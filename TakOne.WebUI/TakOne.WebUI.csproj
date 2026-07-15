@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
+    <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
+    <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+  </ItemGroup>
+
+</Project>

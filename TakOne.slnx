@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="TakOne.Application/TakOne.Application.csproj" />
+  <Project Path="TakOne.Domain/TakOne.Domain.csproj" />
+  <Project Path="TakOne.Infrastructure/TakOne.Infrastructure.csproj" />
+  <Project Path="TakOne.SharedKernel/TakOne.SharedKernel.csproj" />
+  <Project Path="TakOne.WebUI/TakOne.WebUI.csproj" />
+</Solution>

@@ -1,0 +1,706 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace TakOne.Domain.Sales;
+
+using ERP.Domain.Sales.Enums;
+using ERP.Domain.Sales.Events;
+using ERP.Domain.Sales.ValueObjects;
+using ERP.SharedKernel.Common;
+using ERP.SharedKernel.Primitives;
+using ERP.SharedKernel.ValueObjects;
+using System.Net;
+
+public sealed class Sale : AggregateRoot
+{
+
+
+    // ==================================================================================================================================
+    //                                                          PRIVATE FIELDS
+    // ==================================================================================================================================
+
+
+
+    private readonly List<SaleLineItem> _lineItems = new();
+
+
+
+    // ==================================================================================================================================
+    //                                                          PROPERTIES
+    // ==================================================================================================================================
+
+
+
+    // --- identity and reference ---
+    public Guid BuyerId { get; private set; }        // can't change after the creation of the sale so we have no set 
+    // though it COULD change huh?
+    public string BuyerName { get; private set; }
+    public Guid CreatedByUserId { get; private set; }
+    public string CreatedByName { get; private set; }
+
+
+
+    // --- status ---
+    public SaleStatus Status { get; private set; }
+
+    // --- financial breakdown
+    public Money SubTotal { get; private set; }
+    public Money Total { get; private set; }
+
+    // --- timestamps ---
+    public DateTime CreatedAtUtc { get; }
+    public DateTime? ApprovedAtUtc { get; private set; }
+    public DateTime? InvoicedAt { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
+    public string? CancellationReason { get; private set; }
+
+    // --- lineitems ---
+
+    /// <summary>
+    /// Exposes line items as a read-only collection.
+    /// External code CANNOT modify this collection directly.
+    /// </summary>
+    public IReadOnlyList<SaleLineItem> LineItems => _lineItems.AsReadOnly();
+
+
+
+    // ==================================================================================================================================
+    //                                                          CONSTRUCTORS
+    // ==================================================================================================================================
+
+
+
+#pragma warning disable CS8618
+    /// <summary>
+    /// Parameterless constructor required by Entity Framework Core.
+    /// DO NOT use this in application code.
+    /// </summary>
+    private Sale() : base(Guid.Empty) { }
+#pragma warning restore CS8618
+    /// <summary>
+    /// Private constructor used by the static factory method.
+    /// This ensures all Sales are created through the Create() method,
+    /// which enforces creation invariants and raises the appropriate event.
+    /// </summary>
+    private Sale
+        (
+        Guid buyerId,
+        string buyerName,
+        Guid createdByUserId,
+        string createdByName
+        ) : base(Guid.NewGuid())
+
+    {
+
+        if (buyerId == Guid.Empty) throw new DomainException("Buyer ID is required");
+        if (string.IsNullOrWhiteSpace(buyerName)) throw new DomainException("Buyer name is required");
+        if (createdByUserId == Guid.Empty) throw new DomainException("ID of the User that created the sale (Created by ID) is required ");
+        if (string.IsNullOrWhiteSpace(createdByName)) throw new DomainException("Name of the user that created the sale (created by name) is required");
+
+        BuyerId = buyerId;
+        BuyerName = buyerName;
+        CreatedByUserId = createdByUserId;
+        CreatedByName = createdByName;
+
+        Status = SaleStatus.Draft;
+        SubTotal = Money.Zero("IRR"); // Default currency. Can be made configurable.
+        Total = Money.Zero("IRR");
+        CreatedAtUtc = DateTime.UtcNow;
+
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          FACTORY METHOD
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Creates a new Sale in Draft status.
+    /// This is the ONLY way to create a Sale from application code.
+    /// </summary>
+    public static Sale Create
+        (
+        Guid BuyerId,
+        string BuyerName,
+        Guid createdByUserId,
+        string createdByName
+        )
+    {
+        var sale = new Sale
+            (
+            BuyerId,
+            BuyerName,
+            createdByUserId,
+            createdByName
+            );
+
+        // Raise the domain event AFTER the object is fully constructed
+        sale.AddDomainEvent
+            (
+            new SaleCreatedDomainEvent
+            (
+            sale.Id,            // FIX  Aggregate root has this
+            sale.BuyerId,
+            sale.BuyerName,
+            sale.CreatedAtUtc,
+            sale.CreatedByUserId,
+            sale.CreatedByName
+            )
+            );
+
+        return sale;
+
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          LINE ITEM MANAGEMENT
+    // ==================================================================================================================================
+
+
+
+    public void AddLineItem
+        (
+    Guid productId,
+    string productName,
+    int quantity,
+    Money unitPrice,
+    string productCategory // for when we might want to limit how many they can buy per category as well
+        )
+    {
+
+        EnsureEditable($"Cannot add line items to a sale with status '{Status}'. " + "Only Draft sales can be modified.");
+        EnsureProductQuantityValidity(quantity);
+        EnsureProductPriceValidity(unitPrice);
+
+        // ------------------------------------------------------------------
+        // CHECK FOR EXISTING LINE ITEM WITH THE SAME PRODUCT
+        // ------------------------------------------------------------------
+        var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId);
+
+        if (existingLine is not null)
+        {
+            AddExistingSaleLineItem(existingLine, productId, productName, quantity, unitPrice);
+        }
+        else
+        {
+            // This is a genuinely new product on this sale
+            var lineNumber = _lineItems.Count + 1;
+
+            var lineItem = new SaleLineItem
+                (
+                productId,
+                productName,
+                quantity,
+                unitPrice,
+                lineNumber,
+               productCategory
+                );
+
+            _lineItems.Add(lineItem);
+
+            RecalculateSubtotal();
+
+            AddDomainEvent
+                (
+                new SaleLineItemAddedDomainEvent
+                (
+                Id,
+                lineItem.Id,
+                productId,
+                productName,
+                quantity,
+                unitPrice,
+                lineNumber
+                )
+                );
+        }
+    }
+
+
+
+    /// <summary>
+    /// Updates the quantity of an existing line item.
+    /// </summary>
+    public void UpdateLineItemQuantity(Guid lineItemId, int newQuantity)
+    {
+        EnsureEditable($"Cannot update the number of line items in a sale with status '{Status}'. "
+            + "Only Draft and Pending sales can be modified.");
+
+        EnsureProductQuantityValidity(newQuantity);
+        // if we have FOC or discounts that become invalid after a new quantity, this is the place to check for it
+        // some smarty pants might add a lot of quantity to get the discount and then update the quanitity to 1
+        // and enjoy 10% the discount on that 1 product when we don't give discounts for under 1000 quantity
+
+
+        // ------------------------------------------------------------------
+        // FIND THE LINE ITEM
+        // ------------------------------------------------------------------
+        var lineItem = EnsureSaleLineItemExists(lineItemId);
+        // ------------------------------------------------------------------
+        // UPDATE AND RECALCULATE
+        // ------------------------------------------------------------------
+        lineItem.UpdateQuantity(newQuantity);
+        RecalculateSubtotal();
+
+        AddDomainEvent
+            (
+            new SaleLineItemUpdatedDomainEvent
+            (
+            Id,                         // this is the Base Entity Id which is inside Aggregate root (SaleId)
+            lineItem.Id,
+            lineItem.ProductId,
+            lineItem.ProductName,
+            newQuantity,
+            lineItem.UnitPrice,
+            lineItem.LineNumber
+            )
+            );
+    }
+
+
+
+    /// <summary>
+    /// Removes a line item from the sale.
+    /// </summary>
+    public void RemoveLineItem(Guid lineItemId)
+    {
+        EnsureEditable($"Cannot remove line items of a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
+
+        // ------------------------------------------------------------------
+        // FIND THE LINE ITEM       // the naming of this method has some issues. is it even a guard when it returns a value?
+        // ------------------------------------------------------------------
+        var lineItem = EnsureSaleLineItemExists(lineItemId);
+        // ------------------------------------------------------------------
+        // REMOVE AND RECALCULATE
+        // ------------------------------------------------------------------
+        var removedLineNumber = lineItem.LineNumber;
+        _lineItems.Remove(lineItem);
+
+        RecalculateSubtotal();
+
+        AddDomainEvent
+            (
+            new SaleLineItemRemovedDomainEvent
+            (
+            Id,
+            lineItem.Id,
+            lineItem.ProductId,
+            removedLineNumber
+            )
+            );
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          PRIVATE HELPERS
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Core logic for adding quantity to an existing line item.
+    /// Guards are repeated here so this method is safe to call from any context.
+    /// </summary>
+    private void AddExistingSaleLineItem(SaleLineItem existingLine, Guid productId, string productName, int quantity, Money unitPrice)
+    {
+        EnsureEditable($"Cannot add to the number products of a sale with status '{Status}'. "
+            + "Only Draft and Pending sales can be modified.");
+
+        EnsureProductPriceValidity(unitPrice);
+        EnsureProductQuantityValidity(quantity);
+        // Instead of adding a duplicate, increment the quantity of the existing line.
+        // Business rationale: One line per product simplifies order fulfillment.
+        var newQuantity = existingLine.Quantity + quantity;
+        existingLine.UpdateQuantity(newQuantity);
+
+        RecalculateSubtotal();
+
+        // Raise an event reflecting the update
+        AddDomainEvent
+            (
+            new SaleLineItemUpdatedDomainEvent
+            (
+            Id,
+            existingLine.Id,
+            productId,
+            productName,
+            newQuantity,
+            existingLine.UnitPrice,
+            existingLine.LineNumber
+            )
+            );
+    }
+
+
+
+
+    /// <summary>
+    /// Recalculates Subtotal from line items.
+    /// Called after every line item change.
+    /// </summary>
+    private void RecalculateSubtotal()
+    {
+        if (_lineItems.Count == 0)
+        {
+            SubTotal = Money.Zero("IRR");
+        }
+        else
+        {
+            EnsureSaleLineItemExists(_lineItems[0].Id);
+            var currency = _lineItems[0].UnitPrice.Currency;
+            // aggregate function runs a function on every item and gives us a single value. we give it a seed (Money.Zero(currency))
+            // and tell it that sum is the seed for the first step. now add all the money together and return as money
+            // Subtotal = sum of gross totals (before any line discounts)
+            SubTotal = _lineItems.Aggregate
+                (
+                Money.Zero(currency), (sum, item) => sum + item.GrossTotal
+                );
+
+            // SubtotalAfterLineDiscounts = sum of line totals (after line discounts and FOC)
+            SubTotalAfterLineDiscounts = _lineItems.Aggregate(
+                Money.Zero(currency),
+                (sum, item) => sum + item.LineTotal);
+        }
+
+        // After recalculating subtotal, also recalculate the downstream values.
+        // Discount and Tax are preserved; they are reapplied to the new subtotal.
+        RecalculateTaxableAndTotal();
+    }
+
+
+
+    /// <summary>
+    /// Recalculates TaxableAmount and Total.
+    /// The sale-level discount is calculated on SubtotalAfterLineDiscounts.
+    /// Tax is calculated after the sale-level discount.
+    /// </summary>
+    private void RecalculateTaxableAndTotal()
+    {
+        // Sale-level discount is calculated on the post-line-discount subtotal
+        if (DiscountPercentage.HasValue)
+        {
+            // the whole .value after the discount percentage is called unwrapping. we unwrapped decimal? into decimal
+            // .Value is a property on Nullable<T> that says: "Give me the underlying value. I'm confident it's not null."
+            Discount = SubTotalAfterLineDiscounts * (DiscountPercentage.Value / 100m);
+        }
+
+        TaxableAmount = SubTotalAfterLineDiscounts - Discount;
+
+        // Tax is calculated on the TaxableAmount
+        if (TaxRate.HasValue)
+        {
+            Tax = TaxableAmount * (TaxRate.Value / 100m);
+        }
+
+        Total = TaxableAmount + Tax;
+
+        EnsureTotalIsPositive();
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          CENTRALIZED GUARD METHODS
+    // ==================================================================================================================================
+
+
+
+    private void EnsureEditable(string message)
+    {
+        if (Status != SaleStatus.Draft && Status != SaleStatus.Pending)
+        {
+            throw new DomainException(message);
+        }
+    }
+
+    private void EnsureCancellable()
+    {
+        if (Status == SaleStatus.Shipped)
+        {
+            throw new DomainException("Cannot cancel a sale that has already been shipped. Initiate a return instead.");
+        }
+
+        if (Status == SaleStatus.Invoiced)
+        {
+            throw new DomainException("Cannot cancel a sale that has already been invoiced. Issue a credit note instead.");
+        }
+
+        if (Status == SaleStatus.Cancelled)
+        {
+            throw new DomainException("This sale is already cancelled.");
+        }
+    }
+
+    private static void EnsureProductQuantityValidity(int quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new DomainException("Quantity must be a positive number.");
+        }
+    }
+
+    private static void EnsureProductPriceValidity(Money unitPrice)
+    {
+        if (unitPrice.Amount < 0)
+        {
+            throw new DomainException("Unit price cannot be negative.");
+        }
+    }
+
+    private SaleLineItem EnsureSaleLineItemExists(Guid lineItemId)
+    {
+        var lineItem = _lineItems.FirstOrDefault(li => li.Id == lineItemId);
+
+        if (lineItem is null)
+        {
+            throw new DomainException($"Line item with Id '{lineItemId}' was not found.");
+        }
+        return lineItem;
+    }
+
+    private void EnsureHasLineItems()
+    {
+        if (_lineItems.Count == 0)
+        {
+            throw new DomainException("Cannot submit a sale with no line items.");
+        }
+    }
+
+    private void EnsureTotalIsPositive()
+    {
+        if (Total.Amount <= 0)
+        {
+            throw new DomainException("Cannot submit a sale with zero or negative total.");
+        }
+    }
+
+    private static void EnsureReasonProvided(string reason, string message)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(message);
+    }
+
+    private void EnsureDraft()
+    {
+        if (Status != SaleStatus.Draft)
+        {
+            throw new DomainException($"Only Draft sales can be submitted. Current status: '{Status}'.");
+        }
+    }
+
+    private void EnsurePending()
+    {
+        if (Status != SaleStatus.Pending)
+        {
+            throw new DomainException(
+                $"Only Pending sales can be approved. Current status: '{Status}'.");
+        }
+    }
+
+    private void EnsureApproved()
+    {
+        if (Status != SaleStatus.Approved)
+        {
+            throw new DomainException($"Only Approved sales can perform this action. Current status: '{Status}'.");
+        }
+    }
+
+    private void EnsureShipped()
+    {
+        if (Status != SaleStatus.Shipped)
+        {
+            throw new DomainException($"Only Shipped sales can perform this action. Current status: '{Status}'.");
+        }
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          BEHAVIOR METHODS
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Applies a sale-level discount percentage.
+    /// This is calculated on SubtotalAfterLineDiscounts.
+    /// </summary>
+    public void ApplyDiscount(decimal percentage, string reason)
+    {
+        EnsureEditable($"Cannot apply discount to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
+
+        if (percentage < 0 || percentage > 100) throw new DomainException("Discount percentage must be between 0 and 100.");
+
+        EnsureReasonProvided(reason, "Discount reason is required.");
+
+        DiscountPercentage = percentage;
+        DiscountReason = reason;
+        RecalculateTaxableAndTotal();
+        EnsureTotalIsPositive();
+    }
+
+    public void ApplyTax(decimal rate)
+    {
+        EnsureEditable($"Cannot apply tax to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
+
+        if (rate < 0) throw new DomainException("Tax rate cannot be negative.");
+
+        TaxRate = rate;
+        RecalculateTaxableAndTotal();
+    }
+
+
+
+    /// <summary>
+    /// Applies a percentage discount to a specific line item.
+    /// </summary>
+    public void ApplyLineItemDiscount(Guid lineItemId, decimal percentage, string reason)
+    {
+        EnsureEditable("Can not apply discount to uneditable line items");
+
+        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
+
+        lineItem.ApplyLineDiscount(percentage, reason);
+        RecalculateSubtotal();
+    }
+
+
+
+    /// <summary>
+    /// Removes the line-level discount from a specific line item.
+    /// </summary>
+    public void RemoveLineItemDiscount(Guid lineItemId)
+    {
+        EnsureEditable("Can not remove a line item's discount in non-editable state");
+
+        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
+
+        lineItem.RemoveLineDiscount();
+        RecalculateSubtotal();
+    }
+
+
+
+    /// <summary>
+    /// Marks a line item as Free of Charge.
+    /// </summary>
+    public void MarkLineItemAsFreeOfCharge(Guid lineItemId, string reason)
+    {
+        EnsureEditable("Can not change FOC status in a non-editable state");
+
+        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
+
+        lineItem.MarkAsFreeOfCharge(reason);
+        RecalculateSubtotal();
+    }
+
+
+
+    /// <summary>
+    /// Removes the FOC status from a line item, making it chargeable.
+    /// </summary>
+    public void UnmarkLineItemAsFreeOfCharge(Guid lineItemId)
+    {
+        EnsureEditable("Can not change FOC status in a non-editable state");
+
+        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
+
+        lineItem.UnmarkAsFreeOfCharge();
+        RecalculateSubtotal();
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          STATE TRANSITION METHODS
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Submits the sale for approval.
+    /// Transitions from Draft to Pending.
+    /// </summary>
+    public void Submit()
+    {
+        EnsureDraft();
+        EnsureHasLineItems();
+        // ------------------------------------------------------------------
+        // GUARD: Total must be positive (or zero with justification
+        // — we require positive but MAY need 0 for FOC review this with boss man)
+        // ------------------------------------------------------------------
+        EnsureTotalIsPositive();
+
+        Status = SaleStatus.Pending;
+        SubmittedAtUtc = DateTime.UtcNow;
+        AddDomainEvent(new SaleSubmittedDomainEvent(Id, Total));
+    }
+
+    /// <summary>
+    /// Approves the sale. This means the company has committed to fulfilling the order.
+    /// Transitions from Pending to Approved.
+    /// Discount and tax are frozen at this point since no further modifications are allowed.
+    /// </summary>
+    public void Approve(Guid approvedByUserId)
+    {
+        EnsurePending();
+        EnsureTotalIsPositive();
+        if (approvedByUserId == Guid.Empty) throw new DomainException("The ID of the user that approved the sale is required");
+
+        Status = SaleStatus.Approved;
+        ApprovedAtUtc = DateTime.UtcNow;
+        ApprovedByUserId = approvedByUserId;
+
+        AddDomainEvent(new SaleApprovedDomainEvent(Id, CustomerId, Total, approvedByUserId));
+    }
+
+    /// <summary>
+    /// Cancels the sale. The sale is terminated and no further actions can be taken on it.
+    /// Can be called from Draft, Pending, or Approved status.
+    /// </summary>
+    public void Cancel(Guid cancelledByUserId, string reason)
+    {
+        EnsureCancellable();
+        EnsureReasonProvided(reason, "A cancellation reason is required.");
+        if (cancelledByUserId == Guid.Empty) throw new DomainException("The ID of the user that cancelled the sale is required");
+
+        Status = SaleStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        CancellationReason = reason;
+
+        AddDomainEvent(new SaleCancelledDomainEvent(Id, cancelledByUserId, reason));
+    }
+
+    /// <summary>
+    /// Marks the sale as shipped. Transitions from Approved to Shipped.
+    /// </summary>
+    public void MarkAsShipped()
+    {
+        EnsureApproved();
+        // ------------------------------------------------------------------
+        // TRANSITION
+        // ------------------------------------------------------------------
+        Status = SaleStatus.Shipped;
+        ShippedAtUtc = DateTime.UtcNow;
+
+        AddDomainEvent(new SaleShippedDomainEvent(Id, ShippedAtUtc.Value));
+    }
+
+    /// <summary>
+    /// Marks the sale as invoiced. Transitions from Shipped to Invoiced.
+    /// </summary>
+    public void MarkAsInvoiced()
+    {
+        EnsureShipped();
+
+        Status = SaleStatus.Invoiced;
+        InvoicedAtUtc = DateTime.UtcNow;
+        AddDomainEvent(new SaleInvoicedDomainEvent(Id));
+    }
+}
