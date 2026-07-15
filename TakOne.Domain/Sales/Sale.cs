@@ -1,14 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.Domain.Sales;
 
 using ERP.Domain.Sales.Enums;
 using ERP.Domain.Sales.Events;
 using ERP.Domain.Sales.ValueObjects;
-using ERP.SharedKernel.Common;
-using ERP.SharedKernel.Primitives;
 using ERP.SharedKernel.ValueObjects;
 using System.Net;
 
@@ -51,7 +48,7 @@ public sealed class Sale : AggregateRoot
     // --- timestamps ---
     public DateTime CreatedAtUtc { get; }
     public DateTime? ApprovedAtUtc { get; private set; }
-    public DateTime? InvoicedAt { get; private set; }
+    public DateTime? InvoicedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
 
@@ -143,7 +140,7 @@ public sealed class Sale : AggregateRoot
             (
             new SaleCreatedDomainEvent
             (
-            sale.Id,            // FIX  Aggregate root has this
+            sale.Id,            // FIXME  Aggregate root has this
             sale.BuyerId,
             sale.BuyerName,
             sale.CreatedAtUtc,
@@ -174,9 +171,9 @@ public sealed class Sale : AggregateRoot
         )
     {
 
-        EnsureEditable($"Cannot add line items to a sale with status '{Status}'. " + "Only Draft sales can be modified.");
+        EnsureEditable($"Cannot add line items to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
         EnsureProductQuantityValidity(quantity);
-        EnsureProductPriceValidity(unitPrice);
+        EnsureProductPriceValidity(unitPrice);          // we gon use this thang for ... nothing. the product aggregate should protect itself
 
         // ------------------------------------------------------------------
         // CHECK FOR EXISTING LINE ITEM WITH THE SAME PRODUCT
@@ -232,10 +229,8 @@ public sealed class Sale : AggregateRoot
         EnsureEditable($"Cannot update the number of line items in a sale with status '{Status}'. "
             + "Only Draft and Pending sales can be modified.");
 
-        EnsureProductQuantityValidity(newQuantity);
-        // if we have FOC or discounts that become invalid after a new quantity, this is the place to check for it
-        // some smarty pants might add a lot of quantity to get the discount and then update the quanitity to 1
-        // and enjoy 10% the discount on that 1 product when we don't give discounts for under 1000 quantity
+        EnsureProductQuantityValidity(newQuantity);     // this is a guard that should be in the product itself, but we are doing it here for now
+
 
 
         // ------------------------------------------------------------------
@@ -270,7 +265,7 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     public void RemoveLineItem(Guid lineItemId)
     {
-        EnsureEditable($"Cannot remove line items of a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
+        EnsureEditable($"Cannot remove line items of a sale with status '{Status}'. " + "Only Draft and pending sales can be modified.");
 
         // ------------------------------------------------------------------
         // FIND THE LINE ITEM       // the naming of this method has some issues. is it even a guard when it returns a value?
@@ -364,45 +359,18 @@ public sealed class Sale : AggregateRoot
                 );
 
             // SubtotalAfterLineDiscounts = sum of line totals (after line discounts and FOC)
-            SubTotalAfterLineDiscounts = _lineItems.Aggregate(
+            SubTotalAfterLineDiscounts = _lineItems.Aggregate
+                (
                 Money.Zero(currency),
-                (sum, item) => sum + item.LineTotal);
+                (sum, item) => sum + item.LineTotal
+                );
         }
 
         // After recalculating subtotal, also recalculate the downstream values.
         // Discount and Tax are preserved; they are reapplied to the new subtotal.
-        RecalculateTaxableAndTotal();
     }
 
 
-
-    /// <summary>
-    /// Recalculates TaxableAmount and Total.
-    /// The sale-level discount is calculated on SubtotalAfterLineDiscounts.
-    /// Tax is calculated after the sale-level discount.
-    /// </summary>
-    private void RecalculateTaxableAndTotal()
-    {
-        // Sale-level discount is calculated on the post-line-discount subtotal
-        if (DiscountPercentage.HasValue)
-        {
-            // the whole .value after the discount percentage is called unwrapping. we unwrapped decimal? into decimal
-            // .Value is a property on Nullable<T> that says: "Give me the underlying value. I'm confident it's not null."
-            Discount = SubTotalAfterLineDiscounts * (DiscountPercentage.Value / 100m);
-        }
-
-        TaxableAmount = SubTotalAfterLineDiscounts - Discount;
-
-        // Tax is calculated on the TaxableAmount
-        if (TaxRate.HasValue)
-        {
-            Tax = TaxableAmount * (TaxRate.Value / 100m);
-        }
-
-        Total = TaxableAmount + Tax;
-
-        EnsureTotalIsPositive();
-    }
 
 
 
@@ -422,11 +390,6 @@ public sealed class Sale : AggregateRoot
 
     private void EnsureCancellable()
     {
-        if (Status == SaleStatus.Shipped)
-        {
-            throw new DomainException("Cannot cancel a sale that has already been shipped. Initiate a return instead.");
-        }
-
         if (Status == SaleStatus.Invoiced)
         {
             throw new DomainException("Cannot cancel a sale that has already been invoiced. Issue a credit note instead.");
@@ -440,7 +403,7 @@ public sealed class Sale : AggregateRoot
 
     private static void EnsureProductQuantityValidity(int quantity)
     {
-        if (quantity <= 0)
+        if (quantity  0)
         {
             throw new DomainException("Quantity must be a positive number.");
         }
@@ -511,79 +474,11 @@ public sealed class Sale : AggregateRoot
         }
     }
 
-    private void EnsureShipped()
-    {
-        if (Status != SaleStatus.Shipped)
-        {
-            throw new DomainException($"Only Shipped sales can perform this action. Current status: '{Status}'.");
-        }
-    }
-
 
 
     // ==================================================================================================================================
     //                                                          BEHAVIOR METHODS
     // ==================================================================================================================================
-
-
-
-    /// <summary>
-    /// Applies a sale-level discount percentage.
-    /// This is calculated on SubtotalAfterLineDiscounts.
-    /// </summary>
-    public void ApplyDiscount(decimal percentage, string reason)
-    {
-        EnsureEditable($"Cannot apply discount to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
-
-        if (percentage < 0 || percentage > 100) throw new DomainException("Discount percentage must be between 0 and 100.");
-
-        EnsureReasonProvided(reason, "Discount reason is required.");
-
-        DiscountPercentage = percentage;
-        DiscountReason = reason;
-        RecalculateTaxableAndTotal();
-        EnsureTotalIsPositive();
-    }
-
-    public void ApplyTax(decimal rate)
-    {
-        EnsureEditable($"Cannot apply tax to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
-
-        if (rate < 0) throw new DomainException("Tax rate cannot be negative.");
-
-        TaxRate = rate;
-        RecalculateTaxableAndTotal();
-    }
-
-
-
-    /// <summary>
-    /// Applies a percentage discount to a specific line item.
-    /// </summary>
-    public void ApplyLineItemDiscount(Guid lineItemId, decimal percentage, string reason)
-    {
-        EnsureEditable("Can not apply discount to uneditable line items");
-
-        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
-
-        lineItem.ApplyLineDiscount(percentage, reason);
-        RecalculateSubtotal();
-    }
-
-
-
-    /// <summary>
-    /// Removes the line-level discount from a specific line item.
-    /// </summary>
-    public void RemoveLineItemDiscount(Guid lineItemId)
-    {
-        EnsureEditable("Can not remove a line item's discount in non-editable state");
-
-        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
-
-        lineItem.RemoveLineDiscount();
-        RecalculateSubtotal();
-    }
 
 
 
@@ -624,25 +519,6 @@ public sealed class Sale : AggregateRoot
 
 
     /// <summary>
-    /// Submits the sale for approval.
-    /// Transitions from Draft to Pending.
-    /// </summary>
-    public void Submit()
-    {
-        EnsureDraft();
-        EnsureHasLineItems();
-        // ------------------------------------------------------------------
-        // GUARD: Total must be positive (or zero with justification
-        // — we require positive but MAY need 0 for FOC review this with boss man)
-        // ------------------------------------------------------------------
-        EnsureTotalIsPositive();
-
-        Status = SaleStatus.Pending;
-        SubmittedAtUtc = DateTime.UtcNow;
-        AddDomainEvent(new SaleSubmittedDomainEvent(Id, Total));
-    }
-
-    /// <summary>
     /// Approves the sale. This means the company has committed to fulfilling the order.
     /// Transitions from Pending to Approved.
     /// Discount and tax are frozen at this point since no further modifications are allowed.
@@ -677,27 +553,14 @@ public sealed class Sale : AggregateRoot
         AddDomainEvent(new SaleCancelledDomainEvent(Id, cancelledByUserId, reason));
     }
 
-    /// <summary>
-    /// Marks the sale as shipped. Transitions from Approved to Shipped.
-    /// </summary>
-    public void MarkAsShipped()
-    {
-        EnsureApproved();
-        // ------------------------------------------------------------------
-        // TRANSITION
-        // ------------------------------------------------------------------
-        Status = SaleStatus.Shipped;
-        ShippedAtUtc = DateTime.UtcNow;
 
-        AddDomainEvent(new SaleShippedDomainEvent(Id, ShippedAtUtc.Value));
-    }
 
     /// <summary>
     /// Marks the sale as invoiced. Transitions from Shipped to Invoiced.
     /// </summary>
     public void MarkAsInvoiced()
     {
-        EnsureShipped();
+        EnsurePending();
 
         Status = SaleStatus.Invoiced;
         InvoicedAtUtc = DateTime.UtcNow;
