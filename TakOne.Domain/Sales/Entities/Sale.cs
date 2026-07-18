@@ -1,13 +1,11 @@
 ﻿using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.Primitives;
+using TakOne.SharedKernel.ValueObjects;
+using TakOne.Domain.Sales.ValueObjects;
+using TakOne.Domain.Sales.Enums;
+using TakOne.Domain.Sales.Events;
 
-namespace TakOne.Domain.Sales;
-
-using ERP.Domain.Sales.Enums;
-using ERP.Domain.Sales.Events;
-using ERP.Domain.Sales.ValueObjects;
-using ERP.SharedKernel.ValueObjects;
-using System.Net;
+namespace TakOne.Domain.Sales.Entities;
 
 public sealed class Sale : AggregateRoot
 {
@@ -30,10 +28,12 @@ public sealed class Sale : AggregateRoot
 
 
     // --- identity and reference ---
+    public SaleNumber SaleNumber { get; }
     public Guid BuyerId { get; private set; }        // can't change after the creation of the sale so we have no set 
     // though it COULD change huh?
     public string BuyerName { get; private set; }
     public Guid CreatedByUserId { get; private set; }
+    public Guid ApprovedByUserId { get; private set; }
     public string CreatedByName { get; private set; }
 
 
@@ -42,7 +42,6 @@ public sealed class Sale : AggregateRoot
     public SaleStatus Status { get; private set; }
 
     // --- financial breakdown
-    public Money SubTotal { get; private set; }
     public Money Total { get; private set; }
 
     // --- timestamps ---
@@ -84,6 +83,7 @@ public sealed class Sale : AggregateRoot
         (
         Guid buyerId,
         string buyerName,
+        SaleNumber saleNumber,
         Guid createdByUserId,
         string createdByName
         ) : base(Guid.NewGuid())
@@ -92,6 +92,7 @@ public sealed class Sale : AggregateRoot
 
         if (buyerId == Guid.Empty) throw new DomainException("Buyer ID is required");
         if (string.IsNullOrWhiteSpace(buyerName)) throw new DomainException("Buyer name is required");
+        if (saleNumber is null) throw new DomainException("Sale number is required");
         if (createdByUserId == Guid.Empty) throw new DomainException("ID of the User that created the sale (Created by ID) is required ");
         if (string.IsNullOrWhiteSpace(createdByName)) throw new DomainException("Name of the user that created the sale (created by name) is required");
 
@@ -99,9 +100,9 @@ public sealed class Sale : AggregateRoot
         BuyerName = buyerName;
         CreatedByUserId = createdByUserId;
         CreatedByName = createdByName;
+        SaleNumber = saleNumber;
 
-        Status = SaleStatus.Draft;
-        SubTotal = Money.Zero("IRR"); // Default currency. Can be made configurable.
+        Status = SaleStatus.Pending;      
         Total = Money.Zero("IRR");
         CreatedAtUtc = DateTime.UtcNow;
 
@@ -123,6 +124,7 @@ public sealed class Sale : AggregateRoot
         (
         Guid BuyerId,
         string BuyerName,
+        SaleNumber saleNumber,
         Guid createdByUserId,
         string createdByName
         )
@@ -131,6 +133,7 @@ public sealed class Sale : AggregateRoot
             (
             BuyerId,
             BuyerName,
+            saleNumber,
             createdByUserId,
             createdByName
             );
@@ -143,6 +146,7 @@ public sealed class Sale : AggregateRoot
             sale.Id,            // FIXME  Aggregate root has this
             sale.BuyerId,
             sale.BuyerName,
+            sale.SaleNumber,
             sale.CreatedAtUtc,
             sale.CreatedByUserId,
             sale.CreatedByName
@@ -170,8 +174,6 @@ public sealed class Sale : AggregateRoot
     string productCategory // for when we might want to limit how many they can buy per category as well
         )
     {
-
-        EnsureEditable($"Cannot add line items to a sale with status '{Status}'. " + "Only Draft and Pending sales can be modified.");
         EnsureProductQuantityValidity(quantity);
         EnsureProductPriceValidity(unitPrice);          // we gon use this thang for ... nothing. the product aggregate should protect itself
 
@@ -201,7 +203,7 @@ public sealed class Sale : AggregateRoot
 
             _lineItems.Add(lineItem);
 
-            RecalculateSubtotal();
+            Recalculatetotal();
 
             AddDomainEvent
                 (
@@ -226,9 +228,7 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     public void UpdateLineItemQuantity(Guid lineItemId, int newQuantity)
     {
-        EnsureEditable($"Cannot update the number of line items in a sale with status '{Status}'. "
-            + "Only Draft and Pending sales can be modified.");
-
+        EnsurePending();
         EnsureProductQuantityValidity(newQuantity);     // this is a guard that should be in the product itself, but we are doing it here for now
 
 
@@ -241,7 +241,7 @@ public sealed class Sale : AggregateRoot
         // UPDATE AND RECALCULATE
         // ------------------------------------------------------------------
         lineItem.UpdateQuantity(newQuantity);
-        RecalculateSubtotal();
+        Recalculatetotal();
 
         AddDomainEvent
             (
@@ -265,7 +265,7 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     public void RemoveLineItem(Guid lineItemId)
     {
-        EnsureEditable($"Cannot remove line items of a sale with status '{Status}'. " + "Only Draft and pending sales can be modified.");
+        EnsurePending();
 
         // ------------------------------------------------------------------
         // FIND THE LINE ITEM       // the naming of this method has some issues. is it even a guard when it returns a value?
@@ -277,7 +277,7 @@ public sealed class Sale : AggregateRoot
         var removedLineNumber = lineItem.LineNumber;
         _lineItems.Remove(lineItem);
 
-        RecalculateSubtotal();
+        Recalculatetotal();
 
         AddDomainEvent
             (
@@ -305,9 +305,7 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     private void AddExistingSaleLineItem(SaleLineItem existingLine, Guid productId, string productName, int quantity, Money unitPrice)
     {
-        EnsureEditable($"Cannot add to the number products of a sale with status '{Status}'. "
-            + "Only Draft and Pending sales can be modified.");
-
+        EnsurePending();
         EnsureProductPriceValidity(unitPrice);
         EnsureProductQuantityValidity(quantity);
         // Instead of adding a duplicate, increment the quantity of the existing line.
@@ -315,7 +313,7 @@ public sealed class Sale : AggregateRoot
         var newQuantity = existingLine.Quantity + quantity;
         existingLine.UpdateQuantity(newQuantity);
 
-        RecalculateSubtotal();
+        Recalculatetotal();
 
         // Raise an event reflecting the update
         AddDomainEvent
@@ -335,16 +333,15 @@ public sealed class Sale : AggregateRoot
 
 
 
-
     /// <summary>
     /// Recalculates Subtotal from line items.
     /// Called after every line item change.
     /// </summary>
-    private void RecalculateSubtotal()
+    private void Recalculatetotal()
     {
         if (_lineItems.Count == 0)
         {
-            SubTotal = Money.Zero("IRR");
+            Total = Money.Zero("IRR");
         }
         else
         {
@@ -353,21 +350,11 @@ public sealed class Sale : AggregateRoot
             // aggregate function runs a function on every item and gives us a single value. we give it a seed (Money.Zero(currency))
             // and tell it that sum is the seed for the first step. now add all the money together and return as money
             // Subtotal = sum of gross totals (before any line discounts)
-            SubTotal = _lineItems.Aggregate
+            Total = _lineItems.Aggregate
                 (
                 Money.Zero(currency), (sum, item) => sum + item.GrossTotal
                 );
-
-            // SubtotalAfterLineDiscounts = sum of line totals (after line discounts and FOC)
-            SubTotalAfterLineDiscounts = _lineItems.Aggregate
-                (
-                Money.Zero(currency),
-                (sum, item) => sum + item.LineTotal
-                );
         }
-
-        // After recalculating subtotal, also recalculate the downstream values.
-        // Discount and Tax are preserved; they are reapplied to the new subtotal.
     }
 
 
@@ -379,14 +366,6 @@ public sealed class Sale : AggregateRoot
     // ==================================================================================================================================
 
 
-
-    private void EnsureEditable(string message)
-    {
-        if (Status != SaleStatus.Draft && Status != SaleStatus.Pending)
-        {
-            throw new DomainException(message);
-        }
-    }
 
     private void EnsureCancellable()
     {
@@ -403,7 +382,7 @@ public sealed class Sale : AggregateRoot
 
     private static void EnsureProductQuantityValidity(int quantity)
     {
-        if (quantity  0)
+        if (quantity <= 0)
         {
             throw new DomainException("Quantity must be a positive number.");
         }
@@ -449,14 +428,6 @@ public sealed class Sale : AggregateRoot
         if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(message);
     }
 
-    private void EnsureDraft()
-    {
-        if (Status != SaleStatus.Draft)
-        {
-            throw new DomainException($"Only Draft sales can be submitted. Current status: '{Status}'.");
-        }
-    }
-
     private void EnsurePending()
     {
         if (Status != SaleStatus.Pending)
@@ -472,42 +443,6 @@ public sealed class Sale : AggregateRoot
         {
             throw new DomainException($"Only Approved sales can perform this action. Current status: '{Status}'.");
         }
-    }
-
-
-
-    // ==================================================================================================================================
-    //                                                          BEHAVIOR METHODS
-    // ==================================================================================================================================
-
-
-
-    /// <summary>
-    /// Marks a line item as Free of Charge.
-    /// </summary>
-    public void MarkLineItemAsFreeOfCharge(Guid lineItemId, string reason)
-    {
-        EnsureEditable("Can not change FOC status in a non-editable state");
-
-        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
-
-        lineItem.MarkAsFreeOfCharge(reason);
-        RecalculateSubtotal();
-    }
-
-
-
-    /// <summary>
-    /// Removes the FOC status from a line item, making it chargeable.
-    /// </summary>
-    public void UnmarkLineItemAsFreeOfCharge(Guid lineItemId)
-    {
-        EnsureEditable("Can not change FOC status in a non-editable state");
-
-        SaleLineItem lineItem = EnsureSaleLineItemExists(lineItemId);
-
-        lineItem.UnmarkAsFreeOfCharge();
-        RecalculateSubtotal();
     }
 
 
@@ -533,7 +468,7 @@ public sealed class Sale : AggregateRoot
         ApprovedAtUtc = DateTime.UtcNow;
         ApprovedByUserId = approvedByUserId;
 
-        AddDomainEvent(new SaleApprovedDomainEvent(Id, CustomerId, Total, approvedByUserId));
+        AddDomainEvent(new SaleApprovedDomainEvent(Id, BuyerId, Total, approvedByUserId));
     }
 
     /// <summary>
