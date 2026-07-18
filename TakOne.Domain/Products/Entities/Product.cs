@@ -14,7 +14,7 @@ public sealed class Product : AggregateRoot
 
 
 
-    private readonly List<BuyerGroupPurchaseLimit> _BuyerGroupPurchaseLimit;
+    private readonly List<CustomerGroupPurchaseLimit> _CustomerGroupPurchaseLimit;
 
 
 
@@ -28,7 +28,7 @@ public sealed class Product : AggregateRoot
     public string Description { get; private set; }
     public Money Price { get; private set; }
     public int StockQuantity { get; private set; }
-    public IReadOnlyList<BuyerGroupPurchaseLimit> BuyerGroupPurchaseLimits => _BuyerGroupPurchaseLimit.AsReadOnly();
+    public IReadOnlyList<CustomerGroupPurchaseLimit> CustomerGroupPurchaseLimits => _CustomerGroupPurchaseLimit.AsReadOnly();
 
 
     // ==================================================================================================================================
@@ -94,12 +94,12 @@ public sealed class Product : AggregateRoot
         }
     }
 
-    private void EnsureDoesNotExceedPurchaseLimit(int quantity, string buyerGroup)
+    private void EnsureDoesNotExceedPurchaseLimit(int quantity, string CustomerGroup)
     {
-        var limit = _BuyerGroupPurchaseLimit.FirstOrDefault(l => l.BuyerGroupId == buyerGroup.Id);
+        var limit = _CustomerGroupPurchaseLimit.FirstOrDefault(l => l.CustomerGroupId == CustomerGroup.Id);
         if (limit != null && quantity > limit.PurchaseLimit)
         {
-            throw new InvalidOperationException($"Purchase quantity exceeds the limit for buyer group {buyerGroup.Name}.");
+            throw new InvalidOperationException($"Purchase quantity exceeds the limit for Customer group {CustomerGroup.Name}.");
         }
     }
 

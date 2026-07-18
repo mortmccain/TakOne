@@ -29,9 +29,9 @@ public sealed class Sale : AggregateRoot
 
     // --- identity and reference ---
     public SaleNumber SaleNumber { get; }
-    public Guid BuyerId { get; private set; }        // can't change after the creation of the sale so we have no set 
+    public Guid CustomerId { get; private set; }        // can't change after the creation of the sale so we have no set 
     // though it COULD change huh?
-    public string BuyerName { get; private set; }
+    public string CustomerName { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public Guid ApprovedByUserId { get; private set; }
     public string CreatedByName { get; private set; }
@@ -81,8 +81,8 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     private Sale
         (
-        Guid buyerId,
-        string buyerName,
+        Guid customerId,
+        string customerName,
         SaleNumber saleNumber,
         Guid createdByUserId,
         string createdByName
@@ -90,14 +90,14 @@ public sealed class Sale : AggregateRoot
 
     {
 
-        if (buyerId == Guid.Empty) throw new DomainException("Buyer ID is required");
-        if (string.IsNullOrWhiteSpace(buyerName)) throw new DomainException("Buyer name is required");
+        if (customerId == Guid.Empty) throw new DomainException("Customer ID is required");
+        if (string.IsNullOrWhiteSpace(customerName)) throw new DomainException("Customer name is required");
         if (saleNumber is null) throw new DomainException("Sale number is required");
         if (createdByUserId == Guid.Empty) throw new DomainException("ID of the User that created the sale (Created by ID) is required ");
         if (string.IsNullOrWhiteSpace(createdByName)) throw new DomainException("Name of the user that created the sale (created by name) is required");
 
-        BuyerId = buyerId;
-        BuyerName = buyerName;
+        CustomerId = customerId;
+        CustomerName = customerName;
         CreatedByUserId = createdByUserId;
         CreatedByName = createdByName;
         SaleNumber = saleNumber;
@@ -122,8 +122,8 @@ public sealed class Sale : AggregateRoot
     /// </summary>
     public static Sale Create
         (
-        Guid BuyerId,
-        string BuyerName,
+        Guid customerId,
+        string customerName,
         SaleNumber saleNumber,
         Guid createdByUserId,
         string createdByName
@@ -131,8 +131,8 @@ public sealed class Sale : AggregateRoot
     {
         var sale = new Sale
             (
-            BuyerId,
-            BuyerName,
+            customerId,
+            customerName,
             saleNumber,
             createdByUserId,
             createdByName
@@ -144,8 +144,8 @@ public sealed class Sale : AggregateRoot
             new SaleCreatedDomainEvent
             (
             sale.Id,            // FIXME  Aggregate root has this
-            sale.BuyerId,
-            sale.BuyerName,
+            sale.CustomerId,
+            sale.CustomerName,
             sale.SaleNumber,
             sale.CreatedAtUtc,
             sale.CreatedByUserId,
@@ -468,7 +468,7 @@ public sealed class Sale : AggregateRoot
         ApprovedAtUtc = DateTime.UtcNow;
         ApprovedByUserId = approvedByUserId;
 
-        AddDomainEvent(new SaleApprovedDomainEvent(Id, BuyerId, Total, approvedByUserId));
+        AddDomainEvent(new SaleApprovedDomainEvent(Id, CustomerId, Total, approvedByUserId));
     }
 
     /// <summary>
