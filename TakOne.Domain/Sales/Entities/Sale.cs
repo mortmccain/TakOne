@@ -7,6 +7,53 @@ using TakOne.Domain.Sales.Events;
 
 namespace TakOne.Domain.Sales.Entities;
 
+/// <summary>
+/// Aggregate root for a Sale (customer order).
+///
+/// LIFECYCLE:
+///   Draft    — cart state; customer is adding/removing items.
+///   Pending  — submitted; awaiting staff approval.
+///   Approved — staff signed off.
+///   Invoiced — physical handover complete; terminal.
+///   Cancelled— terminal; can be reached from Pending or Approved.
+///
+/// DRAFT DELETION (hard delete):
+///   A Sale in Draft state is NOT cancelled — it is hard-deleted via the
+///   repository (ISaleRepository.DeleteAsync) by the application layer.
+///   We don't keep draft carts around for audit purposes; only submitted
+///   sales are persisted as historical records.
+///   The Sale.Cancel() method therefore throws if called from Draft.
+///
+/// AUDIT FIELDS CONVENTION:
+///   Every state transition has a corresponding "<state>ByUserId" Guid column.
+///   These are NON-NULLABLE Guids (default Guid.Empty) — the convention is
+///   that a consumer reads the field only when the Sale is in (or past) the
+///   corresponding state. E.g., read ApprovedByUserId only when
+///   Status == Approved || Status == Invoiced.
+///
+///   Note: Submit() has no SubmittedByUserId field — the submitter is always
+///   the sale's creator (CreatedByUserId), since a sale cannot be submitted
+///   by anyone other than the customer who created it.
+///
+///   We snapshot only CustomerName and CreatedByName (because a sales employee
+///   may create a sale on behalf of a customer, and we want both names available
+///   without joining to the Users table). For other transitions, we store only
+///   the user Id — investigation joins to Users by Id to get the name.
+///
+/// PURCHASE LIMIT ENFORCEMENT:
+///   When a customer adds a line item, the application layer looks up the
+///   per-group purchase limit on the Product (via Product.GetPurchaseLimitForGroup)
+///   using the buyer's User.GroupName. If a limit exists, it is passed to
+///   <see cref="AddLineItem"/> as <c>purchaseLimit</c>. The Sale aggregate
+///   then enforces: total quantity of this Product on this Sale ≤ purchaseLimit.
+///   If <c>purchaseLimit</c> is null, no limit is enforced.
+///
+/// WHAT THE SALE DOES NOT DO:
+///   - It does NOT load the Product aggregate. The application layer loads
+///     Products and passes their data into AddLineItem.
+///   - It does NOT decrease Product stock. Stock decrement is the application
+///     layer's job, on Approve().
+/// </summary>
 public sealed class Sale : AggregateRoot
 {
 
@@ -23,32 +70,95 @@ public sealed class Sale : AggregateRoot
 
 
     // ==================================================================================================================================
-    //                                                          PROPERTIES
+    //                                                          PROPERTIES — IDENTITY & SNAPSHOT
     // ==================================================================================================================================
 
 
 
-    // --- identity and reference ---
     public SaleNumber SaleNumber { get; }
-    public Guid CustomerId { get; private set; }        // can't change after the creation of the sale so we have no set 
-    // though it COULD change huh?
+
+    /// <summary>
+    /// The user who placed the sale. Immutable after creation.
+    /// (Refers to a User aggregate, since customers are just Users with the
+    /// Customer role and a non-null GroupName.)
+    /// </summary>
+    public Guid CustomerId { get; private set; }
+
+    /// <summary>
+    /// Snapshot of the customer's full name at sale time.
+    /// </summary>
     public string CustomerName { get; private set; }
+
+    /// <summary>
+    /// The user who created the sale. Usually the customer, but in special
+    /// cases a sales employee may start a sale on behalf of a customer.
+    /// </summary>
     public Guid CreatedByUserId { get; private set; }
-    public Guid ApprovedByUserId { get; private set; }
+
+    /// <summary>
+    /// Snapshot of the creator's full name at sale time.
+    /// </summary>
     public string CreatedByName { get; private set; }
 
-    // --- status ---
-    public SaleStatus Status { get; private set; }
 
-    // --- financial breakdown
+
+    // ==================================================================================================================================
+    //                                                          PROPERTIES — AUDIT IDs (one per state transition)
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// The user who approved the sale (Pending → Approved).
+    /// Guid.Empty until Approve() is called. Read only when Status ≥ Approved.
+    /// </summary>
+    public Guid ApprovedByUserId { get; private set; }
+
+    /// <summary>
+    /// The user who marked the sale as invoiced (Approved → Invoiced).
+    /// Guid.Empty until MarkAsInvoiced() is called. Read only when Status == Invoiced.
+    /// </summary>
+    public Guid InvoicedByUserId { get; private set; }
+
+    /// <summary>
+    /// The user who cancelled the sale (Pending|Approved → Cancelled).
+    /// Guid.Empty until Cancel() is called. Read only when Status == Cancelled.
+    /// </summary>
+    public Guid CancelledByUserId { get; private set; }
+
+
+
+    // ==================================================================================================================================
+    //                                                          PROPERTIES — STATUS & FINANCIALS
+    // ==================================================================================================================================
+
+
+
+    public SaleStatus Status { get; private set; }
     public Money Total { get; private set; }
 
-    // --- timestamps ---
+
+
+    // ==================================================================================================================================
+    //                                                          PROPERTIES — TIMESTAMPS
+    // ==================================================================================================================================
+
+
+
     public DateTime CreatedAtUtc { get; }
+    public DateTime? SubmittedAtUtc { get; private set; }
     public DateTime? ApprovedAtUtc { get; private set; }
     public DateTime? InvoicedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
+
+
+
+    // ==================================================================================================================================
+    //                                                          LINE ITEMS
+    // ==================================================================================================================================
+
+
 
     /// <summary>
     /// Exposes line items as a read-only collection.
@@ -66,32 +176,27 @@ public sealed class Sale : AggregateRoot
 
 #pragma warning disable CS8618
     /// <summary>
-    /// Parameterless constructor required by Entity Framework Core.
-    /// DO NOT use this in application code.
+    /// Parameterless constructor required by EF Core. DO NOT use in application code.
     /// </summary>
     private Sale() : base(Guid.Empty) { }
 #pragma warning restore CS8618
+
     /// <summary>
     /// Private constructor used by the static factory method.
-    /// This ensures all Sales are created through the Create() method,
-    /// which enforces creation invariants and raises the appropriate event.
+    /// Creates a Sale in <see cref="SaleStatus.Draft"/> status.
     /// </summary>
-    private Sale
-        (
+    private Sale(
         Guid customerId,
         string customerName,
         SaleNumber saleNumber,
         Guid createdByUserId,
-        string createdByName
-        ) : base(Guid.NewGuid())
-
+        string createdByName) : base(Guid.NewGuid())
     {
-
-        if (customerId == Guid.Empty) throw new DomainException("Customer ID is required");
-        if (string.IsNullOrWhiteSpace(customerName)) throw new DomainException("Customer name is required");
-        if (saleNumber is null) throw new DomainException("Sale number is required");
-        if (createdByUserId == Guid.Empty) throw new DomainException("ID of the User that created the sale (Created by ID) is required ");
-        if (string.IsNullOrWhiteSpace(createdByName)) throw new DomainException("Name of the user that created the sale (created by name) is required");
+        EnsureCustomerIdValid(customerId);
+        EnsureCustomerNameValid(customerName);
+        EnsureSaleNumberValid(saleNumber);
+        EnsureCreatedByUserValid(createdByUserId);
+        EnsureCreatedByNameValid(createdByName);
 
         CustomerId = customerId;
         CustomerName = customerName;
@@ -99,10 +204,9 @@ public sealed class Sale : AggregateRoot
         CreatedByName = createdByName;
         SaleNumber = saleNumber;
 
-        Status = SaleStatus.Pending;      
+        Status = SaleStatus.Draft;
         Total = Money.Zero("IRR");
         CreatedAtUtc = DateTime.UtcNow;
-
     }
 
 
@@ -114,7 +218,7 @@ public sealed class Sale : AggregateRoot
 
 
     /// <summary>
-    /// Creates a new Sale in Draft status.
+    /// Creates a new Sale in <see cref="SaleStatus.Draft"/> status.
     /// This is the ONLY way to create a Sale from application code.
     /// </summary>
     public static Sale Create
@@ -126,8 +230,6 @@ public sealed class Sale : AggregateRoot
         string createdByName
         )
     {
-    
-        
         var sale = new Sale
             (
             customerId,
@@ -137,157 +239,227 @@ public sealed class Sale : AggregateRoot
             createdByName
             );
 
-        // Raise the domain event AFTER the object is fully constructed
         sale.AddDomainEvent
             (
             new SaleCreatedDomainEvent
-            (
-            sale.Id,
-            sale.CustomerId,
-            sale.CustomerName,
-            sale.SaleNumber,
-            sale.CreatedAtUtc,
-            sale.CreatedByUserId,
-            sale.CreatedByName
+                (
+                    sale.Id,
+                    sale.CustomerId,
+                    sale.CustomerName,
+                    sale.SaleNumber,
+                    sale.CreatedAtUtc,
+                    sale.CreatedByUserId,
+                    sale.CreatedByName
             )
-            );
+                );
 
-        return sale; // to let the caller use the newly created Sale object immediately after creation,
-                     // including its ID and other properties.
-
+        return sale;
     }
 
 
 
     // ==================================================================================================================================
-    //                                                          LINE ITEM MANAGEMENT
+    //                                                          LINE ITEM MANAGEMENT (Draft only)
     // ==================================================================================================================================
 
 
 
-    public void AddLineItem
-        (
-    Guid productId,
-    string productName,
-    int quantity,
-    Money unitPrice
-    
-        )
+    /// <summary>
+    /// Adds a line item to the sale, or — if a line for the same Product already
+    /// exists — increments that line's quantity by <paramref name="quantity"/>.
+    ///
+    /// Only callable while the Sale is in <see cref="SaleStatus.Draft"/>.
+    ///
+    /// PURCHASE LIMIT:
+    ///   If <paramref name="purchaseLimit"/> is non-null, the resulting total
+    ///   quantity for this Product on this Sale must not exceed it. The
+    ///   application layer is responsible for looking up the correct limit
+    ///   (via Product.GetPurchaseLimitForGroup, using the buyer's GroupName)
+    ///   and passing it here. Null means "no limit for this buyer/product".
+    /// </summary>
+    public void AddLineItem(
+        Guid productId,
+        string productName,
+        int quantity,
+        Money unitPrice,
+        int? purchaseLimit = null)
     {
-        EnsureProductQuantityValidity(quantity);
-        EnsureProductPriceValidity(unitPrice);          // we gon use this thang for ... nothing. the product aggregate should protect itself
+        EnsureDraft();
+        EnsureQuantityValid(quantity);
+        EnsureUnitPriceValid(unitPrice);
 
-        // ------------------------------------------------------------------
-        // CHECK FOR EXISTING LINE ITEM WITH THE SAME PRODUCT
-        // ------------------------------------------------------------------
-        var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId); 
+        var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId);
 
         if (existingLine is not null)
         {
-            AddExistingSaleLineItem(existingLine, productId, productName, quantity, unitPrice);
+            var newQuantity = existingLine.Quantity + quantity;
+            EnsurePurchaseLimitRespected(productId, newQuantity, purchaseLimit);
+
+            existingLine.UpdateQuantity(newQuantity);
+            RecalculateTotal();
+
+            AddDomainEvent(new SaleLineItemUpdatedDomainEvent(
+                Id,
+                existingLine.Id,
+                productId,
+                productName,
+                newQuantity,
+                existingLine.UnitPrice,
+                existingLine.LineNumber));
         }
         else
         {
-            // This is a genuinely new product on this sale
-            var lineNumber = _lineItems.Count + 1;
+            EnsurePurchaseLimitRespected(productId, quantity, purchaseLimit);
 
-            var lineItem = new SaleLineItem
-                (
+            var lineNumber = GetNextLineNumber();
+
+            var lineItem = new SaleLineItem(
                 productId,
                 productName,
                 quantity,
                 unitPrice,
-                lineNumber
-                );
+                lineNumber);
 
             _lineItems.Add(lineItem);
+            RecalculateTotal();
 
-            Recalculatetotal();
-
-            AddDomainEvent
-                (
-                new SaleLineItemAddedDomainEvent
-                (
+            AddDomainEvent(new SaleLineItemAddedDomainEvent(
                 Id,
                 lineItem.Id,
                 productId,
                 productName,
                 quantity,
                 unitPrice,
-                lineNumber
-                )
-                );
+                lineNumber));
         }
     }
 
-
-
     /// <summary>
     /// Updates the quantity of an existing line item.
+    /// Only callable while the Sale is in <see cref="SaleStatus.Draft"/>.
     /// </summary>
-    public void UpdateLineItemQuantity(Guid lineItemId, int newQuantity)
+    public void UpdateLineItemQuantity(Guid lineItemId, int newQuantity, int? purchaseLimit = null)
     {
-        EnsurePending();
-        EnsureProductQuantityValidity(newQuantity);   
+        EnsureDraft();
+        EnsureQuantityValid(newQuantity);
 
+        var lineItem = EnsureLineItemExists(lineItemId);
 
+        EnsurePurchaseLimitRespected(lineItem.ProductId, newQuantity, purchaseLimit);
 
-        // ------------------------------------------------------------------
-        // FIND THE LINE ITEM
-        // ------------------------------------------------------------------
-        var lineItem = EnsureSaleLineItemExists(lineItemId);
-        // ------------------------------------------------------------------
-        // UPDATE AND RECALCULATE
-        // ------------------------------------------------------------------
         lineItem.UpdateQuantity(newQuantity);
-        Recalculatetotal();
+        RecalculateTotal();
 
-        AddDomainEvent
-            (
-            new SaleLineItemUpdatedDomainEvent
-            (
-            Id,                         // this is the Base Entity Id which is inside Aggregate root (SaleId)
+        AddDomainEvent(new SaleLineItemUpdatedDomainEvent(
+            Id,
             lineItem.Id,
             lineItem.ProductId,
             lineItem.ProductName,
             newQuantity,
             lineItem.UnitPrice,
-            lineItem.LineNumber
-            )
-            );
+            lineItem.LineNumber));
+    }
+
+    /// <summary>
+    /// Removes a line item from the sale.
+    /// Only callable while the Sale is in <see cref="SaleStatus.Draft"/>.
+    /// </summary>
+    public void RemoveLineItem(Guid lineItemId)
+    {
+        EnsureDraft();
+
+        var lineItem = EnsureLineItemExists(lineItemId);
+        var removedLineNumber = lineItem.LineNumber;
+
+        _lineItems.Remove(lineItem);
+        RecalculateTotal();
+
+        AddDomainEvent(new SaleLineItemRemovedDomainEvent(
+            Id,
+            lineItem.Id,
+            lineItem.ProductId,
+            removedLineNumber));
     }
 
 
 
+    // ==================================================================================================================================
+    //                                                          STATE TRANSITIONS
+    // ==================================================================================================================================
+
+
+
     /// <summary>
-    /// Removes a line item from the sale.
+    /// Transitions the Sale from <see cref="SaleStatus.Draft"/> to
+    /// <see cref="SaleStatus.Pending"/>. This is the customer "submit cart" action.
+    /// The sale must have at least one line item and a positive total.
+    /// After submission, line items can no longer be modified.
     /// </summary>
-    public void RemoveLineItem(Guid lineItemId)
+    public void Submit()
+    {
+        EnsureDraft();
+        EnsureHasLineItems();
+        EnsureTotalIsPositive();
+
+        Status = SaleStatus.Pending;
+        SubmittedAtUtc = DateTime.UtcNow;
+
+        AddDomainEvent(new SaleSubmittedDomainEvent(Id, CustomerId, Total, CreatedByUserId));
+    }
+
+    /// <summary>
+    /// Approves the sale. Transitions from Pending to Approved.
+    /// Role-based authorization (Employee / Manager) is done in the application
+    /// layer — the Domain does not know about Identity roles.
+    /// </summary>
+    public void Approve(Guid approvedByUserId)
     {
         EnsurePending();
+        EnsureTotalIsPositive();
+        EnsureUserIdValid(approvedByUserId, nameof(approvedByUserId));
 
-        // ------------------------------------------------------------------
-        // FIND THE LINE ITEM       // the naming of this method has some issues. is it even a guard when it returns a value?
-        // ------------------------------------------------------------------
-        var lineItem = EnsureSaleLineItemExists(lineItemId);
-        // ------------------------------------------------------------------
-        // REMOVE AND RECALCULATE
-        // ------------------------------------------------------------------
-        var removedLineNumber = lineItem.LineNumber;
-        _lineItems.Remove(lineItem);
+        Status = SaleStatus.Approved;
+        ApprovedAtUtc = DateTime.UtcNow;
+        ApprovedByUserId = approvedByUserId;
 
-        Recalculatetotal();
+        AddDomainEvent(new SaleApprovedDomainEvent(Id, CustomerId, Total, approvedByUserId));
+    }
 
-        AddDomainEvent
-            (
-            new SaleLineItemRemovedDomainEvent
-            (
-            Id,
-            lineItem.Id,
-            lineItem.ProductId,
-            removedLineNumber
-            )
-            );
+    /// <summary>
+    /// Marks the sale as invoiced. Transitions from Approved to Invoiced.
+    /// "Invoiced" = physical handover complete. Invoiced is terminal — the sale
+    /// cannot be cancelled after this point.
+    /// </summary>
+    public void MarkAsInvoiced(Guid invoicedByUserId)
+    {
+        EnsureApproved();
+        EnsureUserIdValid(invoicedByUserId, nameof(invoicedByUserId));
+
+        Status = SaleStatus.Invoiced;
+        InvoicedAtUtc = DateTime.UtcNow;
+        InvoicedByUserId = invoicedByUserId;
+
+        AddDomainEvent(new SaleInvoicedDomainEvent(Id, invoicedByUserId));
+    }
+
+    /// <summary>
+    /// Cancels the sale. Can be called from Pending or Approved status.
+    /// Cannot cancel a Draft sale — drafts are hard-deleted via the repository.
+    /// Cannot cancel an Invoiced sale (issue a credit note in a separate flow).
+    /// Cannot cancel an already-cancelled sale.
+    /// </summary>
+    public void Cancel(Guid cancelledByUserId, string reason)
+    {
+        EnsureCancellable();
+        EnsureReasonProvided(reason);
+        EnsureUserIdValid(cancelledByUserId, nameof(cancelledByUserId));
+
+        Status = SaleStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        CancelledByUserId = cancelledByUserId;
+        CancellationReason = reason;
+
+        AddDomainEvent(new SaleCancelledDomainEvent(Id, cancelledByUserId, reason));
     }
 
 
@@ -299,205 +471,163 @@ public sealed class Sale : AggregateRoot
 
 
     /// <summary>
-    /// Core logic for adding quantity to an existing line item.
-    /// Guards are repeated here so this method is safe to call from any context.
+    /// Returns the next line number for a new line item.
+    /// Line numbers are stable (deleting line 2 does NOT renumber line 3),
+    /// so we compute the next number as max(existing line numbers) + 1.
+    /// On an empty sale, the first line number is 1.
     /// </summary>
-    private void AddExistingSaleLineItem(SaleLineItem existingLine, Guid productId, string productName, int quantity, Money unitPrice)
+    private int GetNextLineNumber()
     {
-        EnsurePending();
-        EnsureProductPriceValidity(unitPrice);
-        EnsureProductQuantityValidity(quantity);
-        // Instead of adding a duplicate, increment the quantity of the existing line.
-        // Business rationale: One line per product simplifies order fulfillment.
-        var newQuantity = existingLine.Quantity + quantity;
-        existingLine.UpdateQuantity(newQuantity);
-
-        Recalculatetotal();
-
-        // Raise an event reflecting the update
-        AddDomainEvent
-            (
-            new SaleLineItemUpdatedDomainEvent
-            (
-            Id,
-            existingLine.Id,
-            productId,
-            productName,
-            newQuantity,
-            existingLine.UnitPrice,
-            existingLine.LineNumber
-            )
-            );
+        return _lineItems.Count == 0
+            ? 1
+            : _lineItems.Max(li => li.LineNumber) + 1;
     }
 
-
-
     /// <summary>
-    /// Recalculates Subtotal from line items.
+    /// Recalculates the Sale Total from line items.
     /// Called after every line item change.
     /// </summary>
-    private void Recalculatetotal()
+    private void RecalculateTotal()
     {
         if (_lineItems.Count == 0)
         {
             Total = Money.Zero("IRR");
+            return;
         }
-        else
-        {
-            EnsureSaleLineItemExists(_lineItems[0].Id);
-            var currency = _lineItems[0].UnitPrice.Currency;
-            // aggregate function runs a function on every item and gives us a single value. we give it a seed (Money.Zero(currency))
-            // and tell it that sum is the seed for the first step. now add all the money together and return as money
-            // Subtotal = sum of gross totals (before any line discounts)
-            Total = _lineItems.Aggregate
-                (
-                Money.Zero(currency), (sum, item) => sum + item.GrossTotal
-                );
-        }
+
+        var currency = _lineItems[0].UnitPrice.Currency;
+        Total = _lineItems.Aggregate(
+            Money.Zero(currency),
+            (sum, item) => sum + item.GrossTotal);
     }
-
-
 
 
 
     // ==================================================================================================================================
-    //                                                          CENTRALIZED GUARD METHODS
+    //                                                          GUARD METHODS
     // ==================================================================================================================================
 
 
 
-    private void EnsureCancellable()
+    private void EnsureDraft()
     {
-        if (Status == SaleStatus.Invoiced)
-        {
-            throw new DomainException("Cannot cancel a sale that has already been invoiced. Issue a credit note instead.");
-        }
-
-        if (Status == SaleStatus.Cancelled)
-        {
-            throw new DomainException("This sale is already cancelled.");
-        }
-    }
-
-    private static void EnsureProductQuantityValidity(int quantity)
-    {
-        if (quantity <= 0)
-        {
-            throw new DomainException("Quantity must be a positive number.");
-        }
-    }
-
-    private static void EnsureProductPriceValidity(Money unitPrice)
-    {
-        if (unitPrice.Amount < 0)
-        {
-            throw new DomainException("Unit price cannot be negative.");
-        }
-    }
-
-    private SaleLineItem EnsureSaleLineItemExists(Guid lineItemId)
-    {
-        var lineItem = _lineItems.FirstOrDefault(li => li.Id == lineItemId);
-
-        if (lineItem is null)
-        {
-            throw new DomainException($"Line item with Id '{lineItemId}' was not found.");
-        }
-        return lineItem;
-    }
-
-    private void EnsureHasLineItems() 
-    {
-        if (_lineItems.Count == 0)
-        {
-            throw new DomainException("Cannot create a sale with no line items."); 
-        }
-    }
-
-    private void EnsureTotalIsPositive()
-    {
-        if (Total.Amount <= 0)
-        {
-            throw new DomainException("Cannot submit a sale with zero or negative total.");
-        }
-    }
-
-    private static void EnsureReasonProvided(string reason, string message)
-    {
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(message);
+        if (Status != SaleStatus.Draft)
+            throw new DomainException(
+                $"Cannot modify line items of a sale that is not in Draft. Current status: '{Status}'.");
     }
 
     private void EnsurePending()
     {
         if (Status != SaleStatus.Pending)
-        {
             throw new DomainException(
                 $"Only Pending sales can be approved. Current status: '{Status}'.");
-        }
     }
 
     private void EnsureApproved()
     {
         if (Status != SaleStatus.Approved)
-        {
-            throw new DomainException($"Only Approved sales can perform this action. Current status: '{Status}'.");
-        }
+            throw new DomainException(
+                $"Only Approved sales can be marked as invoiced. Current status: '{Status}'.");
     }
 
-
-
-    // ==================================================================================================================================
-    //                                                          STATE TRANSITION METHODS
-    // ==================================================================================================================================
-
-
-
-    /// <summary>
-    /// Approves the sale. This means the company has committed to fulfilling the order.
-    /// Transitions from Pending to Approved.
-    /// Discount and tax are frozen at this point since no further modifications are allowed.
-    /// </summary>
-    public void Approve(Guid approvedByUserId)
+    private void EnsureCancellable()
     {
-        EnsurePending();
-        EnsureTotalIsPositive();
-        if (approvedByUserId == Guid.Empty) throw new DomainException("The ID of the user that approved the sale is required");
+        // Draft sales are NOT cancellable — they are hard-deleted via the repository.
+        if (Status == SaleStatus.Draft)
+            throw new DomainException(
+                "Cannot cancel a Draft sale. Delete it via the repository instead.");
 
-        Status = SaleStatus.Approved;
-        ApprovedAtUtc = DateTime.UtcNow;
-        ApprovedByUserId = approvedByUserId;
+        if (Status == SaleStatus.Invoiced)
+            throw new DomainException(
+                "Cannot cancel a sale that has already been invoiced. Issue a credit note instead.");
 
-        AddDomainEvent(new SaleApprovedDomainEvent(Id, CustomerId, Total, approvedByUserId));
+        if (Status == SaleStatus.Cancelled)
+            throw new DomainException("This sale is already cancelled.");
     }
 
-    /// <summary>
-    /// Cancels the sale. The sale is terminated and no further actions can be taken on it.
-    /// Can be called from Draft, Pending, or Approved status.
-    /// </summary>
-    public void Cancel(Guid cancelledByUserId, string reason)
+    private void EnsureHasLineItems()
     {
-        EnsureCancellable();
-        EnsureReasonProvided(reason, "A cancellation reason is required.");
-        if (cancelledByUserId == Guid.Empty) throw new DomainException("The ID of the user that cancelled the sale is required");
-
-        Status = SaleStatus.Cancelled;
-        CancelledAtUtc = DateTime.UtcNow;
-        CancellationReason = reason;
-
-        AddDomainEvent(new SaleCancelledDomainEvent(Id, cancelledByUserId, reason));
+        if (_lineItems.Count == 0)
+            throw new DomainException("Cannot submit a sale with no line items.");
     }
 
-
-
-    /// <summary>
-    /// Marks the sale as invoiced. Transitions from Shipped to Invoiced.
-    /// </summary>
-    public void MarkAsInvoiced()
+    private void EnsureTotalIsPositive()
     {
-        EnsurePending();
+        if (Total.Amount <= 0)
+            throw new DomainException("Cannot submit a sale with zero or negative total.");
+    }
 
-        Status = SaleStatus.Invoiced;
-        InvoicedAtUtc = DateTime.UtcNow;
-        AddDomainEvent(new SaleInvoicedDomainEvent(Id));
+    private void EnsurePurchaseLimitRespected(Guid productId, int requestedQuantity, int? purchaseLimit)
+    {
+        if (purchaseLimit is null)
+            return; // No limit for this buyer/product combination.
+
+        if (requestedQuantity > purchaseLimit.Value)
+            throw new DomainException(
+                $"Purchase limit exceeded for product '{productId}'. " +
+                $"Limit: {purchaseLimit.Value}, requested: {requestedQuantity}.");
+    }
+
+    private SaleLineItem EnsureLineItemExists(Guid lineItemId)
+    {
+        var lineItem = _lineItems.FirstOrDefault(li => li.Id == lineItemId);
+        if (lineItem is null)
+            throw new DomainException($"Line item with Id '{lineItemId}' was not found on this sale.");
+
+        return lineItem;
+    }
+
+    private static void EnsureQuantityValid(int quantity)
+    {
+        if (quantity <= 0)
+            throw new DomainException("Quantity must be a positive integer.");
+    }
+
+    private static void EnsureUnitPriceValid(Money unitPrice)
+    {
+        if (unitPrice.Amount < 0)
+            throw new DomainException("Unit price cannot be negative.");
+    }
+
+    private static void EnsureReasonProvided(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("A cancellation reason is required.");
+    }
+
+    private static void EnsureUserIdValid(Guid userId, string paramName)
+    {
+        if (userId == Guid.Empty)
+            throw new DomainException($"A valid user Id is required ({paramName}).");
+    }
+
+    private static void EnsureCustomerIdValid(Guid customerId)
+    {
+        if (customerId == Guid.Empty)
+            throw new DomainException("Customer ID is required.");
+    }
+
+    private static void EnsureCustomerNameValid(string customerName)
+    {
+        if (string.IsNullOrWhiteSpace(customerName))
+            throw new DomainException("Customer name is required.");
+    }
+
+    private static void EnsureSaleNumberValid(SaleNumber saleNumber)
+    {
+        if (saleNumber is null)
+            throw new DomainException("Sale number is required.");
+    }
+
+    private static void EnsureCreatedByUserValid(Guid createdByUserId)
+    {
+        if (createdByUserId == Guid.Empty)
+            throw new DomainException("Created-by user ID is required.");
+    }
+
+    private static void EnsureCreatedByNameValid(string createdByName)
+    {
+        if (string.IsNullOrWhiteSpace(createdByName))
+            throw new DomainException("Created-by user name is required.");
     }
 }

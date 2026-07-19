@@ -1,48 +1,46 @@
-﻿using TakOne.Application.Common.Interfaces;
-using TakOne.Domain.Sales.Entities;
+﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
-using Microsoft.Extensions.Logging;
-using TakOne.Application.Sales.Commands.ApproveSale;
 
 namespace TakOne.Application.Sales.Commands.ApproveSale;
 
 public static class ApproveSaleCommandHandler
 {
-    public static async Task<Result> Handle
-        (
+    public static async Task<Result> HandleAsync(
         ApproveSaleCommand command,
+        ICurrentUserService currentUser,
+        ISaleRepository saleRepository,
+        IProductRepository productRepository,
         IUnitOfWork unitOfWork,
-        ILogger<ApproveSaleCommand> logger,
-        CancellationToken cancellationToken
-        )
+        ILogger<ApproveSaleCommandHandler> logger,
+        CancellationToken cancellationToken)
     {
-        var sale = await unitOfWork.GetByIdAsync<Sale>(command.SaleId, cancellationToken);
+        // Role check is done by AuthorizationMiddleware via [RequireRoles(...)].
 
+        var sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
         if (sale is null)
             return Result.Failure($"Sale '{command.SaleId}' was not found.");
 
-        bool canApprove =
-            command.UserRoles.Contains("Admin") || command.UserRoles.Contains("Manager");
+        sale.Approve(currentUser.UserId);
 
-        if (!canApprove)
-            return Result.Failure("Only Admins and Managers can approve sales.");
+        // Decrease stock for each line item — stock is held only when the sale
+        // is committed, not when items are added to the cart.
+        foreach (var line in sale.LineItems)
+        {
+            var product = await productRepository.GetByIdAsync(line.ProductId, cancellationToken);
+            if (product is null)
+                return Result.Failure(
+                    $"Product '{line.ProductId}' on line {line.LineNumber} no longer exists.");
 
-        try
-        {
-            sale.Approve(command.ApprovedByUserId);
-        }
-        catch (DomainException ex)
-        {
-            return Result.Failure(ex.Message);
+            // DomainException (insufficient stock) is caught by middleware.
+            product.DecreaseStock(line.Quantity);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation
-            (
-            "Sale {SaleNumber} (Id: {SaleId}) approved by user {UserId}.",
-            sale.SaleNumber.Value, sale.Id, command.ApprovedByUserId
-            );
+        logger.LogInformation(
+            "Sale {SaleId} approved by user {UserId}.",
+            command.SaleId, currentUser.UserId);
 
         return Result.Success();
     }

@@ -1,10 +1,12 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Sales.Commands.ApproveSale;
 
-public sealed class ApproveSaleCommand
-{
-    public Guid SaleId { get; init; }
-    public Guid ApprovedByUserId { get; init; }
-    public IReadOnlyList<string> UserRoles { get; init; } = Array.Empty<string>();
-}
+/// <summary>
+/// Approves a Pending Sale. Only staff with the Employee or Manager role
+/// can approve — enforced by <see cref="RequireRolesAttribute"/>.
+///
+/// The approver's user Id is captured in sale.ApprovedByUserId for auditing.
+/// </summary>
+[RequireRoles(Roles.Employee, Roles.Manager)]
+public sealed record ApproveSaleCommand(Guid SaleId);

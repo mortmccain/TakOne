@@ -1,10 +1,9 @@
 ﻿using TakOne.SharedKernel.Common;
-using TakOne.SharedKernel.Common;
 
 namespace TakOne.Domain.Sales.Events;
 
 /// <summary>
-/// Raised when a Sale is cancelled. The sale is terminated and no further actions can be taken on it.
+/// Raised when a Sale is cancelled. Terminal event.
 /// </summary>
 public sealed class SaleCancelledDomainEvent : BaseDomainEvent
 {

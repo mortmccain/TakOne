@@ -1,10 +1,12 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Application.Common.Authorization;
 
-namespace TakOne.Application.Sales.Commands.MarkAsInvoiced;
+namespace TakOne.Application.Sales.Commands.MarkSaleAsInvoiced;
 
-public sealed class MarkAsInvoicedCommand
-{
-    public Guid SaleId { get; init; }
-    public Guid MarkedByUserId { get; init; }
-    public IReadOnlyList<string> UserRoles { get; init; } = Array.Empty<string>();
-}
+/// <summary>
+/// Marks an Approved Sale as invoiced (physical handover complete).
+/// Terminal state — the sale cannot be cancelled after this.
+///
+/// Staff-only: Employee or Manager.
+/// </summary>
+[RequireRoles(Roles.Employee, Roles.Manager)]
+public sealed record MarkAsInvoicedCommand(Guid SaleId);

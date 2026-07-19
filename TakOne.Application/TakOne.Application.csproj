@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageReference Include="WolverineFx" Version="6.20.0" />
+    <PackageReference Include="WolverineFx.Postgresql" Version="6.20.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TakOne.Domain\TakOne.Domain.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>

@@ -4,10 +4,21 @@ using TakOne.SharedKernel.ValueObjects;
 
 namespace TakOne.Domain.Sales.Entities;
 
-
-
+/// <summary>
+/// A single line on a Sale. Lives inside the Sale aggregate boundary.
+///
+/// INVARIANTS (enforced by the parent Sale aggregate):
+///   - Quantity must be a positive integer.
+///   - UnitPrice cannot be negative.
+///   - ProductId must be a non-empty Guid.
+///   - ProductName must be non-empty.
+///   - LineNumber is assigned by the parent Sale and is stable for audit
+///     (line 3 stays line 3 even after line 2 is deleted).
+/// </summary>
 public sealed class SaleLineItem : BaseEntity
 {
+
+
 
     // ==================================================================================================================================
     //                                                          PROPERTIES
@@ -17,15 +28,28 @@ public sealed class SaleLineItem : BaseEntity
 
     public Guid ProductId { get; private set; }
     public string ProductName { get; private set; }
-    // don't need it here YAGNI (you ain't gonna need it)
-    // public string ProductDescription { get;private set;}
-    public string ProductCategory { get; private set; }
-    // Stock Keeping Unit (unique code for each product variant)
+
+    /// <summary>
+    /// Quantity ordered on this line. Always ≥ 1 (enforced by parent Sale).
+    /// </summary>
     public int Quantity { get; private set; }
+
+    /// <summary>
+    /// Unit price snapshot at the time the line was added. Stored as a snapshot
+    /// (not a reference to Product.Price) so that future price changes on the
+    /// Product don't alter historical sales.
+    /// </summary>
     public Money UnitPrice { get; private set; }
+
+    /// <summary>
+    /// Audit-friendly position of this line on the sale (1, 2, 3, ...).
+    /// Stable: deleting line 2 does NOT renumber line 3.
+    /// </summary>
     public int LineNumber { get; private set; }
 
-    // --- Computed Totals ---
+    /// <summary>
+    /// Computed gross total for this line. NOT stored — recalculated on read.
+    /// </summary>
     public Money GrossTotal => Quantity * UnitPrice;
 
 
@@ -35,45 +59,95 @@ public sealed class SaleLineItem : BaseEntity
     // ==================================================================================================================================
 
 
+
 #pragma warning disable CS8618
-    private SaleLineItem() : base(Guid.Empty) { }   // for the EF core
+    /// <summary>
+    /// Parameterless constructor required by EF Core. DO NOT use in application code.
+    /// </summary>
+    private SaleLineItem() : base(Guid.Empty) { }
 #pragma warning restore CS8618
-    // internal so it only works within the same assembly
-    internal SaleLineItem
-        (
+
+    /// <summary>
+    /// Internal constructor. Only Sale (the aggregate root, same assembly)
+    /// can create SaleLineItems, via <see cref="Sale.AddLineItem"/>.
+    /// </summary>
+    internal SaleLineItem(
         Guid productId,
         string productName,
         int quantity,
         Money unitPrice,
-        int lineNumber
-        )
-        : base(Guid.NewGuid()) // Generate a new unique ID for this line item
+        int lineNumber) : base(Guid.NewGuid())
     {
+        EnsureProductIdValid(productId);
+        EnsureProductNameValid(productName);
+        EnsureQuantityValid(quantity);
+        EnsureUnitPriceValid(unitPrice);
+        EnsureLineNumberValid(lineNumber);
+
         ProductId = productId;
         ProductName = productName;
         Quantity = quantity;
         UnitPrice = unitPrice;
-        // have this for auditing. when a saleline gets deleted,
-        // the auditor might ask us for line 3 and the deleted lines make things difficult since line 3 might not exist as line 3 anymore
         LineNumber = lineNumber;
     }
 
 
 
     // ==================================================================================================================================
-    //                                                          BEHAVIOR (METHODS)
+    //                                                          BEHAVIOR (internal)
     // ==================================================================================================================================
 
 
 
-    // these bad boys should be validated inside aggregate roots
+    /// <summary>
+    /// Replaces the quantity on this line. The parent Sale is responsible for
+    /// re-validating the purchase limit AFTER calling this, because the limit
+    /// check needs the GroupName context which lives on the Sale.
+    /// </summary>
     internal void UpdateQuantity(int newQuantity)
     {
+        EnsureQuantityValid(newQuantity);
         Quantity = newQuantity;
     }
 
-    internal void UpdateUnitPrice(Money newPrice)
+
+
+    // ==================================================================================================================================
+    //                                                          GUARD METHODS
+    // ==================================================================================================================================
+
+
+
+    private static void EnsureProductIdValid(Guid productId)
     {
-        UnitPrice = newPrice;
+        if (productId == Guid.Empty)
+            throw new DomainException("ProductId is required on a SaleLineItem.");
+    }
+
+    private static void EnsureProductNameValid(string productName)
+    {
+        if (string.IsNullOrWhiteSpace(productName))
+            throw new DomainException("ProductName is required on a SaleLineItem.");
+
+        if (productName.Length > 200)
+            throw new DomainException("ProductName cannot exceed 200 characters.");
+    }
+
+    private static void EnsureQuantityValid(int quantity)
+    {
+        if (quantity <= 0)
+            throw new DomainException("Quantity must be a positive integer.");
+    }
+
+    private static void EnsureUnitPriceValid(Money unitPrice)
+    {
+        if (unitPrice.Amount < 0)
+            throw new DomainException("Unit price cannot be negative.");
+    }
+
+    private static void EnsureLineNumberValid(int lineNumber)
+    {
+        if (lineNumber < 1)
+            throw new DomainException("LineNumber must be at least 1.");
     }
 }

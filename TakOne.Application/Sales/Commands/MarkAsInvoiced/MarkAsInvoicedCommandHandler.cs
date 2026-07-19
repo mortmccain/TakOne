@@ -1,42 +1,30 @@
-﻿using TakOne.Application.Common.Interfaces;
-using TakOne.Domain.Sales.Entities;
+﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
-using Microsoft.Extensions.Logging;
-using TakOne.Application.Sales.Commands.MarkAsInvoiced;
 
-namespace ERP.Application.Sales.Commands.MarkAsInvoiced;
+namespace TakOne.Application.Sales.Commands.MarkSaleAsInvoiced;
 
 public static class MarkAsInvoicedCommandHandler
 {
-    public static async Task<Result> Handle
-        (
-        MarkAsInvoicedCommand command,
+    public static async Task<Result> HandleAsync(
+        MarkSaleAsInvoicedCommand command,
+        ICurrentUserService currentUser,
+        ISaleRepository saleRepository,
         IUnitOfWork unitOfWork,
-        ILogger<MarkAsInvoicedCommand> logger,
-        CancellationToken cancellationToken
-        )
+        ILogger<MarkSaleAsInvoicedCommandHandler> logger,
+        CancellationToken cancellationToken)
     {
-        var sale = await unitOfWork.GetByIdAsync<Sale>(command.SaleId, cancellationToken: cancellationToken);
+        var sale = await saleRepository.GetByIdAsync(command.SaleId, cancellationToken);
         if (sale is null)
             return Result.Failure($"Sale '{command.SaleId}' was not found.");
 
-        if (!command.UserRoles.Contains("Admin") && !command.UserRoles.Contains("Manager"))
-            return Result.Failure("Only Admins and Managers can mark a sale as invoiced.");
-
-        try
-        {
-            sale.MarkAsInvoiced();
-        }
-        catch (DomainException ex)
-        {
-            return Result.Failure(ex.Message);
-        }
+        sale.MarkAsInvoiced(currentUser.UserId);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Sale {SaleNumber} (Id: {SaleId}) marked as invoiced by user {UserId}.",
-            sale.SaleNumber.Value, sale.Id, command.MarkedByUserId);
+            "Sale {SaleId} marked as invoiced by user {UserId}.",
+            command.SaleId, currentUser.UserId);
 
         return Result.Success();
     }

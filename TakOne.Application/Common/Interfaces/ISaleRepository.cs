@@ -7,30 +7,37 @@ public interface ISaleRepository
 {
     Task<Sale?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
-    Task<PaginatedResult<Sale>> GetPaginatedBySpecificationAsync(
+    /// <summary>
+    /// Loads a Sale with its line items eagerly. Required for any operation
+    /// that needs to inspect or modify the lines.
+    /// </summary>
+    Task<Sale?> GetByIdWithLineItemsAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<PaginatedResult<Sale>> GetPaginatedBySpecificationAsync
+        (
         Specification<Sale> specification,
         int pageNumber,
         int pageSize,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default
+        );
 
     /// <summary>
     /// Returns ALL matching sales without pagination.
-    /// Line items are NOT eagerly loaded — only use where Sale-level fields
-    /// (Total, Status, CreatedAtUtc, CreatedByUserId) are sufficient.
+    /// Line items are NOT eagerly loaded.
     /// </summary>
-    Task<List<Sale>> GetAllBySpecificationAsync(
+    Task<List<Sale>> GetAllBySpecificationAsync
+        (
         Specification<Sale> specification,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default
+        );
 
     Task AddAsync(Sale sale, CancellationToken cancellationToken = default);
-    Task RemoveAsync(Sale sale, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Hard-deletes a Sale. ONLY valid for Sales in Draft status — the domain
+    /// Sale.Cancel() throws for Drafts, so draft disposal goes through here.
+    /// The repository implementation may add a defensive check that the Sale
+    /// is actually a Draft before issuing the DELETE.
+    /// </summary>
+    Task DeleteAsync(Sale sale, CancellationToken cancellationToken = default);
 }
-
-/*
- Why no Update method?
-
- EF Core tracks changes to entities loaded from the database. When a handler loads a Sale,
-modifies it, and calls UnitOfWork.SaveChangesAsync(), 
-EF Core automatically detects the changes and generates UPDATE statements.
-An explicit Update method is redundant.
- */

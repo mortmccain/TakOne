@@ -5,7 +5,6 @@ namespace TakOne.Domain.Sales.Events;
 
 /// <summary>
 /// Raised when a Sale transitions from Pending to Approved status.
-/// This is a critical business event — it means the company has committed to fulfilling the order.
 /// </summary>
 public sealed class SaleApprovedDomainEvent : BaseDomainEvent
 {

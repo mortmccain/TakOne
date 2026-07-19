@@ -1,8 +1,32 @@
-﻿using TakOne.SharedKernel.Primitives;
+﻿using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.Primitives;
 using TakOne.SharedKernel.ValueObjects;
+using TakOne.Domain.Products.ValueObjects;
 
 namespace TakOne.Domain.Products.Entities;
 
+/// <summary>
+/// Aggregate root for products in the catalog.
+///
+/// RESPONSIBILITIES:
+///   - Holds the product's identity, description, price, stock, category refs, picture.
+///   - Owns a collection of <see cref="CustomerGroupPurchaseLimit"/> value objects
+///     that define per-group purchase limits for THIS product.
+///   - Enforces stock-related invariants (can't go negative, can't increase by 0 or negative).
+///
+/// DOES NOT ENFORCE:
+///   - That a buyer's quantity respects their group's limit. That enforcement
+///     happens in the Sale aggregate (step 5), because it requires knowing
+///     the buyer's GroupName (which lives on the User aggregate). The
+///     application layer loads the Product, looks up the limit via
+///     <see cref="GetPurchaseLimitForGroup"/>, and passes it to the Sale.
+///
+/// DOES NOT ENFORCE:
+///   - That SubCategoryId belongs to CategoryId, or that SubSubCategoryId
+///     belongs to SubCategoryId. That hierarchy invariant lives in the
+///     Category aggregate (step 4) and is checked by the application layer
+///     when creating/updating a Product.
+/// </summary>
 public sealed class Product : AggregateRoot
 {
 
@@ -14,7 +38,7 @@ public sealed class Product : AggregateRoot
 
 
 
-    private readonly List<CustomerGroupPurchaseLimit> _CustomerGroupPurchaseLimit;
+    private readonly List<CustomerGroupPurchaseLimit> _purchaseLimits = new();
 
 
 
@@ -26,9 +50,43 @@ public sealed class Product : AggregateRoot
 
     public string Name { get; private set; }
     public string Description { get; private set; }
+
+    /// <summary>
+    /// URL or relative path to the product's picture. Nullable because a product
+    /// may be created without a picture and have one added later.
+    /// </summary>
+    public string? PictureUrl { get; private set; }
+
     public Money Price { get; private set; }
+
     public int StockQuantity { get; private set; }
-    public IReadOnlyList<CustomerGroupPurchaseLimit> CustomerGroupPurchaseLimits => _CustomerGroupPurchaseLimit.AsReadOnly();
+
+    /// <summary>
+    /// Required reference to the top-level Category aggregate.
+    /// Every product must belong to at least a Category.
+    /// </summary>
+    public Guid CategoryId { get; private set; }
+
+    /// <summary>
+    /// Optional reference to a SubCategory. Null if the product is only
+    /// categorized at the top level.
+    /// </summary>
+    public Guid? SubCategoryId { get; private set; }
+
+    /// <summary>
+    /// Optional reference to a SubSubCategory. Null if the product is only
+    /// categorized at the Category or SubCategory level.
+    /// </summary>
+    public Guid? SubSubCategoryId { get; private set; }
+
+    /// <summary>
+    /// Read-only view of the per-group purchase limits for this product.
+    /// External code cannot modify this collection directly — use
+    /// <see cref="SetPurchaseLimit"/> / <see cref="RemovePurchaseLimit"/>.
+    /// </summary>
+    public IReadOnlyList<CustomerGroupPurchaseLimit> PurchaseLimits
+        => _purchaseLimits.AsReadOnly();
+
 
 
     // ==================================================================================================================================
@@ -37,13 +95,224 @@ public sealed class Product : AggregateRoot
 
 
 
-    public Product(Guid id, string name, string description, Money price, int stockQuantity)
+#pragma warning disable CS8618
+    /// <summary>
+    /// Parameterless constructor required by EF Core. DO NOT use in application code.
+    /// </summary>
+    private Product() : base(Guid.Empty) { }
+#pragma warning restore CS8618
+
+    /// <summary>
+    /// Private constructor used by the static factory method.
+    /// </summary>
+    private Product(
+        string name,
+        string description,
+        Money price,
+        int stockQuantity,
+        string? pictureUrl,
+        Guid categoryId,
+        Guid? subCategoryId,
+        Guid? subSubCategoryId) : base(Guid.NewGuid())
     {
-        Id = id;
+        EnsureNameValid(name);
+        EnsureDescriptionValid(description);
+        EnsurePriceValid(price);
+        EnsureStockQuantityValid(stockQuantity);
+        EnsureCategoryIdValid(categoryId);
+        EnsureSubCategoryConsistency(subCategoryId, subSubCategoryId);
+
         Name = name;
         Description = description;
         Price = price;
         StockQuantity = stockQuantity;
+        PictureUrl = pictureUrl;
+        CategoryId = categoryId;
+        SubCategoryId = subCategoryId;
+        SubSubCategoryId = subSubCategoryId;
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          FACTORY METHOD
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Creates a new Product. This is the ONLY way to construct a Product
+    /// from application code.
+    ///
+    /// Category hierarchy validation (sub belongs to category, etc.) is NOT
+    /// done here — it's a cross-aggregate invariant that the application layer
+    /// enforces by loading the Category aggregate before calling this method.
+    /// </summary>
+    public static Product Create
+        (
+        string name,
+        string description,
+        Money price,
+        int stockQuantity,
+        Guid categoryId,
+        string? pictureUrl = null,
+        Guid? subCategoryId = null,
+        Guid? subSubCategoryId = null
+        )
+    {
+        return new Product
+            (
+            name,
+            description,
+            price,
+            stockQuantity,
+            pictureUrl,
+            categoryId,
+            subCategoryId,
+            subSubCategoryId
+            );
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          DETAIL / CATEGORY UPDATES
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Updates the product's basic descriptive fields.
+    /// </summary>
+    public void UpdateDetails(string name, string description, Money price, string? pictureUrl)
+    {
+        EnsureNameValid(name);
+        EnsureDescriptionValid(description);
+        EnsurePriceValid(price);
+
+        Name = name;
+        Description = description;
+        Price = price;
+        PictureUrl = pictureUrl;
+    }
+
+    /// <summary>
+    /// Updates the product's category assignment.
+    /// Pass null for subCategoryId / subSubCategoryId to clear them.
+    /// Cross-aggregate hierarchy validation is done by the application layer.
+    /// </summary>
+    public void UpdateCategory
+        (
+        Guid categoryId,
+        Guid? subCategoryId = null,
+        Guid? subSubCategoryId = null
+        )
+    {
+        EnsureCategoryIdValid(categoryId);
+        EnsureSubCategoryConsistency(subCategoryId, subSubCategoryId);
+
+        CategoryId = categoryId;
+        SubCategoryId = subCategoryId;
+        SubSubCategoryId = subSubCategoryId;
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          STOCK MANAGEMENT
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Increases the stock by the given quantity. Used when restocking.
+    /// </summary>
+    public void IncreaseStock(int quantity)
+    {
+        if (quantity <= 0)
+            throw new DomainException("Quantity to increase must be greater than zero.");
+
+        StockQuantity += quantity;
+    }
+
+    /// <summary>
+    /// Decreases the stock by the given quantity. Used when a sale is approved.
+    /// Throws if the resulting stock would be negative.
+    /// </summary>
+    public void DecreaseStock(int quantity)
+    {
+        if (quantity <= 0)
+            throw new DomainException("Quantity to decrease must be greater than zero.");
+
+        if (quantity > StockQuantity)
+            throw new DomainException("Insufficient stock to remove the specified quantity.");
+
+        StockQuantity -= quantity;
+    }
+
+    /// <summary>
+    /// Sets the stock to the given quantity. Used for manual adjustments.
+    /// </summary>
+    public void SetStock(int quantity)
+    {
+        EnsureStockQuantityValid(quantity);
+        StockQuantity = quantity;
+    }
+
+
+
+    // ==================================================================================================================================
+    //                                                          PURCHASE LIMIT MANAGEMENT
+    // ==================================================================================================================================
+
+
+
+    /// <summary>
+    /// Sets (adds or replaces) the purchase limit for the given group.
+    /// Because <see cref="CustomerGroupPurchaseLimit"/> is a value object (immutable),
+    /// "changing" a limit means replacing the old instance with a new one.
+    /// </summary>
+    public void SetPurchaseLimit(string groupName, int limit)
+    {
+        var newLimit = CustomerGroupPurchaseLimit.Create(groupName, limit);
+
+        // Remove any existing limit for the same group, then add the new one.
+        // (Equality is by GroupName + Limit, so we filter on GroupName only.)
+        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
+        if (existing is not null)
+        {
+            _purchaseLimits.Remove(existing);
+        }
+
+        _purchaseLimits.Add(newLimit);
+    }
+
+    /// <summary>
+    /// Removes the purchase limit for the given group, if any.
+    /// </summary>
+    public void RemovePurchaseLimit(string groupName)
+    {
+        EnsureNameValid(groupName);
+
+        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
+        if (existing is not null)
+        {
+            _purchaseLimits.Remove(existing);
+        }
+        // No-op if the limit doesn't exist — idempotent.
+    }
+
+    /// <summary>
+    /// Returns the purchase limit for the given group, or null if no limit
+    /// is defined for that group on this product.
+    /// Called by the application layer (CreateSaleCommandHandler) when building a sale.
+    /// </summary>
+    public CustomerGroupPurchaseLimit? GetPurchaseLimitForGroup(string groupName)
+    {
+        if (string.IsNullOrWhiteSpace(groupName))
+            return null;
+
+        return _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
     }
 
 
@@ -54,93 +323,52 @@ public sealed class Product : AggregateRoot
 
 
 
-    private void EnsurePriceValidity(Money price)
-    {
-        if (price.Amount < 0)
-        {
-            throw new ArgumentException("Price cannot be negative.", nameof(price));
-        }
-    }
-
-   private void EnsureStockQuantityValidity(int stockQuantity)
-    {
-        if (stockQuantity < 0)
-        {
-            throw new ArgumentException("Stock quantity cannot be negative.", nameof(stockQuantity));
-        }
-    }
-
-    private void EnsureNameValidity(string name)
+    private static void EnsureNameValid(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
-        {
-            throw new ArgumentException("Product name cannot be null or whitespace.", nameof(name));
-        }
+            throw new DomainException("name is required.");
+
+        if (name.Length > 200)
+            throw new DomainException("name cannot exceed 200 characters.");
     }
 
-    private void EnsureDescriptionValidity(string description)
+    private static void EnsureDescriptionValid(string description)
     {
         if (string.IsNullOrWhiteSpace(description))
-        {
-            throw new ArgumentException("Product description cannot be null or whitespace.", nameof(description));
-        }
+            throw new DomainException("Product description is required.");
+
+        if (description.Length > 2000)
+            throw new DomainException("Product description cannot exceed 2000 characters.");
     }
 
-    private void EnsureAvailableInStock(int quantity)
+    private static void EnsurePriceValid(Money price)
     {
-        if (quantity > StockQuantity)
-        {
-            throw new InvalidOperationException("Insufficient stock available.");
-        }
+        if (price.Amount < 0)
+            throw new DomainException("Product price cannot be negative.");
     }
 
-    private void EnsureDoesNotExceedPurchaseLimit(int quantity, string CustomerGroup)
+    private static void EnsureStockQuantityValid(int stockQuantity)
     {
-        var limit = _CustomerGroupPurchaseLimit.FirstOrDefault(l => l.CustomerGroupId == CustomerGroup.Id);
-        if (limit != null && quantity > limit.PurchaseLimit)
-        {
-            throw new InvalidOperationException($"Purchase quantity exceeds the limit for Customer group {CustomerGroup.Name}.");
-        }
+        if (stockQuantity < 0)
+            throw new DomainException("Stock quantity cannot be negative.");
     }
 
-    private void EnsureProductDoesNotExist(string name)
+    private static void EnsureCategoryIdValid(Guid categoryId)
     {
-        if (_products.Any(p => p.Name == name))
-        {
-            throw new InvalidOperationException("A product with the specified name already exists.");
-        }
+        if (categoryId == Guid.Empty)
+            throw new DomainException("Category ID is required.");
     }
 
-
-
-
-
-
-
-
-
-
-
-    public void IncreaseStock(int quantity)
+    /// <summary>
+    /// Lightweight intra-product consistency check: you can't have a SubSubCategory
+    /// without a SubCategory. (Cross-aggregate hierarchy validation is done by
+    /// the application layer via the Category aggregate.)
+    /// </summary>
+    private static void EnsureSubCategoryConsistency(Guid? subCategoryId, Guid? subSubCategoryId)
     {
-        if (quantity <= 0)
+        if (subSubCategoryId is not null && subCategoryId is null)
         {
-            throw new ArgumentException("Quantity to increase must be greater than zero.", nameof(quantity));
+            throw new DomainException("Cannot assign a SubSubCategory without a SubCategory.");
         }
-        StockQuantity += quantity;
     }
-
-    public void DecreaseStock(int quantity)
-    {
-        if (quantity <= 0)
-        {
-            throw new ArgumentException("Quantity to decrease must be greater than zero.", nameof(quantity));
-        }
-        if (quantity > StockQuantity)
-        {
-            throw new InvalidOperationException("Insufficient stock to remove the specified quantity.");
-        }
-        StockQuantity -= quantity;
-    }
-
 }

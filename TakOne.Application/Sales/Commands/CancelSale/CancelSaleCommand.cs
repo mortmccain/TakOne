@@ -1,17 +1,14 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Sales.Commands.CancelSale;
 
-public sealed class CancelSaleCommand
-{
-    public Guid SaleId { get; init; }
-    public Guid CancelledByUserId { get; init; }
-
-    /// <summary>
-    /// Roles of the user performing the cancellation.
-    /// The handler uses these to enforce role-based status restrictions.
-    /// </summary>
-    public IReadOnlyList<string> UserRoles { get; init; } = Array.Empty<string>();
-
-    public string Reason { get; init; } = string.Empty;
-}
+/// <summary>
+/// Cancels a Pending or Approved Sale. Terminal state.
+/// Cannot cancel a Draft (use DeleteDraftSaleCommand) or an Invoiced sale.
+///
+/// Staff-only: Employee or Manager.
+/// </summary>
+[RequireRoles(Roles.Employee, Roles.Manager)]
+public sealed record CancelSaleCommand(
+    Guid SaleId,
+    string Reason);

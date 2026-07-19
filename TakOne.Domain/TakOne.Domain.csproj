@@ -10,9 +10,4 @@
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Customer\" />
-    <Folder Include="Users\" />
-  </ItemGroup>
-
 </Project>
