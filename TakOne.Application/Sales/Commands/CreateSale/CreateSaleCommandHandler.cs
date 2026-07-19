@@ -45,28 +45,18 @@ public static class CreateSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // STEP 2: Generate a SaleNumber
+        // STEP 2: Generate a SaleNumber    // FIXME: This should be done in a domain service, not here.
         // ------------------------------------------------------------------
         // In production, this would use a sequence or a domain service.
         // For now, we generate a simple sequential-ish number.
         var saleNumber = await saleNumberGenerator.NextAsync("SALE", cancellationToken);
-        // ------------------------------------------------------------------
-        // STEP 3: Create the address and Sale Aggregate
-        // ------------------------------------------------------------------
-        var shippingAddress = new Address
-            (
-                 customer.ShippingAddress.Country,
-                 customer.ShippingAddress.Street,
-                 customer.ShippingAddress.City,
-                 customer.ShippingAddress.PostalCode,
-                 customer.ShippingAddress.ExactAddress
-            );
+
         var sale = Sale.Create
             (
             // shouldn't we take some of these from the database for security reasons? _currentUserService.UserId 
+            // try connecting the application layer to infrastructure i dare you
             command.CustomerId,
             customer.Name,
-            shippingAddress,
             saleNumber,
             command.CreatedByUserId,
             command.CreatedByName

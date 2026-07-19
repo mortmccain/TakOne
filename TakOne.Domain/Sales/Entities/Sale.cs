@@ -11,6 +11,7 @@ public sealed class Sale : AggregateRoot
 {
 
 
+
     // ==================================================================================================================================
     //                                                          PRIVATE FIELDS
     // ==================================================================================================================================
@@ -36,8 +37,6 @@ public sealed class Sale : AggregateRoot
     public Guid ApprovedByUserId { get; private set; }
     public string CreatedByName { get; private set; }
 
-
-
     // --- status ---
     public SaleStatus Status { get; private set; }
 
@@ -50,8 +49,6 @@ public sealed class Sale : AggregateRoot
     public DateTime? InvoicedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
-
-    // --- lineitems ---
 
     /// <summary>
     /// Exposes line items as a read-only collection.
@@ -129,6 +126,8 @@ public sealed class Sale : AggregateRoot
         string createdByName
         )
     {
+    
+        
         var sale = new Sale
             (
             customerId,
@@ -143,7 +142,7 @@ public sealed class Sale : AggregateRoot
             (
             new SaleCreatedDomainEvent
             (
-            sale.Id,            // FIXME  Aggregate root has this
+            sale.Id,
             sale.CustomerId,
             sale.CustomerName,
             sale.SaleNumber,
@@ -153,7 +152,8 @@ public sealed class Sale : AggregateRoot
             )
             );
 
-        return sale;
+        return sale; // to let the caller use the newly created Sale object immediately after creation,
+                     // including its ID and other properties.
 
     }
 
@@ -170,8 +170,8 @@ public sealed class Sale : AggregateRoot
     Guid productId,
     string productName,
     int quantity,
-    Money unitPrice,
-    string productCategory // for when we might want to limit how many they can buy per category as well
+    Money unitPrice
+    
         )
     {
         EnsureProductQuantityValidity(quantity);
@@ -180,7 +180,7 @@ public sealed class Sale : AggregateRoot
         // ------------------------------------------------------------------
         // CHECK FOR EXISTING LINE ITEM WITH THE SAME PRODUCT
         // ------------------------------------------------------------------
-        var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId);
+        var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId); 
 
         if (existingLine is not null)
         {
@@ -197,8 +197,7 @@ public sealed class Sale : AggregateRoot
                 productName,
                 quantity,
                 unitPrice,
-                lineNumber,
-               productCategory
+                lineNumber
                 );
 
             _lineItems.Add(lineItem);
@@ -229,7 +228,7 @@ public sealed class Sale : AggregateRoot
     public void UpdateLineItemQuantity(Guid lineItemId, int newQuantity)
     {
         EnsurePending();
-        EnsureProductQuantityValidity(newQuantity);     // this is a guard that should be in the product itself, but we are doing it here for now
+        EnsureProductQuantityValidity(newQuantity);   
 
 
 
@@ -407,11 +406,11 @@ public sealed class Sale : AggregateRoot
         return lineItem;
     }
 
-    private void EnsureHasLineItems()
+    private void EnsureHasLineItems() 
     {
         if (_lineItems.Count == 0)
         {
-            throw new DomainException("Cannot submit a sale with no line items.");
+            throw new DomainException("Cannot create a sale with no line items."); 
         }
     }
 

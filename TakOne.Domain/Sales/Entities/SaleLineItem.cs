@@ -45,8 +45,7 @@ public sealed class SaleLineItem : BaseEntity
         string productName,
         int quantity,
         Money unitPrice,
-        int lineNumber,
-        string productCategory
+        int lineNumber
         )
         : base(Guid.NewGuid()) // Generate a new unique ID for this line item
     {
@@ -57,7 +56,6 @@ public sealed class SaleLineItem : BaseEntity
         // have this for auditing. when a saleline gets deleted,
         // the auditor might ask us for line 3 and the deleted lines make things difficult since line 3 might not exist as line 3 anymore
         LineNumber = lineNumber;
-        ProductCategory = productCategory;
     }
 
 

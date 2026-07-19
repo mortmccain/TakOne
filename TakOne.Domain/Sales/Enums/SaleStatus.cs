@@ -2,8 +2,9 @@
 
 public enum SaleStatus
 {
-    Pending = 1,
-    Approved = 2,
-    Invoiced = 3,
-    Cancelled = 4
+    Draft = 1,
+    Pending = 2,
+    Approved = 3,
+    Invoiced = 4,
+    Cancelled = 5
 }
