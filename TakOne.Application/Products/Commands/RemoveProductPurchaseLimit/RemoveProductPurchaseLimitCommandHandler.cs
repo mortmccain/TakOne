@@ -6,16 +6,38 @@ namespace TakOne.Application.Products.Commands.RemoveProductPurchaseLimit;
 
 public sealed class RemoveProductPurchaseLimitCommandHandler
 {
-    public static async Task<Result> HandleAsync(
+    public static async Task<Result> HandleAsync
+        (
         RemoveProductPurchaseLimitCommand command,
+        ICurrentUserService currentUser,
         IProductRepository productRepository,
         IUnitOfWork unitOfWork,
         ILogger<RemoveProductPurchaseLimitCommandHandler> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+        )
     {
+        // ------------------------------------------------------------------
+        //    Defensive auth check. [RequireRoles] already rejected anonymous
+        //    callers via AuthorizationMiddleware, but this handler may also
+        //    be invoked from tests or a non-HTTP host — re-checking keeps
+        //    the invariant honest.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+        {
+            logger.LogWarning("RemoveProductPurchaseLimit: unauthenticated call rejected.");
+
+            return Result.Failure("Authentication required.");
+        }
+
+
         var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
+
         if (product is null)
         {
+            logger.LogWarning
+                ("RemoveProductPurchaseLimit: product {ProductId} was not found. Requested by user {UserId}.",
+                command.ProductId, currentUser.UserId);
+
             return Result.Failure($"Product '{command.ProductId}' was not found.");
         }
 
@@ -28,9 +50,9 @@ public sealed class RemoveProductPurchaseLimitCommandHandler
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-            "RemoveProductPurchaseLimit: limit for group '{Group}' removed from product {ProductId} (if it existed).",
-            command.GroupName, product.Id);
+        logger.LogInformation
+            ("RemoveProductPurchaseLimit: limit for group '{Group}' removed from product {ProductId} (if it existed) by user {UserId}.",
+            command.GroupName, product.Id, currentUser.UserId);
 
         return Result.Success();
     }

@@ -4,7 +4,7 @@ using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 using Wolverine.Middleware;
 
-namespace TakOne.Application.Common.Behaviors;
+namespace TakOne.Application.Common.Middlewares;
 
 /// <summary>
 /// Wolverine middleware that runs BEFORE each command handler. If the command

@@ -9,11 +9,23 @@ public sealed class UpdateProductDetailsCommandHandler
 {
     public static async Task<Result> HandleAsync(
         UpdateProductDetailsCommand command,
+        ICurrentUserService currentUser,
         IProductRepository productRepository,
         IUnitOfWork unitOfWork,
         ILogger<UpdateProductDetailsCommandHandler> logger,
         CancellationToken cancellationToken)
     {
+        // ------------------------------------------------------------------
+        // 0. Defensive auth check. [RequireRoles] already rejected anonymous
+        //    callers via AuthorizationMiddleware, but this handler may also
+        //    be invoked from tests or a non-HTTP host — re-checking keeps
+        //    the invariant honest.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+        {
+            logger.LogWarning("UpdateProductDetails: product {ProductId} was not found. Requested by user {UserId}.", command.ProductId, currentUser.UserId);
+        }
+
         // ------------------------------------------------------------------
         // 1. Load the product. EF Core will track changes, so calling
         //    UpdateDetails on the loaded entity is enough — no explicit
@@ -65,8 +77,8 @@ public sealed class UpdateProductDetailsCommandHandler
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "UpdateProductDetails: product {ProductId} updated. New name: '{Name}'.",
-            product.Id, product.Name);
+           "UpdateProductDetails: product {ProductId} updated by user {UserId}. New name: '{Name}'.",
+            product.Id, currentUser.UserId, product.Name);
 
         return Result.Success();
     }

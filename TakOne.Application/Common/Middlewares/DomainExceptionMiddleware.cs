@@ -1,7 +1,7 @@
 ﻿using TakOne.SharedKernel.Common;
 using Wolverine.Middleware;
 
-namespace TakOne.Application.Common.Behaviors;
+namespace TakOne.Application.Common.Middlewares;
 
 /// <summary>
 /// Wolverine middleware that wraps each handler invocation. If the handler

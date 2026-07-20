@@ -2,7 +2,7 @@
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
 
-namespace ERP.Application.Sales.Specifications;
+namespace TakOne.Application.Sales.Specifications;
 
 public sealed class SaleByCreatorSpecification : Specification<Sale>
 {

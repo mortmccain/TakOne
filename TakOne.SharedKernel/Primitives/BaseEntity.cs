@@ -2,7 +2,7 @@
 
 public abstract class BaseEntity
 {
-    public Guid Id { get; protected set; }                  // what happens when we have Id in here and in the child class? which Id is used?
+    public Guid Id { get; protected set; }                  // what happens when we have Id in here and in the child class? which Id is used? 
                                                             // why is the set protected and not private?
     protected BaseEntity()
     {
@@ -23,8 +23,6 @@ public abstract class BaseEntity
     {
         if (obj is not BaseEntity other)       // don't this and the other if for getType mean the same?
             return false;
-        if (ReferenceEquals(this, other))
-            return true;
         if (ReferenceEquals(this, other))
             return true;
         if (GetType() != other.GetType())           // is the first GetType actually this.GetType?  and what does this part of the code even mean?

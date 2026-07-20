@@ -20,8 +20,8 @@ public sealed class SaleCreatedDomainEvent : BaseDomainEvent
     public SaleCreatedDomainEvent
         (
         Guid saleId,
-        Guid CustomerId,
-        string CustomerName,
+        Guid customerId,
+        string customerName,
         SaleNumber saleNumber,
         DateTime createdAtUtc,
         Guid createdByUserId,
@@ -29,8 +29,8 @@ public sealed class SaleCreatedDomainEvent : BaseDomainEvent
         )
     {
         SaleId = saleId;
-        CustomerId = CustomerId;
-        CustomerName = CustomerName;
+        CustomerId = customerId;
+        CustomerName = customerName;
         SaleNumber = saleNumber;
         CreatedAtUtc = createdAtUtc;
         CreatedByUserId = createdByUserId;

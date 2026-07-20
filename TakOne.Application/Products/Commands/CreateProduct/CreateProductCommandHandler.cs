@@ -16,6 +16,7 @@ public sealed class CreateProductCommandHandler
     public static async Task<Result<Guid>> HandleAsync
         (
         CreateProductCommand command,
+        ICurrentUserService currentUser,
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUnitOfWork unitOfWork,
@@ -23,6 +24,20 @@ public sealed class CreateProductCommandHandler
         CancellationToken cancellationToken
         )
     {
+
+        // ------------------------------------------------------------------
+        // 0. Defensive auth check. [RequireRoles] already rejected anonymous
+        //    callers via AuthorizationMiddleware, but this handler may also be
+        //    invoked from tests or a non-HTTP host — re-checking keeps the
+        //    invariant honest.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+        {
+            logger.LogWarning("CreateProduct: unauthenticated call rejected.");
+
+            return Result<Guid>.Failure("Authentication required.");
+        }
+
         // ------------------------------------------------------------------
         // 1. Name uniqueness. Product names are unique across the catalog.
         //    The handler does the friendly check; the DB has a unique index
@@ -30,10 +45,11 @@ public sealed class CreateProductCommandHandler
         //    our check and our SaveChanges.
         // ------------------------------------------------------------------
         var nameExists = await productRepository.NameExistsAsync(command.Name, excludeId: null, cancellationToken);
+
         if (nameExists)
         {
             return Result<Guid>.Failure
-                ($"A product with the name '{command.Name}' already exists. " +"Choose a different name.");
+                ($"A product with the name '{command.Name}' already exists. " + "Choose a different name.");
         }
 
         // ------------------------------------------------------------------
@@ -46,6 +62,7 @@ public sealed class CreateProductCommandHandler
         //    via SQL EXISTS queries — no need to load the whole aggregate).
         // ------------------------------------------------------------------
         var categoryExists = await categoryRepository.ExistsAsync(command.CategoryId, cancellationToken);
+
         if (!categoryExists)
         {
             return Result<Guid>.Failure($"Category '{command.CategoryId}' was not found.");
@@ -53,8 +70,8 @@ public sealed class CreateProductCommandHandler
 
         if (command.SubCategoryId.HasValue)
         {
-            var subBelongsToCategory = await categoryRepository.SubCategoryBelongsToCategoryAsync(
-                command.CategoryId, command.SubCategoryId.Value, cancellationToken);
+            var subBelongsToCategory = await categoryRepository.SubCategoryBelongsToCategoryAsync
+                (command.CategoryId, command.SubCategoryId.Value, cancellationToken);
 
             if (!subBelongsToCategory)
             {
@@ -64,13 +81,8 @@ public sealed class CreateProductCommandHandler
 
             if (command.SubSubCategoryId.HasValue)
             {
-                 //  var subSubBelongsToSub = await categoryRepository.SubSubCategoryBelongsToSubCategoryAsync
-                //    (command.SubSubCategoryId.Value, command.SubSubCategoryId.Value, cancellationToken);
-
-                // NOTE: the second argument above should be SubCategoryId, not SubSubCategoryId.
-                // Corrected below — leaving the wrong version here would be a bug.
-               var subSubBelongsToSub = await categoryRepository.SubSubCategoryBelongsToSubCategoryAsync
-                    (command.SubCategoryId.Value, command.SubSubCategoryId.Value, cancellationToken);
+                var subSubBelongsToSub = await categoryRepository.SubSubCategoryBelongsToSubCategoryAsync
+                     (command.SubCategoryId.Value, command.SubSubCategoryId.Value, cancellationToken);
 
                 if (!subSubBelongsToSub)
                 {
@@ -96,7 +108,8 @@ public sealed class CreateProductCommandHandler
         //    Using named arguments so the call site is self-documenting
         //    and survives future parameter reordering.
         // ------------------------------------------------------------------
-        var product = Product.Create(
+        var product = Product.Create
+            (
             name: command.Name,
             description: command.Description,
             price: price,
@@ -104,7 +117,8 @@ public sealed class CreateProductCommandHandler
             categoryId: command.CategoryId,
             pictureUrl: command.PictureUrl,
             subCategoryId: command.SubCategoryId,
-            subSubCategoryId: command.SubSubCategoryId);
+            subSubCategoryId: command.SubSubCategoryId
+            );
 
         // ------------------------------------------------------------------
         // 5. Persist. EF Core tracks the Product and its owned collection of
@@ -113,9 +127,11 @@ public sealed class CreateProductCommandHandler
         await productRepository.AddAsync(product, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-            "CreateProduct: product {ProductId} ({Name}) created. Initial stock: {Stock}.",
-            product.Id, product.Name, product.StockQuantity);
+        logger.LogInformation
+            (
+            "CreateProduct: product {ProductId} ({Name}) created by user {UserId}. Initial stock: {Stock}.",
+            product.Id, product.Name, currentUser.UserId, product.StockQuantity
+            );
 
         return Result<Guid>.Success(product.Id);
     }

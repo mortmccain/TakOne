@@ -6,20 +6,40 @@ namespace TakOne.Application.Products.Commands.UpdateProductCategory;
 
 public sealed class UpdateProductCategoryCommandHandler
 {
-    public static async Task<Result> HandleAsync(
+    public static async Task<Result> HandleAsync
+        (
         UpdateProductCategoryCommand command,
+        ICurrentUserService currentUser,
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUnitOfWork unitOfWork,
         ILogger<UpdateProductCategoryCommandHandler> logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+        )
     {
+        // ------------------------------------------------------------------
+        // 0. Defensive auth check. [RequireRoles] already rejected anonymous
+        //    callers via AuthorizationMiddleware, but this handler may also
+        //    be invoked from tests or a non-HTTP host — re-checking keeps
+        //    the invariant honest.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
+        {
+            logger.LogWarning("UpdateProductCategory: unauthenticated call rejected.");
+
+            return Result.Failure("Authentication required.");
+        }
+
         // ------------------------------------------------------------------
         // 1. Load the product. If it doesn't exist, fail fast.
         // ------------------------------------------------------------------
         var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
+
         if (product is null)
         {
+            logger.LogWarning("UpdateProductCategory: product {ProductId} was not found. Requested by user {UserId}.",
+            command.ProductId, currentUser.UserId);
+
             return Result.Failure($"Product '{command.ProductId}' was not found.");
         }
 
@@ -29,8 +49,13 @@ public sealed class UpdateProductCategoryCommandHandler
         //    inconsistent in-memory state if a check fails.
         // ------------------------------------------------------------------
         var categoryExists = await categoryRepository.ExistsAsync(command.CategoryId, cancellationToken);
+
         if (!categoryExists)
         {
+            logger.LogWarning
+                ("UpdateProductCategory: category {CategoryId} was not found. Requested by user {UserId}.",
+                command.CategoryId, currentUser.UserId);
+
             return Result.Failure($"Category '{command.CategoryId}' was not found.");
         }
 
@@ -41,8 +66,12 @@ public sealed class UpdateProductCategoryCommandHandler
 
             if (!subBelongsToCategory)
             {
-                return Result.Failure(
-                    $"SubCategory '{command.SubCategoryId}' does not belong to Category '{command.CategoryId}'.");
+                logger.LogWarning
+                    ("UpdateProductCategory: subcategory {SubCategoryId} was not found. Requested by user {UserId}.",
+                    command.SubCategoryId, currentUser.UserId);
+
+                return Result.Failure
+                    ($"SubCategory '{command.SubCategoryId}' does not belong to Category '{command.CategoryId}'.");
             }
 
             if (command.SubSubCategoryId.HasValue)
@@ -54,8 +83,12 @@ public sealed class UpdateProductCategoryCommandHandler
 
                 if (!subSubBelongsToSub)
                 {
-                    return Result.Failure(
-                        $"SubSubCategory '{command.SubSubCategoryId}' does not belong to SubCategory '{command.SubCategoryId}'.");
+                    logger.LogWarning
+                        ("UpdateProductCategory: subsubcategory {SubSubCategoryId} was not found. Requested by user {UserId}.",
+                        command.SubSubCategoryId, currentUser.UserId);
+
+                    return Result.Failure
+                        ($"SubSubCategory '{command.SubSubCategoryId}' does not belong to SubCategory '{command.SubCategoryId}'.");
                 }
             }
         }
@@ -73,10 +106,8 @@ public sealed class UpdateProductCategoryCommandHandler
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-            "UpdateProductCategory: product {ProductId} moved to category {CategoryId} " +
-            "(sub: {SubId}, subsub: {SubSubId}).",
-            product.Id, command.CategoryId, command.SubCategoryId, command.SubSubCategoryId);
+        logger.LogInformation("UpdateProductCategory: product {ProductId} moved to category {CategoryId} " + "(sub: {SubId}, subsub: {SubSubId}) by user {UserId}.",
+            product.Id, command.CategoryId, command.SubCategoryId, command.SubSubCategoryId, currentUser.UserId);
 
         return Result.Success();
     }
