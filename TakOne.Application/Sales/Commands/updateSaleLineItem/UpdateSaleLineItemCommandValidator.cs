@@ -1,6 +1,5 @@
 ﻿using FluentValidation;
-
-namespace TakOne.Application.Sales.Commands.updateSaleLineItem;
+using TakOne.Application.Sales.Commands.UpdateSaleLineItem;
 
 public sealed class UpdateSaleLineItemCommandValidator : AbstractValidator<UpdateSaleLineItemCommand>
 {
@@ -8,6 +7,6 @@ public sealed class UpdateSaleLineItemCommandValidator : AbstractValidator<Updat
     {
         RuleFor(x => x.SaleId).NotEmpty();
         RuleFor(x => x.LineItemId).NotEmpty();
-        RuleFor(x => x.NewQuantity).GreaterThan(0);
+        RuleFor(x => x.Quantity).GreaterThan(0);
     }
 }

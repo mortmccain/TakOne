@@ -1,4 +1,4 @@
-﻿using TakOne.Application.Sales.DTOs;
+﻿using TakOne.SharedKernel.DTOs;
 
 namespace TakOne.Application.Sales.DTOs;
 
@@ -14,8 +14,7 @@ public sealed class SaleDto
     public Guid CreatedByUserId { get; init; }
     public string CreatedByName { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
-    public decimal TotalAmount { get; init; }
-    public string Currency { get; init; } = "IRR";
+    public MoneyDto Total { get; init; } = new();
     public DateTime CreatedAtUtc { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
     public DateTime? ApprovedAtUtc { get; init; }

@@ -7,11 +7,11 @@ namespace TakOne.Application.Sales.Commands.MarkSaleAsInvoiced;
 public static class MarkAsInvoicedCommandHandler
 {
     public static async Task<Result> HandleAsync(
-        MarkSaleAsInvoicedCommand command,
+        MarkAsInvoicedCommand command,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IUnitOfWork unitOfWork,
-        ILogger<MarkSaleAsInvoicedCommandHandler> logger,
+        ILogger<MarkAsInvoicedCommandHandler> logger,
         CancellationToken cancellationToken)
     {
         var sale = await saleRepository.GetByIdAsync(command.SaleId, cancellationToken);

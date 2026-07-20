@@ -1,17 +1,21 @@
 ﻿using FluentValidation;
+using TakOne.Application.Sales.Commands.CreateSale;
 
-namespace TakOne.Application.Sales.Commands.CreateSale;
-
-/// <summary>
-/// CreateSaleCommand has no parameters, so the validator only checks that
-/// the current user is authenticated (handled by Wolverine auth middleware,
-/// not FluentValidation). This validator exists for consistency with other
-/// commands and to act as a placeholder for future pre-validation rules.
-/// </summary>
 public sealed class CreateSaleCommandValidator : AbstractValidator<CreateSaleCommand>
 {
     public CreateSaleCommandValidator()
     {
-        // No rules — command has no fields.
+        RuleFor(x => x.CustomerWorkerId)
+            .NotEmpty().WithMessage("Customer worker ID is required.");
+
+        RuleFor(x => x.Items)
+            .NotNull().WithMessage("Items list is required.")
+            .Must(items => items.Count > 0).WithMessage("At least one item is required to create a sale.");
+
+        RuleForEach(x => x.Items).ChildRules(item =>
+        {
+            item.RuleFor(i => i.ProductId).NotEmpty();
+            item.RuleFor(i => i.Quantity).GreaterThan(0);
+        });
     }
 }

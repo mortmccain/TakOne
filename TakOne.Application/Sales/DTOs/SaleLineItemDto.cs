@@ -1,4 +1,4 @@
-﻿using TakOne.SharedKernel.ValueObjects;
+﻿using TakOne.SharedKernel.DTOs;
 
 namespace TakOne.Application.Sales.DTOs;
 
@@ -12,8 +12,7 @@ public sealed class SaleLineItemDto
     public Guid ProductId { get; init; }
     public string ProductName { get; init; } = string.Empty;
     public int Quantity { get; init; }
-    public decimal UnitPriceAmount { get; init; }
-    public string Currency { get; init; } = "IRR";
+    public MoneyDto UnitPrice { get; init; } = new();
     public int LineNumber { get; init; }
-    public decimal GrossTotalAmount { get; init; }
+    public MoneyDto GrossTotal { get; init; } = new();
 }

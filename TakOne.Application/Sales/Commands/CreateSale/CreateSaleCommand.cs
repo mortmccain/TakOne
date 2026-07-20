@@ -1,10 +1,13 @@
-﻿namespace TakOne.Application.Sales.Commands.CreateSale;
+﻿using TakOne.Application.Common.Authorization;
 
-/// <summary>
-/// Creates a new Sale in Draft status for the current user.
-/// Returns the new Sale's Id on success.
-///
-/// The current user becomes the CustomerId and the CreatedByUserId.
-/// Line items are added via <see cref="AddItemToSaleCommand"/>.
-/// </summary>
-public sealed record CreateSaleCommand;
+namespace TakOne.Application.Sales.Commands.CreateSale;
+
+// Everyone authenticated can create a sale (customer self-buy, or staff on behalf).
+[RequireRoles(Roles.Customer, Roles.Employee, Roles.Manager, Roles.Admin)]
+public sealed record CreateSaleCommand
+    (
+    string CustomerWorkerId,
+    IReadOnlyList<CreateSaleItem> Items
+    );
+
+public sealed record CreateSaleItem(Guid ProductId, int Quantity);

@@ -1,6 +1,5 @@
 ﻿using FluentValidation;
-
-namespace TakOne.Application.Sales.Commands.AddItemToSale;
+using TakOne.Application.Sales.Commands.AddItemToSale;
 
 public sealed class AddItemToSaleCommandValidator : AbstractValidator<AddItemToSaleCommand>
 {

@@ -1,51 +1,85 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Sales.Commands.CreateSale;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
 
-namespace TakOne.Application.Sales.Commands.CreateSale;
-
-/// <summary>
-/// Creates a new Draft Sale for the current user.
-///
-/// The current user is BOTH the CustomerId and the CreatedByUserId.
-/// We do not take a customer ID in the command — the sale always belongs
-/// to whoever is logged in. (A sales employee creating a sale on behalf
-/// of a customer will be supported in a future flow if needed; for now
-/// every sale is created by and for its buyer.)
-/// </summary>
-public static class CreateSaleCommandHandler
+public sealed class CreateSaleCommandHandler
 {
     public static async Task<Result<Guid>> HandleAsync(
         CreateSaleCommand command,
-        ICurrentUserService currentUser,
-        ISaleNumberGenerator saleNumberGenerator,
+        IUserRepository userRepository,
+        IProductRepository productRepository,
         ISaleRepository saleRepository,
+        ISaleNumberGenerator saleNumberGenerator,
+        ICurrentUserService currentUser,
         IUnitOfWork unitOfWork,
         ILogger<CreateSaleCommandHandler> logger,
         CancellationToken cancellationToken)
     {
-        if (!currentUser.IsAuthenticated)
-            return Result.Failure("Authentication required.");
+        // 1. Resolve the customer by worker ID (the employee types the worker ID, not the Guid).
+        var customer = await userRepository.GetByWorkerIdAsync(command.CustomerWorkerId, cancellationToken);
+        if (customer is null)
+        {
+            logger.LogWarning("CreateSale: customer with worker ID {WorkerId} not found.", command.CustomerWorkerId);
+            return Result<Guid>.Failure($"No user found with worker ID '{command.CustomerWorkerId}'.");
+        }
 
-        // The current user IS the customer (and the creator).
-        var saleNumber = await saleNumberGenerator.NextAsync("SALE", cancellationToken);
+        if (!customer.IsActive)
+        {
+            return Result<Guid>.Failure($"User '{command.CustomerWorkerId}' is inactive and cannot be the customer of a sale.");
+        }
 
+        // 2. Creator = the authenticated user. If creator.Id == customer.Id, this is a self-buy.
+        var creatorId = currentUser.UserId;
+        var creatorName = currentUser.FullName;
+
+        // 3. Generate the sale number.
+        var saleNumber = await saleNumberGenerator.GenerateAsync(cancellationToken);
+
+        // 4. Create the sale in Draft state.
+        //    Sale.Create(saleNumber, customerId, customerName, createdById, createdByName)
         var sale = Sale.Create(
-            customerId: currentUser.UserId,
-            customerName: currentUser.FullName,
-            saleNumber: saleNumber,
-            createdByUserId: currentUser.UserId,
-            createdByName: currentUser.FullName);
+            saleNumber,
+            customer.Id,
+            customer.FullName,
+            creatorId,
+            creatorName);
 
+        // 5. Add each line item — load the product, resolve the customer's group purchase limit,
+        //    pass it down to the aggregate which enforces it.
+        foreach (var item in command.Items)
+        {
+            var product = await productRepository.GetByIdAsync(item.ProductId, cancellationToken);
+            if (product is null)
+            {
+                return Result<Guid>.Failure($"Product '{item.ProductId}' was not found.");
+            }
+
+            if (product.StockQuantity < item.Quantity)
+            {
+                return Result<Guid>.Failure($"Not enough stock for '{product.Name}' (requested {item.Quantity}, available {product.StockQuantity}).");
+            }
+
+            int? purchaseLimit = customer.GroupName is null
+                ? null
+                : product.GetPurchaseLimitForGroup(customer.GroupName);
+
+            sale.AddLineItem(
+                product.Id,
+                product.Name,
+                item.Quantity,
+                product.Price,
+                purchaseLimit);
+        }
+
+        // 6. Persist.
         await saleRepository.AddAsync(sale, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Created Draft Sale {SaleNumber} for user {UserId}. SaleId: {SaleId}",
-            sale.SaleNumber,
-            currentUser.UserId,
-            sale.Id);
+            "CreateSale: sale {SaleId} ({SaleNumber}) created by {CreatorId} for customer {CustomerId} (self-buy={SelfBuy}).",
+            sale.Id, sale.SaleNumber, creatorId, customer.Id, creatorId == customer.Id);
 
         return Result<Guid>.Success(sale.Id);
     }
