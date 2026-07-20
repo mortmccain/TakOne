@@ -18,4 +18,9 @@
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Products\EventHandlers\" />
+    <Folder Include="Products\Queries\" />
+  </ItemGroup>
+
 </Project>

@@ -6,6 +6,7 @@ public sealed class ApproveSaleCommandValidator : AbstractValidator<ApproveSaleC
 {
     public ApproveSaleCommandValidator()
     {
-        RuleFor(x => x.SaleId).NotEmpty();
+        RuleFor(x => x.SaleId)
+            .NotEmpty().WithMessage("Sale ID is required.");
     }
 }

@@ -1,10 +1,12 @@
-﻿namespace TakOne.Application.Sales.Commands.SubmitSale;
+﻿using FluentValidation;
 
-/// <summary>
-/// Transitions the current user's Draft Sale to Pending status.
-/// After this, the sale is locked for editing and awaits staff approval.
-///
-/// The submitter is always the sale's creator (CreatedByUserId) — see the
-/// domain's Sale.Submit() for the rationale.
-/// </summary>
-public sealed record SubmitSaleCommand(Guid SaleId);
+namespace TakOne.Application.Sales.Commands.SubmitSale;
+
+public sealed class SubmitSaleCommandValidator : AbstractValidator<SubmitSaleCommand>
+{
+    public SubmitSaleCommandValidator()
+    {
+        RuleFor(x => x.SaleId)
+            .NotEmpty().WithMessage("Sale ID is required.");
+    }
+}

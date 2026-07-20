@@ -6,9 +6,12 @@ public sealed class CancelSaleCommandValidator : AbstractValidator<CancelSaleCom
 {
     public CancelSaleCommandValidator()
     {
-        RuleFor(x => x.SaleId).NotEmpty();
+        RuleFor(x => x.SaleId)
+            .NotEmpty().WithMessage("Sale ID is required.");
+
         RuleFor(x => x.Reason)
-            .NotEmpty()
-            .MaximumLength(500);
+            .NotEmpty().WithMessage("A cancellation reason is required.")
+            .MinimumLength(3).WithMessage("Cancellation reason must be at least 3 characters.")
+            .MaximumLength(500).WithMessage("Cancellation reason cannot exceed 500 characters.");
     }
 }

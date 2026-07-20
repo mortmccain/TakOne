@@ -6,6 +6,7 @@ public sealed class DeleteDraftSaleCommandValidator : AbstractValidator<DeleteDr
 {
     public DeleteDraftSaleCommandValidator()
     {
-        RuleFor(x => x.SaleId).NotEmpty();
+        RuleFor(x => x.SaleId)
+            .NotEmpty().WithMessage("Sale ID is required.");
     }
 }

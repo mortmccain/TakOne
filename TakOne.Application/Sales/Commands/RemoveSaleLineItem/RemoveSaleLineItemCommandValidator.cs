@@ -6,7 +6,10 @@ public sealed class RemoveSaleLineItemCommandValidator : AbstractValidator<Remov
 {
     public RemoveSaleLineItemCommandValidator()
     {
-        RuleFor(x => x.SaleId).NotEmpty();
-        RuleFor(x => x.LineItemId).NotEmpty();
+        RuleFor(x => x.SaleId)
+            .NotEmpty().WithMessage("Sale ID is required.");
+
+        RuleFor(x => x.LineItemId)
+            .NotEmpty().WithMessage("Line item ID is required.");
     }
 }

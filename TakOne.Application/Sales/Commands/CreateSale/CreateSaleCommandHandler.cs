@@ -1,85 +1,165 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Interfaces;
-using TakOne.Application.Sales.Commands.CreateSale;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
 
+namespace TakOne.Application.Sales.Commands.CreateSale;
+
+/// <summary>
+/// Creates a new Draft Sale with the supplied line items.
+///
+/// NOTE on the class not being static:
+///   Earlier versions of this handler were `public static class`. That breaks
+///   `ILogger<CreateSaleCommandHandler>` because C# forbids static types as
+///   generic type arguments. The class is now `sealed` (instance-able but
+///   non-inheritable); the HandleAsync method stays `static`, which is what
+///   Wolverine's source-generated discovery actually looks for.
+/// </summary>
 public sealed class CreateSaleCommandHandler
 {
+    /// <summary>
+    /// Prefix used for the human-readable SaleNumber (e.g. "SALE-2026-0001").
+    /// Centralized here so it's easy to change without hunting for string literals.
+    /// </summary>
+    public const string SaleNumberPrefix = "SALE";
+
     public static async Task<Result<Guid>> HandleAsync(
         CreateSaleCommand command,
+        ICurrentUserService currentUser,
         IUserRepository userRepository,
         IProductRepository productRepository,
         ISaleRepository saleRepository,
         ISaleNumberGenerator saleNumberGenerator,
-        ICurrentUserService currentUser,
         IUnitOfWork unitOfWork,
         ILogger<CreateSaleCommandHandler> logger,
         CancellationToken cancellationToken)
     {
-        // 1. Resolve the customer by worker ID (the employee types the worker ID, not the Guid).
+        // ------------------------------------------------------------------
+        // 1. Defensive auth check. The [RequireRoles] middleware already
+        //    rejects unauthenticated callers, but this method may also be
+        //    invoked in tests or from a non-HTTP host — re-checking here
+        //    keeps the invariant honest.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsAuthenticated)
+        {
+            return Result<Guid>.Failure("Authentication required.");
+        }
+
+        if (currentUser.UserId == Guid.Empty)
+        {
+            logger.LogWarning("CreateSale: authenticated user has an empty UserId. Claims may be misconfigured.");
+            return Result<Guid>.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // 2. Resolve the customer by worker ID. The employee types the
+        //    customer's worker ID — never a Guid — into the sales-employee
+        //    page. For self-buy, the worker ID equals the current user's
+        //    worker ID, but the lookup still goes through the repository so
+        //    the path is identical.
+        // ------------------------------------------------------------------
         var customer = await userRepository.GetByWorkerIdAsync(command.CustomerWorkerId, cancellationToken);
         if (customer is null)
         {
-            logger.LogWarning("CreateSale: customer with worker ID {WorkerId} not found.", command.CustomerWorkerId);
-            return Result<Guid>.Failure($"No user found with worker ID '{command.CustomerWorkerId}'.");
+            logger.LogWarning(
+                "CreateSale: customer with worker ID '{WorkerId}' was not found. Requested by user {UserId}.",
+                command.CustomerWorkerId, currentUser.UserId);
+
+            return Result<Guid>.Failure(
+                $"No user found with worker ID '{command.CustomerWorkerId}'.");
         }
 
         if (!customer.IsActive)
         {
-            return Result<Guid>.Failure($"User '{command.CustomerWorkerId}' is inactive and cannot be the customer of a sale.");
+            logger.LogWarning(
+                "CreateSale: customer '{WorkerId}' is inactive. Requested by user {UserId}.",
+                command.CustomerWorkerId, currentUser.UserId);
+
+            return Result<Guid>.Failure(
+                $"User '{command.CustomerWorkerId}' is inactive and cannot be the customer of a sale.");
         }
 
-        // 2. Creator = the authenticated user. If creator.Id == customer.Id, this is a self-buy.
-        var creatorId = currentUser.UserId;
-        var creatorName = currentUser.FullName;
+        // ------------------------------------------------------------------
+        // 3. Generate the sale number. ISaleNumberGenerator is backed by a
+        //    DB sequence or row-level lock in Infrastructure, so concurrent
+        //    CreateSale calls will get distinct numbers.
+        // ------------------------------------------------------------------
+        var saleNumber = await saleNumberGenerator.NextAsync(SaleNumberPrefix, cancellationToken);
 
-        // 3. Generate the sale number.
-        var saleNumber = await saleNumberGenerator.GenerateAsync(cancellationToken);
-
-        // 4. Create the sale in Draft state.
-        //    Sale.Create(saleNumber, customerId, customerName, createdById, createdByName)
+        // ------------------------------------------------------------------
+        // 4. Create the Sale in Draft state.
+        //    CustomerId/Name come from the resolved customer.
+        //    CreatedById/Name come from the current user (which may equal
+        //    the customer for self-buy, or be a staff member for on-behalf).
+        // ------------------------------------------------------------------
         var sale = Sale.Create(
-            saleNumber,
-            customer.Id,
-            customer.FullName,
-            creatorId,
-            creatorName);
+            customerId: customer.Id,
+            customerName: customer.FullName,
+            saleNumber: saleNumber,
+            createdByUserId: currentUser.UserId,
+            createdByName: currentUser.FullName);
 
-        // 5. Add each line item — load the product, resolve the customer's group purchase limit,
-        //    pass it down to the aggregate which enforces it.
+        // ------------------------------------------------------------------
+        // 5. Add each line item. For each item we:
+        //      a. Load the product (for name snapshot, price snapshot, stock
+        //         check, and purchase-limit lookup).
+        //      b. Check stock: the requested quantity must be ≤ current stock.
+        //         Stock is NOT decremented here — only at Approve time.
+        //      c. Look up the customer's per-group purchase limit using the
+        //         CUSTOMER's GroupName (NOT the current user's, in case a
+        //         staff member is creating the sale on behalf of a customer).
+        //      d. Add the line to the sale. The aggregate enforces the limit.
+        //
+        //    If any item fails, we return immediately — the in-memory Sale
+        //    is discarded (no rollback needed, nothing persisted yet).
+        // ------------------------------------------------------------------
         foreach (var item in command.Items)
         {
             var product = await productRepository.GetByIdAsync(item.ProductId, cancellationToken);
             if (product is null)
             {
-                return Result<Guid>.Failure($"Product '{item.ProductId}' was not found.");
+                return Result<Guid>.Failure(
+                    $"Product '{item.ProductId}' was not found.");
             }
 
-            if (product.StockQuantity < item.Quantity)
+            if (item.Quantity > product.StockQuantity)
             {
-                return Result<Guid>.Failure($"Not enough stock for '{product.Name}' (requested {item.Quantity}, available {product.StockQuantity}).");
+                return Result<Guid>.Failure(
+                    $"Not enough stock for '{product.Name}' " +
+                    $"(requested {item.Quantity}, available {product.StockQuantity}).");
             }
 
-            int? purchaseLimit = customer.GroupName is null
-                ? null
-                : product.GetPurchaseLimitForGroup(customer.GroupName);
+            // GetPurchaseLimitForGroup returns the CustomerGroupPurchaseLimit
+            // value object (or null if no limit is defined for that group on
+            // this product). The Sale aggregate expects the raw int? — so we
+            // unwrap .Limit here. A null GroupName (staff buying as themselves
+            // for themselves) means no limit applies.
+            int? purchaseLimit = null;
+            if (!string.IsNullOrWhiteSpace(customer.GroupName))
+            {
+                var limitVo = product.GetPurchaseLimitForGroup(customer.GroupName);
+                purchaseLimit = limitVo?.Limit;
+            }
 
             sale.AddLineItem(
-                product.Id,
-                product.Name,
-                item.Quantity,
-                product.Price,
-                purchaseLimit);
+                productId: product.Id,
+                productName: product.Name,
+                quantity: item.Quantity,
+                unitPrice: product.Price,
+                purchaseLimit: purchaseLimit);
         }
 
-        // 6. Persist.
+        // ------------------------------------------------------------------
+        // 6. Persist. Single transaction — EF Core tracks the Sale and its
+        //    line items as one unit.
+        // ------------------------------------------------------------------
         await saleRepository.AddAsync(sale, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
+        var isSelfBuy = customer.Id == currentUser.UserId;
         logger.LogInformation(
-            "CreateSale: sale {SaleId} ({SaleNumber}) created by {CreatorId} for customer {CustomerId} (self-buy={SelfBuy}).",
-            sale.Id, sale.SaleNumber, creatorId, customer.Id, creatorId == customer.Id);
+            "CreateSale: sale {SaleId} ({SaleNumber}) created by {CreatorId} for customer {CustomerId}. Self-buy: {SelfBuy}.",
+            sale.Id, sale.SaleNumber, currentUser.UserId, customer.Id, isSelfBuy);
 
         return Result<Guid>.Success(sale.Id);
     }
