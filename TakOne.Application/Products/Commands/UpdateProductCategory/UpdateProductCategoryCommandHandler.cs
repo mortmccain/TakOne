@@ -106,7 +106,8 @@ public sealed class UpdateProductCategoryCommandHandler
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("UpdateProductCategory: product {ProductId} moved to category {CategoryId} " + "(sub: {SubId}, subsub: {SubSubId}) by user {UserId}.",
+        logger.LogInformation
+            ("UpdateProductCategory: product {ProductId} moved to category {CategoryId} " + "(sub: {SubId}, subsub: {SubSubId}) by user {UserId}.",
             product.Id, command.CategoryId, command.SubCategoryId, command.SubSubCategoryId, currentUser.UserId);
 
         return Result.Success();

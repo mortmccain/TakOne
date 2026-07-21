@@ -23,7 +23,8 @@ public sealed class UpdateProductDetailsCommandHandler
         // ------------------------------------------------------------------
         if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
         {
-            logger.LogWarning("UpdateProductDetails: product {ProductId} was not found. Requested by user {UserId}.", command.ProductId, currentUser.UserId);
+            logger.LogWarning("UpdateProductDetails: unauthenticated call rejected.");
+            return Result.Failure("Authentication required.");
         }
 
         // ------------------------------------------------------------------
@@ -34,6 +35,10 @@ public sealed class UpdateProductDetailsCommandHandler
         var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
         if (product is null)
         {
+            logger.LogWarning
+                ("UpdateProductDetails: product {ProductId} was not found. Requested by user {UserId}.",
+                command.ProductId, currentUser.UserId);
+
             return Result.Failure($"Product '{command.ProductId}' was not found.");
         }
 
@@ -48,9 +53,12 @@ public sealed class UpdateProductDetailsCommandHandler
 
         if (nameExistsForOther)
         {
-            return Result.Failure(
-                $"Another product with the name '{command.Name}' already exists. " +
-                "Choose a different name.");
+            logger.LogWarning
+                ("UpdateProductDetails: product name '{Name}' already exists. User {UserId} rejected.",
+                command.Name, currentUser.UserId);
+
+            return Result.Failure
+                ($"Another product with the name '{command.Name}' already exists. " + "Choose a different name.");
         }
 
         // ------------------------------------------------------------------
@@ -68,16 +76,18 @@ public sealed class UpdateProductDetailsCommandHandler
         //    DomainException is caught by middleware and converted to
         //    Result.Failure.
         // ------------------------------------------------------------------
-        product.UpdateDetails(
+        product.UpdateDetails
+            (
             name: command.Name,
             description: command.Description,
             price: price,
-            pictureUrl: command.PictureUrl);
+            pictureUrl: command.PictureUrl
+            );
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-           "UpdateProductDetails: product {ProductId} updated by user {UserId}. New name: '{Name}'.",
+        logger.LogInformation
+            ("UpdateProductDetails: product {ProductId} updated by user {UserId}. New name: '{Name}'.",
             product.Id, currentUser.UserId, product.Name);
 
         return Result.Success();

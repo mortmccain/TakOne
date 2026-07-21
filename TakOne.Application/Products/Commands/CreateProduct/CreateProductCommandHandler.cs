@@ -48,6 +48,10 @@ public sealed class CreateProductCommandHandler
 
         if (nameExists)
         {
+            logger.LogWarning
+                ("CreateProduct: product name '{Name}' already exists. User {UserId} rejected.",
+                command.Name, currentUser.UserId);
+
             return Result<Guid>.Failure
                 ($"A product with the name '{command.Name}' already exists. " + "Choose a different name.");
         }
@@ -65,6 +69,9 @@ public sealed class CreateProductCommandHandler
 
         if (!categoryExists)
         {
+            logger.LogWarning
+                ("CreateProduct: category '{CategoryId}' not found. User {UserId} rejected.", command.CategoryId, currentUser.UserId);
+
             return Result<Guid>.Failure($"Category '{command.CategoryId}' was not found.");
         }
 
@@ -75,6 +82,10 @@ public sealed class CreateProductCommandHandler
 
             if (!subBelongsToCategory)
             {
+                logger.LogWarning
+                    ("CreateProduct: subcategory '{SubCategoryId}' does not belong to category '{CategoryId}'. User {UserId} rejected.",
+                    command.SubCategoryId, command.CategoryId, currentUser.UserId);
+
                 return Result<Guid>.Failure
                     ($"SubCategory '{command.SubCategoryId}' does not belong to Category '{command.CategoryId}'.");
             }
@@ -86,6 +97,10 @@ public sealed class CreateProductCommandHandler
 
                 if (!subSubBelongsToSub)
                 {
+                    logger.LogWarning
+                        ("CreateProduct: subsubcategory '{SubSubCategoryId}' does not belong tosubcategory '{SubCategoryId}'. User {UserId} rejected.",
+                        command.SubSubCategoryId, command.SubCategoryId, currentUser.UserId);
+
                     return Result<Guid>.Failure
                         ($"SubSubCategory '{command.SubSubCategoryId}' does not belong to SubCategory '{command.SubCategoryId}'.");
                 }
