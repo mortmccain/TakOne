@@ -23,6 +23,8 @@
     <Folder Include="Categories\Queries\" />
     <Folder Include="Products\EventHandlers\" />
     <Folder Include="Products\Queries\" />
+    <Folder Include="Users\EventHandlers\" />
+    <Folder Include="Users\Queries\" />
   </ItemGroup>
 
 </Project>
