@@ -4,7 +4,7 @@ using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
 using TakOne.SharedKernel.Common;
 
-namespace TakOne.Application.Sales.Commands.updateSaleLineItem;
+namespace TakOne.Application.Sales.Commands.UpdateSaleLineItem;
 
 /// <summary>
 /// Updates the quantity of a line item on a Draft Sale.

@@ -185,12 +185,14 @@ public sealed class Sale : AggregateRoot
     /// Private constructor used by the static factory method.
     /// Creates a Sale in <see cref="SaleStatus.Draft"/> status.
     /// </summary>
-    private Sale(
+    private Sale
+        (
         Guid customerId,
         string customerName,
         SaleNumber saleNumber,
         Guid createdByUserId,
-        string createdByName) : base(Guid.NewGuid())
+        string createdByName
+        ) : base(Guid.NewGuid())
     {
         EnsureCustomerIdValid(customerId);
         EnsureCustomerNameValid(customerName);
@@ -277,12 +279,14 @@ public sealed class Sale : AggregateRoot
     ///   (via Product.GetPurchaseLimitForGroup, using the buyer's GroupName)
     ///   and passing it here. Null means "no limit for this buyer/product".
     /// </summary>
-    public void AddLineItem(
+    public void AddLineItem
+        (
         Guid productId,
         string productName,
         int quantity,
         Money unitPrice,
-        int? purchaseLimit = null)
+        int? purchaseLimit = null
+        )
     {
         EnsureDraft();
         EnsureQuantityValid(quantity);
@@ -298,14 +302,19 @@ public sealed class Sale : AggregateRoot
             existingLine.UpdateQuantity(newQuantity);
             RecalculateTotal();
 
-            AddDomainEvent(new SaleLineItemUpdatedDomainEvent(
+            AddDomainEvent
+                (
+                new SaleLineItemUpdatedDomainEvent
+                (
                 Id,
                 existingLine.Id,
                 productId,
                 productName,
                 newQuantity,
                 existingLine.UnitPrice,
-                existingLine.LineNumber));
+                existingLine.LineNumber
+                )
+                );
         }
         else
         {
@@ -313,24 +322,31 @@ public sealed class Sale : AggregateRoot
 
             var lineNumber = GetNextLineNumber();
 
-            var lineItem = new SaleLineItem(
+            var lineItem = new SaleLineItem
+                (
                 productId,
                 productName,
                 quantity,
                 unitPrice,
-                lineNumber);
+                lineNumber
+                );
 
             _lineItems.Add(lineItem);
             RecalculateTotal();
 
-            AddDomainEvent(new SaleLineItemAddedDomainEvent(
+            AddDomainEvent
+                (
+                new SaleLineItemAddedDomainEvent
+                (
                 Id,
                 lineItem.Id,
                 productId,
                 productName,
                 quantity,
                 unitPrice,
-                lineNumber));
+                lineNumber
+                )
+                );
         }
     }
 
@@ -350,14 +366,19 @@ public sealed class Sale : AggregateRoot
         lineItem.UpdateQuantity(newQuantity);
         RecalculateTotal();
 
-        AddDomainEvent(new SaleLineItemUpdatedDomainEvent(
+        AddDomainEvent
+            (
+            new SaleLineItemUpdatedDomainEvent
+            (
             Id,
             lineItem.Id,
             lineItem.ProductId,
             lineItem.ProductName,
             newQuantity,
             lineItem.UnitPrice,
-            lineItem.LineNumber));
+            lineItem.LineNumber
+            )
+            );
     }
 
     /// <summary>
@@ -374,11 +395,16 @@ public sealed class Sale : AggregateRoot
         _lineItems.Remove(lineItem);
         RecalculateTotal();
 
-        AddDomainEvent(new SaleLineItemRemovedDomainEvent(
+        AddDomainEvent
+            (
+            new SaleLineItemRemovedDomainEvent
+            (
             Id,
             lineItem.Id,
             lineItem.ProductId,
-            removedLineNumber));
+            removedLineNumber
+            )
+            );
     }
 
 
@@ -496,9 +522,11 @@ public sealed class Sale : AggregateRoot
         }
 
         var currency = _lineItems[0].UnitPrice.Currency;
-        Total = _lineItems.Aggregate(
-            Money.Zero(currency),
-            (sum, item) => sum + item.GrossTotal);
+        Total = _lineItems.Aggregate
+            (
+                Money.Zero(currency),
+                (sum, item) => sum + item.GrossTotal
+            );
     }
 
 

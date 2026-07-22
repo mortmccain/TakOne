@@ -1,5 +1,25 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<!--
+    PROJECT ROLE:
+    The Infrastructure layer is the OUTERMOST layer of the onion (apart from
+    WebUI). It depends on Application, Domain, and SharedKernel — but none
+    of those depend on it. This is what "Dependency Inversion" buys us:
+    the Application layer declares abstract interfaces (IProductRepository,
+    IUnitOfWork, IUserAccountService, etc.), and Infrastructure provides
+    concrete EF Core / ASP.NET Identity implementations.
 
+    EVERYTHING FRAMEWORK-SPECIFIC LIVES HERE:
+      - EF Core DbContext + entity configurations
+      - ASP.NET Identity (ApplicationUser, UserManager, RoleManager)
+      - SQL Server connection management
+      - Wolverine EF Core transactional middleware (completes the outbox)
+      - Domain-event dispatch interceptor (ISaveChangesInterceptor)
+
+    NOTHING IN DOMAIN OR APPLICATION REFERENCES THIS PROJECT.
+  -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+	
+	
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -13,16 +33,62 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Infrastructure\Identity\" />
     <Folder Include="Infrastructure\Persistence\Configurations\" />
     <Folder Include="Infrastructure\Persistence\Repositories\" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+
+	  <!--
+      ASP.NET Core Identity + EF Core integration.
+      Pulls in:
+        - Microsoft.AspNetCore.Identity (transitively)
+        - Microsoft.EntityFrameworkCore (transitively)
+        - Microsoft.Extensions.Logging.Abstractions (transitively)
+
+      We need the EFCore variant (not just Microsoft.AspNetCore.Identity)
+      because we want Identity storage to share the SAME DbContext as our
+      domain entities, so a User creation + role assignment can commit in
+      the same transaction as a Sale creation, etc.
+    -->
+	  <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
+
+	  
+	  
+	  <!--
+      EF Core SQL Server provider. Used by the DbContext to talk to SQL Server.
+    -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+
+	  
+
+	  <!--
+      DI / Configuration abstractions so this layer can expose its own
+      `AddTakOneInfrastructure(...)` extension method on IServiceCollection
+      and read configuration (connection strings, etc.).
+    -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+
+
+	  
+	  <!--
+      WolverineFx.EntityFrameworkCore — provides
+      `WolverineOptions.UseEntityFrameworkCoreTransactions<TDbContext>()`,
+      which enrolls every Wolverine handler into an EF Core transaction.
+
+      This is the MISSING HALF of the outbox that we deferred from
+      Application-layer configuration. Without it, Wolverine has a message
+      store (`wolverine_messages` table) but no transactional link between
+      that store and business changes. With it, when a handler calls
+      `SaveChangesAsync` + `IMessageBus.PublishAsync`, the outbox entry
+      commits in the SAME transaction as the business changes — atomic,
+      no orphan messages, no lost events.
+
+      Version must match the WolverineFx version used by the Application layer.
+    -->
+    <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.21.0" />
   </ItemGroup>
 
 </Project>

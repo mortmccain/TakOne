@@ -1,6 +1,6 @@
 ﻿using TakOne.Application.Common.Authorization;
 
-namespace TakOne.Application.Sales.Commands.updateSaleLineItem;
+namespace TakOne.Application.Sales.Commands.UpdateSaleLineItem;
 
 /// <summary>
 /// Replaces the quantity of an existing line item on a Draft Sale.

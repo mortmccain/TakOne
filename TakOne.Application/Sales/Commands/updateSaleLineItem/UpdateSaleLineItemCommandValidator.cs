@@ -1,6 +1,6 @@
 ﻿using FluentValidation;
 
-namespace TakOne.Application.Sales.Commands.updateSaleLineItem;
+namespace TakOne.Application.Sales.Commands.UpdateSaleLineItem;
 
 public sealed class UpdateSaleLineItemCommandValidator : AbstractValidator<UpdateSaleLineItemCommand>
 {

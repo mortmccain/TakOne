@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Ardalis.Specification;
+using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Sales.DTOs;
@@ -23,14 +24,12 @@ public sealed class GetSalesPaginatedQueryHandler
 {
     private const int MaxPageSize = 100;
 
-    public static async Task<PaginatedResult<SaleListItemDto>> HandleAsync
-        (
+    public static async Task<PaginatedResult<SaleListItemDto>> HandleAsync(
         GetSalesPaginatedQuery query,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         ILogger<GetSalesPaginatedQueryHandler> logger,
-        CancellationToken cancellationToken
-        )
+        CancellationToken cancellationToken)
     {
         // ------------------------------------------------------------------
         // 0. Defense-in-depth auth check.
@@ -43,7 +42,8 @@ public sealed class GetSalesPaginatedQueryHandler
             // signature is PaginatedResult<T>, not Result<PaginatedResult<T>>.
             // The caller is expected to interpret an empty page as "no data"
             // and the warning log captures the auth failure for ops.
-            return new PaginatedResult<SaleListItemDto>(Array.Empty<SaleListItemDto>(), 0, 1, 1);
+            return new PaginatedResult<SaleListItemDto>(
+                Array.Empty<SaleListItemDto>(), 0, 1, 1);
         }
 
         // ------------------------------------------------------------------
@@ -55,8 +55,11 @@ public sealed class GetSalesPaginatedQueryHandler
             currentUser.IsInRole(Roles.Manager) ||
             currentUser.IsInRole(Roles.Employee);
 
-        Specification<Sale> spec = canSeeAllSales
-            ? Specification<Sale>.Empty
+        // `ISpecification<Sale>` is the Ardalis interface. The repository's
+        // SpecificationEvaluator translates whichever spec we hand it into
+        // the appropriate LINQ query against the Sales DbSet.
+        ISpecification<Sale> spec = canSeeAllSales
+            ? new AllSalesSpecification()
             : new SaleByCreatorSpecification(currentUser.UserId);
 
         // ------------------------------------------------------------------
@@ -74,7 +77,8 @@ public sealed class GetSalesPaginatedQueryHandler
         // ------------------------------------------------------------------
         // 3. Load the page from the repository.
         // ------------------------------------------------------------------
-        var paginated = await saleRepository.GetPaginatedBySpecificationAsync(spec, pageNumber, pageSize, cancellationToken);
+        var paginated = await saleRepository.GetPaginatedBySpecificationAsync(
+            spec, pageNumber, pageSize, cancellationToken);
 
         // ------------------------------------------------------------------
         // 4. Project to DTO. If a search term was supplied, apply it here
@@ -110,6 +114,7 @@ public sealed class GetSalesPaginatedQueryHandler
         // is acceptable — the search box reloads the page anyway. If we ever
         // add infinite scroll, we'll need server-side search first.
 
-        return new PaginatedResult<SaleListItemDto>(dtos, paginated.TotalCount, pageNumber, pageSize);
+        return new PaginatedResult<SaleListItemDto>(
+            dtos, paginated.TotalCount, pageNumber, pageSize);
     }
 }

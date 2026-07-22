@@ -1,27 +1,100 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="FluentValidation" Version="12.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageReference Include="WolverineFx" Version="6.21.0" />
-    <PackageReference Include="WolverineFx.SqlServer" Version="6.21.0" />
-  </ItemGroup>
+	<ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\TakOne.Domain\TakOne.Domain.csproj" />
-    <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
-  </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Categories\EventHandlers\" />
-    <Folder Include="Products\EventHandlers\" />
-    <Folder Include="Users\EventHandlers\" />
-  </ItemGroup>
+
+		<!--
+      Ardalis.Specification — the specification pattern base classes used by
+      repository query methods (e.g. ISaleRepository.GetPaginatedBySpecificationAsync).
+
+      WHY ARDALIS INSTEAD OF OUR OWN Specification<T> IN SharedKernel:
+        Our in-house Specification<T> only supports Expression<Func<T,bool>> (a Where
+        clause). It cannot express Includes, OrderBy, pagination, AsNoTracking,
+        projections, or split queries — all of which an enterprise repository needs.
+
+        Ardalis.Specification handles all of these via a single SpecificationEvaluator
+        that translates a Specification<T> into an IQueryable<T>. It's the de-facto
+        standard for .NET DDD projects (~14M NuGet downloads) and lets us write
+        repository methods that accept any ISpecification<T> without needing custom
+        translation logic.
+
+      Only the Application layer needs the base library (`Ardalis.Specification`).
+      The Infrastructure layer additionally pulls in `Ardalis.Specification.EntityFrameworkCore`
+      for the SpecificationEvaluator that runs against EF CoreDbSets.
+    -->
+		<PackageReference Include="Ardalis.Specification" Version="9.3.1" />
+
+
+
+		<!--
+      FluentValidation itself must also be referenced explicitly. WolverineFx.FluentValidation
+      bundles it transitively, but transitive dependencies aren't surfaced to IntelliSense /
+      the compiler in all setups — so `using FluentValidation;` fails without this entry.
+    -->
+		<PackageReference Include="FluentValidation" Version="12.1.1" />
+
+
+
+		<!--
+      FluentValidation.DependencyInjectionExtensions — provides AddValidatorsFromAssembly(...),
+      which we call in ServiceCollectionExtensions to register all AbstractValidator<T>
+      classes in this assembly. This is a separate NuGet from FluentValidation itself.
+    -->
+		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+
+
+
+		<!--
+      DI / Configuration abstractions. The Application layer owns its own
+      ServiceCollectionExtensions entry point, so it needs these abstractions
+      to express IServiceCollection and IConfiguration parameter types.
+      We use the .Abstractions variants (no implementation) because we
+      don't build a ServiceProvider here — we only configure one.
+    -->
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+
+
+
+		<!--
+      Wolverine + FluentValidation integration. WolverineFx.SqlServer is the
+      SQL Server transport / message-store package used by the outbox; the
+      user already replaced the original (incorrect) WolverineFx.Postgresql
+      reference with this one on their side. The working copy here keeps
+      SqlServer as the canonical reference.
+      Version pinning matches Wolverine's major release line.
+    -->
+		<PackageReference Include="WolverineFx" Version="6.21.0" />
+		<PackageReference Include="WolverineFx.SqlServer" Version="6.21.0" />
+
+
+		<!--
+      WolverineFx.FluentValidation wires FluentValidation validators into Wolverine's
+      command pipeline so any AbstractValidator<TCommand> runs automatically before
+      the handler. Version must match the WolverineFx version above.
+    -->
+		<PackageReference Include="WolverineFx.FluentValidation" Version="6.21.0" />
+
+
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\TakOne.Domain\TakOne.Domain.csproj" />
+		<ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="Categories\EventHandlers\" />
+		<Folder Include="Products\EventHandlers\" />
+		<Folder Include="Users\EventHandlers\" />
+	</ItemGroup>
 
 </Project>

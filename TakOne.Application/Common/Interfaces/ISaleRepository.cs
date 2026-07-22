@@ -1,4 +1,6 @@
 ﻿using TakOne.Domain.Sales.Entities;
+using Ardalis.Specification;
+
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Common.Interfaces;
@@ -13,9 +15,22 @@ public interface ISaleRepository
     /// </summary>
     Task<Sale?> GetByIdWithLineItemsAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns a paginated slice of Sales matching the given specification.
+    ///
+    /// The caller (a query handler) builds an <see cref="ISpecification{Sale}"/>
+    /// (e.g. <c>SaleByCreatorSpecification</c>) and passes it here. The
+    /// Infrastructure layer's <c>SpecificationEvaluator</c> translates the
+    /// spec into a LINQ query against the <c>Sales</c> DbSet — including
+    /// any <c>Where</c>, <c>OrderBy</c>, <c>Include</c> clauses declared
+    /// by the specification.
+    ///
+    /// Pass <c>Specification&lt;Sale&gt;.Empty</c> (or a null-spec) to get
+    /// an unfiltered, paginated list — typically only for admin/manager views.
+    /// </summary>
     Task<PaginatedResult<Sale>> GetPaginatedBySpecificationAsync
         (
-        Specification<Sale> specification,
+        ISpecification<Sale> specification,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
@@ -23,11 +38,12 @@ public interface ISaleRepository
 
     /// <summary>
     /// Returns ALL matching sales without pagination.
-    /// Line items are NOT eagerly loaded.
+    /// Line items are NOT eagerly loaded — call
+    /// <see cref="GetByIdWithLineItemsAsync"/> per sale if you need them.
     /// </summary>
     Task<List<Sale>> GetAllBySpecificationAsync
         (
-        Specification<Sale> specification,
+        ISpecification<Sale> specification,
         CancellationToken cancellationToken = default
         );
 
