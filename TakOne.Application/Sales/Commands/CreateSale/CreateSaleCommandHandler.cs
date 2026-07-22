@@ -80,12 +80,17 @@ public sealed class CreateSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Generate the sale number. ISaleNumberGenerator is backed by a
-        //    DB sequence or row-level lock in Infrastructure, so concurrent
-        //    CreateSale calls will get distinct numbers.
+        // 3. Generate the sale number. ISaleNumberGenerator is backed by the
+        //    Infrastructure layer (step 7d), which uses PersianCalendar to
+        //    compute the Persian year and counts ALL existing sales in that
+        //    year to produce a globally-unique sequence.
+        //    Concurrency note: two simultaneous CreateSale calls could both
+        //    compute the same sequence. The unique index on
+        //    (SaleNumber_Year, SaleNumber_Sequence) on the Sales table causes
+        //    the loser's SaveChangesAsync to fail. A retry policy (Polly)
+        //    will be added in a future hardening pass.
         // ------------------------------------------------------------------
-        var saleNumber = await saleNumberGenerator.NextAsync(SaleNumberPrefix, cancellationToken);
-
+        var saleNumber = await saleNumberGenerator.NextAsync(cancellationToken);
         // ------------------------------------------------------------------
         // 4. Create the Sale in Draft state.
         //    CustomerId/Name come from the resolved customer.

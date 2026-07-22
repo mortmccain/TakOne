@@ -33,8 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Infrastructure\Persistence\Configurations\" />
-    <Folder Include="Infrastructure\Persistence\Repositories\" />
+    <Folder Include="Persistence\Repositories\" />
   </ItemGroup>
 
   <ItemGroup>
