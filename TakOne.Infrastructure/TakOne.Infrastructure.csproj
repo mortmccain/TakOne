@@ -33,10 +33,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Persistence\Repositories\" />
-  </ItemGroup>
-
-  <ItemGroup>
 
 	  <!--
       ASP.NET Core Identity + EF Core integration.
@@ -50,6 +46,7 @@
       domain entities, so a User creation + role assignment can commit in
       the same transaction as a Sale creation, etc.
     -->
+	  <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
 	  <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
 
 	  
