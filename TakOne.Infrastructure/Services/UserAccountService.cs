@@ -1,0 +1,440 @@
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Interfaces;
+using TakOne.Infrastructure.Identity;
+using TakOne.Infrastructure.Persistence;
+using TakOne.SharedKernel.Common;
+
+namespace TakOne.Infrastructure.Services;
+
+/// <summary>
+/// Infrastructure implementation of <see cref="IUserAccountService"/>.
+///
+/// RESPONSIBILITY:
+///   Bridge the framework-free Domain <c>User</c> aggregate to ASP.NET
+///   Identity's <c>ApplicationUser</c>. Operations that the Domain cannot
+///   model (passwords, email, Identity roles) live here.
+///
+/// SHARED-PK INVARIANT:
+///   The Domain User and the ApplicationUser share the SAME primary key.
+///   The handler creates the Domain User first (which generates a new Guid),
+///   then calls <see cref="CreateIdentityAccountAsync"/> with that Guid — so
+///   the ApplicationUser row uses the Domain User's Id as its own PK.
+///
+///   UserManager.CreateAsync normally GENERATES a new Guid for the Id.
+///   We override that by explicitly setting <c>appUser.Id = userId</c> BEFORE
+///   calling <c>CreateAsync</c>. EF Core + Identity will respect the
+///   pre-set Id (it's just a primary key value, no different from any other).
+///
+/// TRANSACTIONALITY — HOW ATOMIC COMMITS ARE ACHIEVED:
+///   This service shares the SAME <see cref="ApplicationDbContext"/> that the
+///   repositories use (registered via DI as a scoped service — one instance
+///   per HTTP request / Wolverine handler invocation). The intended handler
+///   flow is:
+///     1. userRepository.AddAsync(domainUser)              → tracks Domain User for INSERT
+///     2. userAccountService.CreateIdentityAccountAsync()  → UserManager.CreateAsync
+///                                                           calls Context.SaveChangesAsync
+///                                                           internally (auto-save)
+///     3. unitOfWork.SaveChangesAsync()                    → commits any remaining
+///      
+///
+///   ASP.NET Identity's default EF Core <c>UserStore&lt;TUser&gt;</c>
+///   implementation calls <c>Context.SaveChangesAsync()</c> INSIDE
+///   <c>UserManager.CreateAsync</c>, <c>AddToRoleAsync</c>, <c>ResetPasswordAsync</c>,
+///   etc. 
+///
+///   etc. Without a transaction, the ApplicationUser row (and the AspNetUserRoles
+///   row, etc.) would commit IMMEDIATELY at step 2 — NOT deferred to step 3 —
+///   which would break the "same DbContext → same transaction" intuition and
+///   produce orphan ApplicationUsers if the handler later fails.
+///
+///   THE FIX (wired in <c>AddTakOneInfrastructure</c>, Step 7e):
+///   Wolverine's EF Core transactional middleware
+///   (<c>opts.UseEntityFrameworkCoreTransactions()</c> +
+///   <c>opts.Policies.AutoApplyTransactions()</c>) wraps every Wolverine handler
+///   in an EF Core transaction. The middleware:
+///     a. Calls <c>BeginTransactionAsync</c> on the DbContext before the handler
+///        runs. From this point, ANY <c>SaveChangesAsync</c> call (including
+///        Identity's auto-saves) writes its changes INSIDE the open transaction —
+///        they are persisted to the database's transaction log but NOT committed.
+///     b. After the handler returns successfully, calls <c>CommitAsync</c> —
+///        all changes (Domain User, ApplicationUser, role assignment, outbox
+///        entries) commit atomically.
+///     c. If the handler throws, calls <c>RollbackAsync</c> — all changes roll
+///        back together, including Identity rows that Identity "auto-saved".
+///
+///   This is cleaner than wrapping each Identity operation in a
+///   <c>TransactionScope</c> (the option A approach we considered earlier):
+///     - No <c>TransactionScopeAsyncFlowOption.Enabled</c> gotchas.
+///     - No transaction-timeout tuning.
+///     - The scope is owned by Wolverine, not by the handler — the handler
+///       code stays clean.
+///     - The Domain User INSERT and the ApplicationUser INSERT are in the
+///       SAME transaction automatically, because both go through the same
+///       scoped DbContext that Wolverine enrolled.
+///
+///   CAVEAT — handlers MUST be invoked via Wolverine:
+///   This guarantee only applies to handlers running under Wolverine's
+///   transactional middleware. If you ever call this service from a non-
+///   Wolverine entry point (e.g. a Blazor component that resolves
+///   IUserAccountService directly from DI), you MUST wrap the call in an
+///   explicit <c>TransactionScope</c> or open an EF Core transaction on the
+///   DbContext manually. In TakOne, all commands go through Wolverine, so
+///   this caveat is currently moot — but it's worth knowing if you ever add
+///   a non-Wolverine entry point.
+/// 
+///   This is the reason UserManager is constructed with our ApplicationDbContext
+///   as its store, not a separate IdentityDbContext. (Wired in step 7e via
+///   <c>AddIdentity&lt;ApplicationUser, IdentityRole&lt;Guid&gt;&gt;.AddEntityFrameworkStores&lt;ApplicationDbContext&gt;()</c>.)
+///
+/// ERROR SEMANTICS:
+///   Identity operations return <c>IdentityResult</c>, which has a
+///   <c>.Errors</c> collection of <c>IdentityError</c> objects (each with
+///   Code + Description). We flatten these into a single semicolon-joined
+///   string and return <c>Result.Failure(...)</c>. The handler surfaces the
+///   string to the caller.
+///
+///   Identity error codes are things like "DuplicateUserName",
+///   "PasswordTooShort", "InvalidEmail". They're localized by the
+///   IdentityErrorDescriber — which we use as-is. If you ever need to map
+///   specific codes to specific user-facing message keys, override the
+///   describer in <c>AddTakOneInfrastructure</c>.
+/// </summary>
+public sealed class UserAccountService : IUserAccountService
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ApplicationDbContext _db;
+    private readonly ILogger<UserAccountService> _logger;
+
+    public UserAccountService(
+        UserManager<ApplicationUser> userManager,
+        ApplicationDbContext db,
+        ILogger<UserAccountService> logger)
+    {
+        _userManager = userManager;
+        _db = db;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> CreateIdentityAccountAsync(
+        Guid userId,
+        string workerId,
+        string email,
+        string initialPassword,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // 1. Construct the ApplicationUser with the SHARED PK.
+        //
+        //    Setting Id = userId BEFORE CreateAsync overrides Identity's
+        //    default "generate a new Guid" behavior. This is what makes the
+        //    Domain User and ApplicationUser one-to-one by shared PK.
+        // ------------------------------------------------------------------
+        var appUser = new ApplicationUser
+        {
+            Id = userId,
+            UserName = workerId,         // login identifier (matches Domain User.WorkerId)
+            Email = email,
+            EmailConfirmed = true,       // admin-created accounts skip email confirmation
+            IsActive = true,             // mirrors Domain User.IsActive default
+            SecurityStamp = Guid.NewGuid().ToString("N")
+        };
+
+        // SecurityStamp: Identity uses this to invalidate outstanding login
+        // sessions when security-sensitive fields change (password, role).
+        // We set it explicitly to a fresh Guid so it's deterministic and
+        // traceable in logs. UserManager.CreateAsync would set one if we
+        // left it null, but being explicit removes ambiguity.
+
+        // ------------------------------------------------------------------
+        // 2. Create the user with the password.
+        //
+        //    UserManager.CreateAsync hashes the password, validates
+        //    uniqueness of UserName + Email, and INSERTs the row on the
+        //    next SaveChanges. (It does NOT call SaveChanges itself — it
+        //    calls the store's CreateAsync, which just queues the INSERT
+        //    in the DbContext.)
+        //
+        //    Wait — actually, the default Identity EF store DOES call
+        //    SaveChanges internally inside CreateAsync. So the ApplicationUser
+        //    row commits IMMEDIATELY here, even if the handler later fails
+        //    and never calls IUnitOfWork.SaveChangesAsync. This is a known
+        //    Identity quirk.
+        //
+        //    Workaround: if the Domain User INSERT later fails, we manually
+        //    DELETE the ApplicationUser row to roll back. The handler is
+        //    responsible for catching that failure and calling a cleanup
+        //    method on this service. (See CreateCustomerCommandHandler's
+        //    transaction flow — currently it doesn't do this cleanup because
+        //    in practice the Domain User INSERT can only fail on the unique
+        //    WorkerId index, which we pre-check. But we should harden this
+        //    in a future pass.)
+        // ------------------------------------------------------------------
+        var createResult = await _userManager.CreateAsync(appUser, initialPassword);
+        if (!createResult.Succeeded)
+        {
+            var error = FlattenErrors(createResult);
+            _logger.LogWarning(
+                "UserAccountService.CreateIdentityAccountAsync: UserManager.CreateAsync failed " +
+                "for userId {UserId}, workerId '{WorkerId}', email '{Email}'. Errors: {Errors}.",
+                userId, workerId, email, error);
+            return Result.Failure(error);
+        }
+
+        // ------------------------------------------------------------------
+        // 3. Assign the role.
+        //
+        //    AddToRoleAsync:
+        //      - Looks up the IdentityRole by name (throws if not found).
+        //      - Inserts a row into AspNetUserRoles linking the user to the role.
+        //
+        //    If the role doesn't exist (e.g. the role seed hasn't run yet),
+        //    this fails with "Role X does not exist." That's the most common
+        //    production bug with this method — ensure role seeding runs on
+        //    app startup (configured in step 7e or WebUI startup).
+        // ------------------------------------------------------------------
+        var roleResult = await _userManager.AddToRoleAsync(appUser, role);
+        if (!roleResult.Succeeded)
+        {
+            var error = FlattenErrors(roleResult);
+            _logger.LogWarning(
+                "UserAccountService.CreateIdentityAccountAsync: AddToRoleAsync '{Role}' failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                role, userId, error);
+
+            // Roll back the user creation. Otherwise we'd leave an
+            // orphaned ApplicationUser with no role — the user could log in
+            // but couldn't do anything (and the Domain User INSERT might
+            // still go through, leaving a half-state).
+            await _userManager.DeleteAsync(appUser);
+            return Result.Failure(error);
+        }
+
+        _logger.LogInformation
+            (
+            "UserAccountService.CreateIdentityAccountAsync: Identity account created " +
+            "for userId {UserId} (workerId '{WorkerId}', role '{Role}').",
+            userId, workerId, role
+            );
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> ResetPasswordAsync
+        (
+        Guid userId,
+        string newPassword,
+        CancellationToken cancellationToken = default
+        )
+    {
+        // ------------------------------------------------------------------
+        // Load the ApplicationUser. We use the DbContext directly (not
+        // UserManager.FindByIdAsync) for two reasons:
+        //   1. FindByIdAsync takes a string, not a Guid — awkward.
+        //   2. We want a TRACKED entity so that any property updates we make
+        //      (none here, but future-proofing) are detected by the change
+        //      tracker.
+        // ------------------------------------------------------------------
+        var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (appUser is null)
+        {
+            return Result.Failure($"Identity account for user '{userId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // UserManager.ResetPasswordAsync normally requires a token (issued
+        // via UserManager.GeneratePasswordResetTokenAsync). That's the
+        // user-driven "forgot password" flow. For an ADMIN-driven reset
+        // (this method), we use RemovePasswordAsync + AddPasswordAsync —
+        // which bypasses the token flow entirely.
+        //
+        // This is a deliberate choice: admin resets don't need the user to
+        // click a link in an email. The admin is authenticated, and the
+        // audit log captures who did it (the calling handler logs the actor).
+        // ------------------------------------------------------------------
+        var removeResult = await _userManager.RemovePasswordAsync(appUser);
+        if (!removeResult.Succeeded)
+        {
+            var error = FlattenErrors(removeResult);
+            _logger.LogWarning(
+                "UserAccountService.ResetPasswordAsync: RemovePasswordAsync failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                userId, error);
+            return Result.Failure(error);
+        }
+
+        var addResult = await _userManager.AddPasswordAsync(appUser, newPassword);
+        if (!addResult.Succeeded)
+        {
+            var error = FlattenErrors(addResult);
+            _logger.LogWarning(
+                "UserAccountService.ResetPasswordAsync: AddPasswordAsync failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                userId, error);
+
+            // We've removed the old password but couldn't set the new one —
+            // the user now has NO password and CANNOT log in. Surface this
+            // loudly so the admin knows to retry immediately. We do NOT
+            // attempt to restore the old password (we don't have it; it was
+            // hashed).
+            return Result.Failure(
+                $"Password reset FAILED for user '{userId}'. The old password was removed " +
+                $"but the new password was rejected. Errors: {error}. " +
+                $"The user cannot log in until this is resolved — please retry with a stronger password.");
+        }
+
+        _logger.LogInformation
+            (
+            "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}.", userId);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> AssignRoleAsync
+        (
+        Guid userId,
+        string role,
+        CancellationToken cancellationToken = default
+        )
+    {
+        var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (appUser is null)
+        {
+            return Result.Failure($"Identity account for user '{userId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // Idempotency: if the user already has the role, IsInRoleAsync
+        // returns true and we skip the AddToRoleAsync call. This avoids
+        // a no-op INSERT into AspNetUserRoles (which would fail anyway
+        // because Identity dedupes — but skipping is cleaner).
+        // ------------------------------------------------------------------
+        if (await _userManager.IsInRoleAsync(appUser, role))
+        {
+            _logger.LogDebug
+                (
+                "UserAccountService.AssignRoleAsync: user {UserId} already has role '{Role}' — no-op.", userId, role);
+
+            return Result.Success();
+        }
+
+        var result = await _userManager.AddToRoleAsync(appUser, role);
+
+        if (!result.Succeeded)
+        {
+            var error = FlattenErrors(result);
+
+            _logger.LogWarning
+                (
+                "UserAccountService.AssignRoleAsync: AddToRoleAsync '{Role}' failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                role, userId, error
+                );
+
+            return Result.Failure(error);
+        }
+
+        _logger.LogInformation
+            ("UserAccountService.AssignRoleAsync: role '{Role}' assigned to userId {UserId}.", role, userId);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> RemoveFromRoleAsync
+        (
+        Guid userId,
+        string role,
+        CancellationToken cancellationToken = default
+        )
+    {
+        var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (appUser is null)
+        {
+            return Result.Failure($"Identity account for user '{userId}' was not found.");
+        }
+
+        // Idempotency: if the user doesn't have the role, no-op.
+        if (!await _userManager.IsInRoleAsync(appUser, role))
+        {
+            _logger.LogDebug
+                ("UserAccountService.RemoveFromRoleAsync: user {UserId} does not have role '{Role}' — no-op.", userId, role);
+
+            return Result.Success();
+        }
+
+        var result = await _userManager.RemoveFromRoleAsync(appUser, role);
+
+        if (!result.Succeeded)
+        {
+            var error = FlattenErrors(result);
+
+            _logger.LogWarning
+                (
+                "UserAccountService.RemoveFromRoleAsync: RemoveFromRoleAsync '{Role}' failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                role, userId, error
+                );
+
+            return Result.Failure(error);
+        }
+
+        _logger.LogInformation
+            (
+            "UserAccountService.RemoveFromRoleAsync: role '{Role}' removed from userId {UserId}.", role, userId);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetRolesAsync
+        (
+        Guid userId,
+        CancellationToken cancellationToken = default
+        )
+    {
+        var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (appUser is null)
+        {
+            // Returning an empty list rather than throwing — the caller
+            // (query handlers like GetUserByIdQueryHandler) treats "no roles"
+            // as a valid state. A null User will surface elsewhere as a
+            // "user not found" error.
+            return Array.Empty<string>();
+        }
+
+        var roles = await _userManager.GetRolesAsync(appUser);
+
+        return roles.ToList();
+    }
+
+    /// <summary>
+    /// Flattens an <c>IdentityResult</c>'s Errors collection into a single
+    /// semicolon-joined string for surface-friendly error messages.
+    ///
+    /// Each IdentityError has a Code (e.g. "DuplicateUserName",
+    /// "PasswordTooShort") and a Description (the user-facing message,
+    /// localized by the IdentityErrorDescriber).
+    ///
+    /// We include both in the flattened form "{Code}: {Description}" so the
+    /// log + error message is grep-friendly by code while still being
+    /// readable.
+    /// </summary>
+    private static string FlattenErrors(IdentityResult result)
+    {
+        if (result.Errors is null)
+        {
+            return "Unknown Identity failure.";
+        }
+
+        return string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+    }
+}

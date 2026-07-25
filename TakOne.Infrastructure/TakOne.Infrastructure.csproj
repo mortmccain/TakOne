@@ -11,8 +11,11 @@
       - EF Core DbContext + entity configurations
       - ASP.NET Identity (ApplicationUser, UserManager, RoleManager)
       - SQL Server connection management
-      - Wolverine EF Core transactional middleware (completes the outbox)
-      - Domain-event dispatch interceptor (ISaveChangesInterceptor)
+      - Wolverine SQL Server message store (durable inbox/outbox)
+      - Wolverine EF Core transactional middleware (the transactional link
+        between the DbContext and the outbox — completes the outbox chain)
+      - Wolverine domain-event scraper (PublishDomainEventsFromEntityFrameworkCore
+        — replaces what would otherwise be a hand-rolled ISaveChangesInterceptor)
 
     NOTHING IN DOMAIN OR APPLICATION REFERENCES THIS PROJECT.
   -->
@@ -32,7 +35,57 @@
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
 
+	
+	
+	<!--
+    ASP.NET Core shared framework reference.
+
+    This is REQUIRED for any non-web class library (Sdk=Microsoft.NET.Sdk)
+    that wants to call ASP.NET Core APIs. Without it, types like
+    `Microsoft.AspNetCore.Identity.IdentityServiceCollectionExtensions`
+    (which provides the `AddIdentity<TUser, TRole>()` extension method we
+    call in AddTakOneInfrastructure) are unreachable, even if you reference
+    `Microsoft.AspNetCore.Identity.EntityFrameworkCore` as a NuGet package.
+
+    REASON: Since .NET Core 3.0, the actual implementation of ASP.NET Core
+    types lives in the shared framework, NOT in NuGet packages. The
+    `Microsoft.AspNetCore.Identity.EntityFrameworkCore` NuGet package only
+    brings the EF Core integration glue (IdentityDbContext<>, IdentityUser<>,
+    IdentityRole<>, etc.); the `AddIdentity` extension method lives in
+    `Microsoft.Extensions.Identity.Core`, which is part of the shared
+    framework only.
+
+    Architecturally this is fine: the Infrastructure layer is the OUTERMOST
+    layer of the onion and is *supposed* to know about framework concerns.
+    Domain and Application stay clean — they have no FrameworkReference.
+
+    Reference:
+      https://learn.microsoft.com/en-us/aspnet/core/fundamentals/metapackage
+  -->
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+	
+	
+	
   <ItemGroup>
+
+	  <!--
+      Ardalis.Specification.EntityFrameworkCore — provides
+      `SpecificationEvaluator`, which translates an `ISpecification<T>` into
+      an EF Core `IQueryable<T>` (applying Where, OrderBy, Include, AsNoTracking,
+      Skip/Take, etc. as declared by the spec).
+
+      This is the Infrastructure-side counterpart to `Ardalis.Specification`
+      (already referenced by the Application layer). Application builds specs;
+      Infrastructure consumes them via the evaluator — no manual LINQ
+      translation in each repository.
+
+      Version must match the Ardalis.Specification version used by Application.
+    -->
+	  <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
+
+
 
 	  <!--
       ASP.NET Core Identity + EF Core integration.
@@ -46,45 +99,95 @@
       domain entities, so a User creation + role assignment can commit in
       the same transaction as a Sale creation, etc.
     -->
-	  <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
 	  <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
 
-	  
+
 	  
 	  <!--
       EF Core SQL Server provider. Used by the DbContext to talk to SQL Server.
     -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
 
-	  
+
 
 	  <!--
       DI / Configuration abstractions so this layer can expose its own
       `AddTakOneInfrastructure(...)` extension method on IServiceCollection
       and read configuration (connection strings, etc.).
     -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
 
+
+
+
+	  <!--
+      Microsoft.Extensions.Options.ConfigurationExtensions — provides the
+      `services.Configure<TOptions>(IConfigurationSection)` extension method,
+      which we use in AddTakOneInfrastructure to bind TakOneDatabaseOptions
+      from the "TakOne:Database" configuration section. This is the SINGLE
+      binding site for TakOneDatabaseOptions — the Application layer no
+      longer binds it (after the SQL Server message store was moved here).
+    -->
 
 	  
-	  <!--
-      WolverineFx.EntityFrameworkCore — provides
-      `WolverineOptions.UseEntityFrameworkCoreTransactions<TDbContext>()`,
-      which enrolls every Wolverine handler into an EF Core transaction.
 
-      This is the MISSING HALF of the outbox that we deferred from
-      Application-layer configuration. Without it, Wolverine has a message
-      store (`wolverine_messages` table) but no transactional link between
-      that store and business changes. With it, when a handler calls
-      `SaveChangesAsync` + `IMessageBus.PublishAsync`, the outbox entry
-      commits in the SAME transaction as the business changes — atomic,
-      no orphan messages, no lost events.
+	  <!--
+      WolverineFx.EntityFrameworkCore — provides:
+        - `WolverineOptions.UseEntityFrameworkCoreTransactions()` (non-generic,
+          auto-detects registered DbContexts) — enrolls every Wolverine handler
+          that uses a DbContext into an EF Core transaction. Combined with
+          `opts.Policies.AutoApplyTransactions()` (called in AddTakOneInfrastructure),
+          this is the transactional outbox: when a handler calls
+          IMessageBus.PublishAsync + IUnitOfWork.SaveChangesAsync, the outbox
+          entry commits in the SAME transaction as the business changes —
+          atomic, no orphan messages, no lost events.
+        - `WolverineOptions.PublishDomainEventsFromEntityFrameworkCore<TEntityType,
+          TDomainEvent>(accessor)` — scrapes domain events from tracked
+          AggregateRoot entities at SaveChanges time and publishes them through
+          the enrolled outbox. Replaces what would otherwise be a hand-rolled
+          ISaveChangesInterceptor (which has tricky captive-dependency and
+          timing issues that Wolverine's built-in scraper handles correctly).
+        - `IDbContextOutbox<T>` / `IDbContextOutbox` (Scoped) — the API for
+          using the outbox from non-Wolverine entry points (e.g. an MVC
+          controller that wants transactional publish without going through
+          the Wolverine handler pipeline).
 
       Version must match the WolverineFx version used by the Application layer.
+
+      Reference: https://wolverinefx.net/guide/durability/efcore/outbox-and-inbox
+                 https://wolverinefx.net/guide/durability/efcore/domain-events
     -->
+	  
+	  
+	  
     <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.21.0" />
+
+
+
+	  <!--
+      WolverineFx.SqlServer — provides `WolverineOptions.PersistMessagesWithSqlServer(
+      connectionString)`, the SQL Server message store backing the durable
+      inbox / outbox. Creates the `wolverine_messages` table on first run
+      and durably stores every locally-dispatched message until processed.
+
+      Referenced by the Infrastructure layer (NOT the Application layer) because:
+        - It is a SQL Server–specific persistence concern, not a messaging
+          abstraction. The Application layer's `AddTakOneApplication` only
+          configures engine-agnostic Wolverine features (handler discovery,
+          middleware, FluentValidation); everything that touches a concrete
+          engine lives here.
+        - The connection string it needs is the same one
+          `ApplicationDbContext` uses, so co-locating the call with the
+          DbContext registration in `AddTakOneInfrastructure` keeps both
+          usages of `TakOneDatabaseOptions.ConnectionString` in one file.
+
+      Version must match the WolverineFx version used by the Application layer.
+
+      Reference: https://wolverinefx.net/guide/durability/sqlserver
+    -->
+    <PackageReference Include="WolverineFx.SqlServer" Version="6.22.0" />
+	  
+	  
+	  
   </ItemGroup>
 
 </Project>

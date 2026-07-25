@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using TakOne.Application.Common.Middlewares;
 using Wolverine;
 using Wolverine.FluentValidation;
-using Wolverine.SqlServer;
 
 namespace TakOne.Application.DependencyInjection;
 
@@ -18,11 +17,12 @@ namespace TakOne.Application.DependencyInjection;
 ///   - Wolverine command/query bus (with discovery of all handlers in this assembly)
 ///   - FluentValidation integration (validators run automatically before handlers)
 ///   - Wolverine middleware pipeline (logging → performance → authorization → domain-exception)
-///   - Wolverine SQL Server message store + durable local queues (for transactional
-///     outbox support — the EF Core tx middleware itself is added in Step 7,
-///     Infrastructure, because it needs the DbContext)
 ///
-/// WHAT IS NOT REGISTERED HERE:
+///     Engine-specific concerns (SQL Server message store, durable local
+///     queues, EF Core transactional middleware, domain-event scraper) are
+///     registered by <c>AddTakOneInfrastructure</c> in the Infrastructure layer.
+///
+/// WHAT IS NOT REGISTERED HERE (deferred to Infrastructure):
 ///   - <see cref="TakOne.Application.Common.Interfaces.ICurrentUserService"/> — the
 ///     real implementation depends on IHttpContextAccessor (an ASP.NET Core
 ///     abstraction), so it lives in the WebUI layer and is registered there.
@@ -32,33 +32,59 @@ namespace TakOne.Application.DependencyInjection;
 ///   - IUserAccountService
 ///   - The EF Core DbContext
 ///   - ASP.NET Identity
-///   - EF Core transactional middleware (opts.UseEntityFrameworkCoreTransactions())
-///     — added in Step 7 because it needs the DbContext registered first.
+///   - Wolverine SQL Server message store (<c>opts.PersistMessagesWithSqlServer(...)</c>)
+///     — engine-specific, lives in Infrastructure.
+///   - Wolverine durable local queues policy (<c>opts.Policies.UseDurableLocalQueues()</c>)
+///     — only meaningful alongside a message store, so co-located with it in
+///     Infrastructure.
+///   - EF Core transactional middleware (<c>opts.UseEntityFrameworkCoreTransactions()</c>)
+///     — needs the DbContext registered first.
+///   - Domain-event scraper (<c>opts.PublishDomainEventsFromEntityFrameworkCore</c>)
+///     — same reason.
 ///
 ///   The Infrastructure- and WebUI-layer registrations are performed by their
 ///   own extension methods, which the WebUI calls AFTER this one. Keeping
 ///   them separate honors the dependency direction: Application never
 ///   references Infrastructure or WebUI, only the other way around.
+///
+/// ENGINE-AGNOSTIC BY DESIGN:
+///   This method does NOT reference any specific database engine, message-bus
+///   transport, or persistence technology. The Application layer's Wolverine
+///   configuration is limited to:
+///     - Handler discovery (scans this assembly for <c>HandleAsync</c> methods)
+///     - Middleware pipeline ordering (logging → perf → auth → domain-exception)
+///     - FluentValidation integration
+///   Everything that touches a concrete engine (SQL Server message store,
+///   EF Core transactional middleware, durable-queues policy) is owned by
+///   <c>AddTakOneInfrastructure</c>. This keeps <c>TakOne.Application.csproj</c>
+///   free of any <c>WolverineFx.SqlServer</c> / <c>WolverineFx.EntityFrameworkCore</c>
+///   / <c>Microsoft.EntityFrameworkCore.*</c> references.
+///
+/// CONNECTION STRING HANDLING:
+///   This method takes <c>IConfiguration</c> (not a connection string) and
+///   does NOT read the connection string at all — that's now exclusively
+///   <c>AddTakOneInfrastructure</c>'s job, since it's the only layer that
+///   needs it (for the DbContext and the Wolverine message store). The
+///   connection string never appears in any method signature, log, or error
+///   message anywhere in the codebase.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds all Application-layer services to the DI container and configures
-    /// Wolverine for command/query dispatch, validation, middleware, and outbox.
+    /// Wolverine for command/query dispatch, validation, and middleware.
     /// </summary>
     /// <param name="services">
     /// The DI container being configured. Typically <c>builder.Services</c>
     /// in Program.cs.
     /// </param>
     /// <param name="configuration">
-    /// Application configuration. Used here to read optional Wolverine tuning
-    /// knobs (e.g. slow-request threshold) — pass the root <c>IConfiguration</c>.
-    /// </param>
-    /// <param name="wolverineConnectionString">
-    /// The SQL Server connection string Wolverine will use for its message
-    /// store (the <c>wolverine_messages</c> table). Should point to the same
-    /// database the application uses for its business data, so that outbox
-    /// entries commit in the same transaction as business changes.
+    /// Application configuration. Used here ONLY for the optional
+    /// <c>Wolverine:SlowRequestThresholdMs</c> tuning knob. The database
+    /// connection string is NOT read by this method — it's read by
+    /// <c>AddTakOneInfrastructure</c> (which needs it for the DbContext and
+    /// the Wolverine SQL Server message store). The connection string never
+    /// appears as a method parameter anywhere in the codebase.
     /// </param>
     /// <returns>
     /// The modified <see cref="IServiceCollection"/> (so callers can chain
@@ -66,8 +92,7 @@ public static class ServiceCollectionExtensions
     /// </returns>
     public static IServiceCollection AddTakOneApplication(
         this IServiceCollection services,
-        IConfiguration configuration,
-        string wolverineConnectionString)
+        IConfiguration configuration)
     {
         // ------------------------------------------------------------------
         // 0. Argument guards. Cheap, but they turn "why is Wolverine empty?"
@@ -75,13 +100,6 @@ public static class ServiceCollectionExtensions
         // ------------------------------------------------------------------
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-
-        if (string.IsNullOrWhiteSpace(wolverineConnectionString))
-        {
-            throw new ArgumentException
-                ("Wolverine connection string must be provided so the message " + "store can be wired to a SQL Server database.",
-                nameof(wolverineConnectionString));
-        }
 
         // ------------------------------------------------------------------
         // 1. FluentValidation — register all validators in this assembly.
@@ -100,11 +118,9 @@ public static class ServiceCollectionExtensions
         //    passing `RegistrationBehavior.ExplicitRegistration` to
         //    `UseFluentValidation(...)`.
         // ------------------------------------------------------------------
-        services.AddValidatorsFromAssembly
-            (
+        services.AddValidatorsFromAssembly(
             Assembly.GetExecutingAssembly(),
-            ServiceLifetime.Transient
-            );
+            ServiceLifetime.Transient);
 
         // ------------------------------------------------------------------
         // 2. Optional Wolverine tuning from configuration. We read it here
@@ -117,7 +133,6 @@ public static class ServiceCollectionExtensions
         //       "Wolverine": { "SlowRequestThresholdMs": 300 }
         // ------------------------------------------------------------------
         var slowThresholdMs = configuration.GetValue<int?>("Wolverine:SlowRequestThresholdMs");
-
         if (slowThresholdMs.HasValue && slowThresholdMs.Value > 0)
         {
             PerformanceMiddleware.SlowRequestThresholdMs = slowThresholdMs.Value;
@@ -136,21 +151,18 @@ public static class ServiceCollectionExtensions
         //
         //    The WebUI's Program.cs would look like:
         //
-        //       builder.Services.AddTakOneApplication(
-        //           builder.Configuration,
-        //           builder.Configuration.GetConnectionString("DefaultConnection")!);
+        //       builder.Services.AddTakOneApplication(builder.Configuration);
         //
         //       builder.Host.UseWolverine(opts => { /* opts already configured */ });
         //
         //    NOTE: Infrastructure's AddTakOneInfrastructure(...) extension method
         //    (Step 7) will add ANOTHER services.Configure<WolverineOptions>(...)
-        //    lambda to register EF Core transactional middleware. ASP.NET Core
-        //    composes multiple Configure<T> lambdas in registration order, so
-        //    Infrastructure's additions layer on top of ours cleanly.
+        //    lambda to register EF Core transactional middleware + the
+        //    domain-event scraper. ASP.NET Core composes multiple Configure<T>
+        //    lambdas in registration order, so Infrastructure's additions layer
+        //    on top of ours cleanly.
         // ------------------------------------------------------------------
-        services.Configure<WolverineOptions>
-            (
-            opts =>
+        services.Configure<WolverineOptions>(opts =>
         {
             // --------------------------------------------------------------
             // 3a. Discover handlers in THIS assembly. Wolverine's source
@@ -225,40 +237,22 @@ public static class ServiceCollectionExtensions
             opts.UseFluentValidation(RegistrationBehavior.ExplicitRegistration);
 
             // --------------------------------------------------------------
-            // 3d. SQL SERVER MESSAGE STORE + DURABLE LOCAL QUEUES.
+            // 3d. (MOVED TO INFRASTRUCTURE)
             //
-            //     Two separate concerns, both required for the outbox:
+            //     The SQL Server message store (<c>PersistMessagesWithSqlServer</c>)
+            //     and the durable-local-queues policy (<c>UseDurableLocalQueues</c>)
+            //     used to live here but have been MOVED to <c>AddTakOneInfrastructure</c>.
+            //     Both are SQL Server / persistence-specific concerns that don't
+            //     belong in the Application layer. Co-locating them with the EF
+            //     Core transactional middleware in Infrastructure makes the
+            //     "SQL Server durability setup" a single cohesive block, and
+            //     lets this layer drop its <c>WolverineFx.SqlServer</c>
+            //     dependency entirely.
             //
-            //     (1) PersistMessagesWithSqlServer(connectionString) — creates
-            //         the wolverine_messages table on first run and sets up
-            //         the message store on the given connection string. This
-            //         is where outgoing messages are durably stored until
-            //         they're processed.
-            //
-            //     (2) UseDurableLocalQueues() — a policy that enrolls ALL
-            //         local queues into durable inbox/outbox processing.
-            //         Without this, messages are stored in-memory only and
-            //         lost on process restart. With this, every locally
-            //         dispatched message is persisted to the message store
-            //         and durably delivered.
-            //
-            //     WHAT THIS BUYS US (combined with the EF Core transactional
-            //     middleware added in Step 7):
-            //       - When a handler calls IMessageBus.PublishAsync(...) inside
-            //         a transaction, the published message is written to the
-            //         wolverine_messages table in the SAME transaction as the
-            //         business changes.
-            //       - If SaveChangesAsync succeeds, both the business changes
-            //         and the message are committed atomically.
-            //       - If SaveChangesAsync fails, both roll back — no orphan
-            //         messages, no lost events.
-            //       - A background process then picks up the outbox entries
-            //         and sends them to their actual destinations.
-            //
-            //     Reference: https://wolverinefx.net/guide/durability/sqlserver
+            //     The full transactional-outbox chain (message store + durable
+            //     queues + EF Core tx middleware + domain-event scraper) is
+            //     documented in <c>AddTakOneInfrastructure</c>.
             // --------------------------------------------------------------
-            opts.PersistMessagesWithSqlServer(wolverineConnectionString);
-            opts.Policies.UseDurableLocalQueues();
         });
 
         return services;

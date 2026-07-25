@@ -1,7 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TakOne.Domain.Sales.Entities;
-using TakOne.Domain.Sales.ValueObjects;
 
 namespace TakOne.Infrastructure.Persistence.Configurations;
 

@@ -10,6 +10,19 @@
 
 
 
+		<PackageReference Include="Ardalis.Specification" Version="9.3.1" />
+
+
+
+		<!--
+      FluentValidation itself must also be referenced explicitly. WolverineFx.FluentValidation
+      bundles it transitively, but transitive dependencies aren't surfaced to IntelliSense /
+      the compiler in all setups — so `using FluentValidation;` fails without this entry.
+    -->
+		<PackageReference Include="FluentValidation" Version="12.1.1" />
+
+
+
 		<!--
       Ardalis.Specification — the specification pattern base classes used by
       repository query methods (e.g. ISaleRepository.GetPaginatedBySpecificationAsync).
@@ -29,26 +42,8 @@
       The Infrastructure layer additionally pulls in `Ardalis.Specification.EntityFrameworkCore`
       for the SpecificationEvaluator that runs against EF CoreDbSets.
     -->
-		<PackageReference Include="Ardalis.Specification" Version="9.3.1" />
-
-
-
-		<!--
-      FluentValidation itself must also be referenced explicitly. WolverineFx.FluentValidation
-      bundles it transitively, but transitive dependencies aren't surfaced to IntelliSense /
-      the compiler in all setups — so `using FluentValidation;` fails without this entry.
-    -->
-		<PackageReference Include="FluentValidation" Version="12.1.1" />
-
-
-
-		<!--
-      FluentValidation.DependencyInjectionExtensions — provides AddValidatorsFromAssembly(...),
-      which we call in ServiceCollectionExtensions to register all AbstractValidator<T>
-      classes in this assembly. This is a separate NuGet from FluentValidation itself.
-    -->
 		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+
 
 
 
@@ -58,30 +53,46 @@
       to express IServiceCollection and IConfiguration parameter types.
       We use the .Abstractions variants (no implementation) because we
       don't build a ServiceProvider here — we only configure one.
-    -->
+		-->
+		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
 
 
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.10" />
+		<PackageReference Include="WolverineFx" Version="6.22.0" />
 
+
+		
 		<!--
-      Wolverine + FluentValidation integration. WolverineFx.SqlServer is the
-      SQL Server transport / message-store package used by the outbox; the
-      user already replaced the original (incorrect) WolverineFx.Postgresql
-      reference with this one on their side. The working copy here keeps
-      SqlServer as the canonical reference.
+      Wolverine + FluentValidation integration.
+
+      ONLY the engine-agnostic Wolverine packages are referenced here:
+        - WolverineFx — the bus, handler discovery, middleware, the
+          WolverineOptions configuration surface.
+        - WolverineFx.FluentValidation — wires FluentValidation validators
+          into the command pipeline.
+
+      Engine-specific packages (WolverineFx.SqlServer for the message store,
+      WolverineFx.EntityFrameworkCore for the transactional middleware + the
+      domain-event scraper) are referenced by TakOne.Infrastructure only.
+      This keeps the Application layer free of any concrete database-engine
+      or persistence-technology dependency — the application code is identical
+      whether the message store is SQL Server, Postgres, or in-memory, and
+      whether the persistence stack is EF Core or something else.
+
       Version pinning matches Wolverine's major release line.
     -->
-		<PackageReference Include="WolverineFx" Version="6.21.0" />
-		<PackageReference Include="WolverineFx.SqlServer" Version="6.21.0" />
+		<PackageReference Include="WolverineFx" Version="6.22.0" />
 
 
+		
 		<!--
       WolverineFx.FluentValidation wires FluentValidation validators into Wolverine's
       command pipeline so any AbstractValidator<TCommand> runs automatically before
       the handler. Version must match the WolverineFx version above.
     -->
-		<PackageReference Include="WolverineFx.FluentValidation" Version="6.21.0" />
+		<PackageReference Include="WolverineFx.FluentValidation" Version="6.22.0" />
 
 
 	</ItemGroup>

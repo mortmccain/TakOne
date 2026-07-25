@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Radzen.Blazor" Version="11.1.7" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
