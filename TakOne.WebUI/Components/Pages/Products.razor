@@ -1,0 +1,670 @@
+﻿@* Products.razor — Phase 3.1
+   Customer-facing product catalog at route `/Products`. All authenticated
+   users can browse here. Customers land here directly after login (per
+   roadmap Section 12.8). Staff users arrive here from the sidebar's
+   "Products" link.
+
+   LAYOUT:
+     1. Page header: title + (optional, staff-only) "Manage Products" link
+        to /Admin/Products.
+     2. Filter bar: search box + category dropdown + stock-status filter.
+     3. Product card grid: responsive (1 col mobile, 2 col tablet, 3-4 col
+        desktop) using RadzenRow + RadzenColumn. Each card shows picture
+        placeholder, name, price, stock badge, and a "View details" button.
+     4. Pager: simple prev/next + page count display.
+     5. Empty state when no products match the filters.
+
+   DATA LOADING:
+     - OnInitializedAsync: load the user's roles + active categories (for
+       the filter dropdown) + the first page of products.
+     - On filter/page change: re-call GetProductsPaginatedQuery via
+       Wolverine. Server-side paging (PageSize=12 — 4 cols × 3 rows on
+       desktop, scales down on mobile).
+     - Search is debounced via RadzenTextBox's `Change` EventCallback
+       (fires on Enter or blur, NOT on every keystroke — that would
+       hammer the bus).
+
+   CART INTEGRATION (DEFERRED):
+     The "Add to cart" button on each card is intentionally NOT in this
+     page. Per roadmap Section 12.4, the add-to-cart flow needs
+     `GetActiveDraftForUserAsync` on ISaleRepository (which doesn't exist
+     yet) plus a CreateOrAppendSale command wrapper. That infrastructure
+     lands with Phase 4.1 (Cart page). For Phase 3.1, the catalog is a
+     browse-and-discover surface — clicking a card navigates to
+     /Products/{Id} (Phase 3.2, also not built yet) for full details.
+
+   ROLE-AWARE BEHAVIOR:
+     - All authenticated users can browse.
+     - "Manage Products" link in header: staff only (Admin/Manager/Employee)
+       — hidden for Customer/ReadOnly per Section 12.1.
+     - Stock filter has 3 values: All / In Stock / Out of Stock. Applied
+       client-side on the loaded page (cheap — the page already has 12 items).
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<Products> (Loc).
+     Numbers (price, stock) are formatted with the current culture's
+     NumberFormatInfo — Persian shows Persian digits when the culture is
+     fa-IR (handled automatically by Blazor's @CultureInfo logic).
+
+   ANTIFORGERY:
+     Not needed here — no EditForm, no POST. Pure read-only browsing
+     surface (filter changes trigger a new GET via Wolverine query, not a
+     form POST). *@
+
+@page "/Products"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Products> Loc
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Product card — uniform height across the row so the grid looks
+                       tidy even when product names wrap to 2 lines. Hover effect gives
+                       affordance that the card is clickable. */
+            .product-card {
+                transition: transform 0.18s ease, box-shadow 0.18s ease;
+                cursor: pointer;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+
+                .product-card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18);
+                }
+
+            /* Picture placeholder — when the product has no PictureUrl, we show
+                       a Material icon centered on a neutral background. Same aspect
+                       ratio across cards keeps the grid tidy. */
+            .product-picture {
+                aspect-ratio: 1 / 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--rz-base-background-color);
+                border-bottom: 1px solid var(--rz-base-border-color);
+                overflow: hidden;
+            }
+
+                .product-picture img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+
+                .product-picture .rz-icon {
+                    font-size: 4rem;
+                    color: var(--rz-text-secondary-color);
+                }
+
+            /* Card body pushes the action button to the bottom via flex.
+                       Equal-height rows make the grid look clean. */
+            .product-card .rz-card-body {
+                display: flex;
+                flex-direction: column;
+                flex: 1;
+                gap: 0.5rem;
+            }
+
+            .product-name {
+                font-weight: 600;
+                font-size: 1rem;
+                line-height: 1.3;
+                /* Clamp to 2 lines so long names don't blow up the card */
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
+
+            .product-price {
+                font-size: 1.1rem;
+                font-weight: 700;
+                color: var(--rz-primary);
+            }
+
+            .product-stock {
+                font-size: 0.85rem;
+            }
+
+            .product-stock-low {
+                color: var(--rz-warning);
+            }
+
+            .product-stock-out {
+                color: var(--rz-danger);
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ──
+       Title + (staff-only) "Manage Products" link to /Admin/Products.
+       Per Section 12.7 (hide, don't disable), the link is wrapped in
+       AuthorizeView and simply absent for Customer/ReadOnly users. *@
+    <RadzenStack Orientation="Orientation.Horizontal"
+                 AlignItems="AlignItems.Center"
+                 JustifyContent="JustifyContent.SpaceBetween">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="inventory_2" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+            <RadzenButton Text="@Loc["ManageProductsButton"]"
+                          Icon="settings"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Click="@(() => Navigation.NavigateTo("/Admin/Products", forceLoad: false))" />
+        </AuthorizeView>
+    </RadzenStack>
+
+    @* ── Filter bar ──
+       Three controls in a row, wrap on mobile. Each control re-triggers
+       LoadProductsAsync() via its respective callback. *@
+    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
+        <RadzenStack Orientation="Orientation.Horizontal"
+                     AlignItems="AlignItems.End"
+                     JustifyContent="JustifyContent.SpaceBetween"
+                     Wrap="FlexWrap.Wrap"
+                     Gap="1rem">
+            @* Search box — fires OnSearch on Enter or blur (NOT every keystroke).
+               `@bind-Value` with the default binding event (onchange) updates
+               `_searchTerm` when the user presses Enter or leaves the field.
+               `@bind-Value:after` then fires our handler AFTER the value is
+               updated, so `LoadProductsAsync` sees the new value. This is the
+               Blazor 7+ idiomatic pattern for "react to a committed value
+               change" — much simpler than wiring `ValueChanged` + manual
+               state-assignment, and avoids firing on every keystroke. *@
+            <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
+                <RadzenTextBox @bind-Value="_searchTerm"
+                               @bind-Value:after="OnSearchChanged"
+                               Placeholder="@Loc["SearchPlaceholder"]"
+                               TValue="string" />
+            </RadzenFormField>
+
+            @* Category dropdown — populated from GetActiveCategoriesQuery.
+               "All categories" is the default (null selection).
+               NOTE on AllowClear: this is a real RadzenDropDown parameter
+               in v11.1.1 (verified via ERP reference SalesList.razor line 106). *@
+            <RadzenFormField Text="@Loc["CategoryLabel"]" Style="flex: 0 1 220px; min-width: 180px;">
+                <RadzenDropDown Value="_selectedCategoryId"
+                                Data="_categories"
+                                TValue="Guid?"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                AllowClear="true"
+                                Placeholder="@Loc["AllCategories"]"
+                                ValueChanged="@OnCategoryChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+
+            @* Stock-status filter — client-side filter on the loaded page.
+               Three options: All / In Stock / Out of Stock. We don't push
+               this to the backend (the GetProductsPaginatedQuery doesn't
+               accept it). Filtering happens in the @foreach projection. *@
+            <RadzenFormField Text="@Loc["StockLabel"]" Style="flex: 0 1 180px; min-width: 140px;">
+                <RadzenDropDown Value="_stockFilter"
+                                Data="_stockFilterOptions"
+                                TValue="StockFilter"
+                                TextProperty="Label"
+                                ValueProperty="Value"
+                                ValueChanged="@OnStockFilterChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+        </RadzenStack>
+    </RadzenCard>
+
+    @* ── Loading spinner ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["LoadingText"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error banner ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadProductsAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state ── *@
+    else if (_filteredProducts.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="search_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
+                <RadzenText Text="@Loc["EmptyMessage"]"
+                            Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                              Icon="filter_alt_off"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Click="@ClearFilters" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Product card grid ── *@
+    else
+    {
+        <RadzenRow Gap="1rem">
+            @foreach (var product in _filteredProducts)
+            {
+                <RadzenColumn Size="12" SizeMD="6" SizeLG="4" SizeXL="3">
+                    <RadzenCard class="product-card" Variant="Variant.Filled">
+                        @* Picture — if PictureUrl is null, show a placeholder icon.
+                           The whole card is clickable, so we navigate on click. *@
+                        <div class="product-picture" @onclick="@(() => GoToProductDetail(product.Id))">
+                            @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                            {
+                                <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                            }
+                            else
+                            {
+                                <RadzenIcon Icon="image" />
+                            }
+                        </div>
+
+                        <RadzenStack Gap="0.5rem" Style="flex: 1;">
+                            <div class="product-name" @onclick="@(() => GoToProductDetail(product.Id))">
+                                @product.Name
+                            </div>
+
+                            <div class="product-price">
+                                @FormatPrice(product.Price)
+                            </div>
+
+                            <div class="product-stock @GetStockClass(product.StockQuantity)">
+                                <RadzenIcon Icon="@GetStockIcon(product.StockQuantity)"
+                                            Style="font-size: 0.95rem; vertical-align: middle;" />
+                                <span style="vertical-align: middle; margin-left: 0.25rem;">
+                                    @GetStockLabel(product.StockQuantity)
+                                </span>
+                            </div>
+                        </RadzenStack>
+
+                        @* "View details" button — full-width, primary action.
+                           The whole card is also clickable, but a visible button
+                           gives better affordance for touch users (the card click
+                           target can be hard to discover on mobile). *@
+                        <RadzenButton Text="@Loc["ViewDetailsButton"]"
+                                      Icon="arrow_forward"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Variant="Variant.Outlined"
+                                      Click="@(() => GoToProductDetail(product.Id))"
+                                      Style="width: 100%; margin-top: 0.5rem;" />
+                    </RadzenCard>
+                </RadzenColumn>
+            }
+        </RadzenRow>
+
+        @* ── Pager ──
+           Manual pager (Prev / page numbers / Next) rather than RadzenDataPager
+           — RadzenDataPager IS a real Radzen component, but the ERP reference
+           project doesn't use it (they use RadzenDataGrid's built-in pager
+           for tables). For our card-grid catalog, a manual pager is simpler
+           and removes any API uncertainty. The pager operates on the
+           PaginatedResult metadata from the backend (true server-side paging). *@
+        @if (_totalCount > _pageSize)
+        {
+            <RadzenStack Orientation="Orientation.Horizontal"
+                         JustifyContent="JustifyContent.Center"
+                         AlignItems="AlignItems.Center"
+                         Gap="0.5rem"
+                         Wrap="FlexWrap.Wrap"
+                         Style="margin-top: 1rem;">
+                <RadzenButton Icon="chevron_left"
+                              Variant="Variant.Text"
+                              Disabled="@(_pageNumber <= 1)"
+                              Click="@(() => OnPageChanged(_pageNumber - 1))" />
+
+                @{
+                    var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
+                    var startPage = Math.Max(1, _pageNumber - 2);
+                    var endPage = Math.Min(totalPages, startPage + 4);
+                    if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
+                }
+
+                @for (var p = startPage; p <= endPage; p++)
+                {
+                    var page = p; // closure capture for the lambda
+                                  <RadzenButton Text="@(page.ToString())"
+                                                Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
+                                                ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
+                                                Disabled="@(_isLoading)"
+                                                Click="@(() => OnPageChanged(page))" />
+                }
+
+                <RadzenButton Icon="chevron_right"
+                              Variant="Variant.Text"
+                              Disabled="@(_pageNumber >= Math.Ceiling((double)_totalCount / _pageSize))"
+                              Click="@(() => OnPageChanged(_pageNumber + 1))" />
+
+                <RadzenText Text="@string.Format(CultureInfo.CurrentCulture, Loc["PageInfoFormat"], _pageNumber, totalPages, _totalCount)"
+                            TextStyle="TextStyle.Caption"
+                            Style="color: var(--rz-text-secondary-color); margin-left: 0.5rem;" />
+            </RadzenStack>
+        }
+    }
+</RadzenStack>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The full page of products returned by the backend (BEFORE the
+    /// client-side stock filter is applied). We keep this around so that
+    /// toggling the stock filter doesn't require a round-trip.
+    /// </summary>
+    private List<ProductListItemDto> _products = new();
+
+    /// <summary>
+    /// The products actually rendered — _products filtered by _stockFilter.
+    /// Computed once per render cycle.
+    /// </summary>
+    private List<ProductListItemDto> _filteredProducts => _stockFilter switch
+    {
+        StockFilter.InStock => _products.Where(p => p.StockQuantity > 0).ToList(),
+        StockFilter.OutOfStock => _products.Where(p => p.StockQuantity == 0).ToList(),
+        _ => _products
+    };
+
+    private List<CategoryDto> _categories = new();
+
+    /// <summary>
+    /// Filter state. All start empty/null (= "show everything").
+    /// </summary>
+    private string _searchTerm = string.Empty;
+    private Guid? _selectedCategoryId;
+    private StockFilter _stockFilter = StockFilter.All;
+
+    /// <summary>
+    /// Pager state. _pageSize=12 gives 4×3 on desktop, 2×6 on tablet,
+    /// 1×12 on mobile — all clean layouts with the RadzenColumn sizes
+    /// declared in the markup.
+    /// </summary>
+    private const int _pageSize = 12;
+    private int _pageNumber = 1;
+    private int _totalCount;
+
+    /// <summary>
+    /// Loading/error state.
+    /// </summary>
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// The dropdown options for the stock-status filter. Built once on init.
+    /// Each entry is (Value, Label) — the Label is localized at render time
+    /// so the dropdown reflects the current culture.
+    /// </summary>
+    private List<StockFilterOption> _stockFilterOptions = new();
+
+    /// <summary>
+    /// Simple DTO for the dropdown options. Using a class (not a tuple)
+    /// because RadzenDropDown's TextProperty/ValueProperty use reflection.
+    /// </summary>
+    private sealed class StockFilterOption
+    {
+        public StockFilter Value { get; init; }
+        public string Label { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// The stock-status filter values.
+    /// </summary>
+    private enum StockFilter
+    {
+        All,
+        InStock,
+        OutOfStock
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Build the stock-filter dropdown options. The labels are localized
+        // at this point — they won't update if the user switches language
+        // mid-session, but that's an acceptable tradeoff (the culture switch
+        // force-loads the page, which re-runs OnInitializedAsync anyway).
+        _stockFilterOptions = new List<StockFilterOption>
+        {
+            new() { Value = StockFilter.All, Label = Loc["StockAll"] },
+            new() { Value = StockFilter.InStock, Label = Loc["StockInStock"] },
+            new() { Value = StockFilter.OutOfStock, Label = Loc["StockOutOfStock"] }
+        };
+
+        // Read the ?category=... query param if present (e.g. when the user
+        // navigates here from the Categories tree page in a future phase).
+        // We use NavigationManager.Uri + System.Web.HttpUtility to parse
+        // — Blazor's [SupplyParameterFromQuery] only works on component
+        // parameters, and we'd rather not pollute the parameter surface
+        // for a one-shot optional seed.
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (System.Web.HttpUtility.ParseQueryString(uri.Query)["category"] is { } catIdStr
+            && Guid.TryParse(catIdStr, out var catId))
+        {
+            _selectedCategoryId = catId;
+        }
+
+        try
+        {
+            // Load categories + first page of products in parallel. The two
+            // queries are independent — running them concurrently saves a
+            // round-trip on initial page load.
+            await Task.WhenAll(
+                LoadCategoriesAsync(),
+                LoadProductsAsync());
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+            // Non-fatal: if categories fail to load, the dropdown will just
+            // be empty. The user can still browse all products.
+        }
+        catch (Exception)
+        {
+            // Swallow — categories are an optional filter, not the main content.
+            // If they don't load, the user can still search + browse.
+        }
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = _pageSize,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                CategoryId = _selectedCategoryId
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+            _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // If the page is now empty (e.g. user filtered down to nothing),
+            // bump the page number back to 1 and retry. Common case: user
+            // was on page 5, then applied a filter that only has 2 pages —
+            // we don't want to leave them stranded on an empty page 5.
+            if (_products.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = 1;
+                await LoadProductsAsync();
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Filter change handlers ──────────────────────────────────────────
+
+    private async Task OnSearchChanged()
+    {
+        // `_searchTerm` has already been updated by @bind-Value before this
+        // handler fires (that's what :after means). We just need to reset
+        // the page and re-load.
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    private async Task OnCategoryChanged(Guid? categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    private Task OnStockFilterChanged(StockFilter filter)
+    {
+        // Stock filter is CLIENT-SIDE — no backend call needed. We just
+        // update the state and let the @foreach projection re-compute.
+        _stockFilter = filter;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _pageNumber = newPage;
+        await LoadProductsAsync();
+    }
+
+    private async Task ClearFilters()
+    {
+        _searchTerm = string.Empty;
+        _selectedCategoryId = null;
+        _stockFilter = StockFilter.All;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+
+    private void GoToProductDetail(Guid productId)
+    {
+        // Phase 3.2 will build /Products/{Id}. For now, navigating there
+        // will 404 — but the route is reserved and the URL is meaningful
+        // (users can copy/paste it). Once 3.2 lands, this just works.
+        Navigation.NavigateTo($"/Products/{productId}", forceLoad: false);
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Persian culture shows Persian digits + RTL; English shows
+    /// Latin digits + LTR. The currency code is shown as-is (e.g. "IRR"
+    /// or "USD") — we don't localize the currency symbol because TakOne
+    /// hasn't decided on the currency yet (roadmap open question #2).
+    /// </summary>
+    private static string FormatPrice(MoneyDto price)
+    {
+        if (price is null) return "—";
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+    }
+
+    /// <summary>
+    /// Returns "out", "low", or "" based on stock level. Used by the
+    /// CSS class on the stock indicator to color it (red/orange/default).
+    /// Threshold for "low" is 10 units — configurable here in one place
+    /// if we want to tune it later.
+    /// </summary>
+    private static string GetStockClass(int stock)
+    {
+        if (stock == 0) return "product-stock-out";
+        if (stock <= 10) return "product-stock-low";
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Returns a Material icon name for the stock indicator.
+    /// - In stock → "check_circle" (green-ish via CSS class)
+    /// - Low stock → "warning" (orange)
+    /// - Out of stock → "cancel" (red)
+    /// </summary>
+    private static string GetStockIcon(int stock)
+    {
+        if (stock == 0) return "cancel";
+        if (stock <= 10) return "warning";
+        return "check_circle";
+    }
+
+    /// <summary>
+    /// Returns a localized stock label: "In stock (N)", "Low stock (N)",
+    /// or "Out of stock". Uses Loc[] so the strings come from the resx
+    /// files. The number is interpolated with the current culture's
+    /// digit formatting (Persian digits in fa-IR, Latin in en-US).
+    /// </summary>
+    private string GetStockLabel(int stock)
+    {
+        if (stock == 0) return Loc["StockOut"];
+        if (stock <= 10) return string.Format(CultureInfo.CurrentCulture, Loc["StockLowFormat"], stock);
+        return string.Format(CultureInfo.CurrentCulture, Loc["StockInFormat"], stock);
+    }
+}

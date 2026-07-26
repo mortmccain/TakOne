@@ -132,6 +132,20 @@ app.MapHub<NotificationHub>("/notificationHub");
 // the design rationale (static method vs IHostedService vs EF HasData).
 await RoleSeeder.EnsureRolesCreatedAsync(app.Services);
 
+// Default admin seeding — creates a single bootstrap Admin user IF (and
+// only if) no user currently holds the Admin role. Breaks the
+// chicken-and-egg: you can't log in to create the first admin because the
+// user-management page is locked to Admin/Manager. After this runs once,
+// you have a known login to bootstrap the rest of the system from.
+//
+// Default credentials are logged at WARNING level on first creation and
+// are documented in DefaultAdminSeeder.cs. CHANGE THE PASSWORD after
+// first login.
+//
+// Idempotent: GetUsersInRoleAsync("Admin") non-empty → no-op. Safe to
+// leave wired in for every startup.
+await DefaultAdminSeeder.EnsureDefaultAdminAsync(app.Services);
+
 // ==================================================================================================================================
 //                                                          RUN
 // ==================================================================================================================================
