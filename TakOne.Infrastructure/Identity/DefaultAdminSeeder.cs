@@ -33,7 +33,7 @@ namespace TakOne.Infrastructure.Identity;
 /// DEFAULT CREDENTIALS:
 ///   WorkerId (login): <c>ADMIN-0001</c>
 ///   Email:            <c>admin@takone.local</c>
-///   Password:         <c>Admin@12345</c>
+    ///   Password:         <c>MarkMccain2323!</c>
 ///
 ///   The password meets Identity's default complexity rules (8+ chars,
 ///   upper + lower + digit + non-alphanumeric, 4+ unique chars). The email

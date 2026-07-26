@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Radzen;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
@@ -24,7 +25,42 @@ var builder = WebApplication.CreateBuilder(args);
 // Identity options, cookie config) lives in AddTakOneInfrastructure per
 // Concern F in the roadmap. The WebUI's Program.cs stays clean.
 builder.Services.AddTakOneApplication(builder.Configuration);
-builder.Services.AddTakOneInfrastructure(builder.Configuration);
+builder.Services.AddTakOneInfrastructure(builder.Configuration, builder.Environment);
+
+// --- Data Protection key persistence (CRITICAL for dev cookie survival) ---
+//
+// Without explicit key persistence, ASP.NET Core Data Protection uses an
+// EPHEMERAL key store that changes on every app restart. The auth cookie
+// (and antiforgery tokens) are encrypted with these keys.
+//
+// SYMPTOM of missing persistence:
+//   1. User logs in → cookie set, encrypted with key K1
+//   2. App restarts (rebuild, code change, Hot Reload boundary, etc.)
+//      → new key K2 generated, K1 discarded
+//   3. Browser sends old cookie (encrypted with K1) → server tries to
+//      decrypt with K2 → fails silently → user appears logged out
+//   4. Cookie middleware redirects to /Account/Login with the
+//      "LoginRequired" info banner — looks like "login failed with
+//      no error"
+//
+// In production, this is solved by PersistKeysToDbContext<T>() or
+// PersistKeysToFileSystem(new DirectoryInfo("\\\\server\\share\\keys"))
+// pointing to a shared, replicated location. For dev, we use a local
+// folder under the user profile so keys survive across restarts.
+//
+// SetApplicationName is REQUIRED when multiple apps share a key ring —
+// and even with a single app it makes the key discriminator stable
+// across rebuilds (otherwise the app's "default" discriminator can shift
+// if the entry-assembly name changes during refactoring).
+//
+// PRODUCTION HARDENING (future):
+//   Replace PersistKeysToFileSystem with PersistKeysToDbContext<DataProtectionKeyDbContext>()
+//   (or a dedicated schema in ApplicationDbContext) so all web nodes share
+//   the same key ring in SQL Server.
+builder.Services.AddDataProtection()
+    .SetApplicationName("TakOne")
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(builder.Environment.ContentRootPath, ".dataprotection-keys")));
 
 // --- Wolverine host (empty lambda) ---
 // Per roadmap concern: Wolverine options are already fully configured inside

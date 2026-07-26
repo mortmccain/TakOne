@@ -47,11 +47,13 @@
 @using TakOne.Infrastructure.Identity
 @using TakOne.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Logging
 @inject SignInManager<ApplicationUser> SignInManager
 @inject UserManager<ApplicationUser> UserManager
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Login> Loc
+@inject ILogger<Login> LoginLogger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -256,11 +258,17 @@
         _isSubmitting = true;
         _errorMessage = string.Empty;
 
+        // ─── DIAGNOSTIC LOGGING (temporary — remove once login is stable) ───
+        LoginLogger.LogWarning(
+            "DIAG Login: HandleLoginAsync STARTED. WorkerId='{WorkerId}', PasswordLength={PwdLen}",
+            model.WorkerId, model.Password?.Length ?? -1);
+
         try
         {
             var httpContext = HttpContextAccessor.HttpContext;
             if (httpContext is null)
             {
+                LoginLogger.LogError("DIAG Login: HttpContext is NULL — cannot proceed.");
                 _errorMessage = Loc["Error_NoHttpContext"];
                 return;
             }
@@ -283,8 +291,17 @@
             //     attacker enumerate valid WorkerIds.
             // --------------------------------------------------------------
             var appUser = await UserManager.FindByNameAsync(model.WorkerId);
+            LoginLogger.LogWarning(
+                "DIAG Login: FindByNameAsync('{WorkerId}') → {Found}. IsActive={IsActive}, EmailConfirmed={EmailConfirmed}, LockoutEnd={LockoutEnd}, AccessFailedCount={AccessFailed}",
+                model.WorkerId,
+                appUser is not null ? "FOUND" : "NULL",
+                appUser?.IsActive,
+                appUser?.EmailConfirmed,
+                appUser?.LockoutEnd,
+                appUser?.AccessFailedCount);
             if (appUser is null || !appUser.IsActive)
             {
+                LoginLogger.LogError("DIAG Login: pre-check failed (user not found OR inactive). Returning InvalidCredentials.");
                 _errorMessage = Loc["Error_InvalidCredentials"];
                 return;
             }
@@ -297,6 +314,10 @@
             var domainUser = await db.DomainUsers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == appUser.Id);
+            LoginLogger.LogWarning(
+                "DIAG Login: DomainUser lookup → {Found}, FullName='{Name}'",
+                domainUser is not null ? "FOUND" : "NULL",
+                domainUser?.FullName);
 
             // --------------------------------------------------------------
             // 1b. Validate credentials via SignInManager.
@@ -316,6 +337,10 @@
                 isPersistent: false,        // session cookie — closes with browser
                 lockoutOnFailure: true);    // honor lockout policy on bad password
 
+            LoginLogger.LogWarning(
+                "DIAG Login: PasswordSignInAsync → Succeeded={Succeeded}, IsLockedOut={Locked}, IsNotAllowed={NotAllowed}, Requires2FA={TwoFA}",
+                result.Succeeded, result.IsLockedOut, result.IsNotAllowed, result.RequiresTwoFactor);
+
             if (!result.Succeeded)
             {
                 // Map Identity's SignInResult to a user-friendly message.
@@ -324,6 +349,7 @@
                 // to prevent username enumeration.
                 if (result.IsLockedOut)
                 {
+                    LoginLogger.LogError("DIAG Login: branch = LOCKED_OUT.");
                     _errorMessage = Loc["Error_LockedOut"];
                 }
                 else if (result.IsNotAllowed)
@@ -333,19 +359,24 @@
                     // RequireConfirmedAccount=false (our config), this
                     // branch is unlikely to fire — but we handle it
                     // defensively in case someone tightens the config.
+                    LoginLogger.LogError("DIAG Login: branch = NOT_ALLOWED (likely EmailConfirmed=false).");
                     _errorMessage = Loc["Error_NotAllowed"];
                 }
                 else if (result.RequiresTwoFactor)
                 {
                     // 2FA not implemented in v1 (roadmap Section 11).
+                    LoginLogger.LogError("DIAG Login: branch = REQUIRES_2FA (not supported).");
                     _errorMessage = Loc["Error_TwoFactorNotSupported"];
                 }
                 else
                 {
+                    LoginLogger.LogError("DIAG Login: branch = INVALID_CREDENTIALS (wrong password OR user not found).");
                     _errorMessage = Loc["Error_InvalidCredentials"];
                 }
                 return;
             }
+
+            LoginLogger.LogWarning("DIAG Login: PasswordSignInAsync SUCCEEDED — auth cookie should be on the response.");
 
             // --------------------------------------------------------------
             // 2. Login succeeded. Now enrich the principal with our
@@ -381,6 +412,8 @@
                 new AuthenticationProperties { IsPersistent = false },
                 extraClaims);
 
+            LoginLogger.LogWarning("DIAG Login: SignInWithClaimsAsync completed — enriched cookie should now be on the response.");
+
             // --------------------------------------------------------------
             // 3. Role-aware redirect.
             //
@@ -406,12 +439,15 @@
                 ? returnUrl
                 : GetRoleAwareLandingUrl(principalForRedirect);
 
+            LoginLogger.LogWarning("DIAG Login: NavigateTo target='{Target}', forceLoad=true.", target);
             Navigation.NavigateTo(target, forceLoad: true);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Defensive: any unexpected error → generic message. Don't
             // leak exception details to the user.
+            LoginLogger.LogError(ex, "DIAG Login: EXCEPTION thrown in HandleLoginAsync. Type={Type}, Message={Message}",
+                ex.GetType().Name, ex.Message);
             _errorMessage = Loc["Error_Unexpected"];
         }
         finally

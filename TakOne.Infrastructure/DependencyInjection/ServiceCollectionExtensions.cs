@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Configuration;
 using TakOne.Infrastructure.Identity;
@@ -110,17 +112,17 @@ public static class ServiceCollectionExtensions
     /// The modified <see cref="IServiceCollection"/> (so callers can chain
     /// further DI calls if they wish).
     /// </returns>
-    public static IServiceCollection AddTakOneInfrastructure
-        (
+    public static IServiceCollection AddTakOneInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration
-        )
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment)
     {
         // ------------------------------------------------------------------
         // 0. Argument guards.
         // ------------------------------------------------------------------
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(hostEnvironment);
 
         // ------------------------------------------------------------------
         // 1. Bind TakOneDatabaseOptions from configuration.
@@ -135,8 +137,8 @@ public static class ServiceCollectionExtensions
         //    startup with a clear message, not at first request with an
         //    opaque SqlException.
         // ------------------------------------------------------------------
-        services.Configure<TakOneDatabaseOptions>
-            (configuration.GetSection(TakOneDatabaseOptions.SectionName));
+        services.Configure<TakOneDatabaseOptions>(
+            configuration.GetSection(TakOneDatabaseOptions.SectionName));
 
         // Read the connection string NOW (at startup) for the DbContext
         // registration AND the Wolverine message store below. We can't use
@@ -190,8 +192,7 @@ public static class ServiceCollectionExtensions
         //    transaction commits, and publishes them through the enrolled
         //    outbox. No custom interceptor needed.
         // ------------------------------------------------------------------
-        services.AddDbContext<ApplicationDbContext>
-            (
+        services.AddDbContext<ApplicationDbContext>(
             (serviceProvider, options) =>
             {
                 // Resolve the bound options to get the connection string.
@@ -254,9 +255,7 @@ public static class ServiceCollectionExtensions
         // ------------------------------------------------------------------
         var identitySection = configuration.GetSection("TakOne:Identity");
 
-        services.AddIdentity<ApplicationUser, IdentityRole<Guid>>
-            (
-            options =>
+        services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
         {
             // Bind each subsection from appsettings.json. If a section
             // is missing in appsettings, the Identity defaults remain
@@ -265,8 +264,7 @@ public static class ServiceCollectionExtensions
             identitySection.GetSection("Lockout").Bind(options.Lockout);
             identitySection.GetSection("User").Bind(options.User);
             identitySection.GetSection("SignIn").Bind(options.SignIn);
-        }
-            )
+        })
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
 
@@ -331,13 +329,30 @@ public static class ServiceCollectionExtensions
             .GetSection("TakOne:Auth:CookieSlidingExpiration")
             .Get<bool?>() ?? true; // safe default
 
-        services.ConfigureApplicationCookie
-            (
-            options =>
+        services.ConfigureApplicationCookie(options =>
         {
             options.Cookie.Name = "TakOne.Auth";
             options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+
+            // SecurePolicy: Always in production (HTTPS-only), SameAsRequest
+            // in Development so the cookie works over HTTP when the dev
+            // HTTPS cert isn't trusted (common on first-run dev machines).
+            //
+            // SYMPTOM if this is Always in dev and the developer hits the
+            // app over HTTP: login POST succeeds, cookie is Set on the
+            // response with the Secure flag, but the browser refuses to
+            // send it back on the next (HTTP) request. The user is
+            // immediately redirected back to /Account/Login with the
+            // info-style "LoginRequired" banner — looks like "login failed
+            // with no error".
+            //
+            // We capture hostEnvironment at registration time (passed in
+            // from Program.cs). Production keeps SecurePolicy.Always
+            // (hardened).
+            options.Cookie.SecurePolicy = hostEnvironment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+
             options.Cookie.SameSite = SameSiteMode.Strict;
 
             options.ExpireTimeSpan = TimeSpan.FromHours(cookieExpiryHours);
@@ -354,8 +369,7 @@ public static class ServiceCollectionExtensions
             // RedirectToLogin.razor component's existing
             // `?returnUrl=...` query string matches.
             options.ReturnUrlParameter = "returnUrl";
-        }
-            );
+        });
 
         // ------------------------------------------------------------------
         // 4. Repository registrations.
@@ -488,10 +502,30 @@ public static class ServiceCollectionExtensions
         //      https://wolverinefx.net/guide/durability/efcore/transactional-middleware
         //      https://wolverinefx.net/guide/durability/efcore/domain-events
         // ------------------------------------------------------------------
-        services.Configure<WolverineOptions>
-            (
-            opts =>
+        services.Configure<WolverineOptions>(opts =>
         {
+            // (0) Runtime code generation — Wolverine 6.x removed the Roslyn
+            //     runtime compiler from core WolverineFx and split it into the
+            //     WolverineFx.RuntimeCompilation NuGet package. Without this
+            //     call (or the package's auto-registration), Wolverine throws
+            //     at startup:
+            //       "Wolverine is running in TypeLoadMode.Dynamic, which
+            //        compiles handler/middleware code at runtime, but no
+            //        IAssemblyGenerator (Roslyn) is registered."
+            //
+            //     TypeLoadMode.Dynamic is Wolverine's default in 6.x, so we
+            //     don't set it explicitly — we just enable the runtime
+            //     compiler that Dynamic mode requires.
+            //
+            //     PRODUCTION HARDENING (future):
+            //       For production, remove this call AND the
+            //       WolverineFx.RuntimeCompilation package, then pre-generate
+            //       handler/middleware code with `dotnet run -- codegen write`
+            //       and set opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Static.
+            //       That removes the Roslyn runtime dependency (~10 MB) and
+            //       speeds up startup. See https://wolverinefx.net/guide/codegen.html.
+            opts.UseRuntimeCompilation();
+
             // (a) SQL Server message store — durably persists outgoing
             //     messages until processed. Uses the same connection string
             //     as ApplicationDbContext (captured from the local
@@ -529,8 +563,7 @@ public static class ServiceCollectionExtensions
             //     overload accepts any delegate returning IEnumerable<TEvent>.)
             opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>(
                 agg => agg.DomainEvents);
-        }
-            );
+        });
 
         return services;
     }
