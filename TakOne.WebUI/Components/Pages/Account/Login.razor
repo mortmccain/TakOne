@@ -102,74 +102,38 @@
        validates the token, then Blazor's form binder populates FormModel
        from the posted fields, then OnValidSubmit fires.
     *@
-    <EditForm Model="@FormModel" OnValidSubmit="@HandleLoginAsync" FormName="loginForm">
+    <EditForm Model="@FormModel"
+              OnValidSubmit="@HandleLoginAsync"
+              FormName="loginForm"
+              Method="post"
+              Enhance="false">
+        @* ↑ Enhance="false" is the CRITICAL fix. It tells blazor.web.js
+         NOT to intercept this form's submit with enhanced navigation.
+         The browser does a normal full-page POST, the antiforgery
+         token is consumed cleanly, and the cookie set by
+         PasswordSignInAsync takes effect on the redirect response. *@
+
         <DataAnnotationsValidator />
 
+        @* NOTE: Do NOT add <AntiforgeryToken /> here — EditForm auto-injects
+       one internally. Adding a second one causes the server to reject
+       the POST with 400 "duplicate antiforgery token". *@
+
         <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
-            @* NOTE on `autofocus` + `FormModel!` null-forgiving:
-               1) `RadzenTextBox` has NO `AutoFocus` parameter in
-                  Radzen.Blazor v11.1.1 — verified via the official API
-                  page (https://blazor.radzen.com/docs/api/Radzen.Blazor.RadzenTextBox),
-                  which lists only AutoComplete / AutoCompleteAttribute /
-                  AutoCompleteType / AutoFilter as `Auto*` properties.
-                  An earlier draft wrote `AutoFocus="true"` (PascalCase),
-                  thinking it was the inherited `RadzenComponent.AutoFocus`
-                  bool parameter — that parameter doesn't exist either.
-                  Blazor therefore treated `AutoFocus="true"` as an
-                  unmatched attribute, splatted it through `AdditionalAttributes`
-                  onto the rendered `<input>` as `autofocus="true"`, and
-                  the HTML analyzer flagged it: "'true' is not a valid
-                  value of attribute 'autofocus'."
 
-                  WHY NOT use the canonical Radzen autofocus pattern
-                  (`@ref` + `FocusAsync()` in `OnAfterRenderAsync`)?
-                  Because this Login.razor is a STATIC-SSR page, not a
-                  Blazor interactive circuit (see the file-level doc
-                  comment — the auth cookie must be set on the HTTP
-                  response before the page returns, which requires static
-                  SSR). `OnAfterRenderAsync(firstRender)` does NOT fire on
-                  static SSR pages, so the `FocusAsync()` JS-interop call
-                  has nowhere to run. The only way to autofocus on static
-                  SSR is to emit the HTML `autofocus` attribute directly.
-
-                  THE FIX: write `autofocus` as a BARE boolean attribute
-                  (no `="true"`). Per HTML5 spec, boolean attributes are
-                  written either bare (`autofocus`) or with their own name
-                  as value (`autofocus="autofocus"`) — never `="true"`.
-                  Radzen captures the unmatched `autofocus` attribute via
-                  `RadzenComponent.AdditionalAttributes` and renders it
-                  onto the underlying `<input>`, where the browser
-                  interprets its presence as `true`. The Blazor HTML
-                  analyzer accepts the bare form without complaint.
-
-               2) `FormModel` is `LoginModel?` (must be nullable so
-                  [SupplyParameterFromForm] can leave it null on the
-                  initial GET). `OnInitialized` does
-                  `FormModel ??= new LoginModel();`, but the compiler's
-                  nullable analysis can't prove non-nullness across method
-                  boundaries — so each `@bind-Value="FormModel.X"` raises
-                  CS8602 "Dereference of a possibly null reference." The
-                  null-forgiving operator `!` is a compile-time-only
-                  annotation (emits no IL, doesn't change runtime
-                  semantics) that suppresses the warning. We know it's
-                  safe here because OnInitialized runs before the markup
-                  is first rendered. *@
             <RadzenFormField Text="@Loc["WorkerIdLabel"]">
                 <RadzenTextBox @bind-Value="FormModel!.WorkerId"
+                               Name="FormModel.WorkerId"
                                Placeholder="@Loc["WorkerIdPlaceholder"]"
                                autofocus />
             </RadzenFormField>
 
             <RadzenFormField Text="@Loc["PasswordLabel"]">
                 <RadzenPassword @bind-Value="FormModel!.Password"
+                                Name="FormModel.Password"
                                 Placeholder="@Loc["PasswordPlaceholder"]" />
             </RadzenFormField>
 
-            @* "Forgot password?" link — below the password field, above the
-               submit button (conventional placement in B2B login forms).
-               Uses RadzenLink with the lock_reset Material icon. The link
-               is a plain anchor (no JS) — it just navigates to the static
-               SSR ForgotPassword page. *@
             <RadzenStack Orientation="Orientation.Horizontal"
                          JustifyContent="JustifyContent.End"
                          Style="margin-top: -0.25rem;">
@@ -210,7 +174,7 @@
     /// a fresh instance. On POST, Blazor populates it from the posted
     /// fields before OnValidSubmit fires.
     /// </summary>
-    [SupplyParameterFromForm]
+    [SupplyParameterFromForm(FormName = "loginForm")]
     private LoginModel? FormModel { get; set; }
 
     private string _errorMessage = string.Empty;
