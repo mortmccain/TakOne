@@ -65,7 +65,7 @@ public static class DefaultAdminSeeder
     /// The default admin's initial password. MEETS Identity's default
     /// complexity rules. CHANGE THIS AFTER FIRST LOGIN.
     /// </summary>
-    public const string DefaultPassword = "Admin@12345";
+    public const string DefaultPassword = "MarkMccain2323!";
 
     /// <summary>
     /// Creates the default admin user if no Admin role users exist.

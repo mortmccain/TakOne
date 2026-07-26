@@ -64,6 +64,30 @@ builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
 builder.Services.AddScoped<ToastService>();
 
 // --- Localization (Persian default + English secondary, see roadmap Section 5) ---
+//
+// AddLocalization() registers IStringLocalizer<T> and IStringLocalizerFactory
+// as scoped services. WITHOUT this call, [Inject] IStringLocalizer<MyComponent>
+// in any .razor file throws at render time:
+//   "Cannot provide a value for property 'Localizer' on type '...'.
+//    There is no registered service of type
+//    'IStringLocalizer`1[...]'."
+//
+// This is a separate registration from BOTH:
+//   - Configure<RequestLocalizationOptions>(...) below — only tunes the
+//     options object the middleware reads (default culture, supported list).
+//   - app.UseRequestLocalization() in the pipeline — only sets
+//     CultureInfo.CurrentCulture / CurrentUICulture per request from
+//     the cookie/accept-header.
+// Neither of those two alone registers IStringLocalizer<T> services.
+//
+// Type-to-resource mapping is by convention: IStringLocalizer<LoginLayout>
+// looks for Resources/Components/Layout/LoginLayout.{culture}.resx (and the
+// same path co-located next to the .razor file). Our .resx files are
+// co-located (e.g. Components/Layout/LoginLayout.fa-IR.resx), which is the
+// pattern ASP.NET Core's default ResourceManagerStringLocalizerFactory picks
+// up automatically — no custom IStringLocalizerFactory needed.
+builder.Services.AddLocalization();
+
 var supportedCultures = builder.Configuration
     .GetSection("TakOne:Localization:SupportedCultures")
     .Get<string[]>() ?? new[] { "fa-IR", "en-US" };

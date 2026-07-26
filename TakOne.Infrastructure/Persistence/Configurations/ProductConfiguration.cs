@@ -120,6 +120,18 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         // The domain never reads or writes this shadow Id — it's purely an
         // EF/SQL requirement. From the domain's perspective, the value
         // object's identity is (GroupName, Limit).
+        //
+        // WHY NO HasOne/HasMany here:
+        //   OwnsMany ALREADY declares the relationship: it creates a shadow
+        //   `ProductId` FK column, sets cascade delete, and marks the entity
+        //   as owned. Calling `HasOne<Product>().WithMany().HasForeignKey(...)`
+        //   ON TOP of OwnsMany re-declares the relationship as a non-ownership
+        //   navigation, which EF rejects with:
+        //     "The navigation 'PurchaseLimits' cannot be changed, because the
+        //      foreign key between 'Product' and 'CustomerGroupPurchaseLimit'
+        //      is an ownership. To change the navigation to the owned entity
+        //      type remove the ownership."
+        //   We rely purely on OwnsMany's implicit ownership + cascade.
         // ------------------------------------------------------------------
         builder.OwnsMany(p => p.PurchaseLimits, limit =>
         {
@@ -134,14 +146,9 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 
             limit.HasKey("Id");
 
-            // Foreign key back to the owning Product. Cascade delete so that
-            // deleting a Product also deletes its purchase limits (they have
-            // no meaning without the parent Product).
-            limit.HasOne<Product>()
-                .WithMany()
-                .HasForeignKey("ProductId")
-                .OnDelete(DeleteBehavior.Cascade)
-                .IsRequired();
+            // NOTE: the ProductId shadow FK column + cascade-delete behavior
+            // are AUTOMATICALLY set up by OwnsMany. Do NOT add a HasOne here
+            // — see the block comment above for the rationale.
 
             limit.Property(l => l.GroupName).HasMaxLength(100).IsRequired();
             limit.Property(l => l.Limit).IsRequired();
@@ -150,6 +157,9 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             // The domain's SetPurchaseLimit method enforces this in-memory
             // (it removes the existing limit before adding the new one), but
             // the DB index is the authoritative guard against races.
+            //
+            // "ProductId" here is a string referring to the shadow FK property
+            // that OwnsMany created. EF resolves it by name.
             limit.HasIndex("ProductId", nameof(CustomerGroupPurchaseLimit.GroupName))
                 .IsUnique();
         });

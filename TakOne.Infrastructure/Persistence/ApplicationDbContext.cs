@@ -6,6 +6,7 @@ using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Users;
 using TakOne.Infrastructure.Identity;
+using TakOne.SharedKernel.Common;
 
 namespace TakOne.Infrastructure.Persistence;
 
@@ -124,12 +125,37 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
         // defaults if we ever need to.
         base.OnModelCreating(modelBuilder);
 
+        // ------------------------------------------------------------------
+        // Domain Events are NOT persisted — they're in-memory only.
+        //
+        // AggregateRoot exposes `public IReadOnlyCollection<BaseDomainEvent>
+        // DomainEvents`. EF Core's navigation discovery sees this typed
+        // collection and tries to map BaseDomainEvent (and every derived
+        // event type) as an entity. BaseDomainEvent has no Id property,
+        // so EF throws "requires a primary key to be defined" at
+        // design-time (e.g. `dotnet ef migrations add`).
+        //
+        // We don't want domain events in the DB at all. They're scraped
+        // from the aggregate by Wolverine's
+        // `PublishDomainEventsFromEntityFrameworkCore<AggregateRoot,
+        // BaseDomainEvent>(agg => agg.DomainEvents)` extension in
+        // ServiceCollectionExtensions, then dispatched as MediatR
+        // notifications, then cleared from the aggregate.
+        //
+        // `Ignore<BaseDomainEvent>()` removes it from the model
+        // discovery graph entirely — and because derived types are only
+        // discovered through their base, this also covers
+        // SaleCreatedDomainEvent, SaleApprovedDomainEvent,
+        // CategoryCreatedDomainEvent, etc. No per-event Ignore needed.
+        // ------------------------------------------------------------------
+        modelBuilder.Ignore<BaseDomainEvent>();
+
         // Apply all IEntityTypeConfiguration<T> classes in this assembly.
         // This is the modern alternative to manually calling
         // `modelBuilder.Entity<Category>().HasKey(...)` etc. — each entity's
         // mapping lives in its own file, which is easier to read, test, and
         // maintain.
-        modelBuilder.ApplyConfigurationsFromAssembly
-            (typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(ApplicationDbContext).Assembly);
     }
 }

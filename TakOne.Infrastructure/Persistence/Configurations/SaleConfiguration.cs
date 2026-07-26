@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TakOne.Domain.Sales.Entities;
+using TakOne.Domain.Sales.ValueObjects;
 
 namespace TakOne.Infrastructure.Persistence.Configurations;
 
@@ -17,7 +18,6 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   - CustomerName          (nvarchar(200), NOT NULL)      — snapshot at sale time
 ///   - CreatedByUserId       (uniqueidentifier, NOT NULL)   — cross-aggregate ref to User
 ///   - CreatedByName         (nvarchar(200), NOT NULL)      — snapshot at sale time
-///   - SubmittedByUserId     (uniqueidentifier, NOT NULL, default 0x00)
 ///   - ApprovedByUserId      (uniqueidentifier, NOT NULL, default 0x00)
 ///   - InvoicedByUserId      (uniqueidentifier, NOT NULL, default 0x00)
 ///   - CancelledByUserId     (uniqueidentifier, NOT NULL, default 0x00)
@@ -46,8 +46,8 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   fails with a unique-constraint violation, and the handler can retry).
 ///
 /// CROSS-AGGREGATE REFERENCES — NO FKs:
-///   CustomerId, CreatedByUserId, SubmittedByUserId, ApprovedByUserId,
-///   InvoicedByUserId, CancelledByUserId all reference the User aggregate.
+///   CustomerId, CreatedByUserId, ApprovedByUserId, InvoicedByUserId,
+///   CancelledByUserId all reference the User aggregate.
 ///   They're indexed for query performance but have NO DB-level FK
 ///   constraints (same strict-DDD reasoning as ProductConfiguration).
 ///
@@ -70,7 +70,13 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // Owned value object: SaleNumber
         //
         // Flattened into Sales table. `Value` is computed-on-access from
-        // Year + Sequence (see SaleNumber.cs), so we don't store it.
+        // Year + Sequence + Prefix (see SaleNumber.cs) — we ignore it so EF
+        // doesn't try to map (and write to) the read-only expression-bodied
+        // property. `Prefix` is `public const string` on SaleNumber, so it's
+        // a static member; EF Core's conventions already skip static/const
+        // members and they will NOT become columns — no explicit Ignore needed.
+        // (Attempting `sn.Ignore(p => p.Prefix)` is a compile error: const
+        // members cannot be accessed via an instance reference.)
         // ------------------------------------------------------------------
         builder.OwnsOne(s => s.SaleNumber, sn =>
         {
@@ -82,22 +88,40 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
                 .HasColumnName("SaleNumber_Sequence")
                 .IsRequired();
 
-            // IMPORTANT: ignore the `Value` property. It's computed from
-            // Year + Sequence + Prefix on every access — storing it would
-            // be redundant and would risk divergence.
+            // IMPORTANT: ignore the `Value` computed property. Storing it
+            // would be redundant (it's derivable from Year + Sequence) and
+            // would risk divergence if Year/Sequence ever changed without
+            // re-deriving Value.
             sn.Ignore(p => p.Value);
-        });
 
-        // The globally-unique SaleNumber index. This is the authoritative
-        // enforcement of SaleNumber uniqueness AND the concurrency guard for
-        // the SaleNumberGenerator race condition (two concurrent CreateSale
-        // calls both computing sequence N — only one commits, the other gets
-        // a unique-constraint violation on SaveChangesAsync).
-        //
-        // EF Core's OwnsOne creates the columns with the names we specified
-        // above (SaleNumber_Year, SaleNumber_Sequence). The HasIndex call
-        // uses the property paths to reference them.
-        builder.HasIndex("SaleNumber_Year", "SaleNumber_Sequence").IsUnique();
+            // The globally-unique SaleNumber index. This is the authoritative
+            // enforcement of SaleNumber uniqueness AND the concurrency guard
+            // for the SaleNumberGenerator race condition (two concurrent
+            // CreateSale calls both computing sequence N — only one commits,
+            // the other gets a unique-constraint violation on SaveChangesAsync).
+            //
+            // WHY THIS LIVES INSIDE OwnsOne (not outside on builder.HasIndex):
+            //   EF Core's HasIndex lambda only accepts DIRECT property access
+            //   on the entity being configured — it does NOT support navigating
+            //   THROUGH an owned navigation. So `builder.HasIndex(s => new {
+            //   s.SaleNumber.Year, s.SaleNumber.Sequence })` throws:
+            //     "The expression 's => new <>f__AnonymousType0`2(Year =
+            //      s.SaleNumber.Year, Sequence = s.SaleNumber.Sequence)'
+            //      is not a valid member access expression."
+            //   And `builder.HasIndex("SaleNumber_Year", "SaleNumber_Sequence")`
+            //   ALSO fails (the previous attempt) because those names belong
+            //   to the owned entity type, not to Sale — EF treats them as
+            //   shadow properties on Sale and can't infer a type.
+            //
+            //   The CORRECT place to declare an index on owned-entity
+            //   properties is INSIDE the OwnsOne lambda, where `sn` is the
+            //   owned entity's configuration builder and the properties ARE
+            //   direct members. EF will then flatten the index onto the
+            //   parent (Sales) table using the column names we declared above
+            //   (SaleNumber_Year, SaleNumber_Sequence).
+            sn.HasIndex(p => new { p.Year, p.Sequence })
+                .IsUnique();
+        });
 
         // ------------------------------------------------------------------
         // Cross-aggregate reference columns (User aggregate)
@@ -108,6 +132,9 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // ------------------------------------------------------------------
         builder.Property(s => s.CustomerId).IsRequired();
         builder.Property(s => s.CreatedByUserId).IsRequired();
+        // NOTE: no SubmittedByUserId column — the submitter is always the
+        // sale's CustomerId (enforced by SubmitSaleCommandHandler). Storing
+        // it again would be redundant denormalization.
         builder.Property(s => s.ApprovedByUserId).IsRequired();
         builder.Property(s => s.InvoicedByUserId).IsRequired();
         builder.Property(s => s.CancelledByUserId).IsRequired();
@@ -173,6 +200,11 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // IReadOnlyList<T> with no setter, so EF must populate the private
         // _lineItems field directly.
         // ------------------------------------------------------------------
+        // LineItems collection — SaleLineItem has NO public SaleId property
+        // (the aggregate boundary is kept clean: children don't reference
+        // their parent). We model the FK as a SHADOW PROPERTY named "SaleId"
+        // so the DB schema and EF model still see the column, but the domain
+        // class doesn't. EF writes/reads it transparently during SaveChanges.
         builder.HasMany(s => s.LineItems)
             .WithOne()
             .HasForeignKey("SaleId")
