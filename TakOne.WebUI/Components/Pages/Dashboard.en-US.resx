@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dashboard.en-US.resx — English strings for Dashboard.razor.
+
+     The four <resheader> tags below are REQUIRED by the .resx reader —
+     without them, the loader rejects the file with "resx input is not valid,
+     couldn't find valid resheader tags". -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page + loading + error -->
+  <data name="PageTitle" xml:space="preserve">
+    <value>Dashboard — TakOne</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>Loading dashboard…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Couldn't load dashboard</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>Failed to load dashboard data. Please reload the page.</value>
+  </data>
+  <data name="Error_Unexpected" xml:space="preserve">
+    <value>An unexpected error occurred while loading the dashboard. Please try again.</value>
+  </data>
+
+  <!-- Welcome header -->
+  <data name="WelcomeBack" xml:space="preserve">
+    <value>Welcome back,</value>
+  </data>
+  <data name="ScopeEmployee" xml:space="preserve">
+    <value>Your personal performance</value>
+  </data>
+  <data name="ScopeCompany" xml:space="preserve">
+    <value>Company-wide overview</value>
+  </data>
+  <data name="TotalRevenue" xml:space="preserve">
+    <value>Total Revenue</value>
+  </data>
+
+  <!-- KPI cards -->
+  <data name="Kpi_TotalSales" xml:space="preserve">
+    <value>Total Sales</value>
+  </data>
+  <data name="Kpi_Draft" xml:space="preserve">
+    <value>Draft</value>
+  </data>
+  <data name="Kpi_Pending" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="Kpi_Approved" xml:space="preserve">
+    <value>Approved</value>
+  </data>
+  <data name="Kpi_Cancelled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="Kpi_ActiveCustomers" xml:space="preserve">
+    <value>Active Customers</value>
+  </data>
+
+  <!-- Chart titles + subtitles -->
+  <data name="Chart_5YearPie" xml:space="preserve">
+    <value>5-Year Revenue Distribution</value>
+  </data>
+  <data name="Chart_YearColumn" xml:space="preserve">
+    <value>Revenue by Year</value>
+  </data>
+  <data name="Chart_MonthlyLine" xml:space="preserve">
+    <value>Monthly Revenue</value>
+  </data>
+  <data name="Chart_StatusDonut" xml:space="preserve">
+    <value>Sales by Status</value>
+  </data>
+  <data name="Chart_StatusSubtitle" xml:space="preserve">
+    <value>Current breakdown — all time</value>
+  </data>
+  <data name="Chart_Last5Years" xml:space="preserve">
+    <value>Last 5 years</value>
+  </data>
+
+  <!-- Chart legends -->
+  <data name="ChartLegend_Revenue" xml:space="preserve">
+    <value>Revenue</value>
+  </data>
+  <data name="ChartLegend_Count" xml:space="preserve">
+    <value>Count</value>
+  </data>
+  <data name="ChartLegend_Employee" xml:space="preserve">
+    <value>your sales</value>
+  </data>
+  <data name="ChartLegend_All" xml:space="preserve">
+    <value>all sales</value>
+  </data>
+  <data name="ChartLegend_EmployeeSales" xml:space="preserve">
+    <value>your sales only</value>
+  </data>
+  <data name="ChartLegend_AllSellers" xml:space="preserve">
+    <value>all sellers combined</value>
+  </data>
+  <data name="ChartLegend_ExcludingCancelled" xml:space="preserve">
+    <value>excluding cancelled</value>
+  </data>
+
+  <!-- Empty states -->
+  <data name="Empty_Revenue" xml:space="preserve">
+    <value>No revenue data yet</value>
+  </data>
+  <data name="Empty_Sales" xml:space="preserve">
+    <value>No sales yet</value>
+  </data>
+
+  <!-- Quick actions panel -->
+  <data name="QuickActions" xml:space="preserve">
+    <value>Quick Actions</value>
+  </data>
+  <data name="Action_BrowseProducts" xml:space="preserve">
+    <value>Browse Products</value>
+  </data>
+  <data name="Action_BrowseProducts_Desc" xml:space="preserve">
+    <value>Explore the product catalog</value>
+  </data>
+  <data name="Action_ViewSales" xml:space="preserve">
+    <value>View All Sales</value>
+  </data>
+  <data name="Action_ViewSales_Desc" xml:space="preserve">
+    <value>Browse and manage orders</value>
+  </data>
+  <data name="Action_ManageProducts" xml:space="preserve">
+    <value>Manage Products</value>
+  </data>
+  <data name="Action_ManageProducts_Desc" xml:space="preserve">
+    <value>Create and edit product catalog</value>
+  </data>
+  <data name="Action_ManageUsers" xml:space="preserve">
+    <value>User Management</value>
+  </data>
+  <data name="Action_ManageUsers_Desc" xml:space="preserve">
+    <value>Create and manage users</value>
+  </data>
+</root>

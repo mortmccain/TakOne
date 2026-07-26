@@ -93,8 +93,26 @@ public static class RoleSeeder
 
         var roleManager = scopedProvider
             .GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+
+        // NOTE on the logger type: an earlier draft used
+        // `ILogger<RoleSeeder>` here. That fails to compile with
+        // CS0704: "static types cannot be used as type arguments"
+        // because RoleSeeder is `public static class` (by design — see
+        // the class-level doc comment for why we chose a static method
+        // over IHostedService). ILogger<T> requires T to be a
+        // constructible type; static classes fail that constraint.
+        //
+        // The fix is the non-generic ILogger API: resolve an
+        // ILoggerFactory and call CreateLogger("RoleSeeder") to get an
+        // ILogger whose category name is "RoleSeeder" — same string
+        // that `ILogger<RoleSeeder>` would have produced (typeof(T).Name).
+        // Logging behavior is identical: same filter rules, same scopes,
+        // same structured-message template. We just lose the static
+        // type-safety of `ILogger<T>`'s category derivation, which is a
+        // non-issue here because the class is sealed-by-being-static.
         var logger = scopedProvider
-            .GetService<ILogger<RoleSeeder>>();
+            .GetService<ILoggerFactory>()
+            ?.CreateLogger("RoleSeeder");
 
         foreach (var roleName in AllRoles)
         {

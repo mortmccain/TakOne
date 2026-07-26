@@ -30,19 +30,35 @@ public interface IUserRepository
     /// Pass <c>groupName: null</c> to include users from all groups (and
     /// staff users who have no group).
     /// </summary>
-    Task<PaginatedResult<User>> GetPaginatedAsync
-        (
+    Task<PaginatedResult<User>> GetPaginatedAsync(
         string? searchTerm = null,
         bool? isActive = null,
         string? groupName = null,
         int pageNumber = 1,
         int pageSize = 20,
-        CancellationToken cancellationToken = default
-        );
+        CancellationToken cancellationToken = default);
 
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<bool> WorkerIdExistsAsync(string workerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the count of active users currently in the <c>Customer</c>
+    /// role. Used by the Dashboard's "Active Customers" KPI card.
+    ///
+    /// IMPLEMENTATION NOTE:
+    ///   The Domain User table (<c>Users</c>) doesn't store roles — roles
+    ///   live in ASP.NET Identity's <c>AspNetUserRoles</c> + <c>AspNetRoles</c>
+    ///   tables, joined to <c>AspNetUsers</c> by user Id. The Infrastructure
+    ///   implementation therefore joins
+    ///   <c>AspNetUsers (IsActive=1) → AspNetUserRoles → AspNetRoles (Name='Customer')</c>.
+    ///
+    ///   The join crosses the Domain/Identity boundary, which is why this
+    ///   method lives on the repository (Infrastructure) rather than being
+    ///   computed in the application layer — the Application layer has no
+    ///   direct access to the Identity tables.
+    /// </summary>
+    Task<int> GetActiveCustomerCountAsync(CancellationToken cancellationToken = default);
 
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 }

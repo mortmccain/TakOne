@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Login.fa-IR.resx — Persian (Farsi) strings for Login.razor.
+
+     The four <resheader> tags below are REQUIRED by the .resx reader —
+     without them, the loader rejects the file with "resx input is not valid,
+     couldn't find valid resheader tags". -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>ورود — تک‌وان</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>ورود ناموفق بود</value>
+  </data>
+  <data name="LoginRequiredTitle" xml:space="preserve">
+    <value>لطفاً وارد شوید</value>
+  </data>
+  <data name="LoginRequiredMessage" xml:space="preserve">
+    <value>برای دسترسی به آن صفحه باید وارد سیستم شوید.</value>
+  </data>
+  <data name="WorkerIdLabel" xml:space="preserve">
+    <value>کد پرسنلی</value>
+  </data>
+  <data name="WorkerIdPlaceholder" xml:space="preserve">
+    <value>مثلاً EMP-12345</value>
+  </data>
+  <data name="PasswordLabel" xml:space="preserve">
+    <value>رمز عبور</value>
+  </data>
+  <data name="PasswordPlaceholder" xml:space="preserve">
+    <value>رمز عبور خود را وارد کنید</value>
+  </data>
+  <data name="SubmitButton" xml:space="preserve">
+    <value>ورود</value>
+  </data>
+  <data name="ForgotPasswordLink" xml:space="preserve">
+    <value>رمز عبور خود را فراموش کرده‌اید؟</value>
+  </data>
+  <data name="Error_NoHttpContext" xml:space="preserve">
+    <value>پردازش درخواست شما ممکن نیست. لطفاً صفحه را مجدداً بارگذاری کنید و دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_LockedOut" xml:space="preserve">
+    <value>حساب کاربری شما پس از تلاش‌های ناموفق متعدد قفل شده است. لطفاً ۱۵ دقیقه دیگر دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_NotAllowed" xml:space="preserve">
+    <value>حساب کاربری شما مجاز به ورود نیست. لطفاً با مدیر سیستم تماس بگیرید.</value>
+  </data>
+  <data name="Error_TwoFactorNotSupported" xml:space="preserve">
+    <value>احراز هویت دو مرحله‌ای در این نسخه پشتیبانی نمی‌شود.</value>
+  </data>
+  <data name="Error_InvalidCredentials" xml:space="preserve">
+    <value>کد پرسنلی یا رمز عبور نادرست است.</value>
+  </data>
+  <data name="Error_Unexpected" xml:space="preserve">
+    <value>خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+</root>

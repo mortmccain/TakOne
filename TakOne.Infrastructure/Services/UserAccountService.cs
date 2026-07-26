@@ -38,13 +38,11 @@ namespace TakOne.Infrastructure.Services;
 ///                                                           calls Context.SaveChangesAsync
 ///                                                           internally (auto-save)
 ///     3. unitOfWork.SaveChangesAsync()                    → commits any remaining
-///      
+///                                                           tracked changes
 ///
 ///   ASP.NET Identity's default EF Core <c>UserStore&lt;TUser&gt;</c>
 ///   implementation calls <c>Context.SaveChangesAsync()</c> INSIDE
 ///   <c>UserManager.CreateAsync</c>, <c>AddToRoleAsync</c>, <c>ResetPasswordAsync</c>,
-///   etc. 
-///
 ///   etc. Without a transaction, the ApplicationUser row (and the AspNetUserRoles
 ///   row, etc.) would commit IMMEDIATELY at step 2 — NOT deferred to step 3 —
 ///   which would break the "same DbContext → same transaction" intuition and
@@ -84,7 +82,7 @@ namespace TakOne.Infrastructure.Services;
 ///   DbContext manually. In TakOne, all commands go through Wolverine, so
 ///   this caveat is currently moot — but it's worth knowing if you ever add
 ///   a non-Wolverine entry point.
-/// 
+///
 ///   This is the reason UserManager is constructed with our ApplicationDbContext
 ///   as its store, not a separate IdentityDbContext. (Wired in step 7e via
 ///   <c>AddIdentity&lt;ApplicationUser, IdentityRole&lt;Guid&gt;&gt;.AddEntityFrameworkStores&lt;ApplicationDbContext&gt;()</c>.)
@@ -108,12 +106,10 @@ public sealed class UserAccountService : IUserAccountService
     private readonly ApplicationDbContext _db;
     private readonly ILogger<UserAccountService> _logger;
 
-    public UserAccountService
-        (
+    public UserAccountService(
         UserManager<ApplicationUser> userManager,
         ApplicationDbContext db,
-        ILogger<UserAccountService> logger
-        )
+        ILogger<UserAccountService> logger)
     {
         _userManager = userManager;
         _db = db;
@@ -121,16 +117,14 @@ public sealed class UserAccountService : IUserAccountService
     }
 
     /// <inheritdoc />
-    public async Task<Result> CreateIdentityAccountAsync
-        (
+    public async Task<Result> CreateIdentityAccountAsync(
         Guid userId,
         string workerId,
         string email,
         string initialPassword,
         string role,
         Gender gender,
-        CancellationToken cancellationToken = default
-        )
+        CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------
         // 1. Construct the ApplicationUser with the SHARED PK.
@@ -225,23 +219,19 @@ public sealed class UserAccountService : IUserAccountService
             return Result.Failure(error);
         }
 
-        _logger.LogInformation
-            (
+        _logger.LogInformation(
             "UserAccountService.CreateIdentityAccountAsync: Identity account created " +
             "for userId {UserId} (workerId '{WorkerId}', role '{Role}').",
-            userId, workerId, role
-            );
+            userId, workerId, role);
 
         return Result.Success();
     }
 
     /// <inheritdoc />
-    public async Task<Result> ResetPasswordAsync
-        (
+    public async Task<Result> ResetPasswordAsync(
         Guid userId,
         string newPassword,
-        CancellationToken cancellationToken = default
-        )
+        CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------
         // Load the ApplicationUser. We use the DbContext directly (not
@@ -299,23 +289,159 @@ public sealed class UserAccountService : IUserAccountService
                 $"The user cannot log in until this is resolved — please retry with a stronger password.");
         }
 
-        _logger.LogInformation
-            (
-            "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}.", userId);
+        _logger.LogInformation(
+            "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}.",
+            userId);
 
         return Result.Success();
     }
 
     /// <inheritdoc />
-    public async Task<Result> AssignRoleAsync
-        (
+    /// <remarks>
+    /// ENUMERATION DEFENSE: returns <c>null</c> if the user is not found OR
+    /// if the user is deactivated. Both cases must look identical to the
+    /// caller. See the interface docstring for the rationale.
+    /// </remarks>
+    public async Task<string?> GeneratePasswordResetTokenAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Look up by EMAIL (not WorkerId). The Forgot Password form collects
+        // email because the user might not remember their WorkerId — that's
+        // a common friction point in B2B apps.
+        //
+        // We use AsNoTracking — we don't intend to mutate the entity here.
+        // UserManager.GeneratePasswordResetTokenAsync internally re-loads
+        // the user via its own store, so a tracked entity wouldn't help.
+        // ------------------------------------------------------------------
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            // Defensive — should be caught by form validation, but never
+            // trust the boundary. Returning null here lets the caller show
+            // the same generic message they'd show for "user not found".
+            return null;
+        }
+
+        var appUser = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+
+        // Enumeration defense: null for "not found" AND "deactivated".
+        // An attacker probing for valid emails should get NO signal.
+        if (appUser is null || !appUser.IsActive)
+        {
+            _logger.LogInformation(
+                "UserAccountService.GeneratePasswordResetTokenAsync: " +
+                "no active user found for email '{Email}' (returning null — caller shows generic message).",
+                email);
+            return null;
+        }
+
+        // ------------------------------------------------------------------
+        // Generate the token. Identity's default token provider
+        // (DataProtectorTokenProvider) issues a base64-encoded signed
+        // string that encodes the user's SecurityStamp + a UTC timestamp.
+        // The token is validated by UserManager.ResetPasswordAsync, which
+        // checks the signature AND the timestamp (default 24h lifespan,
+        // configurable via TokenLifespan in IdentityOptions.Tokens).
+        // ------------------------------------------------------------------
+        var token = await _userManager.GeneratePasswordResetTokenAsync(appUser);
+
+        _logger.LogInformation(
+            "UserAccountService.GeneratePasswordResetTokenAsync: " +
+            "token generated for userId {UserId} (email '{Email}').",
+            appUser.Id, email);
+
+        return token;
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> ResetPasswordFromTokenAsync(
+        string email,
+        string token,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Validate inputs. The caller (Razor page) already validates non-
+        // empty + password complexity on the client side, but defense in
+        // depth — never trust the boundary.
+        // ------------------------------------------------------------------
+        if (string.IsNullOrWhiteSpace(email)
+            || string.IsNullOrWhiteSpace(token)
+            || string.IsNullOrWhiteSpace(newPassword))
+        {
+            return Result.Failure("Invalid reset request.");
+        }
+
+        var appUser = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+
+        // ENUMERATION DEFENSE: don't reveal "user not found" vs "token
+        // invalid" — both return the same generic "link is invalid" message.
+        // The user-facing copy in ResetPassword.razor uses Loc["Error_InvalidLink"]
+        // for ALL failure cases except password-complexity violations.
+        if (appUser is null || !appUser.IsActive)
+        {
+            _logger.LogWarning(
+                "UserAccountService.ResetPasswordFromTokenAsync: " +
+                "reset attempt for non-existent or deactivated email '{Email}'.",
+                email);
+            return Result.Failure("Invalid reset link.");
+        }
+
+        // ------------------------------------------------------------------
+        // UserManager.ResetPasswordAsync:
+        //   1. Validates the token signature + timestamp (throws if expired
+        //      or tampered).
+        //   2. Validates the new password against Identity's complexity
+        //      rules (returns IdentityResult with PasswordTooShort /
+        //      PasswordRequiresDigit / etc. on failure).
+        //   3. On success, hashes the new password, updates the
+        //      SecurityStamp (which invalidates outstanding login cookies
+        //      — the user must re-authenticate everywhere), and saves.
+        //
+        // SecurityStamp invalidation is important here: if an attacker stole
+        // the user's old password AND the user just reset their password,
+        // the attacker's old session cookie is no longer valid.
+        // ------------------------------------------------------------------
+        var result = await _userManager.ResetPasswordAsync(appUser, token, newPassword);
+        if (!result.Succeeded)
+        {
+            var error = FlattenErrors(result);
+            _logger.LogWarning(
+                "UserAccountService.ResetPasswordFromTokenAsync: " +
+                "ResetPasswordAsync failed for userId {UserId} (email '{Email}'). Errors: {Errors}.",
+                appUser.Id, email, error);
+
+            // The errors collection may contain password-complexity errors
+            // (PasswordTooShort, PasswordRequiresDigit, etc.) OR token-
+            // validation errors (InvalidToken). We surface Identity's
+            // descriptions verbatim — they're already localized by the
+            // IdentityErrorDescriber. The page differentiates presentation
+            // by checking whether the message starts with "InvalidToken"
+            // or contains "password" — but we don't try to second-guess
+            // Identity's wording here.
+            return Result.Failure(error);
+        }
+
+        _logger.LogInformation(
+            "UserAccountService.ResetPasswordFromTokenAsync: " +
+            "password reset via token for userId {UserId} (email '{Email}').",
+            appUser.Id, email);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> AssignRoleAsync(
         Guid userId,
         string role,
-        CancellationToken cancellationToken = default
-        )
+        CancellationToken cancellationToken = default)
     {
         var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-
         if (appUser is null)
         {
             return Result.Failure($"Identity account for user '{userId}' was not found.");
@@ -329,45 +455,37 @@ public sealed class UserAccountService : IUserAccountService
         // ------------------------------------------------------------------
         if (await _userManager.IsInRoleAsync(appUser, role))
         {
-            _logger.LogDebug
-                (
-                "UserAccountService.AssignRoleAsync: user {UserId} already has role '{Role}' — no-op.", userId, role);
-
+            _logger.LogDebug(
+                "UserAccountService.AssignRoleAsync: user {UserId} already has role '{Role}' — no-op.",
+                userId, role);
             return Result.Success();
         }
 
         var result = await _userManager.AddToRoleAsync(appUser, role);
-
         if (!result.Succeeded)
         {
             var error = FlattenErrors(result);
-
-            _logger.LogWarning
-                (
+            _logger.LogWarning(
                 "UserAccountService.AssignRoleAsync: AddToRoleAsync '{Role}' failed " +
                 "for userId {UserId}. Errors: {Errors}.",
-                role, userId, error
-                );
-
+                role, userId, error);
             return Result.Failure(error);
         }
 
-        _logger.LogInformation
-            ("UserAccountService.AssignRoleAsync: role '{Role}' assigned to userId {UserId}.", role, userId);
+        _logger.LogInformation(
+            "UserAccountService.AssignRoleAsync: role '{Role}' assigned to userId {UserId}.",
+            role, userId);
 
         return Result.Success();
     }
 
     /// <inheritdoc />
-    public async Task<Result> RemoveFromRoleAsync
-        (
+    public async Task<Result> RemoveFromRoleAsync(
         Guid userId,
         string role,
-        CancellationToken cancellationToken = default
-        )
+        CancellationToken cancellationToken = default)
     {
         var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-
         if (appUser is null)
         {
             return Result.Failure($"Identity account for user '{userId}' was not found.");
@@ -376,44 +494,36 @@ public sealed class UserAccountService : IUserAccountService
         // Idempotency: if the user doesn't have the role, no-op.
         if (!await _userManager.IsInRoleAsync(appUser, role))
         {
-            _logger.LogDebug
-                ("UserAccountService.RemoveFromRoleAsync: user {UserId} does not have role '{Role}' — no-op.", userId, role);
-
+            _logger.LogDebug(
+                "UserAccountService.RemoveFromRoleAsync: user {UserId} does not have role '{Role}' — no-op.",
+                userId, role);
             return Result.Success();
         }
 
         var result = await _userManager.RemoveFromRoleAsync(appUser, role);
-
         if (!result.Succeeded)
         {
             var error = FlattenErrors(result);
-
-            _logger.LogWarning
-                (
+            _logger.LogWarning(
                 "UserAccountService.RemoveFromRoleAsync: RemoveFromRoleAsync '{Role}' failed " +
                 "for userId {UserId}. Errors: {Errors}.",
-                role, userId, error
-                );
-
+                role, userId, error);
             return Result.Failure(error);
         }
 
-        _logger.LogInformation
-            (
-            "UserAccountService.RemoveFromRoleAsync: role '{Role}' removed from userId {UserId}.", role, userId);
+        _logger.LogInformation(
+            "UserAccountService.RemoveFromRoleAsync: role '{Role}' removed from userId {UserId}.",
+            role, userId);
 
         return Result.Success();
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<string>> GetRolesAsync
-        (
+    public async Task<IReadOnlyList<string>> GetRolesAsync(
         Guid userId,
-        CancellationToken cancellationToken = default
-        )
+        CancellationToken cancellationToken = default)
     {
         var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-
         if (appUser is null)
         {
             // Returning an empty list rather than throwing — the caller
@@ -424,7 +534,6 @@ public sealed class UserAccountService : IUserAccountService
         }
 
         var roles = await _userManager.GetRolesAsync(appUser);
-
         return roles.ToList();
     }
 

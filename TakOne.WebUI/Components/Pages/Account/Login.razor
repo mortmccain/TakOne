@@ -1,0 +1,478 @@
+﻿@* Login.razor — Phase 1.1
+   Static-rendered login page (NOT a Blazor circuit). The login flow
+   needs the cookie to be set on the HTTP response BEFORE the page
+   returns — that's only possible with static SSR, not Blazor Server
+   interactive mode (which buffers the response and the cookie wouldn't
+   be visible until a full reload).
+
+   FLOW:
+     1. User visits /Account/Login?returnUrl=/Sales (or whatever).
+     2. Page renders the form statically (no circuit established).
+     3. User submits → EditForm's OnValidSubmit fires in the same
+        static-rendered request.
+     4. We call SignInManager.PasswordSignInAsync — this validates
+        credentials AND sets the auth cookie on the HTTP response.
+     5. On success, we redirect to the role-aware landing page with
+        forceLoad:true so the browser does a fresh HTTP round-trip —
+        the new request carries the cookie and Blazor's circuit starts
+        with the correct auth state.
+     6. On failure, we re-render the form with an error message.
+
+   CUSTOM CLAIMS:
+     BlazorCurrentUserService reads "FullName" and "GroupName" claims
+     from the principal. We populate these at sign-in time by replacing
+     Identity's default ClaimsPrincipal with one that includes our
+     custom claims. The technique: call SignInManager.PasswordSignInAsync
+     to validate the password + issue the cookie, then if it succeeds,
+     re-issue the principal with the extra claims via
+     SignInManager.SignInWithClaimsAsync (which atomically replaces
+     the cookie).
+
+   ROLE-AWARE REDIRECT (roadmap Section 12.8):
+     Admin/Manager/Employee/ReadOnly → /  (Dashboard)
+     Customer                          → /Products (Catalog)
+
+   ANTI-FORGERY:
+     EditForm automatically emits an antiforgery token. The
+     UseAntiforgery middleware in Program.cs validates it on POST.
+     No manual [ValidateAntiForgeryToken] needed. *@
+
+@page "/Account/Login"
+@layout LoginLayout
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using TakOne.Application.Common.Authorization
+@using TakOne.Domain.Users
+@using TakOne.Infrastructure.Identity
+@using TakOne.Infrastructure.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Login> Loc
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem" Style="max-width: 360px; margin: 0 auto;">
+    @* Error banner — shown only after a failed login attempt.
+       NOTE on `AlertStyle`: this is the CORRECT API for RadzenAlert in
+       Radzen.Blazor v11.1.1 (verified via the official docs at
+       https://blazor.radzen.com/docs/api/Radzen.AlertStyle and by
+       cross-checking the ERP reference project, which uses the exact
+       same Radzen.Blazor 11.1.1 version).
+
+       Two earlier drafts got this wrong:
+         (a) `AlertShade.Danger` / `AlertShade.Info` — the `AlertShade`
+             enum was REMOVED years ago and doesn't exist in v11.1.1.
+         (b) `Shade.Danger` / `Shade.Info` — there IS a `Shade` enum in
+             Radzen.Blazor, but it doesn't contain Danger/Info (its
+             values are Primary/Secondary/Base/Dark/Light — it's a
+             theme-shade enum, not a severity enum).
+
+       The actual API is: the `RadzenAlert` parameter is named
+       `AlertStyle`, and the enum type is also `AlertStyle` (same name,
+       both in namespace `Radzen`). Values: Primary, Secondary, Light,
+       Base, Dark, Success, Danger, Warning, Info. Both `AlertStyle` (the
+       property) and `AlertStyle` (the enum) are reachable without
+       qualification because `Radzen` is imported via _Imports.razor. *@
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_errorMessage"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* Information banner — shown when redirected from an auth-required page. *@
+    @if (_showLoginRequiredBanner)
+    {
+        <RadzenAlert Title="@Loc["LoginRequiredTitle"]"
+                     Text="@Loc["LoginRequiredMessage"]"
+                     AlertStyle="AlertStyle.Info"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @*
+       EditForm with FormName + [SupplyParameterFromForm] is the canonical
+       Blazor static-SSR form pattern. On POST, the antiforgery middleware
+       validates the token, then Blazor's form binder populates FormModel
+       from the posted fields, then OnValidSubmit fires.
+    *@
+    <EditForm Model="@FormModel" OnValidSubmit="@HandleLoginAsync" FormName="loginForm">
+        <DataAnnotationsValidator />
+
+        <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
+            @* NOTE on `autofocus` + `FormModel!` null-forgiving:
+               1) `RadzenTextBox` has NO `AutoFocus` parameter in
+                  Radzen.Blazor v11.1.1 — verified via the official API
+                  page (https://blazor.radzen.com/docs/api/Radzen.Blazor.RadzenTextBox),
+                  which lists only AutoComplete / AutoCompleteAttribute /
+                  AutoCompleteType / AutoFilter as `Auto*` properties.
+                  An earlier draft wrote `AutoFocus="true"` (PascalCase),
+                  thinking it was the inherited `RadzenComponent.AutoFocus`
+                  bool parameter — that parameter doesn't exist either.
+                  Blazor therefore treated `AutoFocus="true"` as an
+                  unmatched attribute, splatted it through `AdditionalAttributes`
+                  onto the rendered `<input>` as `autofocus="true"`, and
+                  the HTML analyzer flagged it: "'true' is not a valid
+                  value of attribute 'autofocus'."
+
+                  WHY NOT use the canonical Radzen autofocus pattern
+                  (`@ref` + `FocusAsync()` in `OnAfterRenderAsync`)?
+                  Because this Login.razor is a STATIC-SSR page, not a
+                  Blazor interactive circuit (see the file-level doc
+                  comment — the auth cookie must be set on the HTTP
+                  response before the page returns, which requires static
+                  SSR). `OnAfterRenderAsync(firstRender)` does NOT fire on
+                  static SSR pages, so the `FocusAsync()` JS-interop call
+                  has nowhere to run. The only way to autofocus on static
+                  SSR is to emit the HTML `autofocus` attribute directly.
+
+                  THE FIX: write `autofocus` as a BARE boolean attribute
+                  (no `="true"`). Per HTML5 spec, boolean attributes are
+                  written either bare (`autofocus`) or with their own name
+                  as value (`autofocus="autofocus"`) — never `="true"`.
+                  Radzen captures the unmatched `autofocus` attribute via
+                  `RadzenComponent.AdditionalAttributes` and renders it
+                  onto the underlying `<input>`, where the browser
+                  interprets its presence as `true`. The Blazor HTML
+                  analyzer accepts the bare form without complaint.
+
+               2) `FormModel` is `LoginModel?` (must be nullable so
+                  [SupplyParameterFromForm] can leave it null on the
+                  initial GET). `OnInitialized` does
+                  `FormModel ??= new LoginModel();`, but the compiler's
+                  nullable analysis can't prove non-nullness across method
+                  boundaries — so each `@bind-Value="FormModel.X"` raises
+                  CS8602 "Dereference of a possibly null reference." The
+                  null-forgiving operator `!` is a compile-time-only
+                  annotation (emits no IL, doesn't change runtime
+                  semantics) that suppresses the warning. We know it's
+                  safe here because OnInitialized runs before the markup
+                  is first rendered. *@
+            <RadzenFormField Text="@Loc["WorkerIdLabel"]">
+                <RadzenTextBox @bind-Value="FormModel!.WorkerId"
+                               Placeholder="@Loc["WorkerIdPlaceholder"]"
+                               autofocus />
+            </RadzenFormField>
+
+            <RadzenFormField Text="@Loc["PasswordLabel"]">
+                <RadzenPassword @bind-Value="FormModel!.Password"
+                                Placeholder="@Loc["PasswordPlaceholder"]" />
+            </RadzenFormField>
+
+            @* "Forgot password?" link — below the password field, above the
+               submit button (conventional placement in B2B login forms).
+               Uses RadzenLink with the lock_reset Material icon. The link
+               is a plain anchor (no JS) — it just navigates to the static
+               SSR ForgotPassword page. *@
+            <RadzenStack Orientation="Orientation.Horizontal"
+                         JustifyContent="JustifyContent.End"
+                         Style="margin-top: -0.25rem;">
+                <RadzenLink Text="@Loc["ForgotPasswordLink"]"
+                            Path="/Account/ForgotPassword"
+                            Icon="lock_reset"
+                            Style="font-size: 0.85rem;" />
+            </RadzenStack>
+
+            <RadzenButton Text="@Loc["SubmitButton"]"
+                          ButtonType="ButtonType.Submit"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Filled"
+                          Icon="login"
+                          Disabled="@_isSubmitting"
+                          Style="width: 100%;" />
+        </RadzenStack>
+    </EditForm>
+</RadzenStack>
+
+@code {
+    /// <summary>
+    /// The form model. Uses [Required] for basic validation; the actual
+    /// credential check happens in SignInManager.PasswordSignInAsync.
+    /// </summary>
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Worker ID is required.")]
+        public string WorkerId { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "Password is required.")]
+        public string Password { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Bound from the form POST by Blazor's [SupplyParameterFromForm]
+    /// mechanism. On the initial GET this is null — OnInitialized creates
+    /// a fresh instance. On POST, Blazor populates it from the posted
+    /// fields before OnValidSubmit fires.
+    /// </summary>
+    [SupplyParameterFromForm]
+    private LoginModel? FormModel { get; set; }
+
+    private string _errorMessage = string.Empty;
+    private bool _showLoginRequiredBanner;
+    private bool _isSubmitting;
+
+    protected override void OnInitialized()
+    {
+        // Initialize the form model on the initial GET. On POST, Blazor
+        // has already populated FormModel before OnInitialized runs, so
+        // this no-ops.
+        FormModel ??= new LoginModel();
+
+        // If the user is already authenticated, they have no business on
+        // the login page — redirect to their role-aware landing page.
+        // (This mirrors the redirect after a successful login, but for
+        // the case where the user manually navigates to /Account/Login
+        // while already signed in.)
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            var target = GetRoleAwareLandingUrl(httpContext.User);
+            Navigation.NavigateTo(target, forceLoad: true);
+            return;
+        }
+
+        // Show the "you must log in to access that page" banner when the
+        // user was redirected here by the cookie middleware's LoginPath
+        // redirect. The middleware appends ?returnUrl=... to the URL.
+        var query = httpContext?.Request.Query;
+        if (query is not null && query.ContainsKey("returnUrl"))
+        {
+            _showLoginRequiredBanner = true;
+        }
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        // FormModel is guaranteed non-null here — EditForm only fires
+        // OnValidSubmit when the model is populated AND passes validation.
+        var model = FormModel!;
+
+        _isSubmitting = true;
+        _errorMessage = string.Empty;
+
+        try
+        {
+            var httpContext = HttpContextAccessor.HttpContext;
+            if (httpContext is null)
+            {
+                _errorMessage = Loc["Error_NoHttpContext"];
+                return;
+            }
+
+            // --------------------------------------------------------------
+            // 1a. Pre-check: load the ApplicationUser + Domain User BEFORE
+            //     calling PasswordSignInAsync. We need the Domain User for
+            //     custom claims (FullName, GroupName, Gender) anyway, so we
+            //     fetch it now and also check the user's IsActive flag.
+            //
+            //     Rationale: appsettings.json sets RequireConfirmedAccount =
+            //     false, which means Identity's SignInManager will NOT
+            //     consult our custom IsActive flag during sign-in. Without
+            //     this pre-check, a deactivated user could log in
+            //     successfully. We close that hole here.
+            //
+            //     We deliberately return the SAME generic error message
+            //     for "user not found" and "user deactivated" — leaking
+            //     "your account exists but is deactivated" would let an
+            //     attacker enumerate valid WorkerIds.
+            // --------------------------------------------------------------
+            var appUser = await UserManager.FindByNameAsync(model.WorkerId);
+            if (appUser is null || !appUser.IsActive)
+            {
+                _errorMessage = Loc["Error_InvalidCredentials"];
+                return;
+            }
+
+            // Fetch the Domain User (for custom claims) — single row
+            // lookup by the shared PK. AsNoTracking because we don't
+            // intend to mutate it during the login flow.
+            var db = httpContext.RequestServices
+                .GetRequiredService<ApplicationDbContext>();
+            var domainUser = await db.DomainUsers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == appUser.Id);
+
+            // --------------------------------------------------------------
+            // 1b. Validate credentials via SignInManager.
+            //
+            //     PasswordSignInAsync checks the password against the
+            //     hashed value on ApplicationUser, honors lockout policy,
+            //     and (if success) issues the auth cookie on the HTTP
+            //     response.
+            //
+            //     Note: this is NOT a Blazor circuit call. The page is
+            //     statically rendered, so SignInManager sees the real
+            //     HttpContext and can write the cookie to the response.
+            // --------------------------------------------------------------
+            var result = await SignInManager.PasswordSignInAsync(
+                model.WorkerId,
+                model.Password,
+                isPersistent: false,        // session cookie — closes with browser
+                lockoutOnFailure: true);    // honor lockout policy on bad password
+
+            if (!result.Succeeded)
+            {
+                // Map Identity's SignInResult to a user-friendly message.
+                // We deliberately DON'T distinguish "wrong password" from
+                // "user not found" — both return the same generic message
+                // to prevent username enumeration.
+                if (result.IsLockedOut)
+                {
+                    _errorMessage = Loc["Error_LockedOut"];
+                }
+                else if (result.IsNotAllowed)
+                {
+                    // IsNotAllowed fires when RequireConfirmedEmail=true
+                    // and the user's EmailConfirmed=false. With
+                    // RequireConfirmedAccount=false (our config), this
+                    // branch is unlikely to fire — but we handle it
+                    // defensively in case someone tightens the config.
+                    _errorMessage = Loc["Error_NotAllowed"];
+                }
+                else if (result.RequiresTwoFactor)
+                {
+                    // 2FA not implemented in v1 (roadmap Section 11).
+                    _errorMessage = Loc["Error_TwoFactorNotSupported"];
+                }
+                else
+                {
+                    _errorMessage = Loc["Error_InvalidCredentials"];
+                }
+                return;
+            }
+
+            // --------------------------------------------------------------
+            // 2. Login succeeded. Now enrich the principal with our
+            //    custom claims (FullName, GroupName, Gender) so
+            //    BlazorCurrentUserService can read them without a DB
+            //    lookup on every request.
+            //
+            //    Technique: SignInManager.SignInWithClaimsAsync re-creates
+            //    the auth cookie with the additional claims baked in. The
+            //    existing sign-in (from step 1) is replaced atomically —
+            //    no race window where the user is signed in but missing
+            //    the custom claims.
+            // --------------------------------------------------------------
+            var extraClaims = new List<Claim>
+            {
+                new("FullName", domainUser?.FullName ?? appUser.UserName ?? string.Empty),
+            };
+            if (domainUser is not null && !string.IsNullOrEmpty(domainUser.GroupName))
+            {
+                extraClaims.Add(new Claim("GroupName", domainUser.GroupName));
+            }
+            // Also stash Gender as a claim — cheap to add, useful for the
+            // profile page (avoids a DB lookup just to render "Gender: Male").
+            extraClaims.Add(new Claim("Gender", domainUser?.Gender.ToString() ?? Gender.Male.ToString()));
+
+            // Re-sign-in with the enriched principal. The
+            // AuthenticationProperties here match what
+            // PasswordSignInAsync already used (non-persistent session
+            // cookie). We pass isPersistent:false to keep the cookie
+            // session-scoped.
+            await SignInManager.SignInWithClaimsAsync(
+                appUser,
+                new AuthenticationProperties { IsPersistent = false },
+                extraClaims);
+
+            // --------------------------------------------------------------
+            // 3. Role-aware redirect.
+            //
+            //    Per roadmap Section 12.8:
+            //      Admin/Manager/Employee/ReadOnly → /  (Dashboard)
+            //      Customer                          → /Products
+            //
+            //    If a returnUrl was supplied (user was redirected from
+            //    a protected page), honor it INSTEAD of the role-aware
+            //    default — UNLESS the returnUrl is the login page itself
+            //    (which would create an infinite redirect loop).
+            //
+            //    forceLoad:true is CRITICAL — it forces a full HTTP
+            //    round-trip so the new cookie is visible to Blazor's
+            //    circuit. Without it, Blazor would try to handle the
+            //    navigation client-side via SignalR, the circuit would
+            //    still see the pre-login auth state, and the user would
+            //    bounce back to /Account/Login.
+            // --------------------------------------------------------------
+            var returnUrl = httpContext.Request.Query["returnUrl"].ToString();
+            var principalForRedirect = await CreateUserPrincipalWithRolesAsync(appUser);
+            var target = !string.IsNullOrEmpty(returnUrl) && IsSafeReturnUrl(returnUrl)
+                ? returnUrl
+                : GetRoleAwareLandingUrl(principalForRedirect);
+
+            Navigation.NavigateTo(target, forceLoad: true);
+        }
+        catch (Exception)
+        {
+            // Defensive: any unexpected error → generic message. Don't
+            // leak exception details to the user.
+            _errorMessage = Loc["Error_Unexpected"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the role-aware landing URL for the given principal.
+    /// </summary>
+    private static string GetRoleAwareLandingUrl(ClaimsPrincipal principal)
+    {
+        // Customer → /Products (no dashboard for customers — they
+        // redirect to the catalog after login).
+        // Everyone else (Admin/Manager/Employee/ReadOnly) → / (Dashboard).
+        if (principal.IsInRole(Roles.Customer))
+        {
+            return "/Products";
+        }
+        return "/";
+    }
+
+    /// <summary>
+    /// Builds a temporary ClaimsPrincipal that includes the user's roles,
+    /// for the sole purpose of evaluating the role-aware redirect target.
+    ///
+    /// We can't use the just-signed-in principal from HttpContext because
+    /// at this point in the request, the cookie has been written to the
+    /// response but HttpContext.User still reflects the pre-sign-in state.
+    /// So we build a fresh principal from UserManager's role list.
+    /// </summary>
+    private async Task<ClaimsPrincipal> CreateUserPrincipalWithRolesAsync(ApplicationUser appUser)
+    {
+        var roles = await UserManager.GetRolesAsync(appUser);
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, appUser.Id.ToString()),
+            new(ClaimTypes.Name, appUser.UserName ?? string.Empty),
+        };
+        claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
+
+        var identity = new ClaimsIdentity(claims, "TakOneLogin");
+        return new ClaimsPrincipal(identity);
+    }
+
+    /// <summary>
+    /// Open-redirect defense. Only allow return URLs that are RELATIVE
+    /// (start with / but not //). Absolute URLs or protocol-relative
+    /// URLs could be used to redirect the user to a phishing site
+    /// after a successful login.
+    /// </summary>
+    private static bool IsSafeReturnUrl(string returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl)) return false;
+        if (!returnUrl.StartsWith('/')) return false;
+        if (returnUrl.StartsWith("//")) return false; // protocol-relative
+        if (returnUrl.StartsWith("/\\", StringComparison.OrdinalIgnoreCase)) return false;
+        // Don't allow redirect back to the login page itself — would loop.
+        if (returnUrl.StartsWith("/Account/Login", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
+}

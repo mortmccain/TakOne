@@ -163,6 +163,54 @@ public sealed class UserRepository : IUserRepository
     }
 
     /// <inheritdoc />
+    public async Task<int> GetActiveCustomerCountAsync(CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Cross-Domain/Identity join to count active users in the Customer
+        // role. The Domain Users table (DomainUsers DbSet) doesn't store
+        // roles — roles live in ASP.NET Identity's AspNetUserRoles +
+        // AspNetRoles tables, joined to AspNetUsers by user Id.
+        //
+        // We need to join:
+        //   AspNetUsers  (IsActive = true)        ← _db.Users (ApplicationUser)
+        //   AspNetUserRoles (userId, roleId)      ← _db.UserRoles
+        //   AspNetRoles  (Name = "Customer")      ← _db.Roles
+        //
+        // WHY WE USE _db.Users (ApplicationUser) AND NOT _db.DomainUsers:
+        //   The IsActive flag is denormalized onto ApplicationUser (see
+        //   ApplicationUser.cs in Infrastructure/Identity/). The Domain User
+        //   also has IsActive, but the UserRoles join table references
+        //   ApplicationUser.Id, so starting from ApplicationUser avoids a
+        //   cross-table join through the shared PK.
+        //
+        // WHY WE LOOK UP THE Customer ROLE ID FIRST (rather than joining by
+        // role Name directly):
+        //   AspNetUserRoles stores only the RoleId (Guid), not the RoleName.
+        //   A single sub-query to resolve the Customer role's Id, then a
+        //   second query filtered by that Id, is more cache-friendly than
+        //   a 3-table join. EF Core's SQL translation for either approach
+        //   is similar, but the two-step form is easier to read.
+        // ------------------------------------------------------------------
+        var customerRoleId = await _db.Roles
+            .Where(r => r.Name == TakOne.Application.Common.Authorization.Roles.Customer)
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // If the Customer role doesn't exist (e.g. RoleSeeder hasn't run
+        // yet), return 0 rather than throwing. The dashboard handler also
+        // has a try/catch around this call as defense-in-depth.
+        if (customerRoleId == Guid.Empty)
+        {
+            return 0;
+        }
+
+        return await _db.Users
+            .Where(u => u.IsActive &&
+                        _db.UserRoles.Any(ur => ur.UserId == u.Id && ur.RoleId == customerRoleId))
+            .CountAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
     {
         // AddAsync queues the Domain User for INSERT on the next SaveChanges.

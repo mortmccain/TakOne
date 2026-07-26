@@ -1,0 +1,68 @@
+﻿@* AccessDenied.razor — Phase 1.3
+   Static-rendered page shown when an AUTHENTICATED user tries to access
+   a page they lack the role for. (Unauthenticated users hit the
+   RedirectToLogin.razor flow instead — they never see this page.)
+
+   WHEN THIS PAGE IS REACHED:
+     The cookie middleware's AccessDeniedPath is set to "/Account/AccessDenied"
+     (in AddTakOneInfrastructure, section 3b). When an [Authorize(Roles="...")]
+     policy fails for an AUTHENTICATED user, the middleware 302-redirects
+     to that path.
+
+   WHY STATIC (not Blazor circuit):
+     The 302 redirect from the cookie middleware happens BEFORE Blazor
+     gets involved — the browser sends a new GET to /Account/AccessDenied,
+     which the Router serves via static SSR. No circuit is established
+     for this page. *@
+
+@page "/Account/AccessDenied"
+@layout LoginLayout
+@inject NavigationManager Navigation
+@inject IStringLocalizer<AccessDenied> Loc
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<RadzenStack Orientation="Orientation.Vertical"
+             Gap="1rem"
+             AlignItems="AlignItems.Center"
+             JustifyContent="JustifyContent.Center"
+             Style="min-height: 240px; text-align: center;">
+    <RadzenIcon Icon="lock" Style="font-size: 48px; color: var(--rz-danger);" />
+
+    <RadzenHeading Text="@Loc["Heading"]" Size="H4" />
+
+    <RadzenText Text="@Loc["Message"]"
+                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Style="margin-top: 16px;">
+        <RadzenButton Text="@Loc["GoHomeButton"]"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Variant="Variant.Filled"
+                      Icon="home"
+                      Click="@GoHome" />
+
+        <RadzenButton Text="@Loc["LogoutButton"]"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
+                      Icon="logout"
+                      Click="@DoLogout" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    private void GoHome()
+    {
+        // Role-aware: if the user is authenticated, / will route them
+        // to the dashboard (or /Products for customers). If they're
+        // somehow NOT authenticated (shouldn't happen on this page),
+        // the cookie middleware will redirect them to /Account/Login.
+        Navigation.NavigateTo("/", forceLoad: true);
+    }
+
+    private void DoLogout()
+    {
+        // Clear the cookie and go back to the login page.
+        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
+    }
+}
