@@ -163,7 +163,7 @@
 	  
 	  
 	  
-    <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.21.0" />
+    <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.22.0" />
 	  
 	  
 	  
@@ -196,12 +196,6 @@
 	  
 	  
 	  
-  </ItemGroup>
-	
-	
-	
-  <ItemGroup>
-    <Folder Include="Persistence\Migrations\" />
   </ItemGroup>
 
 </Project>

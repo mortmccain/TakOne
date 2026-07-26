@@ -47,11 +47,13 @@
 @using TakOne.Infrastructure.Identity
 @using TakOne.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Logging
 @inject SignInManager<ApplicationUser> SignInManager
 @inject UserManager<ApplicationUser> UserManager
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Login> Loc
+@inject ILoggerFactory LoggerFactory
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -102,7 +104,7 @@
        validates the token, then Blazor's form binder populates FormModel
        from the posted fields, then OnValidSubmit fires.
     *@
-    <EditForm Model="@FormModel" OnValidSubmit="@HandleLoginAsync" FormName="loginForm">
+    <EditForm Model="@FormModel" OnValidSubmit="@HandleLoginAsync" FormName="loginForm" @ref="_editForm">
         <DataAnnotationsValidator />
 
         <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
@@ -216,9 +218,15 @@
     private string _errorMessage = string.Empty;
     private bool _showLoginRequiredBanner;
     private bool _isSubmitting;
+    private ILogger<Login> _logger = null!;
+    private EditForm? _editForm;
 
     protected override void OnInitialized()
     {
+        // Initialize logger
+        _logger = LoggerFactory.CreateLogger<Login>();
+        _logger.LogInformation("Login page initialized");
+
         // Initialize the form model on the initial GET. On POST, Blazor
         // has already populated FormModel before OnInitialized runs, so
         // this no-ops.
@@ -232,6 +240,7 @@
         var httpContext = HttpContextAccessor.HttpContext;
         if (httpContext?.User?.Identity?.IsAuthenticated == true)
         {
+            _logger.LogInformation("User already authenticated, redirecting to landing page");
             var target = GetRoleAwareLandingUrl(httpContext.User);
             Navigation.NavigateTo(target, forceLoad: true);
             return;
@@ -244,6 +253,7 @@
         if (query is not null && query.ContainsKey("returnUrl"))
         {
             _showLoginRequiredBanner = true;
+            _logger.LogInformation("Login required banner shown");
         }
     }
 
@@ -256,14 +266,19 @@
         _isSubmitting = true;
         _errorMessage = string.Empty;
 
+        _logger.LogInformation("Login attempt started for WorkerId: {WorkerId}", model.WorkerId);
+
         try
         {
             var httpContext = HttpContextAccessor.HttpContext;
             if (httpContext is null)
             {
+                _logger.LogError("HttpContext is null");
                 _errorMessage = Loc["Error_NoHttpContext"];
                 return;
             }
+
+            _logger.LogInformation("HttpContext acquired");
 
             // --------------------------------------------------------------
             // 1a. Pre-check: load the ApplicationUser + Domain User BEFORE
@@ -282,9 +297,20 @@
             //     "your account exists but is deactivated" would let an
             //     attacker enumerate valid WorkerIds.
             // --------------------------------------------------------------
+            _logger.LogInformation("Looking up ApplicationUser for WorkerId: {WorkerId}", model.WorkerId);
             var appUser = await UserManager.FindByNameAsync(model.WorkerId);
-            if (appUser is null || !appUser.IsActive)
+            if (appUser is null)
             {
+                _logger.LogWarning("ApplicationUser not found for WorkerId: {WorkerId}", model.WorkerId);
+                _errorMessage = Loc["Error_InvalidCredentials"];
+                return;
+            }
+
+            _logger.LogInformation("ApplicationUser found: {UserId}, IsActive: {IsActive}", appUser.Id, appUser.IsActive);
+
+            if (!appUser.IsActive)
+            {
+                _logger.LogWarning("User is inactive: {UserId}", appUser.Id);
                 _errorMessage = Loc["Error_InvalidCredentials"];
                 return;
             }
@@ -292,11 +318,21 @@
             // Fetch the Domain User (for custom claims) — single row
             // lookup by the shared PK. AsNoTracking because we don't
             // intend to mutate it during the login flow.
+            _logger.LogInformation("Looking up Domain User for UserId: {UserId}", appUser.Id);
             var db = httpContext.RequestServices
                 .GetRequiredService<ApplicationDbContext>();
             var domainUser = await db.DomainUsers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == appUser.Id);
+
+            if (domainUser is null)
+            {
+                _logger.LogWarning("Domain User not found for UserId: {UserId}. This is a data integrity issue.", appUser.Id);
+            }
+            else
+            {
+                _logger.LogInformation("Domain User found: {FullName}, GroupName: {GroupName}", domainUser.FullName, domainUser.GroupName);
+            }
 
             // --------------------------------------------------------------
             // 1b. Validate credentials via SignInManager.
@@ -310,11 +346,15 @@
             //     statically rendered, so SignInManager sees the real
             //     HttpContext and can write the cookie to the response.
             // --------------------------------------------------------------
+            _logger.LogInformation("Attempting PasswordSignInAsync for WorkerId: {WorkerId}", model.WorkerId);
             var result = await SignInManager.PasswordSignInAsync(
                 model.WorkerId,
                 model.Password,
                 isPersistent: false,        // session cookie — closes with browser
                 lockoutOnFailure: true);    // honor lockout policy on bad password
+
+            _logger.LogInformation("PasswordSignInAsync result - Succeeded: {Succeeded}, IsLockedOut: {IsLockedOut}, IsNotAllowed: {IsNotAllowed}, RequiresTwoFactor: {RequiresTwoFactor}",
+                result.Succeeded, result.IsLockedOut, result.IsNotAllowed, result.RequiresTwoFactor);
 
             if (!result.Succeeded)
             {
@@ -324,6 +364,7 @@
                 // to prevent username enumeration.
                 if (result.IsLockedOut)
                 {
+                    _logger.LogWarning("User is locked out: {WorkerId}", model.WorkerId);
                     _errorMessage = Loc["Error_LockedOut"];
                 }
                 else if (result.IsNotAllowed)
@@ -333,19 +374,24 @@
                     // RequireConfirmedAccount=false (our config), this
                     // branch is unlikely to fire — but we handle it
                     // defensively in case someone tightens the config.
+                    _logger.LogWarning("User login not allowed: {WorkerId}", model.WorkerId);
                     _errorMessage = Loc["Error_NotAllowed"];
                 }
                 else if (result.RequiresTwoFactor)
                 {
                     // 2FA not implemented in v1 (roadmap Section 11).
+                    _logger.LogWarning("Two-factor auth required but not supported: {WorkerId}", model.WorkerId);
                     _errorMessage = Loc["Error_TwoFactorNotSupported"];
                 }
                 else
                 {
+                    _logger.LogWarning("Invalid credentials for WorkerId: {WorkerId}", model.WorkerId);
                     _errorMessage = Loc["Error_InvalidCredentials"];
                 }
                 return;
             }
+
+            _logger.LogInformation("Password validation succeeded for WorkerId: {WorkerId}", model.WorkerId);
 
             // --------------------------------------------------------------
             // 2. Login succeeded. Now enrich the principal with our
@@ -359,6 +405,7 @@
             //    no race window where the user is signed in but missing
             //    the custom claims.
             // --------------------------------------------------------------
+            _logger.LogInformation("Building custom claims for WorkerId: {WorkerId}", model.WorkerId);
             var extraClaims = new List<Claim>
             {
                 new("FullName", domainUser?.FullName ?? appUser.UserName ?? string.Empty),
@@ -371,6 +418,7 @@
             // profile page (avoids a DB lookup just to render "Gender: Male").
             extraClaims.Add(new Claim("Gender", domainUser?.Gender.ToString() ?? Gender.Male.ToString()));
 
+            _logger.LogInformation("Re-signing in with custom claims for WorkerId: {WorkerId}", model.WorkerId);
             // Re-sign-in with the enriched principal. The
             // AuthenticationProperties here match what
             // PasswordSignInAsync already used (non-persistent session
@@ -380,6 +428,8 @@
                 appUser,
                 new AuthenticationProperties { IsPersistent = false },
                 extraClaims);
+
+            _logger.LogInformation("User signed in successfully with claims for WorkerId: {WorkerId}", model.WorkerId);
 
             // --------------------------------------------------------------
             // 3. Role-aware redirect.
@@ -406,19 +456,26 @@
                 ? returnUrl
                 : GetRoleAwareLandingUrl(principalForRedirect);
 
+            _logger.LogInformation("Redirecting user to: {Target} (returnUrl was: {ReturnUrl})", target, returnUrl);
             Navigation.NavigateTo(target, forceLoad: true);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Defensive: any unexpected error → generic message. Don't
-            // leak exception details to the user.
-            _errorMessage = Loc["Error_Unexpected"];
+            // Log the FULL exception so we can see what's happening
+            _logger.LogError(ex, "Unexpected exception during login for WorkerId: {WorkerId}", FormModel?.WorkerId ?? "unknown");
+            _errorMessage = $"Error: {ex.GetType().Name} - {ex.Message}";
+            if (ex.InnerException is not null)
+            {
+                _errorMessage += $" | Inner: {ex.InnerException.Message}";
+            }
         }
         finally
         {
             _isSubmitting = false;
+            _logger.LogInformation("Login attempt completed for WorkerId: {WorkerId}, ErrorMessage: {ErrorMessage}", FormModel?.WorkerId ?? "unknown", _errorMessage);
         }
     }
+
 
     /// <summary>
     /// Resolves the role-aware landing URL for the given principal.

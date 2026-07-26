@@ -12,7 +12,7 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260726115738_InitialCreate")]
+    [Migration("20260726145654_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

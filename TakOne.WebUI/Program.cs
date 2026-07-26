@@ -170,6 +170,30 @@ await RoleSeeder.EnsureRolesCreatedAsync(app.Services);
 // leave wired in for every startup.
 await DefaultAdminSeeder.EnsureDefaultAdminAsync(app.Services);
 
+// Run login diagnostics in development to troubleshoot authentication issues.
+// This validates that:
+//   1. The admin user exists in the database
+//   2. The password hash is correct
+//   3. The user has the Admin role assigned
+//   4. The user is not locked out
+//   5. Domain and Identity records are in sync
+if (app.Environment.IsDevelopment())
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var logger = scope.ServiceProvider
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Program");
+
+        logger.LogInformation("========== Running Login Diagnostics ==========");
+
+        await TakOne.WebUI.Diagnostics.LoginDiagnostics.RunDiagnosticsAsync(
+            app.Services,
+            TakOne.Infrastructure.Identity.DefaultAdminSeeder.DefaultWorkerId,
+            TakOne.Infrastructure.Identity.DefaultAdminSeeder.DefaultPassword);
+    }
+}
+
 // ==================================================================================================================================
 //                                                          RUN
 // ==================================================================================================================================
