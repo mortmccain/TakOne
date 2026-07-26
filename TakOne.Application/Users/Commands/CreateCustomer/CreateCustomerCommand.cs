@@ -1,4 +1,5 @@
 ﻿using TakOne.Application.Common.Authorization;
+using TakOne.Domain.Users;
 
 namespace TakOne.Application.Users.Commands.CreateCustomer;
 
@@ -33,6 +34,12 @@ namespace TakOne.Application.Users.Commands.CreateCustomer;
 ///   GroupName is required to create a customer (per domain invariant).
 ///   It is NEVER shown to the customer themselves — only to admins and
 ///   managers. See <see cref="Domain.Users.User"/> XML docs for rationale.
+///
+/// GENDER (Phase 0.5):
+///   Required field. Per roadmap Section 12.5, only Male and Female are
+///   valid values. The Domain factory defaults to Male if the caller
+///   doesn't care, but at the command boundary we require an explicit
+///   value so the create-user form always submits one.
 /// </summary>
 [RequireRoles(Roles.Manager, Roles.Admin)]
 public sealed record CreateCustomerCommand
@@ -41,5 +48,6 @@ public sealed record CreateCustomerCommand
     string FullName,
     string GroupName,
     string Email,
-    string InitialPassword
+    string InitialPassword,
+    Gender Gender
     );

@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using TakOne.Application.Common.Authorization;
+using TakOne.Domain.Users;
 
 namespace TakOne.Application.Users.Commands.CreateStaff;
 
@@ -57,5 +58,10 @@ public sealed class CreateStaffCommandValidator : AbstractValidator<CreateStaffC
             .NotEmpty().WithMessage("Role is required.")
             .Must(r => AllowedStaffRoles.Contains(r))
             .WithMessage($"Role must be one of: {string.Join(", ", AllowedStaffRoles)}.");
+
+        // Gender — must be a defined enum value (Male or Female). C# enums
+        // can hold ANY integer, so IsInEnum() guards against (Gender)42.
+        RuleFor(x => x.Gender)
+            .IsInEnum().WithMessage("Gender must be a valid value (Male or Female).");
     }
 }

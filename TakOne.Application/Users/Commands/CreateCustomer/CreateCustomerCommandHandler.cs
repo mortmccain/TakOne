@@ -44,20 +44,21 @@ public sealed class CreateCustomerCommandHandler
 
         if (workerIdExists)
         {
-            logger.LogWarning(
-                "CreateCustomer: worker ID '{WorkerId}' already exists. Requested by user {UserId}.",
+            logger.LogWarning
+                ("CreateCustomer: worker ID '{WorkerId}' already exists. Requested by user {UserId}.",
                 command.WorkerId, currentUser.UserId);
 
-            return Result<Guid>.Failure(
-                $"A user with worker ID '{command.WorkerId}' already exists.");
+            return Result<Guid>.Failure
+                ($"A user with worker ID '{command.WorkerId}' already exists.");
         }
 
         // ------------------------------------------------------------------
         // 2. Create the Domain User via the customer factory. This enforces
         //    the domain invariants (WorkerId/FullName/GroupName non-empty,
-        //    length caps). DomainException is caught by middleware.
+        //    length caps, Gender is a defined enum value). DomainException
+        //    is caught by middleware.
         // ------------------------------------------------------------------
-        var user = User.CreateCustomer(command.WorkerId, command.FullName, command.GroupName);
+        var user = User.CreateCustomer(command.WorkerId, command.FullName, command.GroupName, command.Gender);
 
         // ------------------------------------------------------------------
         // 3. Persist the Domain User. This generates the user's Guid Id,
@@ -74,10 +75,11 @@ public sealed class CreateCustomerCommandHandler
 
         // ------------------------------------------------------------------
         // 4. Create the ApplicationUser (ASP.NET Identity account) with the
-        //    same Guid Id. This sets email + password and assigns the
-        //    Customer role. If it fails (weak password, duplicate email,
-        //    role not seeded), we return the failure and the in-memory
-        //    Domain User is discarded (no SaveChangesAsync yet).
+        //    same Guid Id. This sets email + password, copies the Gender
+        //    (denormalized), and assigns the Customer role. If it fails
+        //    (weak password, duplicate email, role not seeded), we return
+        //    the failure and the in-memory Domain User is discarded (no
+        //    SaveChangesAsync yet).
         // ------------------------------------------------------------------
         var accountResult = await userAccountService.CreateIdentityAccountAsync
             (
@@ -86,6 +88,7 @@ public sealed class CreateCustomerCommandHandler
             command.Email,
             command.InitialPassword,
             Roles.Customer,
+            user.Gender,
             cancellationToken
             );
 

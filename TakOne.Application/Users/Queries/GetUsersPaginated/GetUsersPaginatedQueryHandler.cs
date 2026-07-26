@@ -40,8 +40,7 @@ public sealed class GetUsersPaginatedQueryHandler
         if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
         {
             logger.LogWarning("GetUsersPaginated: unauthenticated call rejected.");
-            return new PaginatedResult<UserListItemDto>(
-                Array.Empty<UserListItemDto>(), 0, 1, 1);
+            return new PaginatedResult<UserListItemDto>(Array.Empty<UserListItemDto>(), 0, 1, 1);
         }
 
         var canListUsers =
@@ -91,6 +90,7 @@ public sealed class GetUsersPaginatedQueryHandler
 
         // ------------------------------------------------------------------
         // 4. Project to DTO. Strip GroupName if the caller can't see it.
+        //    Gender is always visible — it's not security-sensitive.
         // ------------------------------------------------------------------
         var dtos = paginated.Items
             .Select
@@ -100,6 +100,7 @@ public sealed class GetUsersPaginatedQueryHandler
                 Id = u.Id,
                 WorkerId = u.WorkerId,
                 FullName = u.FullName,
+                Gender = u.Gender,
                 GroupName = canSeeGroup ? u.GroupName : null,
                 IsActive = u.IsActive
             }

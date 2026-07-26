@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using TakOne.Domain.Users;
 
 namespace TakOne.Application.Users.Commands.CreateCustomer;
 
@@ -46,5 +47,13 @@ public sealed class CreateCustomerCommandValidator : AbstractValidator<CreateCus
             .WithMessage($"Password must be at least {MinPasswordLength} characters.")
             .MaximumLength(MaxPasswordLength)
             .WithMessage($"Password cannot exceed {MaxPasswordLength} characters.");
+
+        // Gender — must be a defined enum value. C# enums can hold ANY
+        // integer (e.g. (Gender)42), so IsEnumName() checks that the value
+        // is one of the declared members (Male=0, Female=1). The Domain
+        // User.ChangeGender / factory also enforces this, but failing fast
+        // at the validator gives a friendlier error message.
+        RuleFor(x => x.Gender)
+            .IsInEnum().WithMessage("Gender must be a valid value (Male or Female).");
     }
 }

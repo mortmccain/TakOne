@@ -7,6 +7,7 @@ using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.DependencyInjection;
 using TakOne.Infrastructure.DependencyInjection;
+using TakOne.Infrastructure.Identity;
 using TakOne.WebUI.Components;
 using TakOne.WebUI.Hubs;
 using TakOne.WebUI.Services;
@@ -116,4 +117,26 @@ app.MapRazorComponents<App>()
 
 app.MapHub<NotificationHub>("/notificationHub");
 
-app.Run();
+// ==================================================================================================================================
+//                                                          STARTUP-TIME SEEDING
+// ==================================================================================================================================
+
+// Role seeding — ensures all 5 TakOne roles (Admin, Manager, Employee,
+// Customer, ReadOnly) exist in AspNetRoles before the app starts accepting
+// requests. Without this, the first user-creation attempt via
+// IUserAccountService.CreateIdentityAccountAsync would fail with
+// "Role X does not exist."
+//
+// This call is awaited BEFORE app.RunAsync() so there's no race window
+// where a request arrives before roles are seeded. See RoleSeeder.cs for
+// the design rationale (static method vs IHostedService vs EF HasData).
+await RoleSeeder.EnsureRolesCreatedAsync(app.Services);
+
+// ==================================================================================================================================
+//                                                          RUN
+// ==================================================================================================================================
+
+// Use RunAsync (not Run) so the await chain stays consistent with the
+// async RoleSeeder call above. Top-level statements support async natively
+// — the compiler generates an async Main entry point under the hood.
+await app.RunAsync();

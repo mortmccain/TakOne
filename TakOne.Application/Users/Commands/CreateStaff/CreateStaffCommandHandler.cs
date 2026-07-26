@@ -48,11 +48,10 @@ public sealed class CreateStaffCommandHandler
                 ($"A user with worker ID '{command.WorkerId}' already exists.");
         }
 
-        // ------------------------------------------------------------------
         // 2. Create the Domain User via the staff factory. Staff users have
-        //    no GroupName — the factory accepts only (workerId, fullName).
+        //    no GroupName — the factory accepts only (workerId, fullName, gender).
         // ------------------------------------------------------------------
-        var user = User.CreateStaff(command.WorkerId, command.FullName);
+        var user = User.CreateStaff(command.WorkerId, command.FullName, command.Gender);
 
         // ------------------------------------------------------------------
         // 3. Track the Domain User (no SaveChanges yet — see CreateCustomer
@@ -62,9 +61,10 @@ public sealed class CreateStaffCommandHandler
 
         // ------------------------------------------------------------------
         // 4. Create the ApplicationUser with the same Guid Id, set email +
-        //    password, and assign the requested staff role. The role has
-        //    already been validated by the validator (must be one of the
-        //    AllowedStaffRoles), so we trust it here.
+        //    password, copy the Gender (denormalized), and assign the
+        //    requested staff role. The role has already been validated by
+        //    the validator (must be one of the AllowedStaffRoles), so we
+        //    trust it here.
         // ------------------------------------------------------------------
         var accountResult = await userAccountService.CreateIdentityAccountAsync
             (
@@ -73,6 +73,7 @@ public sealed class CreateStaffCommandHandler
             command.Email,
             command.InitialPassword,
             command.Role,
+            user.Gender,
             cancellationToken
             );
 

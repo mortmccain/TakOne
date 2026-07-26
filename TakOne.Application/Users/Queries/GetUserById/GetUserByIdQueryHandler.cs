@@ -93,13 +93,16 @@ public sealed class GetUserByIdQueryHandler
 
         // ------------------------------------------------------------------
         // 5. Project to DTO. Email is left null for now — see class-level
-        //    remark. Roles come from IUserAccountService.
+        //    remark. Roles come from IUserAccountService. Gender is sourced
+        //    from the Domain User (the source of truth — ApplicationUser's
+        //    copy is denormalized for the admin list view).
         // ------------------------------------------------------------------
         var dto = new UserDto
         {
             Id = user.Id,
             WorkerId = user.WorkerId,
             FullName = user.FullName,
+            Gender = user.Gender,
             GroupName = canSeeGroup ? user.GroupName : null,
             IsActive = user.IsActive,
             Email = null, // TODO: extend IUserAccountService with GetEmailAsync

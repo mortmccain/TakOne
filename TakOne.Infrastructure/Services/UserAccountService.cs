@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Domain.Users;
 using TakOne.Infrastructure.Identity;
 using TakOne.Infrastructure.Persistence;
 using TakOne.SharedKernel.Common;
@@ -107,10 +108,12 @@ public sealed class UserAccountService : IUserAccountService
     private readonly ApplicationDbContext _db;
     private readonly ILogger<UserAccountService> _logger;
 
-    public UserAccountService(
+    public UserAccountService
+        (
         UserManager<ApplicationUser> userManager,
         ApplicationDbContext db,
-        ILogger<UserAccountService> logger)
+        ILogger<UserAccountService> logger
+        )
     {
         _userManager = userManager;
         _db = db;
@@ -118,13 +121,16 @@ public sealed class UserAccountService : IUserAccountService
     }
 
     /// <inheritdoc />
-    public async Task<Result> CreateIdentityAccountAsync(
+    public async Task<Result> CreateIdentityAccountAsync
+        (
         Guid userId,
         string workerId,
         string email,
         string initialPassword,
         string role,
-        CancellationToken cancellationToken = default)
+        Gender gender,
+        CancellationToken cancellationToken = default
+        )
     {
         // ------------------------------------------------------------------
         // 1. Construct the ApplicationUser with the SHARED PK.
@@ -132,6 +138,11 @@ public sealed class UserAccountService : IUserAccountService
         //    Setting Id = userId BEFORE CreateAsync overrides Identity's
         //    default "generate a new Guid" behavior. This is what makes the
         //    Domain User and ApplicationUser one-to-one by shared PK.
+        //
+        //    Gender is copied here as a DENORMALIZED value (see ApplicationUser
+        //    class-level remark for the rationale — lets the admin user list
+        //    render without a join to the Domain Users table). The Domain
+        //    User remains the source of truth.
         // ------------------------------------------------------------------
         var appUser = new ApplicationUser
         {
@@ -140,6 +151,7 @@ public sealed class UserAccountService : IUserAccountService
             Email = email,
             EmailConfirmed = true,       // admin-created accounts skip email confirmation
             IsActive = true,             // mirrors Domain User.IsActive default
+            Gender = gender,             // denormalized copy (Phase 0.5)
             SecurityStamp = Guid.NewGuid().ToString("N")
         };
 

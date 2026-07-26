@@ -77,6 +77,18 @@ public sealed class User : AggregateRoot
     /// </summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// The user's gender. Per roadmap Section 12.5 (locked-in): 2-value enum
+    /// (Male=0, Female=1), default Male. Stored as int column on the Users
+    /// table. Used by the user-management admin page (display only — never
+    /// affects authorization or business rules).
+    ///
+    /// Set at creation time via the factory methods' <c>gender</c> parameter.
+    /// Mutable via <see cref="ChangeGender"/> (called by an admin from the
+    /// user-management page if a user's gender was recorded incorrectly).
+    /// </summary>
+    public Gender Gender { get; private set; }
+
 
 
     // ==================================================================================================================================
@@ -95,15 +107,17 @@ public sealed class User : AggregateRoot
     /// <summary>
     /// Private constructor used by the static factory methods.
     /// </summary>
-    private User(string workerId, string fullName, string? groupName) : base(Guid.NewGuid())
+    private User(string workerId, string fullName, string? groupName, Gender gender) : base(Guid.NewGuid())
     {
         EnsureWorkerIdValid(workerId);
         EnsureFullNameValid(fullName);
         // groupName can be null for staff users; only validated if non-null (see CreateCustomer).
+        EnsureGenderValid(gender);
 
         WorkerId = workerId;
         FullName = fullName;
         GroupName = groupName;
+        Gender = gender;
         IsActive = true;
     }
 
@@ -123,10 +137,14 @@ public sealed class User : AggregateRoot
     /// application layer (UserManager.AddToRoleAsync) AFTER this method returns
     /// and AFTER the ApplicationUser has been created in Infrastructure.
     /// </summary>
-    public static User CreateCustomer(string workerId, string fullName, string groupName)
+    /// <param name="gender">
+    /// The user's gender. Per roadmap Section 12.5, only Male/Female are
+    /// supported. Defaults to Male if the caller doesn't care.
+    /// </param>
+    public static User CreateCustomer(string workerId, string fullName, string groupName, Gender gender = Gender.Male)
     {
         EnsureGroupNameValid(groupName);
-        return new User(workerId, fullName, groupName);
+        return new User(workerId, fullName, groupName, gender);
     }
 
     /// <summary>
@@ -135,9 +153,13 @@ public sealed class User : AggregateRoot
     /// The specific role is assigned separately by the application layer
     /// via UserManager.AddToRoleAsync.
     /// </summary>
-    public static User CreateStaff(string workerId, string fullName)
+    /// <param name="gender">
+    /// The user's gender. Per roadmap Section 12.5, only Male/Female are
+    /// supported. Defaults to Male if the caller doesn't care.
+    /// </param>
+    public static User CreateStaff(string workerId, string fullName, Gender gender = Gender.Male)
     {
-        return new User(workerId, fullName, groupName: null);
+        return new User(workerId, fullName, groupName: null, gender);
     }
 
 
@@ -175,6 +197,18 @@ public sealed class User : AggregateRoot
     {
         EnsureFullNameValid(newFullName);
         FullName = newFullName;
+    }
+
+    /// <summary>
+    /// Updates the user's gender. Per roadmap Section 12.5, only Male and
+    /// Female are valid values — any other value throws DomainException.
+    /// This method is typically called by an admin correcting a data-entry
+    /// mistake on the user-management page.
+    /// </summary>
+    public void ChangeGender(Gender newGender)
+    {
+        EnsureGenderValid(newGender);
+        Gender = newGender;
     }
 
     /// <summary>
@@ -231,5 +265,20 @@ public sealed class User : AggregateRoot
 
         if (groupName.Length > 100)
             throw new DomainException("Group name cannot exceed 100 characters.");
+    }
+
+    /// <summary>
+    /// Validates that the supplied Gender is a defined enum value.
+    /// C# enums can hold ANY integer (e.g. <c>(Gender)42</c>), so we must
+    /// explicitly check that the value is one of the two defined members.
+    /// Per roadmap Section 12.5, only Male (0) and Female (1) are valid.
+    /// </summary>
+    private static void EnsureGenderValid(Gender gender)
+    {
+        if (!Enum.IsDefined(typeof(Gender), gender))
+        {
+            throw new DomainException(
+                $"Gender must be one of: {string.Join(", ", Enum.GetNames(typeof(Gender)))}.");
+        }
     }
 }

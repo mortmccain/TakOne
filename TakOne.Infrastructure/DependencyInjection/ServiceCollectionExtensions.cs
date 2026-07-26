@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,9 +110,11 @@ public static class ServiceCollectionExtensions
     /// The modified <see cref="IServiceCollection"/> (so callers can chain
     /// further DI calls if they wish).
     /// </returns>
-    public static IServiceCollection AddTakOneInfrastructure(
+    public static IServiceCollection AddTakOneInfrastructure
+        (
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+        )
     {
         // ------------------------------------------------------------------
         // 0. Argument guards.
@@ -132,8 +135,8 @@ public static class ServiceCollectionExtensions
         //    startup with a clear message, not at first request with an
         //    opaque SqlException.
         // ------------------------------------------------------------------
-        services.Configure<TakOneDatabaseOptions>(
-            configuration.GetSection(TakOneDatabaseOptions.SectionName));
+        services.Configure<TakOneDatabaseOptions>
+            (configuration.GetSection(TakOneDatabaseOptions.SectionName));
 
         // Read the connection string NOW (at startup) for the DbContext
         // registration AND the Wolverine message store below. We can't use
@@ -187,7 +190,8 @@ public static class ServiceCollectionExtensions
         //    transaction commits, and publishes them through the enrolled
         //    outbox. No custom interceptor needed.
         // ------------------------------------------------------------------
-        services.AddDbContext<ApplicationDbContext>(
+        services.AddDbContext<ApplicationDbContext>
+            (
             (serviceProvider, options) =>
             {
                 // Resolve the bound options to get the connection string.
@@ -229,58 +233,129 @@ public static class ServiceCollectionExtensions
         //    auth, etc. (We don't use the email-confirmation flow for
         //    admin-created accounts, but the token providers are needed for
         //    any future self-service features.)
+        //
+        //    IDENTITY OPTIONS BINDING (Concern G — locked in):
+        //      Options are bound from the "TakOne:Identity" section of
+        //      appsettings.json — NOT hard-coded. This lets ops tune the
+        //      password policy, lockout window, etc. without a code redeploy.
+        //      The bound values OVERRIDE the Identity defaults; we do not
+        //      also call services.Configure<IdentityOptions> because the
+        //      AddIdentity(...) lambda runs FIRST and would be overwritten
+        //      by post-hoc Configure<IdentityOptions> calls in subtle ways.
+        //
+        //    NOTE on the binding pattern:
+        //      We bind each subsection (Password, Lockout, User, SignIn) to
+        //      the corresponding nested options object on `options`. This is
+        //      necessary because `services.Configure<IdentityOptions>(section)`
+        //      binds the WHOLE IdentityOptions, and Bind() on a sub-object
+        //      is more explicit about which subsection goes where. The
+        //      TimeSpan values (e.g. "00:15:00" for DefaultLockoutTimeSpan)
+        //      parse correctly via Microsoft.Extensions.Configuration.Binder.
         // ------------------------------------------------------------------
-        services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
+        var identitySection = configuration.GetSection("TakOne:Identity");
+
+        services.AddIdentity<ApplicationUser, IdentityRole<Guid>>
+            (
+            options =>
         {
-            // ------------------------------------------------------------
-            // Identity options — tuned for an enterprise B2B context.
-            //
-            // These are STARTER values. Tighten or loosen as your security
-            // team requires. All can be overridden in appsettings.json by
-            // moving these to IOptions<IdentityOptions> binding, but for
-            // v1 hard-coding is acceptable (changing them requires a
-            // restart anyway).
-            // ------------------------------------------------------------
-
-            // PASSWORD STRENGTH. B2B users don't choose their own password
-            // initially (admin sets a strong one and the user changes it
-            // on first login), so we don't need the most aggressive
-            // policy. But we still require length 8 + 1 non-alphanumeric
-            // to defeat brute-force.
-            options.Password.RequireDigit = true;
-            options.Password.RequireLowercase = true;
-            options.Password.RequireUppercase = true;
-            options.Password.RequireNonAlphanumeric = true;
-            options.Password.RequiredLength = 8;
-            options.Password.RequiredUniqueChars = 4;
-
-            // LOCKOUT. Standard enterprise: 5 failed attempts in 15 min →
-            // 15-min lockout. Prevents brute-force without locking out
-            // users who fat-finger their password once.
-            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-            options.Lockout.MaxFailedAccessAttempts = 5;
-            options.Lockout.AllowedForNewUsers = true;
-
-            // USER. Disallow '@' in WorkerId (we use WorkerId as UserName).
-            // Require unique emails (one account per email).
-            options.User.AllowedUserNameCharacters =
-                "abcdefghijklmnopqrstuvwxyz" +
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-                "0123456789" +
-                "-._";
-            options.User.RequireUniqueEmail = true;
-
-            // SIGN-IN. Require confirmed email before sign-in. Our
-            // IUserAccountService.CreateIdentityAccountAsync sets
-            // EmailConfirmed=true for admin-created accounts, so this
-            // doesn't block them — but it does block any future
-            // self-registration flow until the user confirms.
-            options.SignIn.RequireConfirmedEmail = true;
-            options.SignIn.RequireConfirmedPhoneNumber = false;
-            options.SignIn.RequireConfirmedAccount = true;
-        })
+            // Bind each subsection from appsettings.json. If a section
+            // is missing in appsettings, the Identity defaults remain
+            // in place (the Bind call is a no-op on missing sections).
+            identitySection.GetSection("Password").Bind(options.Password);
+            identitySection.GetSection("Lockout").Bind(options.Lockout);
+            identitySection.GetSection("User").Bind(options.User);
+            identitySection.GetSection("SignIn").Bind(options.SignIn);
+        }
+            )
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
+
+        // ------------------------------------------------------------------
+        // 3b. Cookie auth configuration (Concern F — locked in).
+        //
+        //     ConfigureApplicationCookie is the API for tuning the auth
+        //     cookie that AddIdentity registered by default. Calling it
+        //     AFTER AddIdentity lets us override the defaults without
+        //     losing the rest of Identity's wiring.
+        //
+        //     LOCKED-IN COOKIE POLICY (roadmap Section 1, decision 3):
+        //       - HttpOnly = true        → JS can't read the cookie (XSS hardening)
+        //       - SecurePolicy = Always  → only sent over HTTPS (even in Dev —
+        //                                   use HTTPS dev certs)
+        //       - SameSite = Strict      → not sent on cross-site requests (CSRF
+        //                                   hardening; the trade-off is that
+        //                                   following a link from another site
+        //                                   to TakOne won't carry the cookie,
+        //                                   so the user appears logged-out —
+        //                                   acceptable for an enterprise app)
+        //       - SlidingExpiration      → activity extends the cookie's life
+        //                                   (each request resets the expiry
+        //                                   counter, up to the absolute max)
+        //       - Expiration             → 1 hour by default (from
+        //                                   TakOne:Auth:CookieExpiryHours in
+        //                                   appsettings.json). This is short
+        //                                   for an enterprise app — the
+        //                                   session-expiry warning toast at
+        //                                   55 minutes gives the user a 5-min
+        //                                   heads-up to save their work.
+        //       - LoginPath              → /Account/Login (the static-rendered
+        //                                   login page; if Blazor tried to
+        //                                   handle this we'd have the
+        //                                   "cookie not visible to circuit"
+        //                                   problem documented in
+        //                                   RedirectToLogin.razor)
+        //       - LogoutPath             → /Account/Logout
+        //       - AccessDeniedPath       → /Account/AccessDenied
+        //                                   (the page shown when
+        //                                   AuthorizeRouteView.NotAuthorized
+        //                                   fires for an AUTHENTICATED user
+        //                                   who lacks the role — distinct
+        //                                   from the NotAuthorized →
+        //                                   RedirectToLogin flow for
+        //                                   UNAUTHENTICATED users)
+        //       - Cookie.Name            → "TakOne.Auth" (avoids the default
+        //                                   ".AspNetCore.Cookies" name which
+        //                                   is shared across multiple apps
+        //                                   on the same domain — using a
+        //                                   custom name prevents cookie
+        //                                   collision if TakOne is ever
+        //                                   hosted alongside other ASP.NET
+        //                                   Core apps on the same origin)
+        // ------------------------------------------------------------------
+        var cookieExpiryHours = configuration
+            .GetSection("TakOne:Auth:CookieExpiryHours")
+            .Get<int>();
+        if (cookieExpiryHours <= 0) cookieExpiryHours = 1; // safe default
+
+        var slidingExpiration = configuration
+            .GetSection("TakOne:Auth:CookieSlidingExpiration")
+            .Get<bool?>() ?? true; // safe default
+
+        services.ConfigureApplicationCookie
+            (
+            options =>
+        {
+            options.Cookie.Name = "TakOne.Auth";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+
+            options.ExpireTimeSpan = TimeSpan.FromHours(cookieExpiryHours);
+            options.SlidingExpiration = slidingExpiration;
+
+            options.LoginPath = "/Account/Login";
+            options.LogoutPath = "/Account/Logout";
+            options.AccessDeniedPath = "/Account/AccessDenied";
+
+            // ReturnUrlParameter — the query string key that the cookie
+            // middleware watches for on the login page. After successful
+            // sign-in, SignInManager redirect to this URL. We use the
+            // standard ASP.NET Core default ("ReturnUrl") so the
+            // RedirectToLogin.razor component's existing
+            // `?returnUrl=...` query string matches.
+            options.ReturnUrlParameter = "returnUrl";
+        }
+            );
 
         // ------------------------------------------------------------------
         // 4. Repository registrations.
@@ -413,7 +488,9 @@ public static class ServiceCollectionExtensions
         //      https://wolverinefx.net/guide/durability/efcore/transactional-middleware
         //      https://wolverinefx.net/guide/durability/efcore/domain-events
         // ------------------------------------------------------------------
-        services.Configure<WolverineOptions>(opts =>
+        services.Configure<WolverineOptions>
+            (
+            opts =>
         {
             // (a) SQL Server message store — durably persists outgoing
             //     messages until processed. Uses the same connection string
@@ -452,7 +529,8 @@ public static class ServiceCollectionExtensions
             //     overload accepts any delegate returning IEnumerable<TEvent>.)
             opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>(
                 agg => agg.DomainEvents);
-        });
+        }
+            );
 
         return services;
     }

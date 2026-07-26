@@ -81,6 +81,7 @@ public sealed class GetCustomersByGroupQueryHandler
         //    Strip GroupName if the caller can't see it. (The whole list
         //    is the same group, so this is more about not leaking the
         //    field through the wire format than about per-row variance.)
+        //    Gender is always visible — it's not security-sensitive.
         // ------------------------------------------------------------------
         var dtos = users
             .OrderBy(u => u.FullName, StringComparer.OrdinalIgnoreCase)
@@ -91,6 +92,7 @@ public sealed class GetCustomersByGroupQueryHandler
                 Id = u.Id,
                 WorkerId = u.WorkerId,
                 FullName = u.FullName,
+                Gender = u.Gender,
                 GroupName = canSeeGroup ? u.GroupName : null,
                 IsActive = u.IsActive
             }

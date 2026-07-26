@@ -1,4 +1,5 @@
 ﻿using TakOne.Application.Common.Authorization;
+using TakOne.Domain.Users;
 
 namespace TakOne.Application.Users.Commands.CreateStaff;
 
@@ -26,6 +27,12 @@ namespace TakOne.Application.Users.Commands.CreateStaff;
 ///   always null. Per-product purchase limits do not apply to staff.
 ///   (Staff can still buy on their own behalf — when they do, no purchase
 ///   limit is enforced, because the lookup returns null.)
+///
+/// GENDER (Phase 0.5):
+///   Required field. Per roadmap Section 12.5, only Male and Female are
+///   valid values. The Domain factory defaults to Male if the caller
+///   doesn't care, but at the command boundary we require an explicit
+///   value so the create-user form always submits one.
 /// </summary>
 [RequireRoles(Roles.Admin)]
 public sealed record CreateStaffCommand
@@ -34,5 +41,6 @@ public sealed record CreateStaffCommand
     string FullName,
     string Email,
     string InitialPassword,
-    string Role
+    string Role,
+    Gender Gender
     );
