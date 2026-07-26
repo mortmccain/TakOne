@@ -1,0 +1,64 @@
+﻿@* RequireRole.razor — Phase 0.16
+   Reusable component: render children only if the current user is in
+   AT LEAST ONE of the supplied roles. If the user lacks all of the
+   supplied roles, render nothing (per roadmap Section 12.7: hide,
+   don't disable).
+
+   Usage:
+     <RequireRole Roles="@(new[] { Roles.Admin, Roles.Manager })">
+        <RadzenButton Text="Approve" @onclick="Approve" />
+     </RequireRole>
+
+     <RequireRole Roles="@(new[] { Roles.Admin })">
+        <RadzenButton Text="Delete user" @onclick="Delete" />
+     </RequireRole>
+
+   Why a component instead of just <AuthorizeView Roles="Admin,Manager">?
+     - <AuthorizeView> requires a comma-separated string literal, which
+       means no compile-time check that "Admin" is actually a valid role.
+       Using the Roles static class gives us IntelliSense and refactoring
+       safety — rename the role string and every call site updates.
+     - <RequireRole> also reads cleaner in pages with many role-gated
+       buttons.
+
+   Multiple roles are OR'd (any match shows the content). For AND logic
+   (rare: "show only if user is BOTH Admin AND Manager"), use two nested
+   <RequireRole> components.
+
+   NOTE on the explicit `@using` directives below: Blazor's _Imports.razor
+   is HIERARCHICAL — it only applies to its own folder + subfolders. The
+   project-root _Imports.razor SHOULD cover this folder too, but some IDE
+   / compiler setups still don't pick it up reliably for sibling folders
+   like Authorization/. To eliminate the "Found markup element with
+   unexpected name 'AuthorizeView'" warning, the two namespaces
+   <AuthorizeView> lives in are imported directly at the top of THIS file
+   as a defensive measure. (Even when the root _Imports.razor works,
+   having these here is harmless.) *@
+
+@using Microsoft.AspNetCore.Components.Authorization
+
+<AuthorizeView Roles="@_rolesCsv">
+    @ChildContent
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// One or more role names from the <c>Roles</c> static class in
+    /// <c>TakOne.Application.Common.Authorization</c>. Pass as an array:
+    /// <code>&lt;RequireRole Roles="@(new[] { Roles.Admin, Roles.Manager })"&gt;</code>
+    /// </summary>
+    [Parameter]
+    public string[] Roles { get; set; } = Array.Empty<string>();
+
+    private string _rolesCsv = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        // AuthorizeView.Roles expects a comma-separated string. We join here
+        // rather than at the call site so the API reads naturally.
+        _rolesCsv = string.Join(",", Roles ?? Array.Empty<string>());
+    }
+}

@@ -1,0 +1,22 @@
+﻿@* RedirectToLogin.razor — Phase 0.9
+   Renders when AuthorizeRouteView.NotAuthorized fires. Redirects the
+   browser to /Account/Login with a ReturnUrl query string so the user
+   comes back to the page they wanted after signing in.
+
+   Uses NavigationManager.ForceLoad (roadmap decision #4) to force a
+   full HTTP round-trip. Blazor's interactive navigation does NOT pick
+   up cookie changes set by the login page — only a true browser
+   navigation does. Without forceLoad, the user would log in, get the
+   cookie, but Blazor would still see the old auth state in the
+   circuit and bounce them back to login. ForceLoad solves this. *@
+
+@inject NavigationManager Navigation
+
+@code 
+{
+    protected override void OnInitialized()
+    {
+        var returnUrl = Uri.EscapeDataString(new Uri(Navigation.Uri).PathAndQuery);
+        Navigation.NavigateTo($"Account/Login?returnUrl={returnUrl}", forceLoad: true);
+    }
+}

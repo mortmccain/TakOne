@@ -1,11 +1,44 @@
-﻿@using System.Net.Http
+﻿@* _Imports.razor (PROJECT ROOT) — Phase 0 error-fix pass.
+   Blazor's _Imports.razor is HIERARCHICAL: it only applies to the folder
+   it lives in AND that folder's subfolders. The pre-existing
+   Components/_Imports.razor covers Components/ + its subfolders (Layout/,
+   Pages/, etc.), but it does NOT cover sibling folders like Authorization/,
+   Hubs/, or Services/.
+
+   Effect: any razor file outside Components/ couldn't resolve <AuthorizeView>,
+   <Radzen*>, the Roles static class, or any other namespace imported only by
+   Components/_Imports.razor. This file fixes that by re-declaring the same
+   imports at the PROJECT ROOT so they apply to EVERY razor file in the WebUI
+   project, regardless of which subfolder it lives in.
+
+   (The Components/_Imports.razor file is kept as-is — having both is harmless
+   because Blazor unions the imports. Keeping the Components/ copy means the
+   default Blazor template convention is preserved for tooling that expects it
+   to exist there.) *@
+
+@using System.Net.Http
 @using System.Net.Http.Json
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using static Microsoft.AspNetCore.Components.Web.RenderMode
 @using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Localization
+@using Microsoft.Extensions.Localization
+
 @using TakOne.WebUI
 @using TakOne.WebUI.Components
 @using TakOne.WebUI.Components.Layout
+@using TakOne.WebUI.Authorization
+@using TakOne.WebUI.Services
+@using TakOne.WebUI.Hubs
+
+@using TakOne.Application
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Common.Middlewares
+
+@using Radzen
+@using Radzen.Blazor

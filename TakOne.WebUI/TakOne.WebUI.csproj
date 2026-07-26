@@ -1,5 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
+	
+	
+	  <!--
+    PHASE 0.1 + 0.18 — packages + project references.
+
+    The WebUI is the OUTERMOST layer of the onion. It depends on Application
+    + Infrastructure + SharedKernel (transitively via Infrastructure). It owns
+    the only framework-specific concerns the inner layers don't:
+      - Radzen.Blazor component library
+      - Microsoft.Extensions.Localization for resource-based i18n
+      - ASP.NET SignalR client (already in the shared framework)
+      - Blazor Server (already in the shared framework via Sdk=Microsoft.NET.Sdk.Web)
+
+    NOT referenced here (per Concern F in the roadmap):
+      - Microsoft.AspNetCore.Identity.EntityFrameworkCore — Infrastructure owns it
+      - Microsoft.EntityFrameworkCore.Design — Infrastructure owns it
+      - WolverineFx.* — Application + Infrastructure own them
+
+    The WebUI only ORCHESTRATES: it calls AddTakOneApplication + AddTakOneInfrastructure
+    + AddRazorComponents + AddRadzenComponents and wires the middleware pipeline.
+  -->
+	
+	
+	
+	
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -8,9 +33,38 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Radzen.Blazor" Version="11.1.7" />
-  </ItemGroup>
 
+
+
+	  <!--
+      Microsoft.Extensions.Localization — provides IStringLocalizer<T> and
+      the request-localization middleware used for fa-IR (default, RTL) +
+      en-US (LTR) language switching. See roadmap Section 5.
+    -->
+
+	  
+
+	  <!--
+      Radzen.Blazor v11.x — the only component library we use.
+      Provides Layout, Sidebar, DataGrid, Charts, Dialogs, Notifications, Theme.
+      Replaces the Bootstrap-based scaffolding that ships with the default
+      Blazor template.
+    -->
+    <PackageReference Include="Radzen.Blazor" Version="11.1.7" />
+	  
+	  
+	  
+  </ItemGroup>
+	
+	
+	
+	<!--
+      Project references — the WebUI consumes:
+        - Application: commands, queries, DTOs, ICurrentUserService, Roles
+        - Infrastructure: DI composition root (AddTakOneInfrastructure)
+        - SharedKernel: Result, PaginatedResult, Specification, etc.
+      Domain is reachable transitively via Application.
+    -->
   <ItemGroup>
     <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />

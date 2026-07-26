@@ -1,0 +1,34 @@
+﻿@* LoginLayout.razor — Phase 0.11
+   Per roadmap Concern A: real branded full-screen layout (NOT a pass-through).
+   - Full-screen dark gradient background (overrides the main Radzen theme)
+   - Centered card container for the Login.razor child
+   - TakOne brand mark + tagline at the top
+   - Footer with copyright + language switcher link
+
+   Login.razor itself becomes a child of this layout (it sets
+   @layout LoginLayout) and just renders the form fields inside the card. *@
+
+@inherits LayoutComponentBase
+
+<div class="login-shell">
+    <div class="login-bg"></div>
+
+    <main class="login-card">
+        <header class="login-brand">
+            <h1>TakOne</h1>
+            <p>@Localizer["Tagline"]</p>
+        </header>
+
+        @Body
+
+        <footer class="login-footer">
+            <span>&copy; @DateTime.UtcNow.Year TakOne</span>
+            <a href="/Account/Login?culture=en-US">@Localizer["SwitchToEnglish"]</a>
+            <a href="/Account/Login?culture=fa-IR">@Localizer["SwitchToPersian"]</a>
+        </footer>
+    </main>
+</div>
+
+@code {
+    [Inject] private IStringLocalizer<LoginLayout> Localizer { get; set; } = default!;
+}

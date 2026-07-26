@@ -1,60 +1,151 @@
-html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+/* app.css — Phase 0.19
+   Global overrides for Radzen + TakOne responsive breakpoints.
+   This file is loaded by App.razor after the Radzen theme CSS, so any
+   rule here wins over the theme. Use sparingly — most styling should
+   come from Radzen's own classes + per-page .razor.css isolation. */
+
+/* ---- RTL baseline ---------------------------------------------------- *
+ * When <html dir="rtl"> is set (Persian), flip the layout direction for
+ * most elements. Radzen has built-in RTL support, but we add a few
+ * explicit overrides for our custom bits. */
+[dir="rtl"] body {
+    direction: rtl;
+    text-align: right;
 }
 
-a, .btn-link {
-    color: #006bb7;
+[dir="ltr"] body {
+    direction: ltr;
+    text-align: left;
 }
 
-.btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+/* ---- Touch targets --------------------------------------------------- *
+ * On touch devices (phones, tablets, touch monitors), enlarge click
+ * targets to the WCAG-recommended 44x44px minimum. Radzen's default is
+ * 32x32px which is fine for mouse but too small for fingers. */
+@media (hover: none) and (pointer: coarse) {
+    .rz-icon-button,
+    .rz-button-icon {
+        min-width: 44px;
+        min-height: 44px;
+    }
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+@media (hover: none) and (pointer: coarse) and (min-width: 1024px) {
+    /* Touch monitor — slightly larger still, more generous padding. */
+    .rz-icon-button,
+    .rz-button-icon {
+        min-width: 48px;
+        min-height: 48px;
+    }
 }
 
-.content {
-    padding-top: 1.1rem;
-}
-
-h1:focus {
-    outline: none;
-}
-
-.valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
-}
-
-.invalid {
-    outline: 1px solid #e50000;
-}
-
-.validation-message {
-    color: #e50000;
-}
-
-.blazor-error-boundary {
-    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
-    padding: 1rem 1rem 1rem 3.7rem;
-    color: white;
-}
-
-    .blazor-error-boundary::after {
-        content: "An error has occurred."
+/* ---- Phone-specific tweaks ------------------------------------------- */
+@media (max-width: 640px) {
+    /* Hide hover-only tooltips on touch — they get in the way. */
+    .rz-tooltip {
+        display: none !important;
     }
 
-.darker-border-checkbox.form-check-input {
-    border-color: #929292;
+    /* Compact data grids on phones — drop non-essential columns via
+       CSS. Pages will add class="compact" to grids where this is wanted. */
+    .rz-datatable.compact .rz-datatable-thead > tr > th:nth-child(n+4),
+    .rz-datatable.compact .rz-datatable-data > tr > td:nth-child(n+4) {
+        display: none;
+    }
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-    color: var(--bs-secondary-color);
-    text-align: end;
+/* ---- Card grid (product catalog) ------------------------------------- *
+ * Used by /Products page. Responsive: 1 column on phone, 2 on tablet,
+ * 3 on touch monitor, 4 on PC. */
+.product-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 1fr;
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-    text-align: start;
+@media (min-width: 640px) {
+    .product-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .product-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1280px) {
+    .product-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* ---- Loading spinner (used by <Authorizing> in Routes.razor) -------- *
+ * Bootstrap-compat classes that the default Blazor template uses. We
+ * keep them since Radzen doesn't ship its own full-screen spinner. */
+.spinner-border {
+    display: inline-block;
+    width: 2rem;
+    height: 2rem;
+    vertical-align: text-bottom;
+    border: 0.2em solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spinner-border 0.75s linear infinite;
+}
+
+@keyframes spinner-border {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* ---- Blazor error UI (kept from default template) ------------------ *
+ * Shown when an unhandled exception escapes a component. Hidden by
+ * default; Blazor adds the .show class when it needs to display. */
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
+
+/* ---- Login layout RTL ----------------------------------------------- *
+ * When the page is rendered in RTL mode (Persian), flip the login screen's
+ * gradient direction so the bright "spotlight" stays on the correct side.
+ *
+ * This rule used to live in Components/Layout/LoginLayout.razor.css as
+ * `:global([dir="rtl"]) .login-bg { ... }` — but Blazor's CSS isolation
+ * doesn't support the `:global(...)` pseudo-class (it's a CSS Modules
+ * feature). And since `[dir="rtl"]` lives on the <html> element (which is
+ * OUTSIDE the LoginLayout component's scope), scoped CSS isolation would
+ * strip the rule's matching before it could apply. So it MUST live here
+ * in the global app.css instead. */
+[dir="rtl"] .login-bg {
+    background: radial-gradient(circle at 80% 30%, rgba(59, 130, 246, 0.25) 0%, transparent 50%), radial-gradient(circle at 20% 70%, rgba(139, 92, 246, 0.20) 0%, transparent 50%), linear-gradient(225deg, #0f172a 0%, #1e293b 100%);
 }

@@ -60,9 +60,8 @@
 
 
 		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.10" />
-		<PackageReference Include="WolverineFx" Version="6.22.0" />
 
-
+		
 		
 		<!--
       Wolverine + FluentValidation integration.

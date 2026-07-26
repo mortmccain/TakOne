@@ -1,23 +1,249 @@
-﻿@inherits LayoutComponentBase
+﻿@* MainLayout.razor — Phase 0.10 + 0.20
+   Radzen-based main layout with:
+     - Sidebar with role-gated navigation (uses Roles static class)
+     - Header bar with: hamburger toggle, page title, theme switcher,
+       language switcher, role badge, display name, logout button
+     - Session-expiry warning toast at 55 minutes (5 min before 1h expiry)
+     - Notification hub auto-connect on circuit start
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+   Role-gated nav:
+     - Dashboard: Admin, Manager, Employee, ReadOnly (NOT Customer — they
+       redirect to /Products and have no dashboard)
+     - Products (catalog): everyone (buyers shop here; admins manage)
+     - Sales: everyone (their own order history)
+     - Cart: everyone except ReadOnly (ReadOnly can't buy)
+     - Profile, Settings: everyone
+     - Admin section: Admin, Manager, Employee (NOT Customer/ReadOnly) *@
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
 
-        <article class="content px-4">
+<RadzenLayout>
+    @* Sidebar with role-gated navigation *@
+    <RadzenSidebar @ref="sidebar" Style="width: 240px;">
+        @*
+           Component-name fix: the previous draft used `RadzenSidebarMenu` /
+           `RadzenSidebarMenuItem`, which DON'T exist in Radzen.Blazor 11.1.1.
+           The correct names are `RadzenPanelMenu` / `RadzenPanelMenuItem`.
+           (`RadzenSidebar` itself stays — that's the container.)
+        *@
+        <RadzenPanelMenu>
+            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
+                <RadzenPanelMenuItem Text="@Localizer["Dashboard"]" Icon="dashboard" Path="/" />
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Products"]" Icon="inventory_2" Path="/Products" />
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["MyOrders"]" Icon="receipt_long" Path="/Sales" />
+            </AuthorizeView>
+
+            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
+            </AuthorizeView>
+            <AuthorizeView Roles="@Roles.Customer">
+                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
+            </AuthorizeView>
+
+            @* Admin section — staff only (no customers, no read-only).
+               The outer <AuthorizeView> gates the WHOLE group (header +
+               children). Its `Context` is renamed to `adminSectionCtx`
+               so it doesn't collide with the implicit `context` parameter
+               name on the inner <AuthorizeView> elements (Blazor errors
+               on nested AuthorizeViews that both use the default name).
+               The inner AuthorizeViews each get their own `Context` name
+               for the same reason — every nested AuthorizeView in the
+               tree must have a unique context name. *@
+            <AuthorizeView Context="adminSectionCtx"
+                           Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                @* Parent menu item — uses `Text` (not `Title`), and acts as
+                   a collapsible group because it has child items. *@
+                <RadzenPanelMenuItem Text="@Localizer["AdminSection"]" Icon="admin_panel_settings">
+                    <AuthorizeView Context="adminProductsCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageProducts"]" Icon="inventory" Path="/Admin/Products" />
+                    </AuthorizeView>
+                    <AuthorizeView Context="adminCategoriesCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageCategories"]" Icon="category" Path="/Admin/Categories" />
+                    </AuthorizeView>
+                    <AuthorizeView Context="adminUsersCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageUsers"]" Icon="group" Path="/Admin/Users" />
+                    </AuthorizeView>
+                </RadzenPanelMenuItem>
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Profile"]" Icon="account_circle" Path="/Profile" />
+            </AuthorizeView>
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Settings"]" Icon="settings" Path="/Settings" />
+            </AuthorizeView>
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+
+    <RadzenBody>
+        @* Top header bar.
+           NOTE on component choices: a previous version used <RadzenToolBar>,
+           <RadzenIconButton>, and <RadzenSpacer>. None of these exist in
+           Radzen.Blazor 11.1.1 — the compiler flagged them as "unexpected
+           markup element". The replacements are:
+             - <RadzenToolBar>  →  plain <div class="takone-toolbar"> with
+               flexbox layout (Radzen's CSS already styles children correctly
+               because the rz- classes are still on the inner components).
+             - <RadzenIconButton Icon="X">  →  <RadzenButton Icon="X"
+               Variant="Variant.Text" />  (RadzenButton with Icon= and a Text
+               variant behaves as an icon-only button).
+             - <RadzenSpacer />  →  <div class="takone-spacer" /> with
+               `flex: 1 1 auto` (standard flexbox spacer pattern). *@
+        <RadzenHeader>
+            <div class="takone-toolbar" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; min-height: 56px;">
+                <RadzenButton Icon="menu" Click="@ToggleSidebar" Variant="Variant.Text" />
+                <RadzenText Text="TakOne" Style="font-weight: 600; margin-left: 12px;" />
+
+                <div class="takone-spacer" style="flex: 1 1 auto;"></div>
+
+                @* Theme switcher — 10 free Radzen themes, persisted to localStorage.
+                   NOTE on callback choice: an earlier draft used `@bind-Value`
+                   + `Change`. RadzenDropDown<T>.Change is EventCallback<object?>
+                   (NOT EventCallback<string>), so a lambda `args => Handler(args)`
+                   fails with CS1503 "cannot convert from 'object' to 'string'"
+                   when Handler takes string. A method group fails too (Blazor
+                   can't convert Func<string,Task> to EventCallback<object?>).
+
+                   The fix is to use Radzen's standard ValueChanged callback
+                   instead — ValueChanged IS EventCallback<T>, so with
+                   TValue="string" it's EventCallback<string>, and the handler
+                   `OnThemeChanged(string theme)` matches directly. We drop
+                   @bind-Value (since ValueChanged replaces its auto-generated
+                   setter) and bind Value + ValueChanged manually. The handler
+                   already assigns _selectedTheme, so two-way binding is
+                   preserved. *@
+                <RadzenDropDown Value="_selectedTheme"
+                                Data="_themes"
+                                Style="width: 180px;"
+                                ValueChanged="@OnThemeChanged"
+                                TValue="string" />
+
+                @* Language switcher — Persian (fa-IR, RTL) or English (en-US, LTR) *@
+                <RadzenDropDown Value="_selectedCulture"
+                                Data="_cultures"
+                                Style="width: 120px; margin-left: 8px;"
+                                ValueChanged="@OnCultureChanged"
+                                TValue="string" />
+
+                @* Role badge + display name + logout (only when authenticated) *@
+                <AuthorizeView>
+                    <Authorized>
+                        <RadzenBadge Text="@_roleBadge" IsPill="true" Style="margin-left: 12px;" />
+                        <RadzenText Text="@_displayName" Style="margin-left: 8px;" />
+                        <RadzenButton Icon="logout" Click="@DoLogout" Variant="Variant.Text" Style="margin-left: 8px;" />
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </RadzenHeader>
+
+        <RadzenContent Style="padding: 24px;">
             @Body
-        </article>
-    </main>
-</div>
+        </RadzenContent>
+    </RadzenBody>
+</RadzenLayout>
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+<ReconnectModal />
+
+@code {
+    private RadzenSidebar? sidebar;
+    private string _selectedTheme = "standard-dark";
+    private string _selectedCulture = "fa-IR";
+    private string _displayName = string.Empty;
+    private string _roleBadge = string.Empty;
+
+    private readonly List<string> _themes = new()
+    {
+        "standard-dark", "standard",
+        "material-dark", "material",
+        "software-dark", "software",
+        "humanistic-dark", "humanistic",
+        "dark", "default"
+    };
+
+    private readonly List<string> _cultures = new() { "fa-IR", "en-US" };
+
+    [Inject] private IStringLocalizer<MainLayout> Localizer { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read the current user's name + role for the header badge.
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _displayName = user.FindFirst("FullName")?.Value
+                            ?? user.Identity?.Name
+                            ?? "User";
+            _roleBadge = string.Join(", ", user.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value));
+        }
+
+        // Start the SignalR connection to NotificationHub.
+        try
+        {
+            await JS.InvokeVoidAsync("notificationHub.start");
+        }
+        catch
+        {
+            // Non-fatal — UI still works without real-time, just no push refresh.
+        }
+    }
+
+    private void ToggleSidebar()
+    {
+        // NOTE on the two earlier compile errors this resolves:
+        //
+        // 1) "Cannot await 'void'" — RadzenSidebar.Toggle() returns `void`
+        //    (not Task) in Radzen.Blazor 11.1.1. The previous draft did
+        //    `await sidebar.Toggle();` which failed. We drop the `await`
+        //    and just call the method — Toggle() is synchronous, calls
+        //    StateHasChanged() internally, and Blazor's `Click` EventCallback
+        //    happily binds to a void-returning method.
+        //
+        // 2) BL0006 "Component parameter 'Expanded' should not be set
+        //    outside of its component" — the intermediate workaround mutated
+        //    `sidebar.Expanded = !sidebar.Expanded;` directly. `Expanded` is
+        //    a [Parameter] on RadzenSidebar, and the Blazor analyzer flags
+        //    external writes to [Parameter]s. Calling Toggle() instead
+        //    avoids the warning because it's a public method invocation,
+        //    not a parameter assignment.
+        sidebar?.Toggle();
+    }
+
+    private async Task OnThemeChanged(string theme)
+    {
+        // RadzenDropDown<string>.Change is EventCallback<string> — not
+        // EventCallback<object> — so the parameter type must be `string`.
+        // (The previous `object` parameter failed to convert at the call
+        // site when @bind-Value was strongly typed to string.)
+        _selectedTheme = theme;
+        await JS.InvokeVoidAsync("eval", $"document.querySelector('head link[href*=\"Radzen.Blazor/css/\"]').href = '/_content/Radzen.Blazor/css/{theme}.css'");
+        await JS.InvokeVoidAsync("eval", $"localStorage.setItem('radzen_theme', '{theme}')");
+    }
+
+    private async Task OnCultureChanged(string culture)
+    {
+        _selectedCulture = culture;
+        // Persist to cookie so the NEXT page load (forceLoad) reads it
+        // server-side and sets the right CultureInfo before Blazor renders.
+        await JS.InvokeVoidAsync("eval", $"document.cookie = 'takone_culture={culture}; path=/; max-age=31536000; samesite=strict'");
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    private void DoLogout()
+    {
+        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
+    }
+}
