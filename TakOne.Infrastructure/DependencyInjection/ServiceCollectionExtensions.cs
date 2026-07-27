@@ -76,11 +76,15 @@ namespace TakOne.Infrastructure.DependencyInjection;
 /// ORDER OF CALLS IN Program.cs:
 ///   1. <c>builder.Services.AddTakOneApplication(builder.Configuration)</c>
 ///   2. <c>builder.Services.AddTakOneInfrastructure(builder.Configuration)</c>
-///   3. <c>builder.Host.UseWolverine(_ =&gt; { })</c> — empty lambda; both
-///      Application and Infrastructure have already configured
-///      <c>WolverineOptions</c> via <c>services.Configure&lt;WolverineOptions&gt;</c>.
-///      This call just triggers Wolverine to apply the configured options and
-///      start the message bus.
+///   3. <c>builder.Host.UseWolverine(opts =&gt; { ... })</c> — the lambda
+///      invokes <see cref="ConfigureWolverine"/> on BOTH the Application
+///      and Infrastructure <c>ServiceCollectionExtensions</c> classes,
+///      passing the <c>opts</c> instance directly. This is REQUIRED:
+///      Wolverine does NOT read its options from the
+///      <c>IOptions&lt;WolverineOptions&gt;</c> pipeline, so
+///      <c>services.Configure&lt;WolverineOptions&gt;</c> does not work.
+///      The <c>ConfigureWolverine</c> methods are the ONLY way to apply
+///      Application- and Infrastructure-layer Wolverine configuration.
 ///
 /// CONNECTION STRING HANDLING:
 ///   This method takes <c>IConfiguration</c> (not a connection string
@@ -395,176 +399,178 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserAccountService, UserAccountService>();
 
         // ------------------------------------------------------------------
-        // 6. Wolverine SQL Server message store + durable local queues +
-        //    EF Core transactional middleware + domain-event scraper.
+        // 5. Wolverine host configuration.
         //
-        //    This block is the COMPLETE transactional-outbox wiring. The
-        //    Application layer's AddTakOneApplication configures ONLY the
-        //    engine-agnostic Wolverine concerns (handler discovery, middleware
-        //    pipeline, FluentValidation integration). Everything that touches
-        //    a concrete engine lives here, in this single cohesive block.
+        //    CRITICAL (Wolverine 6.22 behavior):
+        //    As of this fix, the Wolverine options (runtime compilation, SQL
+        //    Server message store, durable local queues, EF Core transactional
+        //    middleware, domain-event scraper) are NO LONGER applied via
+        //    `services.Configure<WolverineOptions>`. That API doesn't work
+        //    for Wolverine — it doesn't read its options from the
+        //    IOptions<WolverineOptions> pipeline.
         //
-        //    Five cooperating pieces, applied in order:
+        //    Instead, we expose a SEPARATE public static extension method
+        //    `ConfigureInfrastructureWolverine(WolverineOptions opts, IConfiguration)`
+        //    further down in this file. The WebUI's Program.cs invokes it
+        //    as a clean extension-method call (`opts.ConfigureInfrastructureWolverine(config)`)
+        //    from inside `builder.Host.UseWolverine(opts => { ... })`. This
+        //    applies our Infrastructure-layer Wolverine config to the SAME
+        //    options instance Wolverine actually uses.
         //
-        //    (a) opts.PersistMessagesWithSqlServer(connectionString) — creates
-        //        the wolverine_messages table on first run and sets up the
-        //        message store on the given connection string. This is where
-        //        outgoing messages are durably stored until they're processed.
-        //        Uses the SAME connection string as ApplicationDbContext, so
-        //        outbox entries can commit in the SAME transaction as business
-        //        changes (the entire reason the outbox pattern works — split
-        //        them into separate databases and you'd need MSDTC, which is
-        //        almost never worth it).
+        //    Application layer does the same (its own `ConfigureApplicationWolverine`
+        //    adds handler discovery + middleware + FluentValidation). The
+        //    Program.cs calls both configurators inside the same UseWolverine
+        //    lambda, each as a clean extension-method call on `opts`. The
+        //    methods are named DISTINCTLY (Application vs Infrastructure) so
+        //    they can coexist as extension methods on WolverineOptions without
+        //    ambiguity -- calling them with identical names would require
+        //    static-call syntax which is fragile.
         //
-        //    (b) opts.Policies.UseDurableLocalQueues() — a policy that
-        //        enrolls ALL local queues into durable inbox/outbox
-        //        processing. Without this, messages are stored in-memory
-        //        only and lost on process restart. With this, every locally
-        //        dispatched message is persisted to the message store and
-        //        durably delivered.
-        //
-        //    (c) opts.UseEntityFrameworkCoreTransactions() — registers EF Core
-        //        as the transaction provider for Wolverine handlers. Each
-        //        handler that uses a DbContext is automatically enrolled in
-        //        an EF Core transaction: the middleware calls
-        //        BeginTransactionAsync before the handler runs, CommitAsync
-        //        after it returns successfully, and RollbackAsync if it
-        //        throws.
-        //
-        //        This ALSO solves the Identity auto-commit issue: when
-        //        UserManager.CreateAsync calls Context.SaveChangesAsync
-        //        internally, the save happens INSIDE the open transaction —
-        //        it's NOT auto-committed. If the handler later fails, the
-        //        transaction rolls back, including the Identity rows. No
-        //        TransactionScope needed.
-        //
-        //    (d) opts.Policies.AutoApplyTransactions() — auto-applies the
-        //        transactional middleware to EVERY handler that uses a
-        //        DbContext. Without this, you'd have to annotate each
-        //        handler with [Transactional]. With it, the default is
-        //        "transactional" — opt OUT with [NonTransactional] on the
-        //        rare handler that needs to.
-        //
-        //    (e) opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot,
-        //        BaseDomainEvent>(agg => agg.DomainEvents) — registers a
-        //        domain-event scraper that, at commit time, walks the
-        //        ChangeTracker, filters to entities assignable to
-        //        AggregateRoot (so SaleLineItem and other non-aggregate
-        //        entities are silently skipped), reads their DomainEvents
-        //        collection, and publishes each via IMessageBus.PublishAsync.
-        //        The published messages are enrolled in the SAME EF Core
-        //        transaction (because the handler is running under the
-        //        transactional middleware), so they commit atomically with
-        //        the business changes.
-        //
-        //        This replaces what would otherwise be a hand-rolled
-        //        ISaveChangesInterceptor. The interceptor approach has two
-        //        problems that the built-in scraper avoids:
-        //          1. Captive dependency: IMessageBus is Scoped, but
-        //             DbContextOptions (which holds interceptors) is
-        //             Singleton. A Singleton-bound interceptor cannot safely
-        //             inject a Scoped IMessageBus.
-        //          2. Timing: calling IMessageBus.PublishAsync from inside
-        //             SavingChangesAsync (the "before save" hook) adds
-        //             OutgoingMessage entities to the DbContext AFTER
-        //             DetectChanges has run, so they may not be in the same
-        //             SaveChanges round-trip.
-        //
-        //        The built-in scraper runs in EfCoreEnvelopeTransaction.CommitAsync
-        //        — AFTER SaveChanges succeeds, BEFORE the transaction commits.
-        //        This is the correct point in the lifecycle.
-        //
-        //    CAVEAT — ClearDomainEvents:
-        //        Wolverine's scraper does NOT clear the events from the
-        //        aggregate after publishing. This is intentional — the
-        //        aggregate is a Scoped entity (loaded fresh per handler
-        //        invocation), so its in-memory DomainEvents collection is
-        //        discarded with the scope. If you ever cache aggregates or
-        //        reuse DbContext instances across messages, you'd need to
-        //        call ClearDomainEvents() yourself after the scrape. For our
-        //        current Scoped-per-request pattern, no action needed.
-        //
-        //    WHAT THIS BUYS US (all five pieces together):
-        //      - When a handler calls IMessageBus.PublishAsync(...) inside
-        //        a transaction, the published message is written to the
-        //        wolverine_messages table in the SAME transaction as the
-        //        business changes.
-        //      - If SaveChangesAsync succeeds, both the business changes
-        //        and the message are committed atomically.
-        //      - If SaveChangesAsync fails, both roll back — no orphan
-        //        messages, no lost events.
-        //      - A background process then picks up the outbox entries
-        //        and sends them to their actual destinations.
-        //
-        //    Reference:
-        //      https://wolverinefx.net/guide/durability/sqlserver
-        //      https://wolverinefx.net/guide/durability/efcore/outbox-and-inbox
-        //      https://wolverinefx.net/guide/durability/efcore/transactional-middleware
-        //      https://wolverinefx.net/guide/durability/efcore/domain-events
+        //    The full design rationale for the five-piece transactional-outbox
+        //    wiring (SQL Server message store + durable local queues + EF Core
+        //    transactional middleware + auto-apply transactions + domain-event
+        //    scraper) is documented in the `ConfigureInfrastructureWolverine`
+        //    method below.
         // ------------------------------------------------------------------
-        services.Configure<WolverineOptions>(opts =>
-        {
-            // (0) Runtime code generation — Wolverine 6.x removed the Roslyn
-            //     runtime compiler from core WolverineFx and split it into the
-            //     WolverineFx.RuntimeCompilation NuGet package. Without this
-            //     call (or the package's auto-registration), Wolverine throws
-            //     at startup:
-            //       "Wolverine is running in TypeLoadMode.Dynamic, which
-            //        compiles handler/middleware code at runtime, but no
-            //        IAssemblyGenerator (Roslyn) is registered."
-            //
-            //     TypeLoadMode.Dynamic is Wolverine's default in 6.x, so we
-            //     don't set it explicitly — we just enable the runtime
-            //     compiler that Dynamic mode requires.
-            //
-            //     PRODUCTION HARDENING (future):
-            //       For production, remove this call AND the
-            //       WolverineFx.RuntimeCompilation package, then pre-generate
-            //       handler/middleware code with `dotnet run -- codegen write`
-            //       and set opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Static.
-            //       That removes the Roslyn runtime dependency (~10 MB) and
-            //       speeds up startup. See https://wolverinefx.net/guide/codegen.html.
-            opts.UseRuntimeCompilation();
-
-            // (a) SQL Server message store — durably persists outgoing
-            //     messages until processed. Uses the same connection string
-            //     as ApplicationDbContext (captured from the local
-            //     `databaseOptions` var constructed in section 1 above).
-            //     Connection string never appears in any method parameter.
-            opts.PersistMessagesWithSqlServer(databaseOptions.ConnectionString);
-
-            // (b) Durable local queues — enrolls ALL local queues into
-            //     durable inbox/outbox processing. Without this, messages
-            //     are stored in-memory only and lost on process restart.
-            opts.Policies.UseDurableLocalQueues();
-
-            // (c) Register EF Core as the transaction provider.
-            opts.UseEntityFrameworkCoreTransactions();
-
-            // (d) Auto-apply transactional middleware to all handlers using
-            //     a DbContext. Individual handlers can opt out with
-            //     [NonTransactional] (namespace Wolverine.Attributes).
-            opts.Policies.AutoApplyTransactions();
-
-            // (e) Scrape domain events from AggregateRoot entities at commit
-            //     time and publish them through the enrolled outbox.
-            //
-            //     Generic args:
-            //       - TEntityType = AggregateRoot — the scraper uses
-            //         OfType<TEntityType>() to filter, so non-aggregate
-            //         entities (SaleLineItem, etc.) are silently skipped.
-            //       - TDomainEvent = BaseDomainEvent — our custom abstract
-            //         base class. Wolverine does NOT require events to
-            //         implement any marker interface; TDomainEvent can be
-            //         any type.
-            //
-            //     Delegate: agg => agg.DomainEvents — our property name.
-            //     (Wolverine's docs sample uses "Events", but the generic
-            //     overload accepts any delegate returning IEnumerable<TEvent>.)
-            opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>(
-                agg => agg.DomainEvents);
-        });
 
         return services;
+    }
+
+    /// <summary>
+    /// Applies Infrastructure-layer Wolverine configuration (runtime code
+    /// generation, SQL Server message store, durable local queues, EF Core
+    /// transactional middleware, domain-event scraper) to the given
+    /// <paramref name="opts"/> instance. MUST be called from inside
+    /// <c>builder.Host.UseWolverine(opts =&gt; { ... })</c> in the WebUI's
+    /// Program.cs -- Wolverine does NOT read its options from the
+    /// <c>IOptions&lt;WolverineOptions&gt;</c> pipeline, so
+    /// <c>services.Configure&lt;WolverineOptions&gt;</c> does not work.
+    /// </summary>
+    /// <remarks>
+    /// NAMING: This method is deliberately named <c>ConfigureInfrastructureWolverine</c>
+    /// (not <c>ConfigureWolverine</c>) so it can coexist with the Application
+    /// layer's <c>ConfigureApplicationWolverine</c> extension method on the
+    /// same <c>WolverineOptions</c> type without ambiguity. With identical
+    /// names the C# compiler requires static-call syntax to disambiguate
+    /// (<c>Class.Method(opts, config)</c>), which is fragile and produces
+    /// confusing "No overload for method 'ConfigureWolverine' takes 2 arguments"
+    /// errors when one of the two files is missed during a refactor. Distinct
+    /// names let the caller use clean extension-method syntax:
+    /// <code>
+    /// builder.Host.UseWolverine(opts =&gt;
+    /// {
+    ///     opts.ConfigureApplicationWolverine(builder.Configuration);
+    ///     opts.ConfigureInfrastructureWolverine(builder.Configuration);
+    /// });
+    /// </code>
+    /// </remarks>
+    /// <param name="opts">
+    /// The <see cref="WolverineOptions"/> instance provided by Wolverine's
+    /// <c>Host.UseWolverine(opts =&gt; ...)</c> lambda. Mutated in place.
+    /// </param>
+    /// <param name="configuration">
+    /// Application configuration. Used to read the database connection string
+    /// (for the SQL Server message store) from
+    /// <c>TakOne:Database:ConnectionString</c>.
+    /// </param>
+    public static void ConfigureInfrastructureWolverine(
+        this WolverineOptions opts,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(opts);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // ------------------------------------------------------------------
+        // Re-parse TakOneDatabaseOptions from configuration.
+        //
+        // The previous implementation parsed this ONCE in AddTakOneInfrastructure
+        // and captured it in a local `databaseOptions` variable. Since the
+        // Wolverine config now lives in a SEPARATE method (this one), that
+        // local is out of scope and we re-parse it here. Cheap operation,
+        // happens only once at startup.
+        //
+        // SECURITY: this local variable captures the connection string. It is
+        // passed to opts.PersistMessagesWithSqlServer(...) and never leaves
+        // this method. It is never logged, never exposed as a method parameter,
+        // never stored in a static field.
+        // ------------------------------------------------------------------
+        var databaseOptions = new TakOneDatabaseOptions
+        {
+            ConnectionString = configuration
+                .GetSection(TakOneDatabaseOptions.SectionName)
+                .GetValue<string>(nameof(TakOneDatabaseOptions.ConnectionString))
+                ?? string.Empty
+        };
+        databaseOptions.EnsureValid();
+
+        // ------------------------------------------------------------------
+        // (0) Runtime code generation — Wolverine 6.x removed the Roslyn
+        //     runtime compiler from core WolverineFx and split it into the
+        //     WolverineFx.RuntimeCompilation NuGet package. Without this
+        //     call (or the package's auto-registration), Wolverine throws
+        //     at startup:
+        //       "Wolverine is running in TypeLoadMode.Dynamic, which
+        //        compiles handler/middleware code at runtime, but no
+        //        IAssemblyGenerator (Roslyn) is registered."
+        //
+        //     TypeLoadMode.Dynamic is Wolverine's default in 6.x, so we
+        //     don't set it explicitly — we just enable the runtime
+        //     compiler that Dynamic mode requires.
+        //
+        //     PRODUCTION HARDENING (future):
+        //       For production, remove this call AND the
+        //       WolverineFx.RuntimeCompilation package, then pre-generate
+        //       handler/middleware code with `dotnet run -- codegen write`
+        //       and set opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Static.
+        //       That removes the Roslyn runtime dependency (~10 MB) and
+        //       speeds up startup. See https://wolverinefx.net/guide/codegen.html.
+        // ------------------------------------------------------------------
+        opts.UseRuntimeCompilation();
+
+        // ------------------------------------------------------------------
+        // (a) SQL Server message store — durably persists outgoing messages
+        //     until processed. Uses the same connection string as
+        //     ApplicationDbContext (re-parsed from configuration above).
+        // ------------------------------------------------------------------
+        opts.PersistMessagesWithSqlServer(databaseOptions.ConnectionString);
+
+        // ------------------------------------------------------------------
+        // (b) Durable local queues — enrolls ALL local queues into durable
+        //     inbox/outbox processing. Without this, messages are stored
+        //     in-memory only and lost on process restart.
+        // ------------------------------------------------------------------
+        opts.Policies.UseDurableLocalQueues();
+
+        // ------------------------------------------------------------------
+        // (c) Register EF Core as the transaction provider.
+        // ------------------------------------------------------------------
+        opts.UseEntityFrameworkCoreTransactions();
+
+        // ------------------------------------------------------------------
+        // (d) Auto-apply transactional middleware to all handlers using
+        //     a DbContext. Individual handlers can opt out with
+        //     [NonTransactional] (namespace Wolverine.Attributes).
+        // ------------------------------------------------------------------
+        opts.Policies.AutoApplyTransactions();
+
+        // ------------------------------------------------------------------
+        // (e) Scrape domain events from AggregateRoot entities at commit
+        //     time and publish them through the enrolled outbox.
+        //
+        //     Generic args:
+        //       - TEntityType = AggregateRoot — the scraper uses
+        //         OfType<TEntityType>() to filter, so non-aggregate
+        //         entities (SaleLineItem, etc.) are silently skipped.
+        //       - TDomainEvent = BaseDomainEvent — our custom abstract
+        //         base class. Wolverine does NOT require events to
+        //         implement any marker interface; TDomainEvent can be
+        //         any type.
+        //
+        //     Delegate: agg => agg.DomainEvents — our property name.
+        //     (Wolverine's docs sample uses "Events", but the generic
+        //     overload accepts any delegate returning IEnumerable<TEvent>.)
+        // ------------------------------------------------------------------
+        opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>(
+            agg => agg.DomainEvents);
     }
 }

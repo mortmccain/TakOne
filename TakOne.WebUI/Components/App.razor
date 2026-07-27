@@ -1,9 +1,19 @@
 ﻿@using TakOne.WebUI.Components
 @using System.Globalization
 
+@* <html> lang/dir are DYNAMIC: Persian (fa-IR) → RTL, English (en-US) → LTR.
+   The previous version hardcoded `lang="fa" dir="rtl"` so English mode
+   still rendered right-to-left, which is wrong. Reading from
+   CultureInfo.CurrentUICulture means the attributes are correct on the
+   very first server render (the localization middleware has already
+   set CurrentUICulture based on the cookie/query-string/default before
+   App.razor renders).
+
+   - TwoLetterISOLanguageName → "fa" for fa-IR, "en" for en-US
+   - TextInfo.IsRightToLeft  → true for fa-IR (Persian is RTL),
+                                false for en-US (English is LTR) *@
 <!DOCTYPE html>
-<html lang="@CultureInfo.CurrentCulture.Name" dir="@(
-      CultureInfo.CurrentCulture.TextInfo.IsRightToLeft ? "rtl" : "ltr")">
+<html lang="@HtmlLang" dir="@HtmlDir">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -39,6 +49,25 @@
 @code {
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
+
+    /// <summary>
+    /// Two-letter ISO language code for the current UI culture ("fa" or "en").
+    /// Used for the &lt;html lang="..."&gt; attribute. Reading from
+    /// CurrentUICulture (not a hardcoded value) means the attribute is
+    /// correct on the very first server render after the localization
+    /// middleware has set the culture.
+    /// </summary>
+    private string HtmlLang => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName;
+
+    /// <summary>
+    /// "rtl" for right-to-left scripts (Persian, Arabic, Hebrew, etc.),
+    /// "ltr" for left-to-right scripts (English, etc.). Uses
+    /// CultureInfo.TextInfo.IsRightToLeft which is populated from the
+    /// culture's satellite data — no hardcoded culture→direction mapping
+    /// needed, so this works automatically if more cultures are added
+    /// later (e.g. ar-SA would also get RTL).
+    /// </summary>
+    private string HtmlDir => CultureInfo.CurrentUICulture.TextInfo.IsRightToLeft ? "rtl" : "ltr";
 
     /// <summary>
     /// Account pages (login, logout, access-denied) render STATICALLY (no

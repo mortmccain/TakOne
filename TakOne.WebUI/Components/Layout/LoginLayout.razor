@@ -9,6 +9,8 @@
    @layout LoginLayout) and just renders the form fields inside the card. *@
 
 @inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <div class="login-shell">
     <div class="login-bg"></div>
@@ -23,12 +25,28 @@
 
         <footer class="login-footer">
             <span>&copy; @DateTime.UtcNow.Year TakOne</span>
-            <a href="/Account/Login?culture=en-US">@Localizer["SwitchToEnglish"]</a>
-            <a href="/Account/Login?culture=fa-IR">@Localizer["SwitchToPersian"]</a>
+            @* Language switcher — writes the `takone_culture` cookie in the
+               format CookieRequestCultureProvider expects (`c=X|uic=X`), then
+               force-reloads so the localization middleware re-evaluates.
+               MUST match MainLayout.razor's OnCultureChanged exactly so the
+               two switchers stay in sync. Previous version used plain
+               `<a href="?culture=en-US">` links which only set the culture
+               for THAT request — the choice was lost on the next navigation.*@
+            <a href="javascript:void(0)" @onclick="@(async () => await SwitchCultureAsync("en-US"))">@Localizer["SwitchToEnglish"]</a>
+            <a href="javascript:void(0)" @onclick="@(async () => await SwitchCultureAsync("fa-IR"))">@Localizer["SwitchToPersian"]</a>
         </footer>
     </main>
 </div>
 
 @code {
     [Inject] private IStringLocalizer<LoginLayout> Localizer { get; set; } = default!;
+
+    private async Task SwitchCultureAsync(string culture)
+    {
+        // Same cookie format as MainLayout.OnCultureChanged — see comment there.
+        var cookieValue = $"c={culture}|uic={culture}";
+        await JS.InvokeVoidAsync("eval",
+            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
 }

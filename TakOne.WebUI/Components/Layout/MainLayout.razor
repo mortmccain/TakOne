@@ -20,7 +20,7 @@
 @inject IJSRuntime JS
 @inject ToastService Toast
 @inject AuthenticationStateProvider AuthStateProvider
-@using Microsoft.AspNetCore.Localization
+@using System.Globalization
 
 <RadzenLayout>
     @* Sidebar with role-gated navigation *@
@@ -161,7 +161,13 @@
 @code {
     private RadzenSidebar? sidebar;
     private string _selectedTheme = "standard-dark";
-    private string _selectedCulture = "fa-IR";
+
+    // Initialize from the current UI culture so the dropdown shows the
+    // ACTUAL active culture on first render (was previously hardcoded to
+    // "fa-IR" which would show fa-IR even when the server had fallen back
+    // to en-US via the Accept-Language header).
+    private string _selectedCulture = CultureInfo.CurrentUICulture.Name;
+
     private string _displayName = string.Empty;
     private string _roleBadge = string.Empty;
 
@@ -237,23 +243,31 @@
     private async Task OnCultureChanged(string culture)
     {
         _selectedCulture = culture;
-        // Persist to cookie so the NEXT page load (forceLoad) reads it
-        // server-side and sets the right CultureInfo before Blazor renders.
+
+        // CRITICAL: CookieRequestCultureProvider expects the cookie VALUE
+        // to be in the format `c=<culture>|uic=<ui-culture>` — NOT a bare
+        // culture name like `fa-IR`. The previous implementation wrote
+        // `takone_culture=fa-IR` which the provider couldn't parse, so
+        // it returned null and the default culture kicked in (always
+        // fa-IR regardless of what the user picked). The language
+        // switcher appeared to do nothing.
         //
-        // IMPORTANT: CookieRequestCultureProvider (registered in Program.cs
-        // with CookieName="takone_culture") expects the cookie VALUE in the
-        // format `c=<culture>|uic=<culture>` — NOT just the bare culture name.
-        // If you write just `takone_culture=fa-IR`, ParseCookieValue returns
-        // null and the provider silently falls through to the next provider
-        // in the chain (Accept-Language header), so the user's choice is lost.
+        // The `c=` part sets CultureInfo.CurrentCulture (number/date
+        // formatting) and `uic=` sets CultureInfo.CurrentUICulture
+        // (which .resx file IStringLocalizer picks). We always set both
+        // to the same value.
         //
-        // Use CookieRequestCultureProvider.MakeCookieValue to encode it
-        // correctly. We invoke it via a small JS shim because Razor can't
-        // call static helpers on RequestLocalization types inline.
-        var cookieValue = CookieRequestCultureProvider.MakeCookieValue(
-            new RequestCulture(culture));
+        // Cookie name MUST match `CookieRequestCultureProvider.CookieName`
+        // configured in Program.cs (currently `takone_culture`).
+        var cookieValue = $"c={culture}|uic={culture}";
         await JS.InvokeVoidAsync("eval",
             $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+
+        // forceLoad:true triggers a full HTTP request so the new cookie
+        // is sent back to the server and the localization middleware
+        // can re-evaluate the culture. Without forceLoad, Blazor's
+        // interactive navigation wouldn't trigger a fresh HTTP request
+        // and the culture wouldn't change.
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 

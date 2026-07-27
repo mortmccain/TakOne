@@ -1,5 +1,11 @@
+using System.Globalization;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Localization;
 using Radzen;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.DependencyInjection;
 using TakOne.Infrastructure.DependencyInjection;
@@ -19,34 +25,101 @@ var builder = WebApplication.CreateBuilder(args);
 // All framework wiring (Identity, EF Core, Wolverine outbox, repositories,
 // Identity options, cookie config) lives in AddTakOneInfrastructure per
 // Concern F in the roadmap. The WebUI's Program.cs stays clean.
-// builder.Environment is passed so Infrastructure can branch on
-// IsDevelopment() (e.g. for detailed exception pages, dev-only
-// EF Core sensitive-data-logging, etc.).
 builder.Services.AddTakOneApplication(builder.Configuration);
 builder.Services.AddTakOneInfrastructure(builder.Configuration, builder.Environment);
-// --- Wolverine host ---
-// Per roadmap concern: Wolverine options are already configured inside
-// AddTakOneApplication (handler discovery, FluentValidation, middleware
-// pipeline) and AddTakOneInfrastructure (SQL Server message store, EF Core
-// transactional outbox, domain-event scraper).
+
+// --- Data Protection key persistence (CRITICAL for dev cookie survival) ---
 //
-// CRITICAL: the lambda passed here MUST re-include the Application assembly
-// for handler discovery. Wolverine's default behavior is to scan ONLY the
-// entry-point assembly (TakOne.WebUI), but our handlers live in
-// TakOne.Application — a REFERENCED assembly, which is silently dropped
-// without this explicit IncludeAssembly call.
+// Without explicit key persistence, ASP.NET Core Data Protection uses an
+// EPHEMERAL key store that changes on every app restart. The auth cookie
+// (and antiforgery tokens) are encrypted with these keys.
 //
-// AddTakOneApplication already calls
-//   opts.Discovery.IncludeAssembly(typeof(ServiceCollectionExtensions).Assembly);
-// via services.Configure<WolverineOptions>(...) — and that DOES get applied
-// when UseWolverine() pulls options from DI. But experience (and the
-// "Wolverine found no handlers" warning in the startup log) shows this is
-// fragile across Wolverine versions. Re-stating it here is cheap and
-// eliminates any ambiguity: Wolverine WILL scan TakOne.Application on every
-// startup, period.
+// SYMPTOM of missing persistence:
+//   1. User logs in → cookie set, encrypted with key K1
+//   2. App restarts (rebuild, code change, Hot Reload boundary, etc.)
+//      → new key K2 generated, K1 discarded
+//   3. Browser sends old cookie (encrypted with K1) → server tries to
+//      decrypt with K2 → fails silently → user appears logged out
+//   4. Cookie middleware redirects to /Account/Login with the
+//      "LoginRequired" info banner — looks like "login failed with
+//      no error"
+//
+// In production, this is solved by PersistKeysToDbContext<T>() or
+// PersistKeysToFileSystem(new DirectoryInfo("\\\\server\\share\\keys"))
+// pointing to a shared, replicated location. For dev, we use a local
+// folder under the user profile so keys survive across restarts.
+//
+// SetApplicationName is REQUIRED when multiple apps share a key ring —
+// and even with a single app it makes the key discriminator stable
+// across rebuilds (otherwise the app's "default" discriminator can shift
+// if the entry-assembly name changes during refactoring).
+//
+// PRODUCTION HARDENING (future):
+//   Replace PersistKeysToFileSystem with PersistKeysToDbContext<DataProtectionKeyDbContext>()
+//   (or a dedicated schema in ApplicationDbContext) so all web nodes share
+//   the same key ring in SQL Server.
+builder.Services.AddDataProtection()
+    .SetApplicationName("TakOne")
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(builder.Environment.ContentRootPath, ".dataprotection-keys")));
+
+// --- Wolverine host (configures discovery, middleware, persistence) ---
+//
+// CRITICAL: We MUST apply our Application- and Infrastructure-layer
+// Wolverine config inside THIS lambda — directly on the
+// `WolverineOptions` instance Wolverine actually uses.
+//
+// The previous implementation had `builder.Host.UseWolverine()` (no lambda)
+// and relied on `services.Configure<WolverineOptions>(...)` calls inside
+// AddTakOneApplication and AddTakOneInfrastructure. THAT DOES NOT WORK.
+// Wolverine does NOT read its options from the IOptions<WolverineOptions>
+// pipeline — the parameterless UseWolverine() overload uses a fresh
+// default `WolverineOptions` instance and silently ignores any
+// Configure<WolverineOptions> lambdas.
+//
+// SYMPTOM of the broken approach:
+//   warn: Wolverine found no handlers. If this is unexpected, check
+//         the assemblies that it's scanning.
+//   Searching assembly Wolverine.RuntimeCompilation
+//   Searching assembly TakOne.WebUI
+//   (NOT searching TakOne.Application — even though AddTakOneApplication
+//    had called opts.Discovery.IncludeAssembly(typeof(...).Assembly))
+//
+//   fail: Failed to create a message handler for
+//         TakOne.Application.Dashboard.Queries.GetDashboardStatsQuery
+//   IndeterminateRoutesException: Could not determine any valid
+//   subscribers or local handlers for message type ...
+//
+// FIX:
+//   Application and Infrastructure each now expose a public static
+//   extension method on WolverineOptions:
+//     - `ConfigureApplicationWolverine(this WolverineOptions, IConfiguration)`
+//     - `ConfigureInfrastructureWolverine(this WolverineOptions, IConfiguration)`
+//   The methods are named DISTINCTLY (Application vs Infrastructure) so they
+//   can coexist as extension methods on WolverineOptions without ambiguity.
+//   Calling them with identical names would require static-call syntax
+//   (Class.Method(opts, config)) which is fragile and produces confusing
+//   "No overload for method 'ConfigureWolverine' takes 2 arguments" errors
+//   when one of the two files is missed during a refactor.
+//
+//   We invoke both as clean extension-method calls inside this lambda,
+//   in order:
+//     1. Application first — discovers handlers, registers middleware,
+//        wires FluentValidation.
+//     2. Infrastructure second — enables runtime compilation, registers
+//        SQL Server message store, durable local queues, EF Core
+//        transactional middleware, domain-event scraper.
+//   Order matters only for documentation clarity; the two configurators
+//   touch disjoint parts of WolverineOptions.
 builder.Host.UseWolverine(opts =>
 {
-    opts.Discovery.IncludeAssembly(typeof(TakOne.Application.DependencyInjection.ServiceCollectionExtensions).Assembly);
+    // Application layer: handler discovery + middleware + FluentValidation.
+    opts.ConfigureApplicationWolverine(builder.Configuration);
+
+    // Infrastructure layer: runtime compilation + SQL Server message
+    // store + durable local queues + EF Core transactional middleware +
+    // domain-event scraper.
+    opts.ConfigureInfrastructureWolverine(builder.Configuration);
 });
 
 // --- Blazor Server + Radzen ---
@@ -100,61 +173,52 @@ var defaultCulture = builder.Configuration
     .GetSection("TakOne:Localization:DefaultCulture")
     .Get<string>() ?? "fa-IR";
 
-// ─── RequestLocalizationOptions with EXPLICIT provider chain ──────────────
-// The default RequestLocalizationOptions uses the built-in provider chain:
-//   1. QueryStringRequestCultureProvider  (URL ?culture=fa-IR)
-//   2. CookieRequestCultureProvider       (cookie .AspNetCore.Culture=c=fa-IR|uic=fa-IR)
-//   3. AcceptLanguageHeaderRequestCultureProvider (browser Accept-Language header)
+// --- Request localization providers ---
 //
-// PROBLEM: MainLayout.razor's OnCultureChanged writes a cookie named
-// `takone_culture` (NOT the default `.AspNetCore.Culture`) and uses the bare
-// format `fa-IR` (NOT `c=fa-IR|uic=fa-IR`). The default cookie provider can't
-// read it, so the user's language choice doesn't persist across page loads.
+// CRITICAL: We MUST clear the default provider list and re-add only the
+// ones we want. By default, `RequestLocalizationOptions` adds THREE
+// providers in this order:
 //
-// FIX: clear the default provider list and rebuild it explicitly with a
-// CookieRequestCultureProvider whose CookieName is `takone_culture`. We use
-// MakeCookieValue to encode the culture in the format ASP.NET Core expects
-// (which CookieRequestCultureProvider.ParseCookieValue will then accept).
+//   1. QueryStringRequestCultureProvider  — reads `?culture=fa-IR`
+//   2. CookieRequestCultureProvider       — reads `.AspNetCore.Culture`
+//                                            cookie (default name)
+//   3. AcceptLanguageHeaderCultureProvider — reads the browser's
+//                                            `Accept-Language` header
 //
-// Order is intentional:
-//   1. QueryString — needed for /Account/Login links (?culture=en-US) which
-//      don't go through MainLayout's language switcher.
-//   2. Cookie — persists the user's choice across page loads.
-//   3. Accept-Language — falls back to the browser's preference for first
-//      visit (before the user has picked anything).
-var localizationOptions = new RequestLocalizationOptions
-{
-    DefaultRequestCulture = new RequestCulture(defaultCulture),
-    ApplyCurrentCultureToResponseHeaders = true
-};
-localizationOptions.AddSupportedCultures(supportedCultures);
-localizationOptions.AddSupportedUICultures(supportedCultures);
-
-// Clear default providers and rebuild with the custom cookie name.
-localizationOptions.RequestCultureProviders.Clear();
-localizationOptions.RequestCultureProviders.Insert(0, new QueryStringRequestCultureProvider());
-localizationOptions.RequestCultureProviders.Insert(1, new CookieRequestCultureProvider
-{
-    CookieName = "takone_culture"
-});
-localizationOptions.RequestCultureProviders.Insert(2, new AcceptLanguageHeaderRequestCultureProvider());
+// PROVIDER #3 IS THE PROBLEM. If the user's browser sends
+// `Accept-Language: en-US,en;q=0.9` (the default for English-locale
+// OSes), the header provider matches `en-US` (which is in our
+// SupportedCultures list) and OVERRIDES the `fa-IR` default. The
+// `DefaultRequestCulture` only kicks in when NO provider returns a
+// match — and the header provider almost always matches something.
+//
+// SYMPTOM: first-time visitor sees English text even though
+// `DefaultCulture = fa-IR` is configured. The lang/dir attributes on
+// <html> are hardcoded `fa`/`rtl` (see App.razor) so the page LOOKS
+// Persian-structured but the strings are English.
+//
+// FIX: keep only QueryString + Cookie providers. Drop the header
+// provider. Now `fa-IR` is the genuine default on first visit (no
+// cookie yet → no query string → default kicks in).
+//
+// We also override the cookie name to `takone_culture` (default is
+// `.AspNetCore.Culture`) so the cookie is human-readable in devtools
+// and doesn't collide with other ASP.NET Core apps on localhost.
+var cultureList = supportedCultures.Select(c => new CultureInfo(c)).ToList();
 
 builder.Services.Configure<RequestLocalizationOptions>(opts =>
 {
     opts.DefaultRequestCulture = new RequestCulture(defaultCulture);
-    opts.AddSupportedCultures(supportedCultures);
-    opts.AddSupportedUICultures(supportedCultures);
-    opts.ApplyCurrentCultureToResponseHeaders = true;
+    opts.SupportedCultures = cultureList;
+    opts.SupportedUICultures = cultureList;
 
-    // Mirror the same explicit provider chain here so the options that
-    // UseRequestLocalization() reads from DI match the ones we set above.
+    // Clear all default providers and add only the two we want.
     opts.RequestCultureProviders.Clear();
     opts.RequestCultureProviders.Add(new QueryStringRequestCultureProvider());
     opts.RequestCultureProviders.Add(new CookieRequestCultureProvider
     {
         CookieName = "takone_culture"
     });
-    opts.RequestCultureProviders.Add(new AcceptLanguageHeaderRequestCultureProvider());
 });
 
 var app = builder.Build();
