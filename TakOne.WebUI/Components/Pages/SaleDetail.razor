@@ -1,0 +1,943 @@
+﻿@* SaleDetail.razor — Phase 4.3
+
+   Customer-facing sale detail page at route `/Sales/{Id:guid}`. Reached
+   from the /Sales list page (Phase 4.2) by clicking a sale number or the
+   View icon. All authenticated users can view this page — the backend
+   handler enforces role-based scoping (customers see only their own sales;
+   staff see any sale).
+
+   BACKEND CONTRACT:
+     - Load: GetSaleByIdQuery(SaleId) → Result<SaleDto>
+       - The handler resolves the current user from ICurrentUserService
+         server-side and rejects customers trying to view other users'
+         sales with a generic "not found" message (avoids leaking that
+         the sale exists).
+       - Returns the full SaleDto with line items + audit trail.
+     - Approve (staff only): ApproveSaleCommand(SaleId) → Result
+       - Transitions Pending → Approved. Decrements stock per line.
+       - Handler enforces [RequireRoles(Employee, Manager, Admin)].
+     - Mark as invoiced (staff only): MarkAsInvoicedCommand(SaleId) → Result
+       - Transitions Approved → Invoiced (terminal state).
+       - Handler enforces [RequireRoles(Employee, Manager, Admin)].
+     - Cancel (staff only): CancelSaleCommand(SaleId, Reason) → Result
+       - Reachable from Pending or Approved (NOT Draft — use delete-draft;
+         NOT Invoiced — use credit note flow instead).
+       - Restores stock if the sale was Approved (stock had been
+         decremented at Approve time).
+       - Reason is required (3-500 chars; enforced by validator).
+       - Handler enforces [RequireRoles(Employee, Manager, Admin)].
+
+   LAYOUT (responsive):
+     Desktop / tablet (≥992px): two columns
+       Left  (8/12): line-item table + audit trail
+       Right (4/12): sticky action panel (status + actions + totals)
+     Mobile (<992px): single column, action panel collapses to top
+
+   SECTIONS:
+     1. Breadcrumb: My orders → [Sale number]
+     2. Page header: Sale number + status badge
+     3. Action panel (right column on desktop, top on mobile):
+        - Status badge (large, color-coded)
+        - Audit trail (created / submitted / approved / invoiced / cancelled
+          with timestamps; the Created entry also shows the creator's name
+          via AuditByFormat)
+        - Staff-only action buttons: Approve (Pending→Approved),
+          Mark as invoiced (Approved→Invoiced), Cancel (Pending/Approved
+          → Cancelled, requires reason via JS prompt)
+        - Totals summary (grand total, line count, total units)
+     4. Line items table:
+        - Line #, Product name, Quantity, Unit price, Line total
+        - Notes: today Gross == Line (no discount/tax yet); only Line is
+          shown. When discount/tax modeling is added to the domain, the
+          table will gain a Gross column — the DTO already exposes both
+          GrossTotal and LineTotal so the UI is forward-compatible.
+
+   STAFF-ACTION UX:
+     Approve and Mark as invoiced are direct clicks — no confirmation needed
+     because they're forward-only transitions and reversible by cancellation
+     (in the case of Approve). Cancel opens a JS prompt() for the reason
+     (same pattern as AdminProducts.razor's restock flow) — simplest UX for
+     a staff tool, no custom dialog component required.
+
+   ROLE-RESOLUTION PATTERN:
+     The _canActOnSales flag is computed in OnInitializedAsync via
+     AuthStateProvider.GetAuthenticationStateAsync() (NOT via
+     ICurrentUserService.IsInRole). The reason: ICurrentUserService in Blazor
+     Server resolves from IHttpContextAccessor.HttpContext, which is only
+     populated during the INITIAL prerender request — it's null when the
+     component renders over the SignalR circuit afterwards. AuthStateProvider
+     is the canonical source of role info for interactive components.
+     ICurrentUserService IS still safe to use inside Wolverine handlers
+     (where the message bus sets up its own ambient context) — just not in
+     the Blazor UI layer for first-render visibility checks.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All button clicks are async event handlers
+     that dispatch commands via Wolverine. The Blazor circuit's anti-forgery
+     token is established at circuit start. *@
+
+@page "/Sales/{Id:guid}"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSaleById
+@using TakOne.Application.Sales.Commands.ApproveSale
+@using TakOne.Application.Sales.Commands.MarkAsInvoiced
+@using TakOne.Application.Sales.Commands.CancelSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<SaleDetail> Loc
+@inject ToastService Toast
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{_sale.SaleNumber} — {Loc["PageTitle"]}")</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
+                       Left = line items + audit (wider); right = sticky action panel. */
+            .detail-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 1.5rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .detail-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1rem;
+                }
+                    /* On mobile, action panel comes FIRST so the user sees status
+                           + actions before scrolling to the line-item table. */
+                    .detail-grid .detail-action-panel {
+                        order: -1;
+                    }
+            }
+
+            /* Page header — sale number (monospace) + status badge inline. */
+            .detail-header {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .detail-sale-number {
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 1.6rem;
+                font-weight: 700;
+                margin: 0;
+                line-height: 1.2;
+            }
+
+            /* Status badge (large) in the action panel header.
+                       Color tokens mirror Radzen's BadgeStyle palette so the large
+                       badge and the small inline badge read as the same status. */
+            .status-badge-large {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.5rem 1rem;
+                border-radius: 9999px;
+                font-size: 1rem;
+                font-weight: 600;
+                min-width: 120px;
+                justify-content: center;
+            }
+
+            /* Per-status background colors (matching Radzen BadgeStyle semantics):
+                       - Draft     → Base      (gray)
+                       - Pending   → Warning   (amber)
+                       - Approved  → Info      (blue)
+                       - Invoiced  → Success   (green)
+                       - Cancelled → Danger    (red)
+                       rgba values are picked to be readable on both light and dark
+                       Radzen themes — foreground is always the darker shade for
+                       accessibility. */
+            .status-bg-draft {
+                background: rgba(158, 158, 158, 0.18);
+                color: #616161;
+            }
+
+            .status-bg-pending {
+                background: rgba(255, 152, 0, 0.18);
+                color: #e65100;
+            }
+
+            .status-bg-approved {
+                background: rgba(33, 150, 243, 0.18);
+                color: #0d47a1;
+            }
+
+            .status-bg-invoiced {
+                background: rgba(76, 175, 80, 0.18);
+                color: #1b5e20;
+            }
+
+            .status-bg-cancelled {
+                background: rgba(244, 67, 54, 0.18);
+                color: #b71c1c;
+            }
+
+            /* Audit trail — vertical timeline of timestamps + actors.
+                       Each entry is one row; rows with no timestamp (e.g. a pending
+                       sale that hasn't been approved yet) are shown muted. */
+            .audit-trail {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+
+            .audit-entry {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 0.5rem 1rem;
+                align-items: baseline;
+            }
+
+            .audit-label {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.9rem;
+            }
+
+            .audit-value {
+                color: var(--rz-text-primary-color);
+                font-weight: 500;
+                text-align: end;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .audit-value-pending {
+                color: var(--rz-text-secondary-color);
+                font-style: italic;
+                font-weight: 400;
+            }
+
+            .audit-actor {
+                grid-column: 1 / -1;
+                font-size: 0.8rem;
+                color: var(--rz-text-secondary-color);
+                margin-top: -0.25rem;
+            }
+
+            /* Line items table — RadzenDataGrid styles are fine, just tune
+                       tabular-nums on the numeric columns. */
+            .line-item-money {
+                font-variant-numeric: tabular-nums;
+                text-align: right;
+                display: inline-block;
+            }
+
+            /* Totals summary at the bottom of the action panel. */
+            .totals-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 0.5rem;
+                padding: 0.4rem 0;
+                border-top: 1px solid var(--rz-base-border-color);
+            }
+
+                .totals-row:first-of-type {
+                    border-top: 1px solid var(--rz-base-border-color);
+                }
+
+                .totals-row.grand-total {
+                    border-top: 2px solid var(--rz-base-border-color);
+                    padding-top: 0.7rem;
+                    margin-top: 0.3rem;
+                    font-weight: 700;
+                    font-size: 1.1rem;
+                }
+
+                .totals-row .label {
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.9rem;
+                }
+
+                .totals-row.grand-total .label {
+                    color: var(--rz-text-primary-color);
+                    font-size: 1rem;
+                }
+
+                .totals-row .value {
+                    font-variant-numeric: tabular-nums;
+                }
+
+            /* Cancellation reason panel — shown only when the sale is Cancelled. */
+            .cancellation-reason {
+                border: 1px solid var(--rz-danger);
+                border-radius: var(--rz-border-radius);
+                padding: 0.75rem 1rem;
+                background: rgba(244, 67, 54, 0.06);
+                color: var(--rz-text-primary-color);
+                font-style: italic;
+            }
+
+            /* Breadcrumb — same styles as ProductDetail.razor for consistency. */
+            .breadcrumb {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                font-size: 0.85rem;
+                color: var(--rz-text-secondary-color);
+                margin-bottom: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+                .breadcrumb a {
+                    color: var(--rz-text-secondary-color);
+                    text-decoration: none;
+                }
+
+                    .breadcrumb a:hover {
+                        color: var(--rz-primary);
+                        text-decoration: underline;
+                    }
+
+                .breadcrumb .crumb-current {
+                    color: var(--rz-text-primary-color);
+                    font-weight: 600;
+                    font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                }
+
+                .breadcrumb .crumb-sep {
+                    opacity: 0.5;
+                }
+
+            /* Sticky action panel on desktop. On mobile it's not sticky
+                       (would consume too much viewport height). */
+            @@media (min-width: 993px) {
+                .detail-action-panel {
+                    position: sticky;
+                    top: 1rem;
+                }
+            }
+
+            /* Action button stack — full-width buttons in a vertical stack. */
+            .action-stack {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Back button ──
+       Returns to /Sales (preserves any filter state via browser back,
+       but we use NavigateTo so the back-stack stays clean). *@
+    <RadzenButton Text="@Loc["BackToList"]"
+                  Icon="arrow_back"
+                  ButtonStyle="ButtonStyle.Light"
+                  Variant="Variant.Text"
+                  Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state ── *@
+    else if (_loadError is not null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadSaleAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Not found ──
+       The handler returns Result.Failure with a "not found" message for
+       both genuinely-missing sales AND sales the caller isn't allowed
+       to see (defense-in-depth — never leak existence). Either way, the
+       user sees the same friendly message. *@
+    else if (_sale is null)
+    {
+        <RadzenAlert Title="@Loc["NotFoundTitle"]"
+                     Text="@Loc["NotFoundMessage"]"
+                     AlertStyle="AlertStyle.Warning"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Main content ── *@
+    else
+    {
+        <div class="detail-grid">
+            @* LEFT — header + line items + cancellation reason (if any) *@
+            <div>
+                @* Breadcrumb: My orders / [Sale number] *@
+                <nav class="breadcrumb" aria-label="breadcrumb">
+                    <a href="/Sales">@Loc["BreadcrumbSales"]</a>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@_sale.SaleNumber</span>
+                </nav>
+
+                @* Page header — sale number + status badge inline *@
+                <div class="detail-header" Style="margin-bottom: 1rem;">
+                    <h1 class="detail-sale-number">@_sale.SaleNumber</h1>
+                    <RadzenBadge Text="@GetStatusLabel(_sale.Status)"
+                                 BadgeStyle="@GetStatusBadgeStyle(_sale.Status)"
+                                 IsPill="true" />
+                </div>
+
+                @* Cancellation reason — only shown when the sale is Cancelled *@
+                @if (_sale.Status == nameof(SaleStatus.Cancelled)
+                     && !string.IsNullOrWhiteSpace(_sale.CancellationReason))
+                {
+                    <div class="cancellation-reason" Style="margin-bottom: 1rem;">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Start" Gap="0.5rem">
+                            <RadzenIcon Icon="block" Style="color: var(--rz-danger); margin-top: 0.15rem;" />
+                            <div>
+                                <div style="font-weight: 600; margin-bottom: 0.25rem;">@Loc["CancellationReasonLabel"]</div>
+                                @_sale.CancellationReason
+                            </div>
+                        </RadzenStack>
+                    </div>
+                }
+
+                @* Line items table *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+                    <RadzenDataGrid Data="@_sale.LineItems"
+                                    AllowSorting="false"
+                                    AllowPaging="false"
+                                    Style="width: 100%;">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="SaleLineItemDto"
+                                                  Title="@Loc["ColLineNumber"]"
+                                                  Width="60px"
+                                                  TextAlign="TextAlign.Center">
+                                <Template Context="line">
+                                    <span style="color: var(--rz-text-secondary-color);">@line.LineNumber</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+
+                            <RadzenDataGridColumn TItem="SaleLineItemDto"
+                                                  Title="@Loc["ColProduct"]"
+                                                  Width="*">
+                                <Template Context="line">
+                                    <RadzenStack Orientation="Orientation.Vertical" Gap="0.1rem">
+                                        <span style="font-weight: 500;">@line.ProductName</span>
+                                    </RadzenStack>
+                                </Template>
+                            </RadzenDataGridColumn>
+
+                            <RadzenDataGridColumn TItem="SaleLineItemDto"
+                                                  Title="@Loc["ColQuantity"]"
+                                                  Width="100px"
+                                                  TextAlign="TextAlign.Right">
+                                <Template Context="line">
+                                    <span class="line-item-money">@line.Quantity.ToString("N0", CultureInfo.CurrentCulture)</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+
+                            <RadzenDataGridColumn TItem="SaleLineItemDto"
+                                                  Title="@Loc["ColUnitPrice"]"
+                                                  Width="140px"
+                                                  TextAlign="TextAlign.Right">
+                                <Template Context="line">
+                                    <span class="line-item-money">@FormatMoney(line.UnitPrice)</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+
+                            <RadzenDataGridColumn TItem="SaleLineItemDto"
+                                                  Title="@Loc["ColLineTotal"]"
+                                                  Width="140px"
+                                                  TextAlign="TextAlign.Right">
+                                <Template Context="line">
+                                    <span class="line-item-money" style="font-weight: 600;">@FormatMoney(line.LineTotal)</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+                        </Columns>
+                    </RadzenDataGrid>
+                </RadzenCard>
+            </div>
+
+            @* RIGHT — sticky action panel: status, audit, totals, actions *@
+            <div class="detail-action-panel">
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                    <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                        @* Status badge (large) — at-a-glance current state *@
+                        <div style="display: flex; justify-content: center;">
+                            <span class="status-badge-large @GetStatusBadgeCssClass(_sale.Status)">
+                                <RadzenIcon Icon="@GetStatusIcon(_sale.Status)" />
+                                @GetStatusLabel(_sale.Status)
+                            </span>
+                        </div>
+
+                        @* Audit trail — list of (label, timestamp, actor) *@
+                        <ul class="audit-trail">
+                            <li class="audit-entry">
+                                <span class="audit-label">@Loc["AuditCreated"]</span>
+                                <span class="audit-value">@FormatTimestamp(_sale.CreatedAtUtc)</span>
+                                <span class="audit-actor">@string.Format(CultureInfo.CurrentCulture, Loc["AuditByFormat"], _sale.CreatedByName)</span>
+                            </li>
+
+                            @if (_sale.SubmittedAtUtc.HasValue)
+                            {
+                                <li class="audit-entry">
+                                    <span class="audit-label">@Loc["AuditSubmitted"]</span>
+                                    <span class="audit-value">@FormatTimestamp(_sale.SubmittedAtUtc.Value)</span>
+                                </li>
+                            }
+
+                            @if (_sale.ApprovedAtUtc.HasValue)
+                            {
+                                <li class="audit-entry">
+                                    <span class="audit-label">@Loc["AuditApproved"]</span>
+                                    <span class="audit-value">@FormatTimestamp(_sale.ApprovedAtUtc.Value)</span>
+                                </li>
+                            }
+                            else if (_sale.Status == nameof(SaleStatus.Pending))
+                            {
+                                <li class="audit-entry">
+                                    <span class="audit-label">@Loc["AuditApproved"]</span>
+                                    <span class="audit-value audit-value-pending">@Loc["AuditPending"]</span>
+                                </li>
+                            }
+
+                            @if (_sale.InvoicedAtUtc.HasValue)
+                            {
+                                <li class="audit-entry">
+                                    <span class="audit-label">@Loc["AuditInvoiced"]</span>
+                                    <span class="audit-value">@FormatTimestamp(_sale.InvoicedAtUtc.Value)</span>
+                                </li>
+                            }
+
+                            @if (_sale.CancelledAtUtc.HasValue)
+                            {
+                                <li class="audit-entry">
+                                    <span class="audit-label">@Loc["AuditCancelled"]</span>
+                                    <span class="audit-value">@FormatTimestamp(_sale.CancelledAtUtc.Value)</span>
+                                </li>
+                            }
+                        </ul>
+
+                        @* Totals summary *@
+                        <div>
+                            <div class="totals-row">
+                                <span class="label">@Loc["TotalLines"]</span>
+                                <span class="value">@_sale.LineItems.Count.ToString("N0", CultureInfo.CurrentCulture)</span>
+                            </div>
+                            <div class="totals-row">
+                                <span class="label">@Loc["TotalUnits"]</span>
+                                <span class="value">@_sale.LineItems.Sum(li => li.Quantity).ToString("N0", CultureInfo.CurrentCulture)</span>
+                            </div>
+                            <div class="totals-row grand-total">
+                                <span class="label">@Loc["GrandTotal"]</span>
+                                <span class="value">@FormatMoney(_sale.Total)</span>
+                            </div>
+                        </div>
+
+                        @* Staff-only action buttons.
+                           Visible only to Employee/Manager/Admin (matches the
+                           [RequireRoles] on each command). ReadOnly is NOT
+                           staff for action purposes — they can view but not
+                           mutate. Pattern: compute _canActOnSales once in
+                           OnInitializedAsync (synchronously) and use it to
+                           gate the entire action stack. *@
+                        @if (_canActOnSales)
+                        {
+                            <div class="action-stack">
+                                @* Approve — only enabled when sale is Pending. *@
+                                <RadzenButton Text="@Loc["ActionApprove"]"
+                                              Icon="check_circle"
+                                              ButtonStyle="ButtonStyle.Success"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(_sale.Status != nameof(SaleStatus.Pending) || _isBusy)"
+                                              Click="@HandleApproveAsync" />
+
+                                @* Mark as invoiced — only enabled when sale is Approved. *@
+                                <RadzenButton Text="@Loc["ActionMarkInvoiced"]"
+                                              Icon="receipt"
+                                              ButtonStyle="ButtonStyle.Info"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(_sale.Status != nameof(SaleStatus.Approved) || _isBusy)"
+                                              Click="@HandleMarkInvoicedAsync" />
+
+                                @* Cancel — enabled when sale is Pending or Approved
+                                   (NOT Draft — use delete-draft via /Cart; NOT Invoiced —
+                                   credit note flow instead). *@
+                                <RadzenButton Text="@Loc["ActionCancel"]"
+                                              Icon="cancel"
+                                              ButtonStyle="ButtonStyle.Danger"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(!_canCancel || _isBusy)"
+                                              Click="@HandleCancelAsync" />
+                            </div>
+
+                            @* Inline error banner for action failures (e.g.
+                               "Not enough stock to approve sale. Product 'X'
+                               has 3 in stock but the sale requires 5."). Shown
+                               ABOVE the action stack so the user sees it
+                               without scrolling. *@
+                            @if (!string.IsNullOrEmpty(_actionError))
+                            {
+                                <RadzenAlert Text="@_actionError"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Filled"
+                                             ShowIcon="true"
+                                             Style="margin: 0;" />
+                            }
+                        }
+
+                        @* Back-to-list secondary action — always visible,
+                           full-width, lower visual weight than staff actions. *@
+                        <RadzenButton Text="@Loc["BackToList"]"
+                                      Icon="list"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Text"
+                                      Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
+                    </RadzenStack>
+                </RadzenCard>
+            </div>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sale Id from the URL. The @page constraint `{Id:guid}` ensures only
+    /// valid Guid strings reach this parameter; malformed URLs hit the
+    /// router's NotFound template instead.
+    /// </summary>
+    [Parameter]
+    public Guid Id { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private SaleDto? _sale;
+    private string? _loadError;
+    private bool _isLoading = true;
+
+    /// <summary>
+    /// True if the current user is in Employee, Manager, or Admin role
+    /// (matches the [RequireRoles] on ApproveSaleCommand, MarkAsInvoicedCommand,
+    /// CancelSaleCommand). Computed synchronously in OnInitializedAsync from
+    /// AuthenticationStateProvider so the action-stack visibility doesn't
+    /// flicker on first render. ReadOnly users can view but not act.
+    /// </summary>
+    private bool _canActOnSales;
+
+    /// <summary>
+    /// True if the sale is in a cancellable state (Pending or Approved).
+    /// Drafts are cancellable via DeleteDraftSaleCommand (handled on /Cart);
+    /// Invoiced sales require a credit note flow (not implemented in v1).
+    /// Computed from _sale.Status after the load succeeds.
+    /// </summary>
+    private bool _canCancel =>
+        _sale is not null
+        && (_sale.Status == nameof(SaleStatus.Pending) || _sale.Status == nameof(SaleStatus.Approved));
+
+    /// <summary>
+    /// True while an action (Approve / MarkInvoiced / Cancel) is in flight.
+    /// Disables all action buttons to prevent double-clicks.
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// Inline error message for the action panel. Populated when an action
+    /// fails (e.g. insufficient stock). Cleared on the next successful
+    /// action or on a manual retry.
+    /// </summary>
+    private string _actionError = string.Empty;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Compute _canActOnSales synchronously via AuthStateProvider so the
+        // action stack doesn't flicker on first render. NOTE: we deliberately
+        // do NOT use ICurrentUserService.IsInRole here — in interactive Blazor
+        // Server mode, ICurrentUserService resolves from
+        // IHttpContextAccessor.HttpContext, which is null over the SignalR
+        // circuit (only populated during the initial prerender). The
+        // AuthStateProvider is the canonical source for interactive
+        // components — it reads from the Blazor circuit's authentication
+        // state, which is preserved across circuit interactions.
+        //
+        // The Wolverine command handlers also enforce [RequireRoles]
+        // server-side (defense-in-depth), so even if a non-staff user could
+        // somehow see the buttons, the handler would reject the dispatch.
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _canActOnSales = user.IsInRole(Roles.Admin)
+                         || user.IsInRole(Roles.Manager)
+                         || user.IsInRole(Roles.Employee);
+
+        try
+        {
+            await LoadSaleAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    private async Task LoadSaleAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var query = new GetSaleByIdQuery { SaleId = Id };
+            var result = await MessageBus.InvokeAsync<Result<SaleDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _sale = result.Value;
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message.
+                // For "not found" (covers both genuinely-missing AND
+                // permission-denied), we show the same NotFound UI.
+                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _sale = null;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_GenericLoad"];
+            _sale = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Staff actions ──────────────────────────────────────────────────
+
+    private async Task HandleApproveAsync()
+    {
+        if (_sale is null || _isBusy) return;
+
+        // Defensive: button is disabled when status != Pending, but the
+        // handler also enforces this. Belt-and-suspenders.
+        if (_sale.Status != nameof(SaleStatus.Pending)) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionApprove"],
+            () => MessageBus.InvokeAsync<Result>(new ApproveSaleCommand(_sale.Id)));
+    }
+
+    private async Task HandleMarkInvoicedAsync()
+    {
+        if (_sale is null || _isBusy) return;
+
+        if (_sale.Status != nameof(SaleStatus.Approved)) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionMarkInvoiced"],
+            () => MessageBus.InvokeAsync<Result>(new MarkAsInvoicedCommand(_sale.Id)));
+    }
+
+    private async Task HandleCancelAsync()
+    {
+        if (_sale is null || _isBusy) return;
+        if (!_canCancel) return;
+
+        // Use the browser's native prompt() for the cancellation reason —
+        // same UX pattern as AdminProducts.razor's restock flow. Simplest
+        // approach for a staff tool; no custom dialog component required.
+        // The reason is validated client-side (3-500 chars) before
+        // dispatching; the FluentValidation validator on the command also
+        // validates server-side (defense-in-depth).
+        var reason = await JS.InvokeAsync<string?>("prompt", Loc["CancelPromptMessage"], "");
+
+        // User clicked Cancel on the prompt, or entered empty/whitespace.
+        // Silent abort — no error toast (the user explicitly chose not to
+        // cancel; we don't want to scold them).
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return;
+        }
+
+        reason = reason.Trim();
+
+        // Client-side validation: 3-500 chars (matches CancelSaleCommandValidator).
+        if (reason.Length < 3 || reason.Length > 500)
+        {
+            await Toast.Warning(Loc["CancelReasonLengthError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        await ExecuteActionAsync(
+            Loc["ActionCancel"],
+            () => MessageBus.InvokeAsync<Result>(new CancelSaleCommand(_sale.Id, reason)));
+    }
+
+    /// <summary>
+    /// Common wrapper for the three staff actions: sets _isBusy, clears the
+    /// previous _actionError, dispatches the command, handles success
+    /// (toast + reload the sale to refresh audit trail + status badge) and
+    /// failure (inline _actionError banner + error toast).
+    /// </summary>
+    private async Task ExecuteActionAsync(string actionName, Func<Task<Result>> dispatch)
+    {
+        _isBusy = true;
+        _actionError = string.Empty;
+
+        try
+        {
+            var result = await dispatch();
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActionSuccessFormat"], actionName),
+                    summary: Loc["ActionSuccessTitle"]);
+
+                // Reload the sale to refresh the status badge, audit trail,
+                // and action-button enabled states. This is the simplest way
+                // to keep the UI honest — no manual state-patching needed.
+                await LoadSaleAsync();
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message
+                // (e.g. "Not enough stock to approve sale. Product 'X' has 3
+                // in stock but the sale requires 5.").
+                _actionError = result.Error ?? Loc["Error_GenericAction"];
+                await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            _actionError = Loc["Error_GenericAction"];
+            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Same convention as Sales.razor / Products.razor / Cart.razor.
+    /// </summary>
+    private static string FormatMoney(MoneyDto? money)
+    {
+        if (money is null) return "—";
+        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {money.Currency}";
+    }
+
+    /// <summary>
+    /// Formats a UTC timestamp for display. NOTE: .LocalDateTime converts
+    /// to the SERVER's local time zone (NOT the user's). For a Tehran-based
+    /// deployment this is correct in practice; see worklog phase 4.2
+    /// soft-issue #2 for the broader pattern.
+    /// </summary>
+    private static string FormatTimestamp(DateTimeOffset utc)
+    {
+        return utc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a Radzen BadgeStyle for color coding (used by the small inline
+    /// badge next to the sale number). Same mapping as Sales.razor.
+    /// </summary>
+    private static BadgeStyle GetStatusBadgeStyle(string status) => status switch
+    {
+        "Draft" => BadgeStyle.Base,
+        "Pending" => BadgeStyle.Warning,
+        "Approved" => BadgeStyle.Info,
+        "Invoiced" => BadgeStyle.Success,
+        "Cancelled" => BadgeStyle.Danger,
+        _ => BadgeStyle.Base
+    };
+
+    /// <summary>
+    /// Returns a CSS class for the large status badge in the action panel.
+    /// Uses Tailwind-like inline color tokens (rgba + foreground color) —
+    /// same pattern as ProductDetail.razor's stock badges.
+    /// </summary>
+    private static string GetStatusBadgeCssClass(string status) => status switch
+    {
+        "Draft" => "status-bg-draft",
+        "Pending" => "status-bg-pending",
+        "Approved" => "status-bg-approved",
+        "Invoiced" => "status-bg-invoiced",
+        "Cancelled" => "status-bg-cancelled",
+        _ => "status-bg-draft"
+    };
+
+    /// <summary>
+    /// Returns a Material icon name for the large status badge.
+    /// </summary>
+    private static string GetStatusIcon(string status) => status switch
+    {
+        "Draft" => "edit_note",
+        "Pending" => "hourglass_top",
+        "Approved" => "check_circle",
+        "Invoiced" => "receipt_long",
+        "Cancelled" => "cancel",
+        _ => "help_outline"
+    };
+
+    /// <summary>
+    /// Returns a localized label for the sale status. Falls back to the
+    /// raw status string if no localization key matches. Same pattern as
+    /// Sales.razor.
+    /// </summary>
+    private string GetStatusLabel(string status)
+    {
+        var key = $"Status{status}";
+        var localized = Loc[key];
+        return localized == key ? status : localized;
+    }
+
+    // ── SaleStatus mirror (for nameof() comparisons) ───────────────────
+
+    /// <summary>
+    /// Local mirror of the SaleStatus enum value NAMES. Used via nameof()
+    /// so the .razor layer is loosely coupled to the domain enum (no
+    /// using directive on TakOne.Domain.Sales.Enums needed). Keep these
+    /// in sync with TakOne.Domain.Sales.Enums.SaleStatus.
+    /// </summary>
+    private static class SaleStatus
+    {
+        public const string Draft = "Draft";
+        public const string Pending = "Pending";
+        public const string Approved = "Approved";
+        public const string Invoiced = "Invoiced";
+        public const string Cancelled = "Cancelled";
+    }
+}

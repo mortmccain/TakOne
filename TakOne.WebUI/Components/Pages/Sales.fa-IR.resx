@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sales.fa-IR.resx — Persian strings for Sales.razor.
+
+     Persian (Farsi) translations for the /Sales order history page.
+     Strings flow RTL when the culture is fa-IR (handled by the html
+     dir attribute set in App.razor / the localization middleware). -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve">
+    <value>سفارش‌های من — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>سفارش‌های من</value>
+  </data>
+  <data name="ContinueShoppingButton" xml:space="preserve">
+    <value>ادامه خرید</value>
+  </data>
+
+  <!-- Filter bar -->
+  <data name="SearchLabel" xml:space="preserve">
+    <value>جستجو</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>جستجو بر اساس شماره فروش یا نام مشتری…</value>
+  </data>
+  <data name="StatusLabel" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="StatusAll" xml:space="preserve">
+    <value>همه وضعیت‌ها</value>
+  </data>
+  <data name="StatusDraft" xml:space="preserve">
+    <value>پیش‌نویس</value>
+  </data>
+  <data name="StatusPending" xml:space="preserve">
+    <value>در انتظار</value>
+  </data>
+  <data name="StatusApproved" xml:space="preserve">
+    <value>تأیید شده</value>
+  </data>
+  <data name="StatusInvoiced" xml:space="preserve">
+    <value>فاکتور شده</value>
+  </data>
+  <data name="StatusCancelled" xml:space="preserve">
+    <value>لغو شده</value>
+  </data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve">
+    <value>در حال بارگذاری سفارش‌های شما…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>بارگذاری سفارش‌های شما ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+
+  <!-- Empty states -->
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>هنوز سفارشی ثبت نشده است</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>برای ثبت اولین سفارش خود، سبد خرید را تأیید کنید. پس از تأیید و فاکتور شدن، سفارش اینجا نمایش داده می‌شود.</value>
+  </data>
+  <data name="EmptyFilteredTitle" xml:space="preserve">
+    <value>هیچ سفارشی با فیلترهای شما مطابقت ندارد</value>
+  </data>
+  <data name="EmptyFilteredMessage" xml:space="preserve">
+    <value>عبارت جستجو یا فیلتر وضعیت دیگری را امتحان کنید.</value>
+  </data>
+  <data name="GoToCartButton" xml:space="preserve">
+    <value>رفتن به سبد خرید</value>
+  </data>
+  <data name="BrowseProductsButton" xml:space="preserve">
+    <value>مشاهده محصولات</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>پاک کردن فیلترها</value>
+  </data>
+
+  <!-- Table columns -->
+  <data name="ColSaleNumber" xml:space="preserve">
+    <value>شماره فروش</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="ColTotal" xml:space="preserve">
+    <value>مبلغ کل</value>
+  </data>
+  <data name="ColCustomer" xml:space="preserve">
+    <value>مشتری</value>
+  </data>
+  <data name="ColCreatedBy" xml:space="preserve">
+    <value>ایجادکننده</value>
+  </data>
+  <data name="ColCreated" xml:space="preserve">
+    <value>تاریخ ایجاد</value>
+  </data>
+  <data name="ColActions" xml:space="preserve">
+    <value>عملیات</value>
+  </data>
+  <data name="ViewButton" xml:space="preserve">
+    <value>مشاهده</value>
+  </data>
+
+  <!-- Pager -->
+  <data name="PageInfoFormat" xml:space="preserve">
+    <value>صفحه {0} از {1} • {2} سفارش</value>
+  </data>
+</root>

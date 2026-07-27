@@ -1,0 +1,660 @@
+﻿@* Sales.razor — Phase 4.2
+
+   Customer-facing order history page at route `/Sales`. ALL authenticated
+   users land here (the sidebar link in MainLayout.razor is wrapped in a
+   bare <AuthorizeView>). The backend handler enforces role-based scoping:
+     - Admin / Manager / Employee / ReadOnly: see ALL sales in the system
+       (the "staff audit view").
+     - Customer: see only their own sales (the "my orders" view).
+
+   BACKEND CONTRACT:
+     - Load: GetSalesPaginatedQuery(PageNumber, PageSize, SearchTerm?)
+       → PaginatedResult<SaleListItemDto>
+       - The handler resolves the current user from ICurrentUserService
+         server-side, so callers CANNOT snoop on other users' sales by
+         passing a foreign id.
+       - Search term matches SaleNumber OR CustomerName (case-insensitive,
+         applied in-memory on the loaded page — see handler comment).
+       - The spec always orders by CreatedAtUtc DESC, so the newest sale
+         appears first on page 1. After /Cart's Submit navigates here,
+         the just-submitted sale is at the top of the list.
+     - Click a row's sale number or View button → /Sales/{Id}. The detail
+       page (Phase 4.3 — not yet built) will load GetSaleByIdQuery. The
+       route is reserved here so the URL is meaningful even when 4.3 404s.
+
+   LAYOUT:
+     1. Page header: title + "Continue shopping" button → /Products.
+     2. Filter bar: search box + status filter dropdown.
+     3. Sales table: RadzenDataGrid (no built-in pager) with columns for
+        sale number (link), status (color-coded badge), total, customer
+        name (staff-only), created-by name (staff-only), created-at, and
+        an actions column with a View button.
+     4. Manual pager below the table (Prev / page numbers / Next + total
+        count). Same pattern as Products.razor and AdminProducts.razor.
+     5. Empty state with a "Submit a cart to create your first order"
+        hint and a Go to cart button.
+
+   DATA LOADING:
+     - OnInitializedAsync: load the first page of sales.
+     - On search/page change: re-call GetSalesPaginatedQuery via Wolverine.
+       Search is debounced via RadzenTextBox's @bind-Value:after (fires on
+       Enter or blur, not every keystroke — same approach as Products.razor).
+     - Status filter is CLIENT-SIDE on the loaded page (the query doesn't
+       accept a status filter). For small per-user lists this is fine; for
+       staff with hundreds of sales, server-side status filtering is a
+       follow-up (would require extending GetSalesPaginatedQuery).
+
+   ROLE-GATED COLUMNS:
+     - Customer / non-staff users see only: Sale number, Status, Total,
+       Created At, Actions. The "Customer" and "Created By" columns are
+       noise for them (Customer = themselves on every row; Created By is
+       an audit detail).
+     - Staff (Admin/Manager/Employee/ReadOnly) see all columns including
+       Customer (who the sale is for) and Created By (who keyed it in).
+       Hiding these for staff would hide useful audit info; showing them
+       to customers leaks nothing they don't already know but is noise.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All button clicks are sync navigations or
+     async event handlers that dispatch queries via Wolverine. The Blazor
+     circuit's anti-forgery token is established at circuit start. *@
+
+@page "/Sales"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Sales> Loc
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+        /* Sale number — monospace + primary color so it reads as a clickable
+           identifier. The link itself is the clickable element; the wrapper
+           just provides consistent typography. */
+        .sale-number-link {
+            font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+            font-weight: 600;
+            color: var(--rz-primary);
+            text-decoration: none;
+        }
+
+        .sale-number-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Status badge — RadzenBadge with BadgeStyle handles colors; this
+           just normalizes the width so badges in a column line up. */
+        .sale-status-badge {
+            min-width: 96px;
+            display: inline-flex;
+            justify-content: center;
+        }
+
+        /* Total — right-aligned tabular numbers so columns line up. */
+        .sale-total {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+
+        /* Muted timestamp for the "Created At" column. The timestamp is
+           secondary info; the sale number is the primary identifier. */
+        .sale-timestamp {
+            color: var(--rz-text-secondary-color);
+            font-size: 0.9rem;
+        }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ──
+       Title + "Continue shopping" button. The button is always visible
+       (any user browsing their orders might want to go back to shopping). *@
+    <RadzenStack Orientation="Orientation.Horizontal"
+                 AlignItems="AlignItems.Center"
+                 JustifyContent="JustifyContent.SpaceBetween"
+                 Wrap="FlexWrap.Wrap"
+                 Gap="0.75rem">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="receipt_long" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <RadzenButton Text="@Loc["ContinueShoppingButton"]"
+                      Icon="storefront"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
+                      Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+    </RadzenStack>
+
+    @* ── Filter bar ──
+       Two controls: search box + status filter dropdown. Search is
+       server-side (re-runs the query); status filter is client-side
+       (operates on the loaded page only). Both reset to page 1 on
+       change. *@
+    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
+        <RadzenStack Orientation="Orientation.Horizontal"
+                     AlignItems="AlignItems.End"
+                     JustifyContent="JustifyContent.SpaceBetween"
+                     Wrap="FlexWrap.Wrap"
+                     Gap="1rem">
+            @* Search box — fires OnSearchChanged on Enter or blur.
+               `@bind-Value` with the default binding event (onchange) updates
+               `_searchTerm` when the user presses Enter or leaves the field.
+               `@bind-Value:after` then fires our handler AFTER the value is
+               updated, so the handler sees the new value. Same pattern as
+               Products.razor. *@
+            <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
+                <RadzenTextBox @bind-Value="_searchTerm"
+                               @bind-Value:after="OnSearchChanged"
+                               Placeholder="@Loc["SearchPlaceholder"]"
+                               TValue="string" />
+            </RadzenFormField>
+
+            @* Status filter dropdown — client-side filter on the loaded page.
+               Three+ options: All / Draft / Pending / Approved / Invoiced /
+               Cancelled. Labels are localized at render time. *@
+            <RadzenFormField Text="@Loc["StatusLabel"]" Style="flex: 0 1 220px; min-width: 180px;">
+                <RadzenDropDown Value="_statusFilter"
+                                Data="_statusFilterOptions"
+                                TValue="StatusFilter"
+                                TextProperty="Label"
+                                ValueProperty="Value"
+                                ValueChanged="@OnStatusFilterChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+        </RadzenStack>
+    </RadzenCard>
+
+    @* ── Loading spinner ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["Loading"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error banner ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadSalesAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state ──
+       Two flavors: no sales at all yet (fresh customer) vs. no sales match
+       the current filters. The hint differs slightly to point the user at
+       the right next action. *@
+    else if (_filteredSales.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="@(_hasFilters ? "filter_alt_off" : "receipt_long")"
+                            Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@(_hasFilters ? Loc["EmptyFilteredTitle"] : Loc["EmptyTitle"])"
+                            TextStyle="TextStyle.H6" />
+                <RadzenText Text="@(_hasFilters ? Loc["EmptyFilteredMessage"] : Loc["EmptyMessage"])"
+                            Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+
+                @if (_hasFilters)
+                {
+                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                  Icon="filter_alt_off"
+                                  ButtonStyle="ButtonStyle.Secondary"
+                                  Variant="Variant.Outlined"
+                                  Click="@ClearFilters" />
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" JustifyContent="JustifyContent.Center">
+                        <RadzenButton Text="@Loc["GoToCartButton"]"
+                                      Icon="shopping_cart"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Click="@(() => Navigation.NavigateTo("/Cart", forceLoad: false))" />
+                        <RadzenButton Text="@Loc["BrowseProductsButton"]"
+                                      Icon="inventory_2"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+                    </RadzenStack>
+                }
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Sales table ──
+       RadzenDataGrid with AllowPaging=false (we use the manual pager below
+       so server-side pagination drives the page count). AllowSorting=false
+       to avoid confusion (sorting client-side on a single page while the
+       server has its own DESC ordering would be misleading). *@
+    else
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <RadzenDataGrid Data="@_filteredSales"
+                            AllowSorting="false"
+                            AllowPaging="false"
+                            AllowColumnResize="true"
+                            Style="width: 100%;">
+                <Columns>
+                    @* Sale number — clickable link to /Sales/{Id}. Monospace
+                       font + primary color so it reads as an identifier. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Title="@Loc["ColSaleNumber"]"
+                                          Width="180px">
+                        <Template Context="sale">
+                            <RadzenLink Text="@sale.SaleNumber"
+                                        Path="@($"/Sales/{sale.Id}")"
+                                        class="sale-number-link" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* Status — color-coded RadzenBadge. Mapping is in
+                       GetStatusBadgeStyle() in the @code block. The label
+                       is localized via Loc[$"Status_{sale.Status}"]. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Title="@Loc["ColStatus"]"
+                                          Width="140px">
+                        <Template Context="sale">
+                            <RadzenBadge Text="@GetStatusLabel(sale.Status)"
+                                         BadgeStyle="@GetStatusBadgeStyle(sale.Status)"
+                                         IsPill="true"
+                                         class="sale-status-badge" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* Total — right-aligned tabular-numeric. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Title="@Loc["ColTotal"]"
+                                          Width="140px"
+                                          TextAlign="TextAlign.Right">
+                        <Template Context="sale">
+                            <span class="sale-total">@FormatMoney(sale.Total)</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* Customer name — staff-only. For a customer browsing
+                       their own orders this column would be themselves on
+                       every row, which is noise. Hiding it for non-staff
+                       keeps the table compact on mobile. *@
+                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Title="@Loc["ColCustomer"]"
+                                              Width="*">
+                            <Template Context="sale">
+                                <RadzenText Text="@sale.CustomerName" Style="font-weight: 500;" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </AuthorizeView>
+
+                    @* Created by — staff-only audit column. Shows which
+                       staff member keyed the sale in (often the customer
+                       themselves for self-service sales, but could be an
+                       employee acting on behalf of a customer). *@
+                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Title="@Loc["ColCreatedBy"]"
+                                              Width="*">
+                            <Template Context="sale">
+                                <RadzenText Text="@sale.CreatedByName"
+                                            Style="color: var(--rz-text-secondary-color);" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </AuthorizeView>
+
+                    @* Created at — formatted as date + time in the current
+                       culture. Persian culture shows Persian digits + the
+                       Jalali (Persian) calendar date when the culture's
+                       DateTimeFormatInfo.Calendar is the PersianCalendar;
+                       English shows Gregorian. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Title="@Loc["ColCreated"]"
+                                          Width="180px">
+                        <Template Context="sale">
+                            <span class="sale-timestamp">
+                                @sale.CreatedAtUtc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture)
+                            </span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* Actions — View icon button. Same target as the sale
+                       number link, but provides a clearer touch target on
+                       mobile. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Title="@Loc["ColActions"]"
+                                          Width="80px"
+                                          TextAlign="TextAlign.Center"
+                                          Sortable="false">
+                        <Template Context="sale">
+                            <RadzenButton Icon="visibility"
+                                          Text="@Loc["ViewButton"]"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Text"
+                                          Click="@(() => GoToSaleDetail(sale.Id))" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+
+        @* ── Pager ──
+           Manual pager (Prev / page numbers / Next) — same approach as
+           Products.razor. Operates on the PaginatedResult metadata from
+           the backend (true server-side paging). The pager is hidden when
+           all sales fit on a single page (totalCount <= pageSize). *@
+        @if (_totalCount > _pageSize)
+        {
+            <RadzenStack Orientation="Orientation.Horizontal"
+                         JustifyContent="JustifyContent.Center"
+                         AlignItems="AlignItems.Center"
+                         Gap="0.5rem"
+                         Wrap="FlexWrap.Wrap"
+                         Style="margin-top: 1rem;">
+                <RadzenButton Icon="chevron_left"
+                              Variant="Variant.Text"
+                              Disabled="@(_pageNumber <= 1)"
+                              Click="@(() => OnPageChanged(_pageNumber - 1))" />
+
+                @{
+                    var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
+                    var startPage = Math.Max(1, _pageNumber - 2);
+                    var endPage = Math.Min(totalPages, startPage + 4);
+                    if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
+                }
+
+                @for (var p = startPage; p <= endPage; p++)
+                {
+                    var page = p; // closure capture for the lambda
+                    <RadzenButton Text="@(page.ToString())"
+                                  Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
+                                  ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
+                                  Disabled="@(_isLoading)"
+                                  Click="@(() => OnPageChanged(page))" />
+                }
+
+                <RadzenButton Icon="chevron_right"
+                              Variant="Variant.Text"
+                              Disabled="@(_pageNumber >= Math.Ceiling((double)_totalCount / _pageSize))"
+                              Click="@(() => OnPageChanged(_pageNumber + 1))" />
+
+                <RadzenText Text="@string.Format(CultureInfo.CurrentCulture, Loc["PageInfoFormat"], _pageNumber, totalPages, _totalCount)"
+                            TextStyle="TextStyle.Caption"
+                            Style="color: var(--rz-text-secondary-color); margin-left: 0.5rem;" />
+            </RadzenStack>
+        }
+    }
+</RadzenStack>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The full page of sales returned by the backend (BEFORE the
+    /// client-side status filter is applied). Kept around so toggling
+    /// the status filter doesn't require a round-trip.
+    /// </summary>
+    private List<SaleListItemDto> _sales = new();
+
+    /// <summary>
+    /// The sales actually rendered — _sales filtered by _statusFilter.
+    /// Computed once per render cycle.
+    /// </summary>
+    private List<SaleListItemDto> _filteredSales => _statusFilter switch
+    {
+        StatusFilter.Draft => _sales.Where(s => s.Status == nameof(StatusFilter.Draft)).ToList(),
+        StatusFilter.Pending => _sales.Where(s => s.Status == nameof(StatusFilter.Pending)).ToList(),
+        StatusFilter.Approved => _sales.Where(s => s.Status == nameof(StatusFilter.Approved)).ToList(),
+        StatusFilter.Invoiced => _sales.Where(s => s.Status == nameof(StatusFilter.Invoiced)).ToList(),
+        StatusFilter.Cancelled => _sales.Where(s => s.Status == nameof(StatusFilter.Cancelled)).ToList(),
+        _ => _sales
+    };
+
+    /// <summary>
+    /// True when the user has entered a search term OR selected a status
+    /// filter. Drives the empty-state copy ("no sales at all" vs. "no sales
+    /// match your filters") and the empty-state CTA ("Go to cart" vs.
+    /// "Clear filters").
+    /// </summary>
+    private bool _hasFilters =>
+        !string.IsNullOrWhiteSpace(_searchTerm) || _statusFilter != StatusFilter.All;
+
+    /// <summary>
+    /// Filter state. All start empty/null (= "show everything").
+    /// </summary>
+    private string _searchTerm = string.Empty;
+    private StatusFilter _statusFilter = StatusFilter.All;
+
+    /// <summary>
+    /// Pager state. _pageSize=10 matches AdminProducts.razor and keeps the
+    /// table on a single screen for typical customers (who rarely have
+    /// more than a handful of orders).
+    /// </summary>
+    private const int _pageSize = 10;
+    private int _pageNumber = 1;
+    private int _totalCount;
+
+    /// <summary>
+    /// Loading/error state.
+    /// </summary>
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// The dropdown options for the status filter. Built once on init.
+    /// Each entry is (Value, Label) — the Label is localized at build time
+    /// so the dropdown reflects the current culture. (Re-running
+    /// OnInitializedAsync on culture switch rebuilds the labels.)
+    /// </summary>
+    private List<StatusFilterOption> _statusFilterOptions = new();
+
+    /// <summary>
+    /// Simple DTO for the dropdown options. Using a class (not a tuple)
+    /// because RadzenDropDown's TextProperty/ValueProperty use reflection.
+    /// </summary>
+    private sealed class StatusFilterOption
+    {
+        public StatusFilter Value { get; init; }
+        public string Label { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// The status filter values. The string values match the SaleStatus
+    /// enum's ToString() output so we can compare directly against
+    /// SaleListItemDto.Status. Keep these in sync with
+    /// TakOne.Domain.Sales.Enums.SaleStatus.
+    /// </summary>
+    private enum StatusFilter
+    {
+        All,
+        Draft,
+        Pending,
+        Approved,
+        Invoiced,
+        Cancelled
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Build the status-filter dropdown options. The labels are localized
+        // at this point — they won't update if the user switches language
+        // mid-session, but the culture switch force-loads the page, which
+        // re-runs OnInitializedAsync anyway.
+        _statusFilterOptions = new List<StatusFilterOption>
+        {
+            new() { Value = StatusFilter.All, Label = Loc["StatusAll"] },
+            new() { Value = StatusFilter.Draft, Label = Loc["StatusDraft"] },
+            new() { Value = StatusFilter.Pending, Label = Loc["StatusPending"] },
+            new() { Value = StatusFilter.Approved, Label = Loc["StatusApproved"] },
+            new() { Value = StatusFilter.Invoiced, Label = Loc["StatusInvoiced"] },
+            new() { Value = StatusFilter.Cancelled, Label = Loc["StatusCancelled"] }
+        };
+
+        try
+        {
+            await LoadSalesAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadSalesAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetSalesPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = _pageSize,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim()
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
+
+            _sales = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // If the page is now empty (e.g. user filtered down to nothing),
+            // bump the page number back to 1 and retry. Common case: user
+            // was on page 5, then applied a filter that only has 2 pages —
+            // we don't want to leave them stranded on an empty page 5.
+            if (_sales.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = 1;
+                await LoadSalesAsync();
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Filter change handlers ──────────────────────────────────────────
+
+    private async Task OnSearchChanged()
+    {
+        // `_searchTerm` has already been updated by @bind-Value before this
+        // handler fires (that's what :after means). Reset the page and re-load.
+        _pageNumber = 1;
+        await LoadSalesAsync();
+    }
+
+    private Task OnStatusFilterChanged(StatusFilter filter)
+    {
+        // Status filter is CLIENT-SIDE — no backend call needed. We just
+        // update the state and let the _filteredSales projection re-compute.
+        _statusFilter = filter;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _pageNumber = newPage;
+        await LoadSalesAsync();
+    }
+
+    private async Task ClearFilters()
+    {
+        _searchTerm = string.Empty;
+        _statusFilter = StatusFilter.All;
+        _pageNumber = 1;
+        await LoadSalesAsync();
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+
+    private void GoToSaleDetail(Guid saleId)
+    {
+        // Phase 4.3 will build /Sales/{Id}. For now, navigating there will
+        // 404 — but the route is reserved and the URL is meaningful (users
+        // can copy/paste it). Once 4.3 lands, this just works.
+        Navigation.NavigateTo($"/Sales/{saleId}", forceLoad: false);
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Persian culture shows Persian digits + RTL; English shows
+    /// Latin digits + LTR. The currency code is shown as-is (e.g. "IRR"
+    /// or "USD") — same convention as Products.razor and Cart.razor.
+    /// </summary>
+    private static string FormatMoney(MoneyDto? money)
+    {
+        if (money is null) return "—";
+        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {money.Currency}";
+    }
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a Radzen BadgeStyle for color coding:
+    ///   - Draft     → Base      (gray, "in progress, not yet submitted")
+    ///   - Pending   → Warning   (amber, "awaiting approval")
+    ///   - Approved  → Info      (blue, "approved, ready to invoice")
+    ///   - Invoiced  → Success   (green, "complete")
+    ///   - Cancelled → Danger    (red, "cancelled")
+    /// 
+    /// Unknown status strings (defensive: shouldn't happen unless the enum
+    /// gains a new value without updating this mapping) fall back to Base.
+    /// </summary>
+    private static BadgeStyle GetStatusBadgeStyle(string status) => status switch
+    {
+        "Draft" => BadgeStyle.Base,
+        "Pending" => BadgeStyle.Warning,
+        "Approved" => BadgeStyle.Info,
+        "Invoiced" => BadgeStyle.Success,
+        "Cancelled" => BadgeStyle.Danger,
+        _ => BadgeStyle.Base
+    };
+
+    /// <summary>
+    /// Returns a localized label for the sale status. Falls back to the
+    /// raw status string if no localization key matches (defensive —
+    /// shouldn't happen unless the enum gains a new value).
+    /// </summary>
+    private string GetStatusLabel(string status)
+    {
+        var key = $"Status{status}";
+        var localized = Loc[key];
+        // If the localizer can't find the key, it returns the key itself.
+        // In that case, fall back to the raw status string.
+        return localized == key ? status : localized;
+    }
+}
