@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateUser.fa-IR.resx — Persian (Farsi) strings for CreateUser.razor.
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>ایجاد کاربر — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>ایجاد کاربر جدید</value>
+  </data>
+  <data name="BackToManageUsers" xml:space="preserve">
+    <value>بازگشت به مدیریت کاربران</value>
+  </data>
+
+  <data name="ManagerScopeTitle" xml:space="preserve">
+    <value>فقط ایجاد مشتری</value>
+  </data>
+  <data name="ManagerScopeMessage" xml:space="preserve">
+    <value>به عنوان مدیر، می‌توانید حساب کاربری مشتری ایجاد کنید. ایجاد حساب کارکنان (کارمند، مدیر، فقط‌خواندنی، مدیر سیستم) نیازمند دسترسی مدیر سیستم است.</value>
+  </data>
+
+  <data name="UserTypeLabel" xml:space="preserve">
+    <value>نوع کاربر</value>
+  </data>
+  <data name="UserTypeCustomer" xml:space="preserve">
+    <value>مشتری</value>
+  </data>
+  <data name="UserTypeCustomerHint" xml:space="preserve">
+    <value>محصولات را خریداری می‌کند؛ عضو یک گروه مشتری است</value>
+  </data>
+  <data name="UserTypeStaff" xml:space="preserve">
+    <value>کارکنان</value>
+  </data>
+  <data name="UserTypeStaffHint" xml:space="preserve">
+    <value>کارمند، مدیر، فقط‌خواندنی یا مدیر سیستم</value>
+  </data>
+
+  <data name="FieldWorkerId" xml:space="preserve">
+    <value>شناسه کارگری</value>
+  </data>
+  <data name="FieldWorkerIdPlaceholder" xml:space="preserve">
+    <value>مثلاً EMP-12345</value>
+  </data>
+  <data name="WorkerIdHint" xml:space="preserve">
+    <value>شناسه کارگری، شناسه ورود به سیستم است و باید در میان همه کاربران یکتا باشد.</value>
+  </data>
+
+  <data name="FieldFullName" xml:space="preserve">
+    <value>نام کامل</value>
+  </data>
+  <data name="FieldFullNamePlaceholder" xml:space="preserve">
+    <value>مثلاً ژانه اسمیت</value>
+  </data>
+
+  <data name="FieldEmail" xml:space="preserve">
+    <value>ایمیل</value>
+  </data>
+  <data name="FieldEmailPlaceholder" xml:space="preserve">
+    <value>مثلاً jane.smith@example.com</value>
+  </data>
+
+  <data name="FieldPassword" xml:space="preserve">
+    <value>گذرواژه اولیه</value>
+  </data>
+  <data name="FieldPasswordPlaceholder" xml:space="preserve">
+    <value>حداقل ۸ نویسه</value>
+  </data>
+  <data name="PasswordHint" xml:space="preserve">
+    <value>کاربر از این گذرواژه برای اولین ورود استفاده می‌کند. بهتر است پس از ورود آن را تغییر دهد.</value>
+  </data>
+  <data name="PasswordShow" xml:space="preserve">
+    <value>نمایش گذرواژه</value>
+  </data>
+  <data name="PasswordHide" xml:space="preserve">
+    <value>پنهان کردن گذرواژه</value>
+  </data>
+
+  <data name="FieldGender" xml:space="preserve">
+    <value>جنسیت</value>
+  </data>
+  <data name="GenderMale" xml:space="preserve">
+    <value>مرد</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>زن</value>
+  </data>
+
+  <data name="FieldGroupName" xml:space="preserve">
+    <value>نام گروه</value>
+  </data>
+  <data name="FieldGroupNamePlaceholder" xml:space="preserve">
+    <value>مثلاً مشتریان منطقه شمال</value>
+  </data>
+  <data name="GroupNameHint" xml:space="preserve">
+    <value>برای مشتری الزامی است. برای اعمال محدودیت خرید هر محصول استفاده می‌شود. مشتری هرگز این مقدار را نمی‌بیند.</value>
+  </data>
+
+  <data name="FieldStaffRole" xml:space="preserve">
+    <value>نقش کارکنان</value>
+  </data>
+  <data name="StaffRolePlaceholder" xml:space="preserve">
+    <value>— انتخاب یک نقش —</value>
+  </data>
+  <data name="StaffRoleHint" xml:space="preserve">
+    <value>نقش تعیین می‌کند این کارمند چه کاری می‌تواند انجام دهد. نقش مشتری هرگز هنگام ایجاد کارکنان اختصاص داده نمی‌شود.</value>
+  </data>
+
+  <data name="RoleEmployee" xml:space="preserve">
+    <value>کارمند</value>
+  </data>
+  <data name="RoleManager" xml:space="preserve">
+    <value>مدیر</value>
+  </data>
+  <data name="RoleReadOnly" xml:space="preserve">
+    <value>فقط‌خواندنی</value>
+  </data>
+  <data name="RoleAdmin" xml:space="preserve">
+    <value>مدیر سیستم</value>
+  </data>
+
+  <data name="SubmitButton" xml:space="preserve">
+    <value>ایجاد کاربر</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+
+  <data name="CreateSuccessTitle" xml:space="preserve">
+    <value>کاربر ایجاد شد</value>
+  </data>
+  <data name="CreateSuccessCustomer" xml:space="preserve">
+    <value>مشتری «{0}» ایجاد شد.</value>
+  </data>
+  <data name="CreateSuccessStaff" xml:space="preserve">
+    <value>کاربر کارکنان «{0}» ({1}) ایجاد شد.</value>
+  </data>
+
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_GenericCreate" xml:space="preserve">
+    <value>ایجاد کاربر ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_ManagerCannotCreateStaff" xml:space="preserve">
+    <value>فقط مدیران سیستم می‌توانند حساب کارکنان ایجاد کنند. لطفاً با یک مدیر سیستم تماس بگیرید.</value>
+  </data>
+  <data name="Error_StaffRoleRequired" xml:space="preserve">
+    <value>لطفاً یک نقش کارکنان انتخاب کنید.</value>
+  </data>
+  <data name="Error_GroupNameRequired" xml:space="preserve">
+    <value>نام گروه برای مشتری الزامی است.</value>
+  </data>
+
+  <data name="HelpTitle" xml:space="preserve">
+    <value>راهنمای ایجاد کاربر</value>
+  </data>
+  <data name="HelpWorkerIdUnique" xml:space="preserve">
+    <value>شناسه کارگری باید در میان همه کاربران یکتا باشد — این شناسه ورود به سیستم است.</value>
+  </data>
+  <data name="HelpEmail" xml:space="preserve">
+    <value>ایمیل باید یک آدرس معتبر باشد. ایمیل‌های تکراری توسط Identity رد می‌شوند.</value>
+  </data>
+  <data name="HelpPassword" xml:space="preserve">
+    <value>گذرواژه اولیه باید حداقل ۸ نویسه باشد. قوانین پیچیدگی Identity اعمال می‌شود (حرف بزرگ، حرف کوچک، عدد، نماد).</value>
+  </data>
+  <data name="HelpGender" xml:space="preserve">
+    <value>جنسیت الزامی است (مرد یا زن). پیش‌فرض مرد است.</value>
+  </data>
+  <data name="HelpGroupName" xml:space="preserve">
+    <value>مشتری باید عضو یک گروه باشد. نام گروه تعیین می‌کند کدام محدودیت خرید برای هر محصول اعمال شود.</value>
+  </data>
+  <data name="HelpStaffRole" xml:space="preserve">
+    <value>نقش کارکنان برای حساب‌های کارکنان الزامی است. مدیران سیستم می‌توانند همه نقش‌ها را اختصاص دهند؛ مدیران نمی‌توانند کارکنان ایجاد کنند.</value>
+  </data>
+  <data name="HelpInitialPassword" xml:space="preserve">
+    <value>گذرواژه اولیه را از طریق کانالی جداگانه به کاربر اطلاع دهید. آن‌ها از این گذرواژه برای اولین ورود استفاده خواهند کرد.</value>
+  </data>
+</root>

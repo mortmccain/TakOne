@@ -1,0 +1,796 @@
+﻿@* AdminUsers.razor — Phase 6.1
+
+   Staff-facing user-management page at route `/Admin/Users`. Reached from
+   the sidebar's "Admin → Manage Users" link (already wired in
+   MainLayout.razor, role-gated to Admin/Manager). The page is also
+   independently gated by [Authorize(Roles=...)] as defense-in-depth.
+
+   PURPOSE:
+     This page is the admin/manager's view of every user in the system
+     (staff and customers). It exists so they can:
+       1. See ALL users in a compact, paginated table (not a single
+          customer-by-customer drill-down).
+       2. Search by Worker ID or Full Name (server-side filter).
+       3. Filter by active/inactive status.
+       4. Activate or Deactivate a user (soft-delete / restore).
+       5. Reset a user's password (Admin only — managers cannot reset
+          passwords, per ResetUserPasswordCommand's [RequireRoles(Admin)]).
+
+   WHAT THIS PAGE DOES NOT DO (out of scope for v1 — see Phase 6.2+):
+     - Create user UI (form for CreateStaffCommand / CreateCustomerCommand).
+       The commands + handlers already exist; the create-user FORM is
+       deferred. For now, users are seeded via the DB seed or created via
+       direct API calls.
+     - User detail page with role assignment UI (AssignUserRoleCommand /
+       RemoveUserRoleCommand exist; the UI is deferred). For now, role
+       changes require DB access.
+     - Edit user full name (UpdateUserFullNameCommand exists; UI deferred).
+     - Group management (AssignUserToGroupCommand / RemoveUserFromGroupCommand
+       exist; UI deferred).
+     - Group-name dropdown filter (would need a "list all groups" query,
+       which doesn't exist yet — currently GetCustomersByGroupQuery goes
+       the other direction).
+
+   LAYOUT:
+     1. Page header: title + (deferred) "Create user" button placeholder.
+     2. Filter bar: search box + activity-status dropdown.
+     3. Loading / error / empty / table states.
+     4. User table: RadzenDataGrid (no built-in pager) with columns for
+        Worker ID, Full Name, Gender, Group (manager+admin only — never
+        shown to employees, but employees can't reach this page anyway),
+        Status (active/inactive badge), and an actions column.
+     5. Manual pager (Prev / page numbers / Next + total count).
+
+   ROLE-RESOLUTION PATTERN (CRITICAL):
+     _isAdmin is computed via AuthStateProvider.GetAuthenticationStateAsync()
+     in OnInitializedAsync — NOT via ICurrentUserService.IsInRole. The
+     ICurrentUserService reads from IHttpContextAccessor.HttpContext,
+     which is NULL over the SignalR circuit in interactive Blazor Server
+     mode (HttpContext only exists during the initial prerender request).
+     AuthStateProvider reads from the Blazor circuit's persistent auth
+     state, which IS preserved across circuit interactions.
+
+     The same pattern is used in Sales.razor (Phase 4.2) and
+     SaleDetail.razor (Phase 4.3) — see those files for the longer
+     explanation. The Wolverine command handlers ALSO enforce
+     [RequireRoles] server-side as defense-in-depth, so even if the
+     client-side role check is wrong, the server still rejects the call.
+
+   DATA LOADING:
+     OnInitializedAsync: resolve the current user's Id + Admin role, then
+     load the first page of users via GetUsersPaginatedQuery. Filter
+     changes reset the page to 1 and re-query.
+
+   ACTIVATE / DEACTIVATE FLOW:
+     - A single toggle button per row. When the user is Active, the button
+       shows "Deactivate" (Danger outlined, block icon). When Inactive, it
+       shows "Activate" (Success outlined, check icon).
+     - Self-deactivation is blocked client-side (the button is hidden on
+       the current user's own row) AND server-side (the handler rejects it
+       with a friendly message). The client-side check is purely UX —
+       without it, the user would click, see an error toast, and have to
+       re-think; with it, the button just isn't there.
+     - On click: confirm via JS confirm() (a destructive action deserves
+       one click of friction), then dispatch the appropriate command,
+       toast on success, reload the grid.
+
+   RESET PASSWORD FLOW:
+     - Admin-only (button hidden from Managers). The button is also hidden
+       on the current user's own row — admins can technically reset their
+       own password via this command (the handler doesn't block it), but
+       it's a confusing UX so we don't offer it. Admins should use the
+       self-service password change flow (deferred) instead.
+     - On click: prompt via JS prompt() for the new password (same pattern
+       as AdminProducts.razor's restock flow). The handler defers password
+       complexity validation to ASP.NET Identity's configured rules —
+       client-side we just check it's non-empty and at least 8 chars to
+       catch obvious typos before the round-trip.
+     - On success: toast. On failure: toast with the handler's error
+       message (Identity's error descriptions are user-friendly enough).
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<AdminUsers>
+     (Loc). Keys are defined in AdminUsers.en-US.resx +
+     AdminUsers.fa-IR.resx. RTL is handled at the html dir level by
+     MainLayout based on the current culture.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All actions use Wolverine command dispatch
+     over the Blazor circuit. The circuit's anti-forgery token covers
+     this case. *@
+
+@page "/Admin/Users"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Commands.ActivateUser
+@using TakOne.Application.Users.Commands.DeactivateUser
+@using TakOne.Application.Users.Commands.ResetUserPassword
+@using TakOne.Application.Users.Queries.GetUsersPaginated
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<AdminUsers> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .admin-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .worker-id-cell {
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+                font-weight: 600;
+                font-size: 0.875rem;
+            }
+
+            .user-name-cell {
+                font-weight: 500;
+            }
+
+            .group-cell-none {
+                color: var(--rz-text-secondary-color);
+                font-style: italic;
+            }
+
+            .row-actions {
+                display: flex;
+                gap: 0.25rem;
+                justify-content: flex-end;
+                align-items: center;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ── *@
+    <div class="admin-header">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="group" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <RadzenButton Text="@Loc["CreateUserButton"]"
+                      Icon="person_add"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Variant="Variant.Filled"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
+    </div>
+
+    @* ── Filter bar ── *@
+    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
+        <RadzenStack Orientation="Orientation.Horizontal"
+                     AlignItems="AlignItems.End"
+                     JustifyContent="JustifyContent.SpaceBetween"
+                     Wrap="FlexWrap.Wrap"
+                     Gap="1rem">
+            <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
+                <RadzenTextBox @bind-Value="_searchTerm"
+                               @bind-Value:after="OnSearchChanged"
+                               Placeholder="@Loc["SearchPlaceholder"]"
+                               TValue="string" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="@Loc["StatusLabel"]" Style="flex: 0 1 200px; min-width: 160px;">
+                <RadzenDropDown Value="_activityFilter"
+                                Data="_activityFilterOptions"
+                                TValue="ActivityFilter"
+                                TextProperty="Label"
+                                ValueProperty="Value"
+                                ValueChanged="@OnActivityFilterChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+        </RadzenStack>
+    </RadzenCard>
+
+    @* ── Loading spinner ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["LoadingText"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error banner ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadUsersAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state (no users at all) ── *@
+    else if (_users.Count == 0 && !HasActiveFilters())
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="person_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
+                <RadzenText Text="@Loc["EmptyMessage"]"
+                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Empty state (filters yielded nothing) ── *@
+    else if (_users.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="search_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyFilteredTitle"]" TextStyle="TextStyle.H6" />
+                <RadzenText Text="@Loc["EmptyFilteredMessage"]"
+                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
+                <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                              Icon="filter_alt_off"
+                              ButtonStyle="ButtonStyle.Base"
+                              Variant="Variant.Outlined"
+                              Click="@ClearFiltersAsync" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── User table ── *@
+    else
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <RadzenDataGrid Data="@_users"
+                            AllowSorting="false"
+                            AllowPaging="false"
+                            Style="width: 100%;"
+                            RowRender="@OnRowRender">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Property="WorkerId"
+                                          Title="@Loc["ColWorkerId"]"
+                                          Width="160px">
+                        <Template Context="user">
+                            <span class="worker-id-cell">@user.WorkerId</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Property="FullName"
+                                          Title="@Loc["ColFullName"]"
+                                          Width="*">
+                        <Template Context="user">
+                            <span class="user-name-cell">@user.FullName</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Property="Gender"
+                                          Title="@Loc["ColGender"]"
+                                          Width="120px">
+                        <Template Context="user">
+                            @GetGenderLabel(user.Gender)
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Property="GroupName"
+                                          Title="@Loc["ColGroup"]"
+                                          Width="180px">
+                        <Template Context="user">
+                            @if (string.IsNullOrWhiteSpace(user.GroupName))
+                            {
+                                <span class="group-cell-none">@Loc["GroupNone"]</span>
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="@user.GroupName"
+                                             BadgeStyle="BadgeStyle.Base"
+                                             IsPill="true" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Property="IsActive"
+                                          Title="@Loc["ColStatus"]"
+                                          Width="120px"
+                                          TextAlign="TextAlign.Center">
+                        <Template Context="user">
+                            @if (user.IsActive)
+                            {
+                                <RadzenBadge Text="@Loc["StatusActiveBadge"]"
+                                             BadgeStyle="BadgeStyle.Success"
+                                             IsPill="true" />
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="@Loc["StatusInactiveBadge"]"
+                                             BadgeStyle="BadgeStyle.Light"
+                                             IsPill="true" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="UserListItemDto"
+                                          Title="@Loc["ColActions"]"
+                                          Width="180px"
+                                          TextAlign="TextAlign.Center"
+                                          Sortable="false">
+                        <Template Context="user">
+                            <div class="row-actions">
+                                @* Activate / Deactivate toggle.
+                                   Hidden on the current user's own row —
+                                   self-deactivation is rejected by the
+                                   handler anyway, but the button adds
+                                   confusing UX so we just don't show it. *@
+                                @if (user.Id != _currentUserId)
+                                {
+                                    @if (user.IsActive)
+                                    {
+                                        <RadzenButton Icon="block"
+                                                      Variant="Variant.Text"
+                                                      ButtonStyle="ButtonStyle.Danger"
+                                                      title="@Loc["ActionDeactivate"]"
+                                                      aria-label="@Loc["ActionDeactivate"]"
+                                                      Disabled="@(_isBusyUserId == user.Id)"
+                                                      Click="@(() => HandleDeactivateAsync(user))" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenButton Icon="check_circle"
+                                                      Variant="Variant.Text"
+                                                      ButtonStyle="ButtonStyle.Success"
+                                                      title="@Loc["ActionActivate"]"
+                                                      aria-label="@Loc["ActionActivate"]"
+                                                      Disabled="@(_isBusyUserId == user.Id)"
+                                                      Click="@(() => HandleActivateAsync(user))" />
+                                    }
+                                }
+
+                                @* Reset password — Admin only.
+                                   Hidden from Managers (button not rendered)
+                                   AND hidden on the current user's own row
+                                   (admin self-reset is technically allowed
+                                   by the handler but confusing UX). The
+                                   server-side [RequireRoles(Admin)] is the
+                                   real guard; this is UX-only. *@
+                                @if (_isAdmin && user.Id != _currentUserId)
+                                {
+                                    <RadzenButton Icon="vpn_key"
+                                                  Variant="Variant.Text"
+                                                  ButtonStyle="ButtonStyle.Warning"
+                                                  title="@Loc["ActionResetPassword"]"
+                                                  aria-label="@Loc["ActionResetPassword"]"
+                                                  Disabled="@(_isBusyUserId == user.Id)"
+                                                  Click="@(() => HandleResetPasswordAsync(user))" />
+                                }
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @* ── Pager ──
+               Manual pager (Prev / page numbers / Next) — same approach as
+               the /Sales list page. Operates on PaginatedResult metadata
+               from the backend (true server-side paging). *@
+            @if (_totalCount > _pageSize)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal"
+                             JustifyContent="JustifyContent.Center"
+                             AlignItems="AlignItems.Center"
+                             Gap="0.5rem"
+                             Wrap="FlexWrap.Wrap"
+                             Style="margin-top: 1rem; padding-bottom: 0.5rem;">
+                    <RadzenButton Icon="chevron_left"
+                                  Variant="Variant.Text"
+                                  Disabled="@(_pageNumber <= 1)"
+                                  Click="@(() => OnPageChanged(_pageNumber - 1))" />
+
+                    @{
+                        var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
+                        var startPage = Math.Max(1, _pageNumber - 2);
+                        var endPage = Math.Min(totalPages, startPage + 4);
+                        if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
+                    }
+
+                    @for (var p = startPage; p <= endPage; p++)
+                    {
+                        var page = p;
+                        <RadzenButton Text="@(page.ToString())"
+                                      Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
+                                      ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
+                                      Disabled="@(_isLoading)"
+                                      Click="@(() => OnPageChanged(page))" />
+                    }
+
+                    <RadzenButton Icon="chevron_right"
+                                  Variant="Variant.Text"
+                                  Disabled="@(_pageNumber >= Math.Ceiling((double)_totalCount / _pageSize))"
+                                  Click="@(() => OnPageChanged(_pageNumber + 1))" />
+
+                    <RadzenText Text="@string.Format(CultureInfo.CurrentCulture, Loc["PageInfoFormat"], _pageNumber, totalPages, _totalCount)"
+                                TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color); margin-left: 0.5rem;" />
+                </RadzenStack>
+            }
+        </RadzenCard>
+    }
+</RadzenStack>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<UserListItemDto> _users = new();
+
+    private string _searchTerm = string.Empty;
+    private ActivityFilter _activityFilter = ActivityFilter.All;
+
+    private const int _pageSize = 20;
+    private int _pageNumber = 1;
+    private int _totalCount;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// The Id of the user whose action button is currently in flight.
+    /// Null when no action is pending. Used to disable that row's action
+    /// buttons while the round-trip is in progress (prevents double-clicks).
+    /// </summary>
+    private Guid? _isBusyUserId;
+
+    /// <summary>
+    /// The current user's Id — used to hide self-action buttons
+    /// (self-deactivation, self-password-reset) on the user's own row.
+    /// Resolved once in OnInitializedAsync.
+    /// </summary>
+    private Guid _currentUserId;
+
+    /// <summary>
+    /// Whether the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false for everyone in
+    /// interactive Blazor Server mode because HttpContext is null over
+    /// the SignalR circuit). See the file-header comment for the full
+    /// explanation.
+    /// </summary>
+    private bool _isAdmin;
+
+    private List<ActivityFilterOption> _activityFilterOptions = new();
+
+    private sealed class ActivityFilterOption
+    {
+        public ActivityFilter Value { get; init; }
+        public string Label { get; init; } = string.Empty;
+    }
+
+    private enum ActivityFilter
+    {
+        All,
+        Active,
+        Inactive
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Populate the activity-filter dropdown options from localizer.
+        _activityFilterOptions = new List<ActivityFilterOption>
+        {
+            new() { Value = ActivityFilter.All,      Label = Loc["StatusAll"] },
+            new() { Value = ActivityFilter.Active,   Label = Loc["StatusActive"] },
+            new() { Value = ActivityFilter.Inactive, Label = Loc["StatusInactive"] }
+        };
+
+        // Resolve the current user's Id + Admin role via the Blazor auth
+        // state (NOT ICurrentUserService — see file-header comment).
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                // The UserId claim is set by our custom IClaimsPrincipalFactory
+                // in the Infrastructure layer — it's the Domain User's Guid Id.
+                var idClaim = user.FindFirst("UserId")?.Value
+                              ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (Guid.TryParse(idClaim, out var parsedId))
+                {
+                    _currentUserId = parsedId;
+                }
+
+                _isAdmin = user.IsInRole(Roles.Admin);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _currentUserId stays Guid.Empty (no self-action
+            // buttons hidden, which is safe but slightly worse UX) and
+            // _isAdmin stays false (Reset Password button hidden — safer
+            // fallback if role resolution fails).
+        }
+
+        await LoadUsersAsync();
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadUsersAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetUsersPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = _pageSize,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                IsActive = _activityFilter switch
+                {
+                    ActivityFilter.Active => true,
+                    ActivityFilter.Inactive => false,
+                    _ => null
+                }
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(query);
+
+            _users = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // If we paginated past the last page (e.g. after a deactivation
+            // reduced the total count), reset to page 1 and retry once.
+            if (_users.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = 1;
+                await LoadUsersAsync();
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Filter handlers ─────────────────────────────────────────────────
+
+    private async Task OnSearchChanged()
+    {
+        _pageNumber = 1;
+        await LoadUsersAsync();
+    }
+
+    private async Task OnActivityFilterChanged(ActivityFilter filter)
+    {
+        _activityFilter = filter;
+        _pageNumber = 1;
+        await LoadUsersAsync();
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _pageNumber = newPage;
+        await LoadUsersAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _searchTerm = string.Empty;
+        _activityFilter = ActivityFilter.All;
+        _pageNumber = 1;
+        await LoadUsersAsync();
+    }
+
+    private bool HasActiveFilters()
+        => !string.IsNullOrWhiteSpace(_searchTerm) || _activityFilter != ActivityFilter.All;
+
+    // ── Activate / Deactivate ───────────────────────────────────────────
+
+    private async Task HandleDeactivateAsync(UserListItemDto user)
+    {
+        if (_isBusyUserId.HasValue) return;
+
+        // JS confirm() — destructive action deserves one click of friction.
+        // The handler also rejects self-deactivation as defense-in-depth,
+        // but we hide the button on the user's own row anyway (see markup).
+        var confirmMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["ConfirmDeactivate"],
+            user.FullName,
+            user.WorkerId);
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed) return;
+
+        _isBusyUserId = user.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateUserCommand(user.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], user.FullName),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadUsersAsync();
+            }
+            else
+            {
+                // The handler rejects self-deactivation with a friendly
+                // message; surface it verbatim.
+                await Toast.Error(
+                    result.Error ?? Loc["ActionError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyUserId = null;
+        }
+    }
+
+    private async Task HandleActivateAsync(UserListItemDto user)
+    {
+        if (_isBusyUserId.HasValue) return;
+
+        // No confirmation for activation — it's a non-destructive restore.
+        _isBusyUserId = user.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateUserCommand(user.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], user.FullName),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await LoadUsersAsync();
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["ActionError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyUserId = null;
+        }
+    }
+
+    // ── Reset password (Admin only) ─────────────────────────────────────
+
+    /// <summary>
+    /// Prompts the admin (via the browser's native prompt()) for a new
+    /// password, then dispatches ResetUserPasswordCommand. Same UX pattern
+    /// as AdminProducts.razor's restock flow — simple, no custom dialog.
+    ///
+    /// The handler defers password-complexity validation to ASP.NET
+    /// Identity's configured rules. Client-side, we just check non-empty
+    /// and at least 8 chars to catch obvious typos before the round-trip.
+    /// </summary>
+    private async Task HandleResetPasswordAsync(UserListItemDto user)
+    {
+        if (_isBusyUserId.HasValue) return;
+
+        var promptMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["ResetPrompt"],
+            user.FullName,
+            user.WorkerId);
+
+        var newPassword = await JS.InvokeAsync<string?>("prompt", promptMessage, "");
+
+        // User clicked Cancel or pressed Escape.
+        if (string.IsNullOrWhiteSpace(newPassword)) return;
+
+        newPassword = newPassword.Trim();
+
+        // Minimal client-side check — Identity's complexity rules are
+        // the real authority and will reject anything too weak.
+        if (newPassword.Length < 8)
+        {
+            await Toast.Warning(Loc["ResetInvalidPassword"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isBusyUserId = user.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ResetUserPasswordCommand(user.Id, newPassword));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ResetSuccess"], user.FullName),
+                    summary: Loc["ResetSuccessTitle"]);
+            }
+            else
+            {
+                // Identity's error descriptions are user-friendly (e.g.
+                // "Passwords must have at least one non-alphanumeric character.")
+                // — surface verbatim.
+                await Toast.Error(
+                    result.Error ?? Loc["ResetError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ResetError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyUserId = null;
+        }
+    }
+
+    // ── Row render hook ─────────────────────────────────────────────────
+
+    private void OnRowRender(RowRenderEventArgs<UserListItemDto> args)
+    {
+        // Subtle visual cue for inactive rows: slight opacity. The status
+        // badge already conveys the state, but the row-level cue helps
+        // scan-by-gesture users notice deactivated accounts at a glance.
+        if (args.Data is { } u && !u.IsActive)
+        {
+            args.Attributes.Add("style", "opacity: 0.65;");
+        }
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    private string GetGenderLabel(Domain.Users.Gender gender)
+        => gender switch
+        {
+            Domain.Users.Gender.Male => Loc["GenderMale"],
+            Domain.Users.Gender.Female => Loc["GenderFemale"],
+            _ => gender.ToString()
+        };
+}

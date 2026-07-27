@@ -1,0 +1,755 @@
+﻿@* CreateUser.razor — Phase 6.2 (Admin/Manager user creation)
+
+   Staff-facing user-creation page at route `/Admin/Users/Create`. Reached
+   from the "Create user" button on /Admin/Users (added in this same
+   phase). Role-gated to Admin / Manager via [Authorize(Roles=...)] as
+   defense-in-depth. The page-level gate is the first cut; the command
+   handlers enforce stricter rules server-side:
+     - CreateCustomerCommand: [RequireRoles(Manager, Admin)]
+     - CreateStaffCommand:    [RequireRoles(Admin)]  ← Managers CANNOT create staff
+
+   PURPOSE:
+     Lets admins/managers create new user accounts (staff or customer)
+     via the UI, so test data can be seeded without DB access. Without
+     this page, the only way to create users is via direct DB inserts
+     or migrations — which blocks the full shopping-flow test (browse
+     → cart → submit → /Sales) when no customer accounts exist.
+
+   UNIFIED FORM (Customer + Staff):
+     CreateCustomerCommand and CreateStaffCommand share 5 fields
+     (WorkerId, FullName, Email, InitialPassword, Gender) and differ in:
+       - Customer requires GroupName; Staff forbids it.
+       - Customer always gets the "Customer" role; Staff requires an
+         explicit Role selection (Employee / Manager / ReadOnly / Admin).
+       - Customer creation: Manager or Admin. Staff creation: Admin only.
+     A single unified form with a User Type toggle avoids ~80% code
+     duplication and lets an admin flip between types without navigating
+     back. When a Manager is signed in, the Staff option is HIDDEN and
+     Customer is pre-selected + locked — this matches the server-side
+     [RequireRoles(Admin)] on CreateStaffCommand (defense-in-depth).
+
+   FORM FIELDS:
+     1. User Type         (Customer / Staff toggle — Staff hidden from
+                           Managers; selecting Staff clears GroupName,
+                           selecting Customer clears StaffRole)
+     2. Worker ID         (required, 1-100 chars — login identifier,
+                           must be globally unique)
+     3. Full Name         (required, 1-200 chars)
+     4. Email             (required, valid email, max 256 chars)
+     5. Initial Password  (required, 8-100 chars — show/hide toggle;
+                           Identity's configured complexity rules are
+                           the real authority)
+     6. Gender            (Male / Female radio — 2-value enum per roadmap
+                           Section 12.5; defaults to Male)
+     7. Group Name        (required when Customer, max 100 chars;
+                           HIDDEN when Staff)
+     8. Staff Role        (Employee / Manager / ReadOnly / Admin
+                           dropdown — HIDDEN when Customer)
+
+   VALIDATION:
+     - FluentValidation runs server-side via Wolverine's pipeline
+       (CreateCustomerCommandValidator / CreateStaffCommandValidator).
+       The validators produce the first wave of error messages
+       (field-level, surfaced via EditContext validation).
+     - The handlers do additional business-rule validation: WorkerId
+       uniqueness (returns friendly "A user with worker ID 'X' already
+       exists."), and Identity-level checks (duplicate email, weak
+       password, role not seeded — surfaced via Result.Failure).
+     - Client-side validation: minimal HTML5 required + min-length on
+       password. The authoritative check is always server-side.
+
+   ROLE-RESOLUTION PATTERN (CRITICAL):
+     _isAdmin is computed via AuthStateProvider.GetAuthenticationStateAsync()
+     in OnInitializedAsync — NOT via ICurrentUserService.IsInRole. The
+     ICurrentUserService reads from IHttpContextAccessor.HttpContext,
+     which is NULL over the SignalR circuit in interactive Blazor Server
+     mode. AuthStateProvider reads from the Blazor circuit's persistent
+     auth state, which IS preserved across circuit interactions.
+
+     Same pattern as AdminUsers.razor (Phase 6.1), Sales.razor (4.2),
+     and SaleDetail.razor (4.3). The Wolverine command handlers ALSO
+     enforce [RequireRoles] server-side as defense-in-depth.
+
+   FORM SUBMISSION:
+     - On valid submit: dispatch the appropriate command
+       (CreateCustomerCommand or CreateStaffCommand) via Wolverine.
+     - On success: toast + navigate to /Admin/Users (where the new user
+       appears in the list — sorted by created-at desc, so newest first).
+     - On failure: show result.Error inline at the top of the form.
+       Field-level errors from FluentValidation are surfaced via
+       EditContext validation.
+
+   LOCALIZATION:
+     All user-visible strings via IStringLocalizer<CreateUser> (Loc).
+     Keys defined in CreateUser.en-US.resx + CreateUser.fa-IR.resx.
+     RTL is handled at the html dir level by MainLayout.
+
+   ANTIFORGERY:
+     Required — EditForm with OnValidSubmit. Blazor Server circuits
+     already have an anti-forgery token established at circuit-start;
+     EditForm validates it automatically. *@
+
+@page "/Admin/Users/Create"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Users.Commands.CreateCustomer
+@using TakOne.Application.Users.Commands.CreateStaff
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<CreateUser> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .create-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 2rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .create-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem;
+                }
+            }
+
+            .form-section {
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+
+            .form-actions {
+                display: flex;
+                gap: 0.75rem;
+                justify-content: flex-end;
+                margin-top: 1rem;
+            }
+
+            .form-error {
+                margin-bottom: 1rem;
+            }
+
+            .usertype-toggle {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+                .usertype-toggle .usertype-option {
+                    flex: 1 1 200px;
+                    min-width: 200px;
+                }
+
+            .gender-row {
+                display: flex;
+                gap: 1.5rem;
+                align-items: center;
+            }
+
+            .gender-option {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                cursor: pointer;
+                user-select: none;
+            }
+
+            .password-row {
+                display: flex;
+                gap: 0.5rem;
+                align-items: flex-end;
+            }
+
+                .password-row .password-field {
+                    flex: 1 1 auto;
+                }
+
+                .password-row .password-toggle {
+                    flex: 0 0 auto;
+                }
+
+            /* Help panel on the right */
+            .help-panel {
+                position: sticky;
+                top: 1rem;
+            }
+
+                .help-panel ul {
+                    margin: 0.5rem 0 0 0;
+                    padding-inline-start: 1.25rem;
+                    color: var(--rz-text-secondary-color);
+                    line-height: 1.7;
+                }
+
+                .help-panel li {
+                    margin-bottom: 0.25rem;
+                }
+
+            @@media (max-width: 992px) {
+                .help-panel {
+                    position: static;
+                }
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Breadcrumb + back button ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenButton Text="@Loc["BackToManageUsers"]"
+                      Icon="arrow_back"
+                      ButtonStyle="ButtonStyle.Light"
+                      Variant="Variant.Text"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
+    </RadzenStack>
+
+    @* ── Page header ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+        <RadzenIcon Icon="person_add" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+        <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+    </RadzenStack>
+
+    @* ── Manager trying to create staff — locked-out notice ──
+       When a Manager is signed in, the User Type toggle is locked to
+       Customer (Staff is hidden). We render this small informational
+       banner above the form so the manager understands why. Admins
+       don't see it. *@
+    @if (!_isAdmin)
+    {
+        <RadzenAlert Title="@Loc["ManagerScopeTitle"]"
+                     Text="@Loc["ManagerScopeMessage"]"
+                     AlertStyle="AlertStyle.Info"
+                     Variant="Variant.Outlined"
+                     ShowIcon="true" />
+    }
+
+    @* ── Main form ── *@
+    <div class="create-grid">
+        @* LEFT — form fields *@
+        <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+            <EditForm Model="@_model" OnValidSubmit="@HandleSubmitAsync" FormName="createUser">
+                <DataAnnotationsValidator />
+
+                @* Server-side error banner (e.g. "A user with worker ID 'X' already exists.") *@
+                @if (!string.IsNullOrEmpty(_submitError))
+                {
+                    <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                 Text="@_submitError"
+                                 AlertStyle="AlertStyle.Danger"
+                                 Variant="Variant.Filled"
+                                 ShowIcon="true"
+                                 Class="form-error" />
+                }
+
+                <div class="form-section">
+                    @* ── User Type toggle ──
+                       Admin: can pick Customer OR Staff.
+                       Manager: locked to Customer (Staff option hidden —
+                                server-side [RequireRoles(Admin)] is the
+                                real guard; hiding the option is UX-only). *@
+                    <div>
+                        <RadzenText Text="@Loc["UserTypeLabel"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
+                        <div class="usertype-toggle">
+                            <RadzenCard Variant="@(_model.UserType == UserType.Customer ? Variant.Filled : Variant.Outlined)"
+                                        Class="usertype-option"
+                                        Style="@($"padding: 0.75rem; cursor: pointer; border: 2px solid {GetToggleBorder(UserType.Customer)};")"
+                                        @onclick="@(() => OnUserTypeChanged(UserType.Customer))">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="shopping_bag" Style="color: var(--rz-primary);" />
+                                    <div>
+                                        <RadzenText Text="@Loc["UserTypeCustomer"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+                                        <RadzenText Text="@Loc["UserTypeCustomerHint"]"
+                                                    TextStyle="TextStyle.Caption"
+                                                    Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                    </div>
+                                </RadzenStack>
+                            </RadzenCard>
+
+                            @if (_isAdmin)
+                            {
+                                <RadzenCard Variant="@(_model.UserType == UserType.Staff ? Variant.Filled : Variant.Outlined)"
+                                            Class="usertype-option"
+                                            Style="@($"padding: 0.75rem; cursor: pointer; border: 2px solid {GetToggleBorder(UserType.Staff)};")"
+                                            @onclick="@(() => OnUserTypeChanged(UserType.Staff))">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenIcon Icon="badge" Style="color: var(--rz-primary);" />
+                                        <div>
+                                            <RadzenText Text="@Loc["UserTypeStaff"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+                                            <RadzenText Text="@Loc["UserTypeStaffHint"]"
+                                                        TextStyle="TextStyle.Caption"
+                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                        </div>
+                                    </RadzenStack>
+                                </RadzenCard>
+                            }
+                        </div>
+                    </div>
+
+                    @* ── Worker ID ── *@
+                    <div>
+                        <RadzenFormField Text="@Loc["FieldWorkerId"]" Style="width: 100%;">
+                            <RadzenTextBox @bind-Value="_model.WorkerId"
+                                           Placeholder="@Loc["FieldWorkerIdPlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%;" />
+                        </RadzenFormField>
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                            @Loc["WorkerIdHint"]
+                        </RadzenText>
+                    </div>
+
+                    @* ── Full Name ── *@
+                    <div>
+                        <RadzenFormField Text="@Loc["FieldFullName"]" Style="width: 100%;">
+                            <RadzenTextBox @bind-Value="_model.FullName"
+                                           Placeholder="@Loc["FieldFullNamePlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%;" />
+                        </RadzenFormField>
+                    </div>
+
+                    @* ── Email ── *@
+                    <div>
+                        <RadzenFormField Text="@Loc["FieldEmail"]" Style="width: 100%;">
+                            <RadzenTextBox @bind-Value="_model.Email"
+                                           Placeholder="@Loc["FieldEmailPlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%;" />
+                        </RadzenFormField>
+                    </div>
+
+                    @* ── Initial Password (with show/hide toggle) ── *@
+                    <div>
+                        <div class="password-row">
+                            <RadzenFormField Text="@Loc["FieldPassword"]" Class="password-field" Style="width: 100%;">
+                                <RadzenTextBox Value="_model.InitialPassword"
+                                               ValueChanged="@OnPasswordChanged"
+                                               Type="@(_showPassword ? "text" : "password")"
+                                               Placeholder="@Loc["FieldPasswordPlaceholder"]"
+                                               TValue="string"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+                            <RadzenButton Icon="@(_showPassword ? "visibility_off" : "visibility")"
+                                          title="@(_showPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                          aria-label="@(_showPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Outlined"
+                                          Click="@TogglePasswordVisibility" />
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                            @Loc["PasswordHint"]
+                        </RadzenText>
+                    </div>
+
+                    @* ── Gender ──
+                       2-value enum per roadmap Section 12.5 (Male / Female).
+                       Radio buttons (not dropdown) since there are only 2
+                       options and radio is faster to scan. Defaults to Male
+                       (the Domain factory default). *@
+                    <div>
+                        <RadzenText Text="@Loc["FieldGender"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
+                        <InputRadioGroup @bind-Value="_model.Gender" TValue="Domain.Users.Gender">
+                            <div class="gender-row">
+                                <label class="gender-option">
+                                    <InputRadio Value="@(Domain.Users.Gender.Male)" />
+                                    <span>@Loc["GenderMale"]</span>
+                                </label>
+                                <label class="gender-option">
+                                    <InputRadio Value="@(Domain.Users.Gender.Female)" />
+                                    <span>@Loc["GenderFemale"]</span>
+                                </label>
+                            </div>
+                        </InputRadioGroup>
+                    </div>
+
+                    @* ── Group Name (Customer only) ──
+                       Required for Customer (enforced server-side by the
+                       validator and Domain invariant). Hidden for Staff —
+                       staff users have null GroupName by design. *@
+                    @if (_model.UserType == UserType.Customer)
+                    {
+                        <div>
+                            <RadzenFormField Text="@Loc["FieldGroupName"]" Style="width: 100%;">
+                                <RadzenTextBox @bind-Value="_model.GroupName"
+                                               Placeholder="@Loc["FieldGroupNamePlaceholder"]"
+                                               TValue="string"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                @Loc["GroupNameHint"]
+                            </RadzenText>
+                        </div>
+                    }
+
+                    @* ── Staff Role (Staff only, Admin only) ──
+                       Admin selects which staff role to assign at creation
+                       (Employee / Manager / ReadOnly / Admin). The Customer
+                       role is NOT in this list — staff accounts are never
+                       customers at creation time. (A manager or employee
+                       who wants to buy on their own behalf gets the Customer
+                       role added later via AssignUserRoleCommand.)
+
+                       BINDING PATTERN:
+                       We bind the dropdown to the PRIMITIVE role string
+                       (TValue="string"), not to the complex StaffRoleOption
+                       object. This matches the sibling pattern in
+                       CreateProduct.razor (TValue="Guid?") and
+                       AdminUsers.razor (TValue="ActivityFilter" enum).
+                       RadzenDropDown's ValueProperty/TextProperty handle the
+                       complex-to-primitive mapping; the binding itself
+                       operates on the primitive key only. *@
+                    @if (_model.UserType == UserType.Staff && _isAdmin)
+                    {
+                        <div>
+                            <RadzenFormField Text="@Loc["FieldStaffRole"]" Style="width: 100%;">
+                                <RadzenDropDown @bind-Value="_model.StaffRole"
+                                                Data="_staffRoleOptions"
+                                                TValue="string"
+                                                TextProperty="Label"
+                                                ValueProperty="Value"
+                                                Placeholder="@Loc["StaffRolePlaceholder"]"
+                                                Style="width: 100%;" />
+                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                @Loc["StaffRoleHint"]
+                            </RadzenText>
+                        </div>
+                    }
+
+                    @* ── Form actions ── *@
+                    <div class="form-actions">
+                        <RadzenButton Text="@Loc["CancelButton"]"
+                                      Icon="close"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Outlined"
+                                      Disabled="@_isSubmitting"
+                                      Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
+                        <RadzenButton Text="@Loc["SubmitButton"]"
+                                      Icon="save"
+                                      ButtonType="ButtonType.Submit"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Variant="Variant.Filled"
+                                      Disabled="@_isSubmitting" />
+                    </div>
+                </div>
+            </EditForm>
+        </RadzenCard>
+
+        @* RIGHT — help panel (sticky on desktop) *@
+        <RadzenCard Variant="Variant.Filled" Class="help-panel" Style="padding: 1.25rem;">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.5rem;">
+                <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
+                <RadzenText Text="@Loc["HelpTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+            </RadzenStack>
+            <ul>
+                <li>@Loc["HelpWorkerIdUnique"]</li>
+                <li>@Loc["HelpEmail"]</li>
+                <li>@Loc["HelpPassword"]</li>
+                <li>@Loc["HelpGender"]</li>
+                <li>@Loc["HelpGroupName"]</li>
+                <li>@Loc["HelpStaffRole"]</li>
+                <li>@Loc["HelpInitialPassword"]</li>
+            </ul>
+        </RadzenCard>
+    </div>
+</RadzenStack>
+
+@code {
+    // ── Form model ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// View-model for the create-user form. Holds fields for BOTH Customer
+    /// and Staff creation in one flat object — the User Type toggle
+    /// determines which fields are shown and which command is dispatched
+    /// at submit time. Staff-only fields (StaffRole) and customer-only
+    /// fields (GroupName) are simply ignored when the other type is
+    /// selected.
+    /// </summary>
+    private sealed class CreateUserFormModel
+    {
+        public UserType UserType { get; set; } = UserType.Customer;
+        public string WorkerId { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string InitialPassword { get; set; } = string.Empty;
+        public Domain.Users.Gender Gender { get; set; } = Domain.Users.Gender.Male;
+        public string GroupName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The selected staff role's string value (e.g. "Employee",
+        /// "Manager", "ReadOnly", "Admin"). Null when no role has been
+        /// picked yet OR when UserType is Customer.
+        ///
+        /// We bind the PRIMITIVE string here (not the complex
+        /// StaffRoleOption object) to match the sibling dropdown pattern.
+        /// The Label is looked up from _staffRoleOptions at display time
+        /// (e.g. for the success toast).
+        /// </summary>
+        public string? StaffRole { get; set; }
+    }
+
+    private enum UserType
+    {
+        Customer,
+        Staff
+    }
+
+    /// <summary>
+    /// Strongly-typed staff-role option for the dropdown. The Value is the
+    /// string role name as expected by CreateStaffCommand (matches the
+    /// Roles constants). The Label is localized for display.
+    ///
+    /// BINDING NOTE:
+    ///   The dropdown binds to the PRIMITIVE string Value (TValue="string"),
+    ///   NOT to this complex object. The StaffRoleOption list is only used
+    ///   as the Data source — RadzenDropDown's ValueProperty="Value" /
+    ///   TextProperty="Label" handle the complex-to-primitive mapping.
+    ///   This matches the sibling pattern in CreateProduct.razor (TValue="Guid?"
+    ///   with CategoryDto data) and AdminUsers.razor (TValue="ActivityFilter"
+    ///   with ActivityFilterOption data).
+    /// </summary>
+    private sealed class StaffRoleOption
+    {
+        public string Value { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+    }
+
+    private CreateUserFormModel _model = new();
+
+    // ── State ────────────────────────────────────────────────────────────
+
+    private bool _isAdmin;
+    private bool _isSubmitting;
+    private string _submitError = string.Empty;
+    private bool _showPassword;
+
+    private List<StaffRoleOption> _staffRoleOptions = new();
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve the current user's Admin role via the Blazor auth state
+        // (NOT ICurrentUserService.IsInRole — see file-header comment).
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                _isAdmin = user.IsInRole(Roles.Admin);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _isAdmin stays false. Managers can still create
+            // customers; only the Staff toggle is hidden.
+            _isAdmin = false;
+        }
+
+        // Populate the staff-role dropdown options. The Value strings
+        // match the Roles constants exactly (verified at compile time via
+        // nameof where possible, but RadzenDropDown's ValueProperty uses
+        // reflection, so we just pass the string).
+        _staffRoleOptions = new List<StaffRoleOption>
+        {
+            new() { Value = Roles.Employee, Label = Loc["RoleEmployee"] },
+            new() { Value = Roles.Manager,  Label = Loc["RoleManager"] },
+            new() { Value = Roles.ReadOnly, Label = Loc["RoleReadOnly"] },
+            new() { Value = Roles.Admin,    Label = Loc["RoleAdmin"] }
+        };
+
+        // If a Manager is signed in, lock the User Type to Customer.
+        // (Admins see both options and can pick either.)
+        if (!_isAdmin)
+        {
+            _model.UserType = UserType.Customer;
+        }
+    }
+
+    // ── Handlers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Toggles between Customer and Staff user types. Clears the
+    /// type-specific fields (GroupName for Staff, StaffRole for Customer)
+    /// so the form doesn't carry stale values across the toggle.
+    /// </summary>
+    private Task OnUserTypeChanged(UserType newType)
+    {
+        if (_model.UserType == newType) return Task.CompletedTask;
+
+        _model.UserType = newType;
+
+        if (newType == UserType.Staff)
+        {
+            _model.GroupName = string.Empty;
+        }
+        else
+        {
+            _model.StaffRole = null;
+        }
+
+        // Clear any stale submit error from a previous attempt.
+        _submitError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles the password visibility between masked and plaintext.
+    /// Purely a UX affordance — no validation implications.
+    /// </summary>
+    private Task TogglePasswordVisibility()
+    {
+        _showPassword = !_showPassword;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Bound to the password field's ValueChanged callback so we can
+    /// toggle the input type between Text and Password without losing
+    /// the value (using @bind-Value with a type change can drop the
+    /// current input).
+    /// </summary>
+    private Task OnPasswordChanged(string value)
+    {
+        _model.InitialPassword = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Returns the CSS color for the user-type toggle border. Both options
+    /// use the primary color as their border; the actual visual cue for
+    /// which type is selected comes from the RadzenCard's Variant
+    /// (Variant.Filled for selected, Variant.Outlined for unselected).
+    /// This helper exists for future customization (e.g. dim the
+    /// unselected border) but currently returns the same value for both
+    /// types to keep the visual hierarchy driven by the Variant alone.
+    /// </summary>
+    private static string GetToggleBorder(UserType type)
+        => "var(--rz-primary)";
+
+    // ── Submit ──────────────────────────────────────────────────────────
+
+    private async Task HandleSubmitAsync()
+    {
+        _submitError = string.Empty;
+
+        // Defense-in-depth: if a Manager somehow ended up with UserType=Staff
+        // (e.g. they were an Admin, picked Staff, then had their role
+        // revoked — extremely unlikely), block the submit client-side.
+        // The server-side [RequireRoles(Admin)] on CreateStaffCommand is
+        // the real guard; this just gives a friendlier error.
+        if (_model.UserType == UserType.Staff && !_isAdmin)
+        {
+            _submitError = Loc["Error_ManagerCannotCreateStaff"];
+            return;
+        }
+
+        // Staff requires a role selection.
+        if (_model.UserType == UserType.Staff && _model.StaffRole is null)
+        {
+            _submitError = Loc["Error_StaffRoleRequired"];
+            return;
+        }
+
+        // Customer requires a non-empty GroupName.
+        if (_model.UserType == UserType.Customer && string.IsNullOrWhiteSpace(_model.GroupName))
+        {
+            _submitError = Loc["Error_GroupNameRequired"];
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            Result<Guid> result;
+
+            if (_model.UserType == UserType.Customer)
+            {
+                var command = new CreateCustomerCommand(
+                    WorkerId: _model.WorkerId.Trim(),
+                    FullName: _model.FullName.Trim(),
+                    GroupName: _model.GroupName.Trim(),
+                    Email: _model.Email.Trim(),
+                    InitialPassword: _model.InitialPassword,
+                    Gender: _model.Gender);
+
+                result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+            }
+            else
+            {
+                var command = new CreateStaffCommand(
+                    WorkerId: _model.WorkerId.Trim(),
+                    FullName: _model.FullName.Trim(),
+                    Email: _model.Email.Trim(),
+                    InitialPassword: _model.InitialPassword,
+                    Role: _model.StaffRole!,
+                    Gender: _model.Gender);
+
+                result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+            }
+
+            if (result.IsSuccess)
+            {
+                // For the Staff success toast, look up the localized role
+                // label (e.g. "Employee" → "کارمند") so the Persian toast
+                // doesn't leak the Latin role constant.
+                var staffRoleLabel = _model.StaffRole is null
+                    ? string.Empty
+                    : _staffRoleOptions.FirstOrDefault(o => o.Value == _model.StaffRole)?.Label ?? _model.StaffRole;
+
+                var successMsg = _model.UserType == UserType.Customer
+                    ? string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccessCustomer"], _model.FullName)
+                    : string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccessStaff"], _model.FullName, staffRoleLabel);
+
+                await Toast.Success(successMsg, summary: Loc["CreateSuccessTitle"]);
+
+                // Navigate back to the admin user list — the new user
+                // appears at the top (sorted by created-at desc, assuming
+                // the list query orders that way; if not, the user can
+                // search by worker ID).
+                Navigation.NavigateTo("/Admin/Users", forceLoad: false);
+            }
+            else
+            {
+                // result.Error contains a user-friendly message from the
+                // handler — e.g.:
+                //   "A user with worker ID 'EMP-123' already exists."
+                //   "User name 'EMP-123' is already taken." (Identity)
+                //   "Email 'foo@bar.com' is already taken." (Identity)
+                //   "Passwords must have at least one non-alphanumeric character." (Identity)
+                _submitError = result.Error ?? Loc["Error_GenericCreate"];
+            }
+        }
+        catch
+        {
+            _submitError = Loc["Error_GenericCreate"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

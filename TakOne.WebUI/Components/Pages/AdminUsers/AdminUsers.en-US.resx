@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AdminUsers.en-US.resx — English strings for AdminUsers.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Manage Users — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Manage Users</value>
+  </data>
+  <data name="CreateUserButton" xml:space="preserve">
+    <value>Create user</value>
+  </data>
+
+  <data name="SearchLabel" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>Search by worker ID or name…</value>
+  </data>
+
+  <data name="StatusLabel" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StatusAll" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="StatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
+
+  <data name="LoadingText" xml:space="preserve">
+    <value>Loading users…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>We couldn't load the users. Please try again.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>No users yet</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>There are no users in the system yet. New users are added through the create-user form (coming soon).</value>
+  </data>
+  <data name="EmptyFilteredTitle" xml:space="preserve">
+    <value>No users match your filters</value>
+  </data>
+  <data name="EmptyFilteredMessage" xml:space="preserve">
+    <value>Try adjusting your search or status filter to find what you're looking for.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>Clear filters</value>
+  </data>
+
+  <data name="ColWorkerId" xml:space="preserve">
+    <value>Worker ID</value>
+  </data>
+  <data name="ColFullName" xml:space="preserve">
+    <value>Full name</value>
+  </data>
+  <data name="ColGender" xml:space="preserve">
+    <value>Gender</value>
+  </data>
+  <data name="ColGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="ColActions" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+
+  <data name="GroupNone" xml:space="preserve">
+    <value>—</value>
+  </data>
+
+  <data name="StatusActiveBadge" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusInactiveBadge" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
+
+  <data name="GenderMale" xml:space="preserve">
+    <value>Male</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>Female</value>
+  </data>
+
+  <data name="ActionActivate" xml:space="preserve">
+    <value>Activate</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+  <data name="ActionResetPassword" xml:space="preserve">
+    <value>Reset password</value>
+  </data>
+
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
+  </data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve">
+    <value>User deactivated</value>
+  </data>
+  <data name="DeactivateSuccess" xml:space="preserve">
+    <value>"{0}" has been deactivated.</value>
+  </data>
+  <data name="ActivateSuccessTitle" xml:space="preserve">
+    <value>User activated</value>
+  </data>
+  <data name="ActivateSuccess" xml:space="preserve">
+    <value>"{0}" has been activated and can now log in.</value>
+  </data>
+
+  <data name="ResetPrompt" xml:space="preserve">
+    <value>Enter a new password for "{0}" ({1}). The user will need it to log in:</value>
+  </data>
+  <data name="ResetInvalidPassword" xml:space="preserve">
+    <value>Password must be at least 8 characters. Please try again.</value>
+  </data>
+  <data name="ResetSuccessTitle" xml:space="preserve">
+    <value>Password reset</value>
+  </data>
+  <data name="ResetSuccess" xml:space="preserve">
+    <value>The password for "{0}" has been reset. Communicate it to the user out-of-band.</value>
+  </data>
+  <data name="ResetError" xml:space="preserve">
+    <value>We couldn't reset the password. Please try again.</value>
+  </data>
+
+  <data name="ActionError" xml:space="preserve">
+    <value>We couldn't complete that action. Please try again.</value>
+  </data>
+
+  <data name="PageInfoFormat" xml:space="preserve">
+    <value>Page {0} of {1} ({2} total)</value>
+  </data>
+</root>

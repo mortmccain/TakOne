@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateUser.en-US.resx — English strings for CreateUser.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Create User — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Create a new user</value>
+  </data>
+  <data name="BackToManageUsers" xml:space="preserve">
+    <value>Back to Manage Users</value>
+  </data>
+
+  <data name="ManagerScopeTitle" xml:space="preserve">
+    <value>Customer creation only</value>
+  </data>
+  <data name="ManagerScopeMessage" xml:space="preserve">
+    <value>As a Manager, you can create customer accounts. Creating staff accounts (Employee, Manager, ReadOnly, Admin) requires Administrator access.</value>
+  </data>
+
+  <data name="UserTypeLabel" xml:space="preserve">
+    <value>User type</value>
+  </data>
+  <data name="UserTypeCustomer" xml:space="preserve">
+    <value>Customer</value>
+  </data>
+  <data name="UserTypeCustomerHint" xml:space="preserve">
+    <value>Buys products; belongs to a customer group</value>
+  </data>
+  <data name="UserTypeStaff" xml:space="preserve">
+    <value>Staff</value>
+  </data>
+  <data name="UserTypeStaffHint" xml:space="preserve">
+    <value>Employee, Manager, ReadOnly, or Admin</value>
+  </data>
+
+  <data name="FieldWorkerId" xml:space="preserve">
+    <value>Worker ID</value>
+  </data>
+  <data name="FieldWorkerIdPlaceholder" xml:space="preserve">
+    <value>e.g. EMP-12345</value>
+  </data>
+  <data name="WorkerIdHint" xml:space="preserve">
+    <value>The worker ID is the login identifier. It must be unique across all users.</value>
+  </data>
+
+  <data name="FieldFullName" xml:space="preserve">
+    <value>Full name</value>
+  </data>
+  <data name="FieldFullNamePlaceholder" xml:space="preserve">
+    <value>e.g. Jane Smith</value>
+  </data>
+
+  <data name="FieldEmail" xml:space="preserve">
+    <value>Email</value>
+  </data>
+  <data name="FieldEmailPlaceholder" xml:space="preserve">
+    <value>e.g. jane.smith@example.com</value>
+  </data>
+
+  <data name="FieldPassword" xml:space="preserve">
+    <value>Initial password</value>
+  </data>
+  <data name="FieldPasswordPlaceholder" xml:space="preserve">
+    <value>At least 8 characters</value>
+  </data>
+  <data name="PasswordHint" xml:space="preserve">
+    <value>The user will use this password to log in for the first time. They should change it afterwards.</value>
+  </data>
+  <data name="PasswordShow" xml:space="preserve">
+    <value>Show password</value>
+  </data>
+  <data name="PasswordHide" xml:space="preserve">
+    <value>Hide password</value>
+  </data>
+
+  <data name="FieldGender" xml:space="preserve">
+    <value>Gender</value>
+  </data>
+  <data name="GenderMale" xml:space="preserve">
+    <value>Male</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>Female</value>
+  </data>
+
+  <data name="FieldGroupName" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="FieldGroupNamePlaceholder" xml:space="preserve">
+    <value>e.g. North Region Customers</value>
+  </data>
+  <data name="GroupNameHint" xml:space="preserve">
+    <value>Required for customers. Used to apply per-product purchase limits. Customers never see this value.</value>
+  </data>
+
+  <data name="FieldStaffRole" xml:space="preserve">
+    <value>Staff role</value>
+  </data>
+  <data name="StaffRolePlaceholder" xml:space="preserve">
+    <value>— Select a role —</value>
+  </data>
+  <data name="StaffRoleHint" xml:space="preserve">
+    <value>The role determines what this staff member can do. Customer role is never assigned at staff creation.</value>
+  </data>
+
+  <data name="RoleEmployee" xml:space="preserve">
+    <value>Employee</value>
+  </data>
+  <data name="RoleManager" xml:space="preserve">
+    <value>Manager</value>
+  </data>
+  <data name="RoleReadOnly" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="RoleAdmin" xml:space="preserve">
+    <value>Administrator</value>
+  </data>
+
+  <data name="SubmitButton" xml:space="preserve">
+    <value>Create user</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
+  <data name="CreateSuccessTitle" xml:space="preserve">
+    <value>User created</value>
+  </data>
+  <data name="CreateSuccessCustomer" xml:space="preserve">
+    <value>Customer "{0}" has been created.</value>
+  </data>
+  <data name="CreateSuccessStaff" xml:space="preserve">
+    <value>Staff user "{0}" ({1}) has been created.</value>
+  </data>
+
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_GenericCreate" xml:space="preserve">
+    <value>We couldn't create the user. Please try again.</value>
+  </data>
+  <data name="Error_ManagerCannotCreateStaff" xml:space="preserve">
+    <value>Only administrators can create staff accounts. Please contact an administrator.</value>
+  </data>
+  <data name="Error_StaffRoleRequired" xml:space="preserve">
+    <value>Please select a staff role.</value>
+  </data>
+  <data name="Error_GroupNameRequired" xml:space="preserve">
+    <value>Group name is required for customers.</value>
+  </data>
+
+  <data name="HelpTitle" xml:space="preserve">
+    <value>Tips for creating a user</value>
+  </data>
+  <data name="HelpWorkerIdUnique" xml:space="preserve">
+    <value>Worker IDs must be unique across all users — they're the login identifier.</value>
+  </data>
+  <data name="HelpEmail" xml:space="preserve">
+    <value>Email must be a valid email address. Duplicate emails are rejected by Identity.</value>
+  </data>
+  <data name="HelpPassword" xml:space="preserve">
+    <value>Initial password must be at least 8 characters. Identity's complexity rules apply (uppercase, lowercase, digit, symbol).</value>
+  </data>
+  <data name="HelpGender" xml:space="preserve">
+    <value>Gender is required (Male or Female). Defaults to Male.</value>
+  </data>
+  <data name="HelpGroupName" xml:space="preserve">
+    <value>Customers must belong to a group. Group name determines which per-product purchase limits apply.</value>
+  </data>
+  <data name="HelpStaffRole" xml:space="preserve">
+    <value>Staff role is required for staff accounts. Admins can assign all roles; Managers cannot create staff at all.</value>
+  </data>
+  <data name="HelpInitialPassword" xml:space="preserve">
+    <value>Communicate the initial password to the user out-of-band. They will use it to log in for the first time.</value>
+  </data>
+</root>

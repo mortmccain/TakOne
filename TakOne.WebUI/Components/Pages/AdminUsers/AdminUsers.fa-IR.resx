@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AdminUsers.fa-IR.resx — Persian (Farsi) strings for AdminUsers.razor.
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>مدیریت کاربران — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>مدیریت کاربران</value>
+  </data>
+  <data name="CreateUserButton" xml:space="preserve">
+    <value>ایجاد کاربر</value>
+  </data>
+
+  <data name="SearchLabel" xml:space="preserve">
+    <value>جستجو</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>جستجو بر اساس شناسه کاربری یا نام…</value>
+  </data>
+
+  <data name="StatusLabel" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="StatusAll" xml:space="preserve">
+    <value>همه</value>
+  </data>
+  <data name="StatusActive" xml:space="preserve">
+    <value>فعال</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+
+  <data name="LoadingText" xml:space="preserve">
+    <value>در حال بارگذاری کاربران…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>بارگذاری کاربران ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>هنوز کاربری ثبت نشده</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>هنوز کاربری در سیستم وجود ندارد. کاربران جدید از طریق فرم ایجاد کاربر (به‌زودی) افزوده می‌شوند.</value>
+  </data>
+  <data name="EmptyFilteredTitle" xml:space="preserve">
+    <value>هیچ کاربری با فیلترهای انتخاب‌شده مطابقت ندارد</value>
+  </data>
+  <data name="EmptyFilteredMessage" xml:space="preserve">
+    <value>برای یافتن کاربر مورد نظر، جستجو یا فیلتر وضعیت را تغییر دهید.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>پاک کردن فیلترها</value>
+  </data>
+
+  <data name="ColWorkerId" xml:space="preserve">
+    <value>شناسه کاربری</value>
+  </data>
+  <data name="ColFullName" xml:space="preserve">
+    <value>نام کامل</value>
+  </data>
+  <data name="ColGender" xml:space="preserve">
+    <value>جنسیت</value>
+  </data>
+  <data name="ColGroup" xml:space="preserve">
+    <value>گروه</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="ColActions" xml:space="preserve">
+    <value>عملیات</value>
+  </data>
+
+  <data name="GroupNone" xml:space="preserve">
+    <value>—</value>
+  </data>
+
+  <data name="StatusActiveBadge" xml:space="preserve">
+    <value>فعال</value>
+  </data>
+  <data name="StatusInactiveBadge" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+
+  <data name="GenderMale" xml:space="preserve">
+    <value>مرد</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>زن</value>
+  </data>
+
+  <data name="ActionActivate" xml:space="preserve">
+    <value>فعال‌سازی</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی</value>
+  </data>
+  <data name="ActionResetPassword" xml:space="preserve">
+    <value>بازنشانی گذرواژه</value>
+  </data>
+
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
+  </data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve">
+    <value>کاربر غیرفعال شد</value>
+  </data>
+  <data name="DeactivateSuccess" xml:space="preserve">
+    <value>«{0}» غیرفعال شد.</value>
+  </data>
+  <data name="ActivateSuccessTitle" xml:space="preserve">
+    <value>کاربر فعال شد</value>
+  </data>
+  <data name="ActivateSuccess" xml:space="preserve">
+    <value>«{0}» فعال شد و اکنون می‌تواند وارد سیستم شود.</value>
+  </data>
+
+  <data name="ResetPrompt" xml:space="preserve">
+    <value>گذرواژه جدید برای «{0}» ({1}) را وارد کنید. این کاربر برای ورود به آن نیاز خواهد داشت:</value>
+  </data>
+  <data name="ResetInvalidPassword" xml:space="preserve">
+    <value>گذرواژه باید حداقل ۸ نویسه باشد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="ResetSuccessTitle" xml:space="preserve">
+    <value>گذرواژه بازنشانی شد</value>
+  </data>
+  <data name="ResetSuccess" xml:space="preserve">
+    <value>گذرواژه «{0}» بازنشانی شد. آن را از طریق کانالی جداگانه به کاربر اطلاع دهید.</value>
+  </data>
+  <data name="ResetError" xml:space="preserve">
+    <value>بازنشانی گذرواژه ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <data name="ActionError" xml:space="preserve">
+    <value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <data name="PageInfoFormat" xml:space="preserve">
+    <value>صفحه {0} از {1} ({2} مورد)</value>
+  </data>
+</root>
