@@ -20,6 +20,7 @@
 @inject IJSRuntime JS
 @inject ToastService Toast
 @inject AuthenticationStateProvider AuthStateProvider
+@using Microsoft.AspNetCore.Localization
 
 <RadzenLayout>
     @* Sidebar with role-gated navigation *@
@@ -238,7 +239,21 @@
         _selectedCulture = culture;
         // Persist to cookie so the NEXT page load (forceLoad) reads it
         // server-side and sets the right CultureInfo before Blazor renders.
-        await JS.InvokeVoidAsync("eval", $"document.cookie = 'takone_culture={culture}; path=/; max-age=31536000; samesite=strict'");
+        //
+        // IMPORTANT: CookieRequestCultureProvider (registered in Program.cs
+        // with CookieName="takone_culture") expects the cookie VALUE in the
+        // format `c=<culture>|uic=<culture>` — NOT just the bare culture name.
+        // If you write just `takone_culture=fa-IR`, ParseCookieValue returns
+        // null and the provider silently falls through to the next provider
+        // in the chain (Accept-Language header), so the user's choice is lost.
+        //
+        // Use CookieRequestCultureProvider.MakeCookieValue to encode it
+        // correctly. We invoke it via a small JS shim because Razor can't
+        // call static helpers on RequestLocalization types inline.
+        var cookieValue = CookieRequestCultureProvider.MakeCookieValue(
+            new RequestCulture(culture));
+        await JS.InvokeVoidAsync("eval",
+            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 

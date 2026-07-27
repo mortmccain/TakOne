@@ -1,0 +1,846 @@
+﻿@* Cart.razor — Phase 4.1
+
+   Customer-facing shopping cart page at route `/Cart`. All authenticated
+   users except ReadOnly can shop (the MainLayout already gates the sidebar
+   link — Customer + Admin/Manager/Employee see it, ReadOnly doesn't).
+
+   BACKEND CONTRACT:
+     - Load:    GetActiveCartForUserQuery → Result<CartDto?>
+       - Success(null)  = empty cart (normal state, not an error)
+       - Success(CartDto) = cart with line items + live stock per line
+       - Failure(error)  = load failed (auth, DB timeout, etc.)
+     - Update qty:   UpdateSaleLineItemCommand(SaleId, LineItemId, Quantity) → Result
+     - Remove line:  RemoveSaleLineItemCommand(SaleId, LineItemId) → Result
+     - Clear cart:   DeleteDraftSaleCommand(SaleId) → Result
+     - Submit cart:  SubmitSaleCommand(SaleId) → Result
+   All five go through Wolverine's IMessageBus.InvokeAsync, which routes
+   them through the auth + logging + performance middleware pipeline
+   (same as every other command/query in the app).
+
+   LAYOUT (responsive):
+     Desktop / tablet (≥992px): two columns
+       Left  (8/12): line-item list (each item = picture + info + qty + actions)
+       Right (4/12): sticky summary panel (totals + submit + clear + continue)
+     Mobile (<992px): single column, summary collapses to bottom
+
+   STATES:
+     1. Loading       — spinner while the cart query resolves
+     2. Error         — alert with the error message + retry button
+     3. Empty cart    — friendly empty-state with "Browse products" CTA
+     4. Cart with items — the main shopping cart surface (the bulk of this file)
+
+   PER-LINE STOCK BADGE:
+     Each line shows a small badge reflecting the relationship between the
+     line's Quantity and the live Product.StockQuantity (CurrentStock on
+     the DTO):
+       - In stock (green)         — CurrentStock ≥ Quantity and > 0
+       - Low stock (orange)       — 0 < CurrentStock < Quantity
+       - Out of stock (red)       — CurrentStock == 0
+     The badge is informational — the user can still click Update (the
+     backend will reject with a friendly message). But the SUBMIT button
+     is disabled if ANY line has stock issues, so the user must fix them
+     before checking out.
+
+   QTY SELECTOR:
+     RadzenNumeric with Min=1, Max=Math.Max(CurrentStock, Quantity).
+     The unusual Max formula lets the user KEEP an over-stock quantity
+     (so they can deliberately reduce it) without forcing them to first
+     drop to CurrentStock. But they can't INCREASE past CurrentStock.
+
+   CLEAR CART CONFIRMATION:
+     We use an INLINE confirmation pattern (toggle a bool flag, show
+     Yes/No buttons in place of the Clear button) rather than a JS
+     confirm() dialog. Inline confirmation is more accessible (works
+     with screen readers, doesn't depend on browser dialog styling)
+     and matches the Radzen visual language.
+
+   SUBMIT FLOW:
+     On success: show a success toast, then navigate to /Sales (the
+     user's order history — Phase 4.2 will build this page; for now
+     the route exists only as a placeholder, but navigating there is
+     still better than leaving them on an empty cart). We do NOT
+     reload the cart here — the cart is now in Pending status, so
+     GetActiveCartForUserQuery will return null on next load anyway.
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<Cart> (Loc).
+     Money is formatted via FormatPrice() (same helper as ProductDetail
+     and Products) — keeps the visual language consistent.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All button clicks are async event handlers
+     that dispatch commands via Wolverine. The Blazor circuit's anti-forgery
+     token is established at circuit start. *@
+
+@page "/Cart"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetActiveCartForUser
+@using TakOne.Application.Sales.Commands.UpdateSaleLineItem
+@using TakOne.Application.Sales.Commands.RemoveSaleLineItem
+@using TakOne.Application.Sales.Commands.DeleteDraftSale
+@using TakOne.Application.Sales.Commands.SubmitSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Cart> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Two-column layout: line items left, summary right.
+                       On tablet/mobile, summary collapses below the items. */
+            .cart-layout {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 1.5rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .cart-layout {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            /* ── Line item card ──
+                       Each line item is its own RadzenCard with a grid layout:
+                         [picture] [info] [qty + actions]
+                       On mobile, the picture shrinks and the layout collapses to
+                       a vertical stack with actions wrapping below. */
+            .cart-line {
+                display: grid;
+                grid-template-columns: 80px minmax(0, 1fr) auto;
+                gap: 1rem;
+                align-items: center;
+            }
+
+            @@media (max-width: 600px) {
+                .cart-line {
+                    grid-template-columns: 64px minmax(0, 1fr);
+                    grid-template-rows: auto auto;
+                    gap: 0.75rem;
+                }
+
+                    .cart-line .cart-line-actions {
+                        grid-column: 1 / -1;
+                        justify-content: space-between;
+                    }
+            }
+
+            .cart-line .cart-line-picture {
+                aspect-ratio: 1 / 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--rz-base-background-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: var(--rz-border-radius);
+                overflow: hidden;
+            }
+
+                .cart-line .cart-line-picture img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+
+                .cart-line .cart-line-picture .rz-icon {
+                    font-size: 2.5rem;
+                    color: var(--rz-text-secondary-color);
+                }
+
+            .cart-line .cart-line-name {
+                font-weight: 600;
+                font-size: 1rem;
+                color: var(--rz-text-primary-color);
+                text-decoration: none;
+                display: block;
+                line-height: 1.3;
+            }
+
+                .cart-line .cart-line-name:hover {
+                    color: var(--rz-primary);
+                    text-decoration: underline;
+                }
+
+            .cart-line .cart-line-unit-price {
+                font-size: 0.85rem;
+                color: var(--rz-text-secondary-color);
+                margin-top: 0.15rem;
+            }
+
+            .cart-line .cart-line-total {
+                font-weight: 700;
+                color: var(--rz-primary);
+                margin-top: 0.25rem;
+            }
+
+            .cart-line .cart-line-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+            .cart-line .qty-input {
+                width: 90px;
+            }
+
+            /* Stock badge — same visual language as ProductDetail.razor */
+            .stock-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.3rem;
+                padding: 0.2rem 0.55rem;
+                border-radius: 9999px;
+                font-size: 0.75rem;
+                font-weight: 600;
+                margin-top: 0.25rem;
+            }
+
+            .stock-in {
+                background: rgba(76, 175, 80, 0.15);
+                color: #4caf50;
+            }
+
+            .stock-low {
+                background: rgba(255, 152, 0, 0.15);
+                color: #ff9800;
+            }
+
+            .stock-out {
+                background: rgba(244, 67, 54, 0.15);
+                color: #f44336;
+            }
+
+            /* Summary panel — sticky on desktop so it stays in view while
+                       the user scrolls long carts. On mobile it just sits at the
+                       bottom of the page (no sticky — would cover content). */
+            .cart-summary {
+                position: sticky;
+                top: 1rem;
+            }
+
+            @@media (max-width: 992px) {
+                .cart-summary {
+                    position: static;
+                }
+            }
+
+            .cart-summary-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                padding: 0.5rem 0;
+            }
+
+                .cart-summary-row .label {
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.95rem;
+                }
+
+                .cart-summary-row .value {
+                    font-weight: 600;
+                    color: var(--rz-text-primary-color);
+                }
+
+                .cart-summary-row.total-row {
+                    border-top: 1px solid var(--rz-base-border-color);
+                    margin-top: 0.5rem;
+                    padding-top: 1rem;
+                }
+
+                    .cart-summary-row.total-row .label {
+                        font-size: 1.05rem;
+                        font-weight: 600;
+                        color: var(--rz-text-primary-color);
+                    }
+
+                    .cart-summary-row.total-row .value {
+                        font-size: 1.5rem;
+                        font-weight: 700;
+                        color: var(--rz-primary);
+                    }
+
+            .cart-actions {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                margin-top: 1rem;
+            }
+
+            /* Empty state — centered icon + message + CTA */
+            .cart-empty {
+                text-align: center;
+                padding: 3rem 1rem;
+            }
+
+                .cart-empty .cart-empty-icon {
+                    font-size: 5rem;
+                    color: var(--rz-text-secondary-color);
+                    opacity: 0.5;
+                    margin-bottom: 1rem;
+                }
+
+                .cart-empty .cart-empty-title {
+                    font-size: 1.4rem;
+                    font-weight: 700;
+                    margin-bottom: 0.5rem;
+                    color: var(--rz-text-primary-color);
+                }
+
+                .cart-empty .cart-empty-message {
+                    color: var(--rz-text-secondary-color);
+                    margin-bottom: 1.5rem;
+                    max-width: 400px;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+
+            /* Page header — title + item count badge */
+            .cart-header {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+
+                .cart-header .cart-header-icon {
+                    font-size: 1.75rem;
+                    color: var(--rz-primary);
+                }
+
+                .cart-header .cart-header-title {
+                    font-size: 1.5rem;
+                    font-weight: 700;
+                    margin: 0;
+                }
+
+                .cart-header .cart-count-badge {
+                    background: var(--rz-primary);
+                    color: var(--rz-primary-foreground-color, #fff);
+                    border-radius: 9999px;
+                    padding: 0.15rem 0.6rem;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1.25rem">
+    @* ── Page header ──
+       Title + cart icon + item-count badge (only when cart has items). *@
+    <div class="cart-header">
+        <RadzenIcon Icon="shopping_cart" class="cart-header-icon" />
+        <h1 class="cart-header-title">@Loc["PageHeading"]</h1>
+        @if (_cart is not null && _cart.TotalItemCount > 0)
+        {
+            <span class="cart-count-badge">
+                @string.Format(CultureInfo.CurrentCulture,
+                    _cart.TotalItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
+                    _cart.TotalItemCount)
+            </span>
+        }
+    </div>
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state ── *@
+    else if (_loadError is not null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+        <RadzenButton Text="@Loc["RetryButton"]"
+                      Icon="refresh"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Variant="Variant.Outlined"
+                      Click="@LoadCartAsync" />
+    }
+
+    @* ── Empty cart ── *@
+    else if (_cart is null || _cart.LineItems.Count == 0)
+    {
+        <RadzenCard>
+            <div class="cart-empty">
+                <RadzenIcon Icon="remove_shopping_cart" class="cart-empty-icon" />
+                <div class="cart-empty-title">@Loc["EmptyTitle"]</div>
+                <p class="cart-empty-message">@Loc["EmptyMessage"]</p>
+                <RadzenButton Text="@Loc["BrowseProductsButton"]"
+                              Icon="inventory_2"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Variant="Variant.Filled"
+                              Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+            </div>
+        </RadzenCard>
+    }
+
+    @* ── Cart with items ── *@
+    else
+    {
+        <div class="cart-layout">
+            @* LEFT — line items list *@
+            <RadzenStack Orientation="Orientation.Vertical" Gap="0.75rem">
+                @foreach (var line in _cart.LineItems)
+                {
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
+                        <div class="cart-line">
+                            @* Picture (clickable → product detail page) *@
+                            <a href="@($"/Products/{line.ProductId}")" class="cart-line-picture" aria-label="@line.ProductName">
+                                <RadzenIcon Icon="inventory_2" />
+                            </a>
+
+                            @* Info: name (link) + unit price + line total + stock badge *@
+                            <div>
+                                <a href="@($"/Products/{line.ProductId}")" class="cart-line-name">@line.ProductName</a>
+                                <div class="cart-line-unit-price">
+                                    @string.Format(CultureInfo.CurrentCulture, Loc["UnitPriceLabel"], FormatPrice(line.UnitPrice))
+                                </div>
+                                <div class="cart-line-total">@FormatPrice(line.LineTotal)</div>
+                                @if (line.CurrentStock == 0)
+                                {
+                                    <span class="stock-badge stock-out">
+                                        <RadzenIcon Icon="error_outline" />
+                                        @Loc["StockOut"]
+                                    </span>
+                                }
+                                else if (line.CurrentStock < line.Quantity)
+                                {
+                                    <span class="stock-badge stock-low">
+                                        <RadzenIcon Icon="warning_amber" />
+                                        @string.Format(CultureInfo.CurrentCulture, Loc["StockLow"], line.CurrentStock)
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="stock-badge stock-in">
+                                        <RadzenIcon Icon="check_circle" />
+                                        @string.Format(CultureInfo.CurrentCulture, Loc["StockIn"], line.CurrentStock)
+                                    </span>
+                                }
+                            </div>
+
+                            @* Actions: qty selector + update + remove *@
+                            <div class="cart-line-actions">
+                                <RadzenNumeric TValue="int"
+                                               Value="@GetPendingQty(line.Id)"
+                                               Min="1"
+                                               Max="@(Math.Max(line.CurrentStock, line.Quantity))"
+                                               Step="1"
+                                               Style="width: 90px;"
+                                               class="qty-input"
+                                               Disabled="@_isBusy"
+                                               ValueChanged="@(v => SetPendingQty(line.Id, v))" />
+                                <RadzenButton Icon="save"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Title="@Loc["UpdateButton"]"
+                                              aria-label="@Loc["UpdateButton"]"
+                                              Disabled="@(_isBusy || GetPendingQty(line.Id) == line.Quantity)"
+                                              Click="@(() => HandleUpdateLineAsync(line.Id))" />
+                                <RadzenButton Icon="delete"
+                                              ButtonStyle="ButtonStyle.Danger"
+                                              Variant="Variant.Text"
+                                              Title="@Loc["RemoveButton"]"
+                                              aria-label="@Loc["RemoveButton"]"
+                                              Disabled="@_isBusy"
+                                              Click="@(() => HandleRemoveLineAsync(line.Id))" />
+                            </div>
+                        </div>
+                    </RadzenCard>
+                }
+
+                @* Continue shopping link — sits below the line items list,
+                   on the left column (matches Amazon's cart pattern). *@
+                <RadzenButton Text="@Loc["ContinueShoppingButton"]"
+                              Icon="arrow_back"
+                              ButtonStyle="ButtonStyle.Light"
+                              Variant="Variant.Text"
+                              Disabled="@_isBusy"
+                              Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+            </RadzenStack>
+
+            @* RIGHT — sticky summary panel *@
+            <div class="cart-summary">
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                    <RadzenText Text="@Loc["SummaryTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin-bottom: 0.5rem;" />
+
+                    <div class="cart-summary-row">
+                        <span class="label">@Loc["TotalItems"]</span>
+                        <span class="value">
+                            @string.Format(CultureInfo.CurrentCulture,
+                                _cart.TotalItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
+                                _cart.TotalItemCount)
+                        </span>
+                    </div>
+
+                    <div class="cart-summary-row">
+                        <span class="label">@Loc["LineItemsCount"]</span>
+                        <span class="value">
+                            @string.Format(CultureInfo.CurrentCulture,
+                                _cart.LineItems.Count == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
+                                _cart.LineItems.Count)
+                        </span>
+                    </div>
+
+                    <div class="cart-summary-row total-row">
+                        <span class="label">@Loc["TotalAmount"]</span>
+                        <span class="value">@FormatPrice(_cart.Total)</span>
+                    </div>
+
+                    @if (HasStockIssue())
+                    {
+                        <RadzenAlert Text="@Loc["StockIssueWarning"]"
+                                     AlertStyle="AlertStyle.Warning"
+                                     Variant="Variant.Filled"
+                                     ShowIcon="true"
+                                     Style="margin-top: 1rem;" />
+                    }
+
+                    <div class="cart-actions">
+                        @if (_confirmingClear)
+                        {
+                            <RadzenStack Orientation="Orientation.Vertical" Gap="0.4rem">
+                                <RadzenText Text="@Loc["ConfirmClearMessage"]" TextStyle="TextStyle.Body2" />
+                                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                                    <RadzenButton Text="@Loc["ConfirmClearYes"]"
+                                                  Icon="delete_forever"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  Variant="Variant.Filled"
+                                                  Disabled="@_isBusy"
+                                                  Click="@HandleClearCartAsync" />
+                                    <RadzenButton Text="@Loc["ConfirmClearNo"]"
+                                                  ButtonStyle="ButtonStyle.Light"
+                                                  Variant="Variant.Text"
+                                                  Disabled="@_isBusy"
+                                                  Click="@(() => _confirmingClear = false)" />
+                                </RadzenStack>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <RadzenButton Text="@Loc["SubmitCartButton"]"
+                                          Icon="shopping_cart_checkout"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Style="width: 100%;"
+                                          Disabled="@(_isBusy || HasStockIssue())"
+                                          Click="@HandleSubmitCartAsync" />
+                            <RadzenButton Text="@Loc["ClearCartButton"]"
+                                          Icon="delete_sweep"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Outlined"
+                                          Style="width: 100%;"
+                                          Disabled="@_isBusy"
+                                          Click="@(() => _confirmingClear = true)" />
+                        }
+                    </div>
+                </RadzenCard>
+            </div>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── State ──────────────────────────────────────────────────────────
+
+    private CartDto? _cart;
+    private string? _loadError;
+    private bool _isLoading = true;
+
+    /// <summary>
+    /// True during any mutation (update/remove/clear/submit). Disables ALL
+    /// action buttons + qty selectors so the user can't fire concurrent
+    /// commands at the same line (which could race against each other and
+    /// leave the cart in an inconsistent state).
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// Tracks user input in the qty selectors BEFORE they click "Update".
+    /// Keyed by line item Id. Initialized from line.Quantity when the cart
+    /// loads; updated live as the user types; reset back to line.Quantity
+    /// after a successful Update (because the cart is reloaded).
+    /// </summary>
+    private readonly Dictionary<Guid, int> _pendingQuantities = new();
+
+    /// <summary>
+    /// Toggles the inline "Are you sure?" confirmation for the Clear button.
+    /// Replaces the Clear + Submit buttons with Yes/No buttons while true.
+    /// </summary>
+    private bool _confirmingClear;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadCartAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    private async Task LoadCartAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CartDto?>>(new GetActiveCartForUserQuery());
+
+            if (result.IsSuccess)
+            {
+                _cart = result.Value;
+                _loadError = null;
+
+                // Re-seed pending-qty state from the freshly-loaded cart.
+                // Existing entries for line items that no longer exist (e.g.
+                // after a remove) are pruned.
+                _pendingQuantities.Clear();
+                if (_cart is not null)
+                {
+                    foreach (var line in _cart.LineItems)
+                    {
+                        _pendingQuantities[line.Id] = line.Quantity;
+                    }
+                }
+
+                // Reset the clear-confirm state — if the cart was just
+                // cleared, the confirmation UI should not linger.
+                _confirmingClear = false;
+            }
+            else
+            {
+                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+            }
+        }
+        catch
+        {
+            // Defensive — any unexpected exception (Wolverine timeout, etc.).
+            // Don't leak exception details to the UI.
+            _loadError = Loc["Error_GenericLoad"];
+        }
+    }
+
+    // ── Mutation handlers ──────────────────────────────────────────────
+
+    private async Task HandleUpdateLineAsync(Guid lineItemId)
+    {
+        if (_cart is null || _isBusy) return;
+
+        // Read the pending qty; if not in the dictionary (defensive — shouldn't
+        // happen), fall back to the current line quantity.
+        if (!_pendingQuantities.TryGetValue(lineItemId, out var newQty)) return;
+        if (newQty < 1) return;
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new UpdateSaleLineItemCommand(_cart.SaleId, lineItemId, newQty));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Updated"], summary: Loc["UpdatedTitle"]);
+                await LoadCartAsync(); // refresh from server — authoritative
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["Error_GenericUpdate"],
+                    summary: Loc["ErrorTitle"]);
+                // Reload to revert the pending qty back to the server's truth.
+                await LoadCartAsync();
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericUpdate"], summary: Loc["ErrorTitle"]);
+            await LoadCartAsync();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleRemoveLineAsync(Guid lineItemId)
+    {
+        if (_cart is null || _isBusy) return;
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new RemoveSaleLineItemCommand(_cart.SaleId, lineItemId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Removed"], summary: Loc["RemovedTitle"]);
+                await LoadCartAsync();
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["Error_GenericRemove"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericRemove"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleClearCartAsync()
+    {
+        if (_cart is null || _isBusy) return;
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeleteDraftSaleCommand(_cart.SaleId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Cleared"], summary: Loc["ClearedTitle"]);
+                _confirmingClear = false;
+                await LoadCartAsync(); // will show empty state
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["Error_GenericClear"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericClear"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleSubmitCartAsync()
+    {
+        if (_cart is null || _isBusy) return;
+
+        // Defense-in-depth: even though the Submit button is disabled when
+        // HasStockIssue is true, the user could (via dev tools) re-enable it.
+        // Re-check before dispatching.
+        if (HasStockIssue())
+        {
+            await Toast.Error(Loc["StockIssueWarning"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SubmitSaleCommand(_cart.SaleId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Submitted"], summary: Loc["SubmittedTitle"]);
+                // Navigate to /Sales (the user's order history — Phase 4.2).
+                // The submitted sale is now in Pending status, so reloading
+                // /Cart would show the empty state.
+                Navigation.NavigateTo("/Sales", forceLoad: false);
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["Error_GenericSubmit"],
+                    summary: Loc["ErrorTitle"]);
+                // Reload — the sale's state may have changed underneath us.
+                await LoadCartAsync();
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSubmit"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Pending-qty state helpers ──────────────────────────────────────
+
+    private int GetPendingQty(Guid lineItemId)
+        => _pendingQuantities.TryGetValue(lineItemId, out var q) ? q : 1;
+
+    private void SetPendingQty(Guid lineItemId, int value)
+    {
+        // Clamp to [1, MaxStock] defensively. RadzenNumeric should already
+        // enforce this, but a programmatic Set could violate it.
+        if (value < 1) value = 1;
+        _pendingQuantities[lineItemId] = value;
+    }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// True if any line item has a stock issue — either the product is out
+    /// of stock, OR the line's quantity exceeds current stock. Used to:
+    ///   - disable the Submit button (defense-in-depth: the backend
+    ///     UpdateSaleLineItem/SubmitSale would reject anyway, but disabling
+    ///     gives a cleaner UX)
+    ///   - show a warning alert above the action buttons
+    /// </summary>
+    private bool HasStockIssue()
+    {
+        if (_cart is null) return false;
+        foreach (var line in _cart.LineItems)
+        {
+            if (line.CurrentStock == 0 || line.Quantity > line.CurrentStock)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Same format as ProductDetail.razor and Products.razor — keeps
+    /// the visual language consistent across catalog + cart + checkout.
+    /// </summary>
+    private static string FormatPrice(MoneyDto price)
+    {
+        if (price is null) return "—";
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+    }
+}

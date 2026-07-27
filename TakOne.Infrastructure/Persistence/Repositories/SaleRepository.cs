@@ -82,6 +82,39 @@ public sealed class SaleRepository : ISaleRepository
     }
 
     /// <inheritdoc />
+    public async Task<Sale?> GetActiveDraftForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        // Defensive: Guid.Empty would match no Sale (CustomerId is non-nullable
+        // in the schema and validated in the Sale factory), but we short-circuit
+        // here to avoid sending a nonsensical query to SQL Server.
+        if (userId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // CustomerId == userId filter; Status == Draft; eager-load LineItems
+        // (the caller — CreateOrAppendSaleCommandHandler — needs them to:
+        //   1. check existing-quantity for stock aggregation
+        //   2. add a new line OR increment an existing one
+        // ).
+        //
+        // OrderByDescending(CreatedAtUtc) + FirstOrDefaultAsync picks the
+        // MOST RECENT draft if (defensively) more than one exists. Per the
+        // interface XML doc, this is the cleanup-friendly behavior: the
+        // orphaned older draft remains in the DB but isn't surfaced.
+        //
+        // TRACKING: returns a TRACKED entity (no AsNoTracking) — the caller
+        // is about to call sale.AddLineItem(...) + unitOfWork.SaveChangesAsync,
+        // which requires the entity + its line items to be tracked so EF
+        // detects the changes.
+        return await _db.Sales
+            .Include(s => s.LineItems)
+            .Where(s => s.CustomerId == userId && s.Status == SaleStatus.Draft)
+            .OrderByDescending(s => s.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<PaginatedResult<Sale>> GetPaginatedBySpecificationAsync(
         ISpecification<Sale> specification,
         int pageNumber,

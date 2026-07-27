@@ -1,0 +1,593 @@
+﻿@* ProductDetail.razor — Phase 3.2
+
+   Customer-facing product detail page at route `/Products/{Id:guid}`.
+   Reached from the Products grid (Phase 3.1) by clicking a product card.
+   All authenticated users can view this page — it's the "shop window".
+
+   LAYOUT (responsive):
+     Desktop / tablet (≥768px): two columns
+       Left  (5/12): product picture placeholder (square aspect ratio)
+       Right (7/12): product info + purchase panel
+     Mobile (<768px): single column, picture on top, info below
+
+   SECTIONS (top to bottom on the right column):
+     1. Breadcrumb: Products → [Category Name] → [Product Name]
+        (Category Name is fetched via GetCategoryByIdWithHierarchyQuery;
+        if the lookup fails for any reason, we just show "Products → [Name]"
+        without the category — non-fatal.)
+     2. Product name (h4)
+     3. Price (large, primary color) + currency
+     4. Stock badge: green "In stock (N)", orange "Low stock (N)",
+        red "Out of stock"
+     5. Description (paragraph, may wrap multiple lines)
+     6. Purchase limits panel — ONLY shown to Admin/Manager (the
+        GetProductByIdQuery handler strips purchase limits for other roles
+        as a defense-in-depth measure). Lists per-group limits.
+     7. Quantity selector (RadzenNumeric, min=1, max=StockQuantity)
+     8. Add to Cart button — disabled if StockQuantity == 0 or while
+        submitting. On success: success toast + clear quantity back to 1.
+
+   DATA LOADING:
+     - OnInitializedAsync: load the product via GetProductByIdQuery
+       (Wolverine IMessageBus.InvokeAsync<Result<ProductDto>>).
+     - If the product loads successfully, fire a secondary query for the
+       category (for the breadcrumb). The category load is non-fatal —
+       if it fails, we just show "Products → [Product]" without the
+       category crumb.
+
+   ADD-TO-CART FLOW:
+     - Dispatch CreateOrAppendSaleCommand(ProductId, Quantity) via
+       Wolverine IMessageBus.InvokeAsync<Result<Guid>>.
+     - The handler:
+         a. Loads the product (already loaded by the page, but the handler
+            re-loads for atomicity — it's a separate scope).
+         b. Finds the user's active Draft Sale (GetActiveDraftForUserAsync).
+         c. Either creates a fresh draft with this line, or appends to the
+            existing one. The Sale aggregate handles the increment-existing-
+            line case (same ProductId on the sale) automatically.
+         d. Returns Result<Guid> with the Sale Id.
+     - On success: ToastService.Success with localized message, then reset
+       quantity selector to 1. We DON'T navigate to /Cart (Phase 4.1 hasn't
+       built that page yet — the user can keep browsing and add more items).
+     - On failure: ToastService.Error with the result.Error message (the
+       handler returns user-friendly messages like "Adding 5 units would
+       bring your cart total to 15, but only 10 are currently in stock.").
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<ProductDetail> (Loc).
+     Keys are defined in ProductDetail.fa-IR.resx (Persian, RTL) and
+     ProductDetail.en-US.resx (English, LTR). RTL/LTR is handled at the
+     <html dir="rtl"|"ltr"> level by MainLayout — individual pages don't
+     need to do anything special.
+
+   IMAGE STRATEGY:
+     Phase 3.2 uses a PLACEHOLDER only — a Material icon (inventory_2)
+     centered on a neutral background. The ProductDto has a PictureUrl
+     field, but it's typically null in dev (no upload UI exists yet —
+     Phase 7.1 will add one). If PictureUrl is set, we render an <img>;
+     otherwise we show the placeholder. This keeps the page forward-
+     compatible with future image support without us having to revisit
+     it later.
+
+   ANTI-FORGERY:
+     Not needed — this page doesn't use EditForm. The Add to Cart button
+     is a regular RadzenButton with a Click handler that calls into
+     Wolverine. The Blazor circuit already has its anti-forgery token
+     established at circuit-start time. No form POST happens.
+
+   ROUTE PARAMETER:
+     `Id` is a Guid bound from the URL via [Parameter]. Blazor's @page
+     constraint `{Id:guid}` validates the URL segment is parseable as a
+     Guid before this component even loads — a malformed URL gets a 404
+     from the router, not a runtime exception here. *@
+
+@page "/Products/{Id:guid}"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductById
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
+@using TakOne.Application.Sales.Commands.CreateOrAppendSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<ProductDetail> Loc
+@inject ToastService Toast
+
+<PageTitle>@(_product is null ? Loc["PageTitle"] : $"{_product.Name} — TakOne")</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Layout — 12-col grid on desktop/tablet, stacks on mobile */
+            .detail-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+                gap: 2rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 768px) {
+                .detail-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem;
+                }
+            }
+
+            /* Picture — square aspect ratio, placeholder-friendly.
+                       We use the same neutral background + border as the Products grid
+                       card so the visual language is consistent across catalog + detail. */
+            .detail-picture {
+                aspect-ratio: 1 / 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--rz-base-background-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: var(--rz-border-radius);
+                overflow: hidden;
+                max-width: 480px;
+            }
+
+                .detail-picture img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+
+                .detail-picture .rz-icon {
+                    font-size: 8rem;
+                    color: var(--rz-text-secondary-color);
+                }
+
+            /* Purchase panel — the right column */
+            .detail-info {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .detail-name {
+                font-size: 1.6rem;
+                font-weight: 700;
+                margin: 0;
+                line-height: 1.2;
+            }
+
+            .detail-price {
+                font-size: 1.75rem;
+                font-weight: 700;
+                color: var(--rz-primary);
+                line-height: 1;
+            }
+
+            .detail-description {
+                color: var(--rz-text-secondary-color);
+                line-height: 1.6;
+                white-space: pre-wrap; /* preserves newlines in description */
+            }
+
+            .stock-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.35rem 0.75rem;
+                border-radius: 9999px;
+                font-size: 0.85rem;
+                font-weight: 600;
+            }
+
+            .stock-in {
+                background: rgba(76, 175, 80, 0.15);
+                color: #4caf50;
+            }
+
+            .stock-low {
+                background: rgba(255, 152, 0, 0.15);
+                color: #ff9800;
+            }
+
+            .stock-out {
+                background: rgba(244, 67, 54, 0.15);
+                color: #f44336;
+            }
+
+            /* Purchase limits panel — only admin/manager see this. */
+            .limits-panel {
+                border: 1px dashed var(--rz-base-border-color);
+                border-radius: var(--rz-border-radius);
+                padding: 1rem;
+                background: var(--rz-base-background-color);
+            }
+
+            .limits-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.4rem;
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+
+                .limits-list li {
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 0.9rem;
+                }
+
+                .limits-list .group-name {
+                    color: var(--rz-text-secondary-color);
+                }
+
+                .limits-list .limit-value {
+                    font-weight: 600;
+                }
+
+            /* Quantity selector + Add-to-cart button row */
+            .purchase-row {
+                display: flex;
+                gap: 0.75rem;
+                align-items: stretch;
+                margin-top: 0.5rem;
+            }
+
+                .purchase-row .qty-input {
+                    width: 100px;
+                }
+
+                .purchase-row .add-to-cart-btn {
+                    flex: 1;
+                }
+
+            @@media (max-width: 480px) {
+                .purchase-row {
+                    flex-direction: column;
+                }
+
+                    .purchase-row .qty-input {
+                        width: 100%;
+                    }
+            }
+
+            /* Breadcrumb */
+            .breadcrumb {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                font-size: 0.85rem;
+                color: var(--rz-text-secondary-color);
+                margin-bottom: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+                .breadcrumb a {
+                    color: var(--rz-text-secondary-color);
+                    text-decoration: none;
+                }
+
+                    .breadcrumb a:hover {
+                        color: var(--rz-primary);
+                        text-decoration: underline;
+                    }
+
+                .breadcrumb .crumb-current {
+                    color: var(--rz-text-primary-color);
+                    font-weight: 600;
+                }
+
+                .breadcrumb .crumb-sep {
+                    opacity: 0.5;
+                }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Back button ──
+       Always visible. Returns to /Products (preserves any ?category=... filter
+       the user had set there if they use browser back, but we use NavigateTo
+       so the back-stack stays clean). *@
+    <RadzenButton Text="@Loc["BackToCatalog"]"
+                  Icon="arrow_back"
+                  ButtonStyle="ButtonStyle.Light"
+                  Variant="Variant.Text"
+                  Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state ── *@
+    else if (_loadError is not null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Not found ── *@
+    else if (_product is null)
+    {
+        <RadzenAlert Title="@Loc["NotFoundTitle"]"
+                     Text="@Loc["NotFoundMessage"]"
+                     AlertStyle="AlertStyle.Warning"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Main content ── *@
+    else
+    {
+        <div class="detail-grid">
+            @* LEFT — picture (or placeholder) *@
+            <div class="detail-picture">
+                @if (!string.IsNullOrWhiteSpace(_product.PictureUrl))
+                {
+                    <img src="@_product.PictureUrl" alt="@_product.Name" loading="lazy" />
+                }
+                else
+                {
+                    <RadzenIcon Icon="inventory_2" />
+                }
+            </div>
+
+            @* RIGHT — info + purchase panel *@
+            <div class="detail-info">
+                @* Breadcrumb: Products → [Category Name] → [Product Name] *@
+                <nav class="breadcrumb" aria-label="breadcrumb">
+                    <a href="/Products">@Loc["BreadcrumbProducts"]</a>
+                    @if (!string.IsNullOrWhiteSpace(_categoryName))
+                    {
+                        <span class="crumb-sep">/</span>
+                        <span>@_categoryName</span>
+                    }
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@_product.Name</span>
+                </nav>
+
+                @* Product name *@
+                <h1 class="detail-name">@_product.Name</h1>
+
+                @* Price *@
+                <div class="detail-price">@FormatPrice(_product.Price)</div>
+
+                @* Stock badge *@
+                @if (_product.StockQuantity == 0)
+                {
+                    <span class="stock-badge stock-out">
+                        <RadzenIcon Icon="error_outline" />
+                        @Loc["StockOut"]
+                    </span>
+                }
+                else if (_product.StockQuantity <= 10)
+                {
+                    <span class="stock-badge stock-low">
+                        <RadzenIcon Icon="warning_amber" />
+                        @string.Format(CultureInfo.CurrentCulture, Loc["StockLow"], _product.StockQuantity)
+                    </span>
+                }
+                else
+                {
+                    <span class="stock-badge stock-in">
+                        <RadzenIcon Icon="check_circle" />
+                        @string.Format(CultureInfo.CurrentCulture, Loc["StockIn"], _product.StockQuantity)
+                    </span>
+                }
+
+                @* Description *@
+                @if (!string.IsNullOrWhiteSpace(_product.Description))
+                {
+                    <p class="detail-description">@_product.Description</p>
+                }
+
+                @* Purchase limits panel — admin/manager only.
+                   The handler already strips limits for other roles, so the
+                   PurchaseLimits collection will be empty for customers.
+                   We additionally gate the UI on role check for clarity. *@
+                @if (_product.PurchaseLimits.Count > 0
+                     && (CurrentUser.IsInRole(Roles.Admin) || CurrentUser.IsInRole(Roles.Manager)))
+                {
+                    <div class="limits-panel">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.5rem;">
+                            <RadzenIcon Icon="rule" />
+                            <RadzenText Text="@Loc["PurchaseLimitsTitle"]" TextStyle="TextStyle.Body1" Style="font-weight: 600; margin: 0;" />
+                        </RadzenStack>
+                        <ul class="limits-list">
+                            @foreach (var limit in _product.PurchaseLimits)
+                            {
+                                <li>
+                                    <span class="group-name">@limit.GroupName</span>
+                                    <span class="limit-value">@string.Format(CultureInfo.CurrentCulture, Loc["PurchaseLimitValue"], limit.Limit)</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+
+                @* Purchase panel: quantity selector + Add to cart button.
+                   Disabled if out of stock OR currently submitting. *@
+                <div class="purchase-row">
+                    <RadzenNumeric @bind-Value="_quantity"
+                                   Min="1"
+                                   Max="@_product.StockQuantity"
+                                   Step="1"
+                                   Style="width: 100px;"
+                                   class="qty-input"
+                                   Disabled="@(_product.StockQuantity == 0 || _isSubmitting)" />
+                    <RadzenButton Text="@Loc["AddToCart"]"
+                                  Icon="add_shopping_cart"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  class="add-to-cart-btn"
+                                  Disabled="@(_product.StockQuantity == 0 || _isSubmitting)"
+                                  Click="@HandleAddToCartAsync" />
+                </div>
+            </div>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Product Id from the URL. The @page constraint `{Id:guid}` ensures
+    /// only valid Guid strings reach this parameter; malformed URLs hit
+    /// the router's NotFound template instead.
+    /// </summary>
+    [Parameter]
+    public Guid Id { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private ProductDto? _product;
+    private string? _categoryName;
+    private string? _loadError;
+    private bool _isLoading = true;
+    private int _quantity = 1;
+    private bool _isSubmitting;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadProductAsync();
+            // Fire-and-forget the category lookup — it's non-fatal. We
+            // could parallelize, but the category lookup depends on
+            // _product.CategoryId being populated, so it has to come
+            // after the product load anyway.
+            await LoadCategoryNameAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    private async Task LoadProductAsync()
+    {
+        var query = new GetProductByIdQuery { ProductId = Id };
+        var result = await MessageBus.InvokeAsync<Result<ProductDto>>(query);
+
+        if (result.IsSuccess)
+        {
+            _product = result.Value;
+        }
+        else
+        {
+            // result.Error contains the handler's user-friendly message
+            // (e.g. "Product '{Id}' was not found.")
+            _loadError = result.Error ?? Loc["Error_GenericLoad"];
+        }
+    }
+
+    private async Task LoadCategoryNameAsync()
+    {
+        if (_product is null || _product.CategoryId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            var query = new GetCategoryByIdWithHierarchyQuery { CategoryId = _product.CategoryId };
+            var result = await MessageBus.InvokeAsync<Result<CategoryDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _categoryName = result.Value.Name;
+            }
+            // Non-fatal: if category fails to load, breadcrumb just shows
+            // "Products / [Product]" without the category crumb.
+        }
+        catch
+        {
+            // Swallow — category is purely a UI nicety for the breadcrumb.
+        }
+    }
+
+    // ── Add-to-cart ────────────────────────────────────────────────────
+
+    private async Task HandleAddToCartAsync()
+    {
+        if (_product is null || _quantity < 1)
+        {
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var command = new CreateOrAppendSaleCommand(_product.Id, _quantity);
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+
+            if (result.IsSuccess)
+            {
+                // Success toast. We don't navigate to /Cart yet (Phase 4.1
+                // will add that page) — the user can keep browsing.
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["AddedToCart"], _quantity, _product.Name),
+                    summary: Loc["AddedToCartTitle"]);
+
+                // Reset quantity back to 1 so the user can add a different
+                // product (or the same one again) without first clearing
+                // the field.
+                _quantity = 1;
+            }
+            else
+            {
+                // result.Error contains a user-friendly message from the
+                // handler (e.g. "Adding 5 units of 'Widget' would bring
+                // your cart total to 15, but only 10 are currently in stock.")
+                await Toast.Error(
+                    result.Error ?? Loc["Error_GenericAdd"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            // Defensive: any unexpected exception (Wolverine timeout, etc.)
+            // gets a generic message. Don't leak exception details.
+            await Toast.Error(
+                Loc["Error_GenericAdd"],
+                summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Same format as the Products grid uses — keeps the visual
+    /// language consistent across catalog + detail.
+    /// </summary>
+    private static string FormatPrice(MoneyDto price)
+    {
+        if (price is null) return "—";
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+    }
+}

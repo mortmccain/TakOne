@@ -1,7 +1,9 @@
 ﻿@using TakOne.WebUI.Components
+@using System.Globalization
 
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="@CultureInfo.CurrentCulture.Name" dir="@(
+      CultureInfo.CurrentCulture.TextInfo.IsRightToLeft ? "rtl" : "ltr")">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

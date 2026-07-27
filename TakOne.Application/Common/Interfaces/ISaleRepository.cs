@@ -16,6 +16,34 @@ public interface ISaleRepository
     Task<Sale?> GetByIdWithLineItemsAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the user's currently-active Draft Sale (with line items
+    /// eagerly loaded), or <c>null</c> if the user has no active draft.
+    ///
+    /// <b>"Active draft"</b> = the most recently created Sale where:
+    /// <list type="bullet">
+    ///   <item><c>CustomerId == userId</c>  (the user IS the customer — self-buy)</item>
+    ///   <item><c>Status == Draft</c></item>
+    /// </list>
+    ///
+    /// Used by the "Add to cart" flow on the product-detail page
+    /// (<c>CreateOrAppendSaleCommand</c>): if a draft exists, we append the
+    /// new line to it; if not, we create a fresh draft and add the line.
+    ///
+    /// <b>CONCURRENCY NOTE:</b>
+    ///   The Sale aggregate allows at most one active draft per customer at a
+    ///   time, but the schema does NOT enforce this with a unique index
+    ///   (because the unique constraint would have to be partial:
+    ///   <c>WHERE Status = 0</c> — supported by SQL Server but not by EF Core's
+    ///   model builder without raw SQL). If a second draft is somehow created
+    ///   (e.g. a race between two simultaneous "Add to cart" clicks), this
+    ///   method returns the most recent one and the older draft becomes
+    ///   "orphaned" — it'll be cleaned up by a future maintenance script.
+    ///   In practice, the EF Core transaction + the user's serial click pattern
+    ///   make this a non-issue.
+    /// </summary>
+    Task<Sale?> GetActiveDraftForUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a paginated slice of Sales matching the given specification.
     ///
     /// The caller (a query handler) builds an <see cref="ISpecification{Sale}"/>

@@ -63,6 +63,42 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Product>> GetByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Materialize the input so we don't enumerate twice (once for the
+        // empty check, once for the Where clause) — important if the caller
+        // passes a lazy IEnumerable that does I/O on each enumeration.
+        // ------------------------------------------------------------------
+        var idList = ids as IList<Guid> ?? ids.ToList();
+
+        if (idList.Count == 0)
+        {
+            return new List<Product>();
+        }
+
+        // ------------------------------------------------------------------
+        // Single round-trip: SELECT * FROM Products WHERE Id IN (@id1, @id2, ...)
+        // EF Core translates .Where(p => idList.Contains(p.Id)) into an IN clause.
+        //
+        // We DON'T use FindAsync here because FindAsync only takes a single PK
+        // (no batch overload). The trade-off: we lose the change-tracker cache
+        // lookup that FindAsync provides. For typical batch callers (cart
+        // enrichment, sales-list projection), the entities being loaded aren't
+        // already tracked by the caller's DbContext scope anyway, so the cache
+        // wouldn't help. If the caller IS in a tracking context and wants to
+        // consult the cache, they should call GetByIdAsync per id instead.
+        //
+        // Price + PurchaseLimits auto-load (owned) — no .Include() needed.
+        // ------------------------------------------------------------------
+        return await _db.Products
+            .Where(p => idList.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<PaginatedResult<Product>> GetPaginatedAsync(
         Guid? categoryId = null,
         Guid? subCategoryId = null,
