@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AdminCategories.fa-IR.resx — Persian (Farsi) strings for AdminCategories.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>مدیریت دسته‌بندی‌ها — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>مدیریت دسته‌بندی‌ها</value>
+  </data>
+
+  <data name="CreateFormTitle" xml:space="preserve">
+    <value>ایجاد دسته‌بندی جدید</value>
+  </data>
+  <data name="FieldName" xml:space="preserve">
+    <value>نام دسته‌بندی</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>مثلاً نوشیدنی‌ها</value>
+  </data>
+  <data name="CreateButton" xml:space="preserve">
+    <value>ایجاد دسته‌بندی</value>
+  </data>
+
+  <data name="LoadingText" xml:space="preserve">
+    <value>در حال بارگذاری دسته‌بندی‌ها…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>بارگذاری دسته‌بندی‌ها ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_GenericCreate" xml:space="preserve">
+    <value>ایجاد دسته‌بندی ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_NameRequired" xml:space="preserve">
+    <value>لطفاً نام دسته‌بندی را وارد کنید.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>هنوز دسته‌بندی وجود ندارد</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>برای ایجاد اولین دسته‌بندی از فرم بالا استفاده کنید. پیش از افزودن محصول، حداقل یک دسته‌بندی لازم است.</value>
+  </data>
+
+  <data name="InactiveBadge" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+  <data name="SubcategoryCount" xml:space="preserve">
+    <value>{0} زیردسته</value>
+  </data>
+  <data name="SubsubcategoryCount" xml:space="preserve">
+    <value>{0} زیرِ زیردسته</value>
+  </data>
+
+  <data name="CreateSuccessTitle" xml:space="preserve">
+    <value>دسته‌بندی ایجاد شد</value>
+  </data>
+  <data name="CreateSuccess" xml:space="preserve">
+    <value>«{0}» افزوده شد.</value>
+  </data>
+</root>

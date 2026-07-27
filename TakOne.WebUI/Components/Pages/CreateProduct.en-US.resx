@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateProduct.en-US.resx — English strings for CreateProduct.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Create Product — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Create a new product</value>
+  </data>
+  <data name="BackToManageProducts" xml:space="preserve">
+    <value>Back to Manage Products</value>
+  </data>
+
+  <data name="LoadingCategories" xml:space="preserve">
+    <value>Loading categories…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>We couldn't load the categories. Please try again.</value>
+  </data>
+  <data name="Error_GenericCreate" xml:space="preserve">
+    <value>We couldn't create the product. Please try again.</value>
+  </data>
+  <data name="Error_CategoryRequired" xml:space="preserve">
+    <value>Please select a category.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+
+  <data name="NoCategoriesTitle" xml:space="preserve">
+    <value>No categories exist yet</value>
+  </data>
+  <data name="NoCategoriesMessage" xml:space="preserve">
+    <value>You must create at least one category before you can add products. Please contact an administrator or use the Categories management page (coming soon).</value>
+  </data>
+
+  <data name="FieldName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>e.g. Organic Apples 1kg</value>
+  </data>
+  <data name="FieldDescription" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="FieldDescriptionPlaceholder" xml:space="preserve">
+    <value>Describe the product for customers…</value>
+  </data>
+  <data name="FieldPriceAmount" xml:space="preserve">
+    <value>Price amount</value>
+  </data>
+  <data name="FieldPriceCurrency" xml:space="preserve">
+    <value>Currency</value>
+  </data>
+  <data name="CurrencyPlaceholder" xml:space="preserve">
+    <value>USD</value>
+  </data>
+  <data name="FieldInitialStock" xml:space="preserve">
+    <value>Initial stock quantity</value>
+  </data>
+  <data name="FieldCategory" xml:space="preserve">
+    <value>Category *</value>
+  </data>
+  <data name="FieldSubCategory" xml:space="preserve">
+    <value>Sub-category</value>
+  </data>
+  <data name="FieldSubSubCategory" xml:space="preserve">
+    <value>Sub-sub-category</value>
+  </data>
+  <data name="CategoryPlaceholder" xml:space="preserve">
+    <value>— Select a category —</value>
+  </data>
+  <data name="OptionalPlaceholder" xml:space="preserve">
+    <value>— Optional —</value>
+  </data>
+  <data name="FieldPictureUrl" xml:space="preserve">
+    <value>Picture URL (optional)</value>
+  </data>
+  <data name="FieldPictureUrlPlaceholder" xml:space="preserve">
+    <value>https://example.com/product.png</value>
+  </data>
+  <data name="PictureUrlHint" xml:space="preserve">
+    <value>Leave empty to use a placeholder image. Full upload support comes in a later phase.</value>
+  </data>
+
+  <data name="SubmitButton" xml:space="preserve">
+    <value>Create product</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
+  <data name="CreateSuccessTitle" xml:space="preserve">
+    <value>Product created</value>
+  </data>
+  <data name="CreateSuccess" xml:space="preserve">
+    <value>"{0}" has been added to the catalog.</value>
+  </data>
+
+  <data name="HelpTitle" xml:space="preserve">
+    <value>Tips for creating a product</value>
+  </data>
+  <data name="HelpNameUnique" xml:space="preserve">
+    <value>Product names must be unique across the catalog.</value>
+  </data>
+  <data name="HelpPrice" xml:space="preserve">
+    <value>Use a 3-letter ISO 4217 currency code (USD, EUR, IRR, etc.). The amount must be greater than zero.</value>
+  </data>
+  <data name="HelpStock" xml:space="preserve">
+    <value>Initial stock can be zero. You can restock later from the product list.</value>
+  </data>
+  <data name="HelpCategory" xml:space="preserve">
+    <value>Category is required. Sub-categories are optional and cascade — selecting a new category clears the lower levels.</value>
+  </data>
+  <data name="HelpPictureUrl" xml:space="preserve">
+    <value>Picture URL must be an absolute https:// URL if set. Otherwise a placeholder is shown.</value>
+  </data>
+  <data name="HelpPurchaseLimits" xml:space="preserve">
+    <value>Purchase limits per customer group can be set after creation from the product detail page.</value>
+  </data>
+</root>

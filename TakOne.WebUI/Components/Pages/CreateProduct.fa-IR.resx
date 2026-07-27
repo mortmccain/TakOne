@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateProduct.fa-IR.resx — Persian (Farsi) strings for CreateProduct.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>ایجاد محصول — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>ایجاد محصول جدید</value>
+  </data>
+  <data name="BackToManageProducts" xml:space="preserve">
+    <value>بازگشت به مدیریت محصولات</value>
+  </data>
+
+  <data name="LoadingCategories" xml:space="preserve">
+    <value>در حال بارگذاری دسته‌بندی‌ها…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>بارگذاری دسته‌بندی‌ها ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_GenericCreate" xml:space="preserve">
+    <value>ایجاد محصول ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_CategoryRequired" xml:space="preserve">
+    <value>لطفاً یک دسته‌بندی انتخاب کنید.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+
+  <data name="NoCategoriesTitle" xml:space="preserve">
+    <value>هنوز دسته‌بندی وجود ندارد</value>
+  </data>
+  <data name="NoCategoriesMessage" xml:space="preserve">
+    <value>پیش از افزودن محصول باید حداقل یک دسته‌بندی ایجاد کنید. لطفاً با مدیر تماس بگیرید یا از صفحه مدیریت دسته‌بندی‌ها (به‌زودی) استفاده کنید.</value>
+  </data>
+
+  <data name="FieldName" xml:space="preserve">
+    <value>نام</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>مثلاً سیب ارگانیک ۱ کیلوگرم</value>
+  </data>
+  <data name="FieldDescription" xml:space="preserve">
+    <value>توضیحات</value>
+  </data>
+  <data name="FieldDescriptionPlaceholder" xml:space="preserve">
+    <value>توضیحات محصول برای مشتریان…</value>
+  </data>
+  <data name="FieldPriceAmount" xml:space="preserve">
+    <value>مبلغ قیمت</value>
+  </data>
+  <data name="FieldPriceCurrency" xml:space="preserve">
+    <value>واحد پول</value>
+  </data>
+  <data name="CurrencyPlaceholder" xml:space="preserve">
+    <value>IRR</value>
+  </data>
+  <data name="FieldInitialStock" xml:space="preserve">
+    <value>موجودی اولیه</value>
+  </data>
+  <data name="FieldCategory" xml:space="preserve">
+    <value>دسته‌بندی *</value>
+  </data>
+  <data name="FieldSubCategory" xml:space="preserve">
+    <value>زیردسته</value>
+  </data>
+  <data name="FieldSubSubCategory" xml:space="preserve">
+    <value>زیرِ زیردسته</value>
+  </data>
+  <data name="CategoryPlaceholder" xml:space="preserve">
+    <value>— یک دسته‌بندی انتخاب کنید —</value>
+  </data>
+  <data name="OptionalPlaceholder" xml:space="preserve">
+    <value>— اختیاری —</value>
+  </data>
+  <data name="FieldPictureUrl" xml:space="preserve">
+    <value>آدرس تصویر (اختیاری)</value>
+  </data>
+  <data name="FieldPictureUrlPlaceholder" xml:space="preserve">
+    <value>https://example.com/product.png</value>
+  </data>
+  <data name="PictureUrlHint" xml:space="preserve">
+    <value>خالی بگذارید تا تصویر پیش‌فرض نمایش داده شود. آپلود تصویر در فازهای بعدی فعال خواهد شد.</value>
+  </data>
+
+  <data name="SubmitButton" xml:space="preserve">
+    <value>ایجاد محصول</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+
+  <data name="CreateSuccessTitle" xml:space="preserve">
+    <value>محصول ایجاد شد</value>
+  </data>
+  <data name="CreateSuccess" xml:space="preserve">
+    <value>«{0}» به فهرست محصولات افزوده شد.</value>
+  </data>
+
+  <data name="HelpTitle" xml:space="preserve">
+    <value>نکته‌هایی برای ایجاد محصول</value>
+  </data>
+  <data name="HelpNameUnique" xml:space="preserve">
+    <value>نام محصول باید در کل فهرست یکتا باشد.</value>
+  </data>
+  <data name="HelpPrice" xml:space="preserve">
+    <value>از کد سه‌حرفی ایزو ۴۲۱۷ استفاده کنید (USD, EUR, IRR و …). مبلغ باید بزرگ‌تر از صفر باشد.</value>
+  </data>
+  <data name="HelpStock" xml:space="preserve">
+    <value>موجودی اولیه می‌تواند صفر باشد. افزایش موجودی بعداً از فهرست محصولات انجام می‌شود.</value>
+  </data>
+  <data name="HelpCategory" xml:space="preserve">
+    <value>دسته‌بندی الزامی است. زیردسته‌ها اختیاری و آبشاری هستند — انتخاب دسته‌بندی جدید، سطوح پایین‌تر را پاک می‌کند.</value>
+  </data>
+  <data name="HelpPictureUrl" xml:space="preserve">
+    <value>آدرس تصویر در صورت وارد کردن باید یک آدرس کامل https:// باشد. در غیر این صورت تصویر پیش‌فرض نمایش داده می‌شود.</value>
+  </data>
+  <data name="HelpPurchaseLimits" xml:space="preserve">
+    <value>سقف خرید برای هر گروه مشتری پس از ایجاد محصول از صفحه جزئیات محصول قابل تنظیم است.</value>
+  </data>
+</root>

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AdminProducts.en-US.resx — English strings for AdminProducts.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Manage Products — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Manage Products</value>
+  </data>
+  <data name="CreateProductButton" xml:space="preserve">
+    <value>Create product</value>
+  </data>
+  <data name="CreateFirstProductButton" xml:space="preserve">
+    <value>Create the first product</value>
+  </data>
+
+  <data name="SearchLabel" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>Search by name…</value>
+  </data>
+  <data name="CategoryLabel" xml:space="preserve">
+    <value>Category</value>
+  </data>
+  <data name="AllCategories" xml:space="preserve">
+    <value>All categories</value>
+  </data>
+  <data name="StockLabel" xml:space="preserve">
+    <value>Stock</value>
+  </data>
+  <data name="StockAll" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="StockInStock" xml:space="preserve">
+    <value>In stock</value>
+  </data>
+  <data name="StockOutOfStock" xml:space="preserve">
+    <value>Out of stock</value>
+  </data>
+
+  <data name="LoadingText" xml:space="preserve">
+    <value>Loading products…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>We couldn't load the products. Please try again.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>No products yet</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>There are no products in the catalog yet. Create the first one to start selling.</value>
+  </data>
+
+  <data name="ColName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="ColPrice" xml:space="preserve">
+    <value>Price</value>
+  </data>
+  <data name="ColStock" xml:space="preserve">
+    <value>Stock</value>
+  </data>
+  <data name="ColCategory" xml:space="preserve">
+    <value>Category</value>
+  </data>
+  <data name="ColActions" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="UnknownCategory" xml:space="preserve">
+    <value>—</value>
+  </data>
+
+  <data name="ActionView" xml:space="preserve">
+    <value>View details</value>
+  </data>
+  <data name="ActionRestock" xml:space="preserve">
+    <value>Restock</value>
+  </data>
+
+  <data name="RestockPrompt" xml:space="preserve">
+    <value>Add to stock for "{0}" (current: {1}). Enter quantity to add:</value>
+  </data>
+  <data name="RestockInvalidQuantity" xml:space="preserve">
+    <value>Please enter a positive whole number.</value>
+  </data>
+  <data name="RestockSuccessTitle" xml:space="preserve">
+    <value>Stock updated</value>
+  </data>
+  <data name="RestockSuccess" xml:space="preserve">
+    <value>Added {0} units to "{1}".</value>
+  </data>
+  <data name="RestockError" xml:space="preserve">
+    <value>We couldn't update the stock. Please try again.</value>
+  </data>
+
+  <data name="PageInfoFormat" xml:space="preserve">
+    <value>Page {0} of {1} ({2} total)</value>
+  </data>
+</root>

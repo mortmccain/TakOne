@@ -1,0 +1,380 @@
+﻿@* AdminCategories.razor — Phase 3.3 (Admin category management)
+
+   Staff-facing category management page at route `/Admin/Categories`.
+   Reached from the sidebar's "Admin → Manage Categories" link (already
+   wired in MainLayout.razor). Role-gated to Admin / Manager via
+   [Authorize(Roles=...)] — Employees cannot create categories (the
+   CreateCategoryCommand requires Manager or Admin role).
+
+   PURPOSE:
+     This page exists so staff can create top-level Categories, which are
+     a prerequisite for creating Products. Without categories, the
+     CreateProduct page shows a "No categories exist" error and the user
+     is stuck.
+
+   WHAT THIS PAGE DOES (v1):
+     1. Lists all active Categories with their SubCategory + SubSubCategory
+        counts (rendered as a tree).
+     2. Inline form at the top to create a new top-level Category (name
+        only — the simplest possible creation flow).
+
+   WHAT THIS PAGE DOES NOT DO (out of scope for v1):
+     - Create SubCategories / SubSubCategories — the commands exist
+       (CreateSubCategoryCommand, CreateSubSubCategoryCommand) but the UI
+       is deferred. For the immediate need (seed a top-level Category so
+       Products can be created), top-level creation is enough.
+     - Rename / deactivate categories — commands exist (RenameCategory,
+       DeactivateCategory) but UI deferred.
+     - Edit category hierarchy — deferred.
+
+   LAYOUT:
+     1. Page header: title.
+     2. Inline "Create new category" form (name input + Create button).
+     3. Categories tree: each top-level category as a card with name,
+        active status, and child counts.
+
+   DATA LOADING:
+     - OnInitializedAsync: load active categories via GetActiveCategoriesQuery.
+     - After successful create: reload the list (so the new category appears).
+
+   LOCALIZATION:
+     All user-visible strings via IStringLocalizer<AdminCategories> (Loc).
+     Keys defined in AdminCategories.en-US.resx + AdminCategories.fa-IR.resx.
+
+   ANTIFORGERY:
+     Required — uses EditForm. The Blazor circuit's anti-forgery token
+     covers this. *@
+
+@page "/Admin/Categories"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Categories.Commands.CreateCategory
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<AdminCategories> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .admin-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .create-form {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+
+                .create-form .name-field {
+                    flex: 1 1 280px;
+                    min-width: 220px;
+                }
+
+            .category-card {
+                padding: 1rem 1.25rem;
+            }
+
+                .category-card .cat-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    flex-wrap: wrap;
+                }
+
+                .category-card .cat-name {
+                    font-size: 1.1rem;
+                    font-weight: 600;
+                }
+
+                .category-card .cat-meta {
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.85rem;
+                }
+
+            .subcategory-list {
+                margin-top: 0.75rem;
+                padding-inline-start: 1.5rem;
+                color: var(--rz-text-secondary-color);
+                line-height: 1.7;
+            }
+
+                .subcategory-list li {
+                    margin-bottom: 0.25rem;
+                }
+
+                .subcategory-list .sub-name {
+                    color: var(--rz-text-primary-color);
+                    font-weight: 500;
+                }
+
+            .subsubcategory-list {
+                padding-inline-start: 1.25rem;
+                font-size: 0.85rem;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ── *@
+    <div class="admin-header">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="category" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+    </div>
+
+    @* ── Inline create form ── *@
+    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.75rem;">
+            <RadzenIcon Icon="add_circle_outline" Style="color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["CreateFormTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <EditForm Model="@_newCategoryModel" OnValidSubmit="@HandleCreateCategoryAsync" FormName="createCategory">
+            <DataAnnotationsValidator />
+
+            @if (!string.IsNullOrEmpty(_createError))
+            {
+                <RadzenAlert Title="@Loc["ErrorTitle"]"
+                             Text="@_createError"
+                             AlertStyle="AlertStyle.Danger"
+                             Variant="Variant.Filled"
+                             ShowIcon="true"
+                             Style="margin-bottom: 1rem;" />
+            }
+
+            <div class="create-form">
+                <RadzenFormField Text="@Loc["FieldName"]" Class="name-field">
+                    <RadzenTextBox @bind-Value="_newCategoryModel.Name"
+                                   Placeholder="@Loc["FieldNamePlaceholder"]"
+                                   TValue="string"
+                                   Style="width: 100%;" />
+                </RadzenFormField>
+
+                <RadzenButton Text="@Loc["CreateButton"]"
+                              Icon="add"
+                              ButtonType="ButtonType.Submit"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Variant="Variant.Filled"
+                              Disabled="@_isCreating" />
+            </div>
+        </EditForm>
+    </RadzenCard>
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["LoadingText"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error state ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadCategoriesAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state ── *@
+    else if (_categories.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="category" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
+                <RadzenText Text="@Loc["EmptyMessage"]"
+                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Category tree ── *@
+    else
+    {
+        @foreach (var category in _categories)
+        {
+            <RadzenCard Variant="Variant.Filled" Class="category-card">
+                <div class="cat-header">
+                    <RadzenIcon Icon="folder" Style="color: var(--rz-primary);" />
+                    <span class="cat-name">@category.Name</span>
+                    @if (!category.IsActive)
+                    {
+                        <RadzenBadge Text="@Loc["InactiveBadge"]"
+                                     IsPill="true"
+                                     BadgeStyle="BadgeStyle.Warning" />
+                    }
+                    <span class="cat-meta">
+                        @string.Format(CultureInfo.CurrentCulture,
+                            Loc["SubcategoryCount"],
+                            category.SubCategories.Count)
+                    </span>
+                </div>
+
+                @if (category.SubCategories.Count > 0)
+                {
+                    <ul class="subcategory-list">
+                        @foreach (var sub in category.SubCategories)
+                        {
+                            <li>
+                                <span class="sub-name">@sub.Name</span>
+                                @if (sub.SubSubCategories.Count > 0)
+                                {
+                                    <span class="cat-meta">
+                                        (@string.Format(CultureInfo.CurrentCulture,
+                                                                                    Loc["SubsubcategoryCount"],
+                                                                                    sub.SubSubCategories.Count))
+                                    </span>
+                                    <ul class="subsubcategory-list">
+                                        @foreach (var ssub in sub.SubSubCategories)
+                                        {
+                                            <li>@ssub.Name</li>
+                                        }
+                                    </ul>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </RadzenCard>
+        }
+    }
+</RadzenStack>
+
+@code {
+    // ── Form model ──────────────────────────────────────────────────────
+
+    private sealed class NewCategoryFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+
+    private NewCategoryFormModel _newCategoryModel = new();
+
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<CategoryDto> _categories = new();
+    private bool _isLoading = true;
+    private string? _loadError;
+    private bool _isCreating;
+    private string? _createError;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategoriesAsync();
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadCategoriesAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+            else
+            {
+                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Create category ─────────────────────────────────────────────────
+
+    private async Task HandleCreateCategoryAsync()
+    {
+        _createError = null;
+
+        if (string.IsNullOrWhiteSpace(_newCategoryModel.Name))
+        {
+            _createError = Loc["Error_NameRequired"];
+            return;
+        }
+
+        _isCreating = true;
+
+        try
+        {
+            var command = new CreateCategoryCommand(_newCategoryModel.Name.Trim());
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccess"], _newCategoryModel.Name),
+                    summary: Loc["CreateSuccessTitle"]);
+
+                // Clear the form for the next entry.
+                _newCategoryModel = new NewCategoryFormModel();
+
+                // Reload the list so the new category appears.
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                // Most likely: name already exists.
+                _createError = result.Error ?? Loc["Error_GenericCreate"];
+            }
+        }
+        catch
+        {
+            _createError = Loc["Error_GenericCreate"];
+        }
+        finally
+        {
+            _isCreating = false;
+        }
+    }
+}

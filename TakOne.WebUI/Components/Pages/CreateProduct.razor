@@ -1,0 +1,597 @@
+﻿@* CreateProduct.razor — Phase 3.3 (Admin product creation)
+
+   Staff-facing product creation page at route `/Admin/Products/Create`.
+   Reached from the "Create product" button on /Admin/Products. Role-gated
+   to Admin / Manager / Employee via [Authorize(Roles=...)].
+
+   PURPOSE:
+     Lets staff add a new product to the catalog so they can test the full
+     shopping flow (browse → detail → add to cart → cart → submit). Without
+     this page, there's no way to seed test data via the UI — only direct DB
+     inserts or migrations could create products.
+
+   FORM FIELDS:
+     1. Name              (required, 1-200 chars)
+     2. Description       (required, 1-2000 chars, multiline)
+     3. Price Amount      (required, > 0)
+     4. Price Currency    (required, 3-letter ISO 4217 — dropdown with the
+                           most common currencies; user can also type a
+                           custom 3-letter code)
+     5. Initial Stock     (required, >= 0, <= 1,000,000)
+     6. Category          (required — top-level category dropdown)
+     7. SubCategory       (optional — filtered by selected Category)
+     8. SubSubCategory    (optional — filtered by selected SubCategory)
+     9. Picture URL       (optional — must be a valid absolute URL if set)
+
+   VALIDATION:
+     - FluentValidation runs server-side via Wolverine's pipeline (the
+       CreateProductCommandValidator is registered with Wolverine's
+       UseFluentValidation integration). The validator produces the
+       first wave of error messages.
+     - The handler does additional business-rule validation: name
+       uniqueness, category hierarchy consistency. These produce
+       user-friendly Result.Failure messages.
+     - Client-side validation is minimal — we rely on RadzenFormField's
+       Required + Min/Max for the basic checks (HTML5 form validation
+       via EditForm's ValidationMessage). The authoritative check is
+       always server-side.
+
+   FORM SUBMISSION:
+     - On valid submit: dispatch CreateProductCommand via Wolverine.
+     - On success: toast + navigate to /Admin/Products (where the new
+       product now appears in the list).
+     - On failure: show the result.Error message inline at the top of
+       the form. Field-level errors from FluentValidation are surfaced
+       via EditContext validation.
+
+   LOCALIZATION:
+     All user-visible strings via IStringLocalizer<CreateProduct> (Loc).
+     Keys defined in CreateProduct.en-US.resx + CreateProduct.fa-IR.resx.
+
+   ANTIFORGERY:
+     Required — this page uses EditForm with a POST-equivalent submit
+     handler. The [AntiforgeryValidation] attribute on the page (via
+     EditForm's built-in support) ensures the circuit's anti-forgery
+     token is checked. Blazor Server circuits already have this token
+     established at circuit-start; EditForm validates it automatically. *@
+
+@page "/Admin/Products/Create"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.Commands.CreateProduct
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<CreateProduct> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .create-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 2rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .create-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem;
+                }
+            }
+
+            .form-section {
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+
+            .price-row {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-end;
+            }
+
+                .price-row .price-amount {
+                    flex: 1 1 auto;
+                }
+
+                .price-row .price-currency {
+                    flex: 0 0 120px;
+                }
+
+            .category-row {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+
+                .category-row > * {
+                    flex: 1 1 200px;
+                    min-width: 180px;
+                }
+
+            .form-actions {
+                display: flex;
+                gap: 0.75rem;
+                justify-content: flex-end;
+                margin-top: 1rem;
+            }
+
+            .form-error {
+                margin-bottom: 1rem;
+            }
+
+            /* Help panel on the right */
+            .help-panel {
+                position: sticky;
+                top: 1rem;
+            }
+
+                .help-panel ul {
+                    margin: 0.5rem 0 0 0;
+                    padding-inline-start: 1.25rem;
+                    color: var(--rz-text-secondary-color);
+                    line-height: 1.7;
+                }
+
+                .help-panel li {
+                    margin-bottom: 0.25rem;
+                }
+
+            @@media (max-width: 992px) {
+                .help-panel {
+                    position: static;
+                }
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Breadcrumb + back button ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenButton Text="@Loc["BackToManageProducts"]"
+                      Icon="arrow_back"
+                      ButtonStyle="ButtonStyle.Light"
+                      Variant="Variant.Text"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Products", forceLoad: false))" />
+    </RadzenStack>
+
+    @* ── Page header ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+        <RadzenIcon Icon="add_box" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+        <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+    </RadzenStack>
+
+    @* ── Loading state (categories still loading) ── *@
+    @if (_isLoadingCategories)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["LoadingCategories"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Category-load failure state ──
+       If categories fail to load, we can't show the form (Category is a
+       required field that depends on this data). Show an error with a
+       retry button instead of letting the user fill out the form and
+       get a server-side "Category not found" error on submit. *@
+    else if (!string.IsNullOrEmpty(_categoriesLoadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_categoriesLoadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadCategoriesAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── No categories exist yet ──
+       Categories must exist before products can be created (CategoryId is
+       required). If the catalog has no categories yet, we redirect the user
+       to create one first. (Phase X will add /Admin/Categories for this.) *@
+    else if (_categories.Count == 0)
+    {
+        <RadzenAlert Title="@Loc["NoCategoriesTitle"]"
+                     Text="@Loc["NoCategoriesMessage"]"
+                     AlertStyle="AlertStyle.Warning"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadCategoriesAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Main form ── *@
+    else
+    {
+        <div class="create-grid">
+            @* LEFT — form fields *@
+            <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+                <EditForm Model="@_model" OnValidSubmit="@HandleSubmitAsync" FormName="createProduct">
+                    <DataAnnotationsValidator />
+
+                    @* Server-side error banner (e.g. "Product name already exists") *@
+                    @if (!string.IsNullOrEmpty(_submitError))
+                    {
+                        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                     Text="@_submitError"
+                                     AlertStyle="AlertStyle.Danger"
+                                     Variant="Variant.Filled"
+                                     ShowIcon="true"
+                                     Class="form-error" />
+                    }
+
+                    <div class="form-section">
+                        @* Name *@
+                        <RadzenFormField Text="@Loc["FieldName"]" Style="width: 100%;">
+                            <RadzenTextBox @bind-Value="_model.Name"
+                                           Placeholder="@Loc["FieldNamePlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%;" />
+                        </RadzenFormField>
+                        <ValidationMessage For="@(() => _model.Name)" />
+
+                        @* Description *@
+                        <div>
+                            <RadzenFormField Text="@Loc["FieldDescription"]" Style="width: 100%;">
+                                <RadzenTextArea @bind-Value="_model.Description"
+                                                Placeholder="@Loc["FieldDescriptionPlaceholder"]"
+                                                TValue="string"
+                                                Rows="4"
+                                                Style="width: 100%;" />
+                            </RadzenFormField>
+                            <ValidationMessage For="@(() => _model.Description)" />
+                        </div>
+
+                        @* Price (amount + currency) *@
+                        <div>
+                            <div class="price-row">
+                                <RadzenFormField Text="@Loc["FieldPriceAmount"]" Class="price-amount">
+                                    <RadzenNumeric TValue="decimal"
+                                                   @bind-Value="_model.PriceAmount"
+                                                   Min="0.01m"
+                                                   Step="1"
+                                                   Style="width: 100%;" />
+                                </RadzenFormField>
+                                <RadzenFormField Text="@Loc["FieldPriceCurrency"]" Class="price-currency">
+                                    <RadzenDropDown TValue="string"
+                                                    @bind-Value="_model.PriceCurrency"
+                                                    Data="_currencyOptions"
+                                                    AllowFiltering="true"
+                                                    AllowCustomValue="true"
+                                                    Placeholder="@Loc["CurrencyPlaceholder"]"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+                            </div>
+                            <ValidationMessage For="@(() => _model.PriceAmount)" />
+                            <ValidationMessage For="@(() => _model.PriceCurrency)" />
+                        </div>
+
+                        @* Initial stock *@
+                        <div>
+                            <RadzenFormField Text="@Loc["FieldInitialStock"]" Style="width: 100%;">
+                                <RadzenNumeric TValue="int"
+                                               @bind-Value="_model.InitialStockQuantity"
+                                               Min="0"
+                                               Step="1"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+                            <ValidationMessage For="@(() => _model.InitialStockQuantity)" />
+                        </div>
+
+                        @* Category hierarchy — three dropdowns in a row.
+                           SubCategory is filtered to those whose CategoryId matches
+                           the selected Category. SubSubCategory is filtered to those
+                           whose SubCategoryId matches the selected SubCategory.
+                           Selecting a new Category clears SubCategory + SubSubCategory
+                           (the cascade invalidates the lower levels). Selecting a new
+                           SubCategory clears SubSubCategory. *@
+                        <div>
+                            <div class="category-row">
+                                <RadzenFormField Text="@Loc["FieldCategory"]">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Value="_model.CategoryId"
+                                                    Data="_categories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    Placeholder="@Loc["CategoryPlaceholder"]"
+                                                    ValueChanged="@OnCategoryChanged"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+
+                                <RadzenFormField Text="@Loc["FieldSubCategory"]">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Value="_model.SubCategoryId"
+                                                    Data="_availableSubCategories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Placeholder="@Loc["OptionalPlaceholder"]"
+                                                    ValueChanged="@OnSubCategoryChanged"
+                                                    Disabled="@(_model.CategoryId == null)"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+
+                                <RadzenFormField Text="@Loc["FieldSubSubCategory"]">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    @bind-Value="_model.SubSubCategoryId"
+                                                    Data="_availableSubSubCategories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Placeholder="@Loc["OptionalPlaceholder"]"
+                                                    Disabled="@(_model.SubCategoryId == null)"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+                            </div>
+                            <ValidationMessage For="@(() => _model.CategoryId)" />
+                        </div>
+
+                        @* Picture URL (optional) *@
+                        <div>
+                            <RadzenFormField Text="@Loc["FieldPictureUrl"]" Style="width: 100%;">
+                                <RadzenTextBox @bind-Value="_model.PictureUrl"
+                                               Placeholder="@Loc["FieldPictureUrlPlaceholder"]"
+                                               TValue="string"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+                            <ValidationMessage For="@(() => _model.PictureUrl)" />
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                @Loc["PictureUrlHint"]
+                            </RadzenText>
+                        </div>
+
+                        @* Form actions *@
+                        <div class="form-actions">
+                            <RadzenButton Text="@Loc["CancelButton"]"
+                                          Icon="close"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Outlined"
+                                          Disabled="@_isSubmitting"
+                                          Click="@(() => Navigation.NavigateTo("/Admin/Products", forceLoad: false))" />
+                            <RadzenButton Text="@Loc["SubmitButton"]"
+                                          Icon="save"
+                                          ButtonType="ButtonType.Submit"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Disabled="@_isSubmitting"
+                                          Click="@(async () => await Task.CompletedTask)" />
+                        </div>
+                    </div>
+                </EditForm>
+            </RadzenCard>
+
+            @* RIGHT — help panel (sticky on desktop) *@
+            <RadzenCard Variant="Variant.Filled" Class="help-panel" Style="padding: 1.25rem;">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.5rem;">
+                    <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
+                    <RadzenText Text="@Loc["HelpTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+                </RadzenStack>
+                <ul>
+                    <li>@Loc["HelpNameUnique"]</li>
+                    <li>@Loc["HelpPrice"]</li>
+                    <li>@Loc["HelpStock"]</li>
+                    <li>@Loc["HelpCategory"]</li>
+                    <li>@Loc["HelpPictureUrl"]</li>
+                    <li>@Loc["HelpPurchaseLimits"]</li>
+                </ul>
+            </RadzenCard>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── Form model ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// View-model for the create-product form. NOT the same as the
+    /// command — we keep the form flat (MoneyDto is split into Amount +
+    /// Currency for simpler RadzenNumeric/RadzenDropDown binding) and
+    /// assemble the MoneyDto + CreateProductCommand at submit time.
+    /// </summary>
+    private sealed class CreateProductFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal PriceAmount { get; set; } = 1m;
+        public string PriceCurrency { get; set; } = "USD";
+        public int InitialStockQuantity { get; set; } = 0;
+        public Guid? CategoryId { get; set; }
+        public Guid? SubCategoryId { get; set; }
+        public Guid? SubSubCategoryId { get; set; }
+        public string? PictureUrl { get; set; }
+    }
+
+    private CreateProductFormModel _model = new();
+
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<CategoryDto> _categories = new();
+    private List<SubCategoryDto> _availableSubCategories = new();
+    private List<SubSubCategoryDto> _availableSubSubCategories = new();
+
+    private bool _isLoadingCategories = true;
+    private string? _categoriesLoadError;
+    private bool _isSubmitting;
+    private string? _submitError;
+
+    /// <summary>
+    /// The most common ISO 4217 currency codes. The user can type a
+    /// custom 3-letter code via the dropdown's AllowCustomValue=true.
+    /// IRR (Iranian Rial) is included because the user's locale is fa-IR.
+    /// </summary>
+    private readonly List<string> _currencyOptions = new()
+    {
+        "USD", "EUR", "GBP", "IRR", "JPY", "CNY", "AED", "TRY", "CAD", "AUD"
+    };
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategoriesAsync();
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadCategoriesAsync()
+    {
+        _isLoadingCategories = true;
+        _categoriesLoadError = null;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+            else
+            {
+                _categoriesLoadError = result.Error ?? Loc["Error_GenericLoad"];
+            }
+        }
+        catch
+        {
+            _categoriesLoadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoadingCategories = false;
+        }
+    }
+
+    // ── Cascade handlers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// When the user picks a Category (or clears it), recompute the
+    /// available SubCategories and clear any selected Sub/SubSub.
+    /// </summary>
+    private Task OnCategoryChanged(Guid? categoryId)
+    {
+        _model.CategoryId = categoryId;
+        _model.SubCategoryId = null;
+        _model.SubSubCategoryId = null;
+
+        _availableSubCategories = categoryId is null
+            ? new()
+            : _categories.FirstOrDefault(c => c.Id == categoryId.Value)?.SubCategories ?? new();
+
+        _availableSubSubCategories = new();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// When the user picks a SubCategory (or clears it), recompute the
+    /// available SubSubCategories and clear any selected SubSub.
+    /// </summary>
+    private Task OnSubCategoryChanged(Guid? subCategoryId)
+    {
+        _model.SubCategoryId = subCategoryId;
+        _model.SubSubCategoryId = null;
+
+        _availableSubSubCategories = subCategoryId is null
+            ? new()
+            : _availableSubCategories.FirstOrDefault(sc => sc.Id == subCategoryId.Value)?.SubSubCategories ?? new();
+
+        return Task.CompletedTask;
+    }
+
+    // ── Submit ──────────────────────────────────────────────────────────
+
+    private async Task HandleSubmitAsync()
+    {
+        // Clear previous server-side error. The EditForm has already
+        // validated the model (DataAnnotationsValidator), so we only
+        // reach this handler if client-side validation passed.
+        _submitError = null;
+
+        // Defense: re-check the required CategoryId. The dropdown binding
+        // is to Guid?, so a null is possible if the user didn't pick one.
+        if (_model.CategoryId is null || _model.CategoryId == Guid.Empty)
+        {
+            _submitError = Loc["Error_CategoryRequired"];
+            return;
+        }
+
+        _isSubmitting = true;
+
+        try
+        {
+            var command = new CreateProductCommand(
+                Name: _model.Name.Trim(),
+                Description: _model.Description.Trim(),
+                PictureUrl: string.IsNullOrWhiteSpace(_model.PictureUrl) ? null : _model.PictureUrl.Trim(),
+                Price: new MoneyDto
+                {
+                    Amount = _model.PriceAmount,
+                    Currency = _model.PriceCurrency.Trim().ToUpperInvariant()
+                },
+                InitialStockQuantity: _model.InitialStockQuantity,
+                CategoryId: _model.CategoryId.Value,
+                SubCategoryId: _model.SubCategoryId,
+                SubSubCategoryId: _model.SubSubCategoryId);
+
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccess"], _model.Name),
+                    summary: Loc["CreateSuccessTitle"]);
+
+                // Navigate back to the admin list — the new product will
+                // appear at the top (sorted by name asc, so position
+                // depends on alphabetical order).
+                Navigation.NavigateTo("/Admin/Products", forceLoad: false);
+            }
+            else
+            {
+                // result.Error contains a user-friendly message from the
+                // handler (e.g. "A product with the name 'X' already exists.
+                // Choose a different name." OR "Category '...' was not found."
+                // OR "SubCategory '...' does not belong to Category '...'.")
+                _submitError = result.Error ?? Loc["Error_GenericCreate"];
+            }
+        }
+        catch
+        {
+            _submitError = Loc["Error_GenericCreate"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

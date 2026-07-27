@@ -1,0 +1,640 @@
+﻿@* AdminProducts.razor — Phase 3.3 (Admin catalog management)
+
+   Staff-facing product catalog management page at route `/Admin/Products`.
+   Reached from the sidebar's "Admin → Manage Products" link (already wired in
+   MainLayout.razor). Role-gated to Admin / Manager / Employee via
+   [Authorize(Roles=...)] — customers and read-only users get a 403.
+
+   PURPOSE:
+     This page is the staff counterpart to the customer-facing /Products
+     catalog. It exists so staff can:
+       1. See ALL products in a compact table (not the customer card grid).
+       2. Add a new product → navigates to /Admin/Products/Create.
+       3. Restock an existing product (IncreaseProductStockCommand).
+       4. View a product's full details → /Products/{Id} (the customer
+          detail page already exists; we just link to it).
+
+   WHAT THIS PAGE DOES NOT DO (out of scope for v1):
+     - Edit product name/description/price/category — the
+       UpdateProductDetailsCommand + UpdateProductCategoryCommand exist in
+       the Application layer, but building the edit UI is deferred to a
+       later iteration. For now, create + restock is enough to seed test
+       data, which is the immediate user need.
+     - Delete/deactivate products — the domain doesn't support soft-delete
+       on Product yet. When added, this page will gain a "Deactivate" button.
+     - Manage purchase limits — SetProductPurchaseLimitCommand exists, but
+       the UI for it deserves its own dedicated panel (per-group limits
+       editor). Deferred.
+
+   LAYOUT:
+     1. Page header: title + "Create product" primary button.
+     2. Filter bar: search box + category dropdown + stock-status filter.
+     3. Product table: RadzenDataGrid with columns for picture, name, price,
+        stock, category, and an actions column (View / Restock).
+     4. Pager: built into RadzenDataGrid (AllowPaging=true, PageSize=10).
+     5. Empty state when no products match the filters.
+
+   DATA LOADING:
+     - OnInitializedAsync: load categories + the first page of products in
+       parallel (Task.WhenAll). Categories are loaded for the filter dropdown
+       AND for the category column display.
+     - Filter changes reset the page to 1 and re-query.
+
+   RESTOCK FLOW:
+     - Click "Restock" on a row → uses IJSRuntime to invoke the browser's
+       native window.prompt() for the quantity. Simple and effective for a
+       staff tool. Returns null if the user cancels.
+     - On confirm: dispatch IncreaseProductStockCommand(ProductId, Quantity).
+     - On success: toast + reload the grid (the stock column refreshes).
+     - On failure: toast with the handler's error message.
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<AdminProducts> (Loc).
+     Keys are defined in AdminProducts.en-US.resx + AdminProducts.fa-IR.resx.
+     RTL is handled at the html dir level by MainLayout.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. The Restock action uses a JS prompt + a
+     Wolverine command dispatch. The Blazor circuit's anti-forgery token
+     covers this case. *@
+
+@page "/Admin/Products"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.JSInterop
+@using Wolverine
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Products.Commands.IncreaseProductStock
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<AdminProducts> Loc
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .admin-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .product-thumb {
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--rz-base-background-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: 4px;
+                overflow: hidden;
+            }
+
+                .product-thumb img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+
+                .product-thumb .rz-icon {
+                    font-size: 1.4rem;
+                    color: var(--rz-text-secondary-color);
+                }
+
+            .stock-cell {
+                font-weight: 600;
+            }
+
+            .stock-cell-out {
+                color: var(--rz-danger);
+            }
+
+            .stock-cell-low {
+                color: var(--rz-warning);
+            }
+
+            .stock-cell-in {
+                color: var(--rz-success);
+            }
+
+            .row-actions {
+                display: flex;
+                gap: 0.25rem;
+                justify-content: flex-end;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ── *@
+    <div class="admin-header">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="inventory" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <RadzenButton Text="@Loc["CreateProductButton"]"
+                      Icon="add"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Variant="Variant.Filled"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+    </div>
+
+    @* ── Filter bar ── *@
+    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
+        <RadzenStack Orientation="Orientation.Horizontal"
+                     AlignItems="AlignItems.End"
+                     JustifyContent="JustifyContent.SpaceBetween"
+                     Wrap="FlexWrap.Wrap"
+                     Gap="1rem">
+            <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
+                <RadzenTextBox @bind-Value="_searchTerm"
+                               @bind-Value:after="OnSearchChanged"
+                               Placeholder="@Loc["SearchPlaceholder"]"
+                               TValue="string" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="@Loc["CategoryLabel"]" Style="flex: 0 1 220px; min-width: 180px;">
+                <RadzenDropDown Value="_selectedCategoryId"
+                                Data="_categories"
+                                TValue="Guid?"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                AllowClear="true"
+                                Placeholder="@Loc["AllCategories"]"
+                                ValueChanged="@OnCategoryChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="@Loc["StockLabel"]" Style="flex: 0 1 180px; min-width: 140px;">
+                <RadzenDropDown Value="_stockFilter"
+                                Data="_stockFilterOptions"
+                                TValue="StockFilter"
+                                TextProperty="Label"
+                                ValueProperty="Value"
+                                ValueChanged="@OnStockFilterChanged"
+                                Style="width: 100%;" />
+            </RadzenFormField>
+        </RadzenStack>
+    </RadzenCard>
+
+    @* ── Loading spinner ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["LoadingText"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error banner ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadProductsAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state ── *@
+    else if (_filteredProducts.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenIcon Icon="inventory_2" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
+                <RadzenText Text="@Loc["EmptyMessage"]"
+                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
+                <RadzenButton Text="@Loc["CreateFirstProductButton"]"
+                              Icon="add"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Variant="Variant.Filled"
+                              Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Product table ── *@
+    else
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <RadzenDataGrid Data="@_filteredProducts"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="@_pageSize"
+                            Style="width: 100%;"
+                            RowRender="@OnRowRender">
+                <Columns>
+                    <RadzenDataGridColumn TItem="ProductListItemDto" Width="60px" Sortable="false">
+                        <Template Context="product">
+                            <div class="product-thumb">
+                                @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                                {
+                                    <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <RadzenIcon Icon="image" />
+                                }
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="ProductListItemDto"
+                                          Property="Name"
+                                          Title="@Loc["ColName"]"
+                                          Width="*">
+                        <Template Context="product">
+                            <RadzenLink Text="@product.Name"
+                                        Path="@($"/Products/{product.Id}")"
+                                        Style="font-weight: 600;" />
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="ProductListItemDto"
+                                          Property="Price.Amount"
+                                          Title="@Loc["ColPrice"]"
+                                          Width="140px"
+                                          TextAlign="TextAlign.Right">
+                        <Template Context="product">
+                            @FormatPrice(product.Price)
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="ProductListItemDto"
+                                          Property="StockQuantity"
+                                          Title="@Loc["ColStock"]"
+                                          Width="120px"
+                                          TextAlign="TextAlign.Right">
+                        <Template Context="product">
+                            <span class="stock-cell @GetStockClass(product.StockQuantity)">
+                                @string.Format(CultureInfo.CurrentCulture, "{0:N0}", product.StockQuantity)
+                            </span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="ProductListItemDto"
+                                          Title="@Loc["ColCategory"]"
+                                          Width="180px"
+                                          Sortable="false">
+                        <Template Context="product">
+                            @(GetCategoryName(product.CategoryId))
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    <RadzenDataGridColumn TItem="ProductListItemDto"
+                                          Title="@Loc["ColActions"]"
+                                          Width="140px"
+                                          TextAlign="TextAlign.Center"
+                                          Sortable="false">
+                        <Template Context="product">
+                            <div class="row-actions">
+                                <RadzenButton Icon="visibility"
+                                              Variant="Variant.Text"
+                                              ButtonStyle="ButtonStyle.Info"
+                                              title="@Loc["ActionView"]"
+                                              Click="@(() => Navigation.NavigateTo($"/Products/{product.Id}", forceLoad: false))" />
+                                <RadzenButton Icon="add_circle_outline"
+                                              Variant="Variant.Text"
+                                              ButtonStyle="ButtonStyle.Success"
+                                              title="@Loc["ActionRestock"]"
+                                              Disabled="@(_isBusyProductId == product.Id)"
+                                              Click="@(() => HandleRestockAsync(product))" />
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @* ── Pager ──
+               Manual pager (Prev / page numbers / Next) — same approach as
+               the customer /Products page. Operates on PaginatedResult
+               metadata from the backend (true server-side paging). *@
+            @if (_totalCount > _pageSize)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal"
+                             JustifyContent="JustifyContent.Center"
+                             AlignItems="AlignItems.Center"
+                             Gap="0.5rem"
+                             Wrap="FlexWrap.Wrap"
+                             Style="margin-top: 1rem; padding-bottom: 0.5rem;">
+                    <RadzenButton Icon="chevron_left"
+                                  Variant="Variant.Text"
+                                  Disabled="@(_pageNumber <= 1)"
+                                  Click="@(() => OnPageChanged(_pageNumber - 1))" />
+
+                    @{
+                        var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
+                        var startPage = Math.Max(1, _pageNumber - 2);
+                        var endPage = Math.Min(totalPages, startPage + 4);
+                        if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
+                    }
+
+                    @for (var p = startPage; p <= endPage; p++)
+                    {
+                        var page = p;
+                        <RadzenButton Text="@(page.ToString())"
+                                      Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
+                                      ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
+                                      Disabled="@(_isLoading)"
+                                      Click="@(() => OnPageChanged(page))" />
+                    }
+
+                    <RadzenButton Icon="chevron_right"
+                                  Variant="Variant.Text"
+                                  Disabled="@(_pageNumber >= Math.Ceiling((double)_totalCount / _pageSize))"
+                                  Click="@(() => OnPageChanged(_pageNumber + 1))" />
+
+                    <RadzenText Text="@string.Format(CultureInfo.CurrentCulture, Loc["PageInfoFormat"], _pageNumber, totalPages, _totalCount)"
+                                TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color); margin-left: 0.5rem;" />
+                </RadzenStack>
+            }
+        </RadzenCard>
+    }
+</RadzenStack>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<ProductListItemDto> _products = new();
+
+    private List<ProductListItemDto> _filteredProducts => _stockFilter switch
+    {
+        StockFilter.InStock => _products.Where(p => p.StockQuantity > 0).ToList(),
+        StockFilter.OutOfStock => _products.Where(p => p.StockQuantity == 0).ToList(),
+        _ => _products
+    };
+
+    private List<CategoryDto> _categories = new();
+
+    private string _searchTerm = string.Empty;
+    private Guid? _selectedCategoryId;
+    private StockFilter _stockFilter = StockFilter.All;
+
+    private const int _pageSize = 10;
+    private int _pageNumber = 1;
+    private int _totalCount;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    private Guid? _isBusyProductId;
+
+    private List<StockFilterOption> _stockFilterOptions = new();
+
+    private sealed class StockFilterOption
+    {
+        public StockFilter Value { get; init; }
+        public string Label { get; init; } = string.Empty;
+    }
+
+    private enum StockFilter
+    {
+        All,
+        InStock,
+        OutOfStock
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stockFilterOptions = new List<StockFilterOption>
+        {
+            new() { Value = StockFilter.All, Label = Loc["StockAll"] },
+            new() { Value = StockFilter.InStock, Label = Loc["StockInStock"] },
+            new() { Value = StockFilter.OutOfStock, Label = Loc["StockOutOfStock"] }
+        };
+
+        try
+        {
+            await Task.WhenAll(
+                LoadCategoriesAsync(),
+                LoadProductsAsync());
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+        }
+        catch
+        {
+            // Non-fatal — empty category dropdown, user can still filter by name.
+        }
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = _pageSize,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                CategoryId = _selectedCategoryId
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+            _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            if (_products.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = 1;
+                await LoadProductsAsync();
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Filter handlers ─────────────────────────────────────────────────
+
+    private async Task OnSearchChanged()
+    {
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    private async Task OnCategoryChanged(Guid? categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    private async Task OnStockFilterChanged(StockFilter filter)
+    {
+        _stockFilter = filter;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _pageNumber = newPage;
+        await LoadProductsAsync();
+    }
+
+    // ── Restock ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Prompts the user (via the browser's native prompt()) for a quantity
+    /// to add to the product's stock, then dispatches
+    /// <see cref="IncreaseProductStockCommand"/>. The JS prompt is the
+    /// simplest UX for a staff tool — no custom dialog component, no extra
+    /// state to manage. If the user cancels, the prompt returns null and
+    /// we abort silently.
+    /// </summary>
+    private async Task HandleRestockAsync(ProductListItemDto product)
+    {
+        if (_isBusyProductId.HasValue)
+        {
+            return;
+        }
+
+        // Build the prompt message: "Add to stock for 'X' (current: N). Enter quantity:"
+        var promptMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["RestockPrompt"],
+            product.Name,
+            string.Format(CultureInfo.CurrentCulture, "{0:N0}", product.StockQuantity));
+
+        var qtyStr = await JS.InvokeAsync<string?>("prompt", promptMessage, "10");
+
+        // User clicked Cancel or pressed Escape.
+        if (string.IsNullOrWhiteSpace(qtyStr))
+        {
+            return;
+        }
+
+        // Parse defensively — non-integer or non-positive input is rejected
+        // with a friendly toast, NOT a thrown exception.
+        if (!int.TryParse(qtyStr.Trim(), out var quantity) || quantity <= 0)
+        {
+            await Toast.Warning(Loc["RestockInvalidQuantity"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isBusyProductId = product.Id;
+
+        try
+        {
+            var command = new IncreaseProductStockCommand(product.Id, quantity);
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["RestockSuccess"], quantity, product.Name),
+                    summary: Loc["RestockSuccessTitle"]);
+
+                await LoadProductsAsync();
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["RestockError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(
+                Loc["RestockError"],
+                summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyProductId = null;
+        }
+    }
+
+    // ── Row render hook ─────────────────────────────────────────────────
+
+    private void OnRowRender(RowRenderEventArgs<ProductListItemDto> args)
+    {
+        // Subtle visual cue for out-of-stock rows: slight opacity.
+        // Per-row coloring beyond this is handled by the stock-cell CSS
+        // class on the stock column itself.
+        if (args.Data is { } p && p.StockQuantity == 0)
+        {
+            args.Attributes.Add("style", "opacity: 0.7;");
+        }
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    private static string FormatPrice(MoneyDto price)
+    {
+        if (price is null) return "—";
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+    }
+
+    private static string GetStockClass(int stock)
+    {
+        if (stock == 0) return "stock-cell-out";
+        if (stock <= 10) return "stock-cell-low";
+        return "stock-cell-in";
+    }
+
+    private string GetCategoryName(Guid categoryId)
+    {
+        var cat = _categories.FirstOrDefault(c => c.Id == categoryId);
+        return cat?.Name ?? Loc["UnknownCategory"];
+    }
+}
