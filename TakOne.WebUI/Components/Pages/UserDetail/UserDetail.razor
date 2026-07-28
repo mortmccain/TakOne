@@ -299,6 +299,153 @@
                 .help-list li {
                     margin-bottom: 0.4rem;
                 }
+
+            /* ── Edit Full Name modal ──
+                           Inline modal overlay + dialog. Renders above all other
+                           content via position:fixed + z-index. Backdrop is a
+                           semi-transparent dark layer that dims the underlying page
+                           (matches Radzen Dialog's visual weight). The dialog itself
+                           is a Radzen-styled card with max-width to keep it compact
+                           on desktop and full-width (minus margins) on mobile. */
+            .modal-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1050;
+                padding: 1rem;
+                /* Smooth open transition. */
+                animation: modal-fade-in 0.15s ease-out;
+            }
+
+            @@keyframes modal-fade-in {
+                from {
+                    opacity: 0;
+                }
+
+                to {
+                    opacity: 1;
+                }
+            }
+
+            .modal-dialog {
+                background: var(--rz-background-color, #fff);
+                border-radius: 8px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+                width: 100%;
+                max-width: 480px;
+                max-height: calc(100vh - 2rem);
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                animation: modal-slide-up 0.2s ease-out;
+            }
+
+            @@keyframes modal-slide-up {
+                from {
+                    transform: translateY(20px);
+                    opacity: 0;
+                }
+
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+
+            .modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 1rem 1.25rem;
+                border-bottom: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.08));
+            }
+
+            .modal-title {
+                margin: 0;
+                font-size: 1.125rem;
+                font-weight: 600;
+                color: var(--rz-text-color, #212121);
+            }
+
+            .modal-close-btn {
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                padding: 0.25rem;
+                line-height: 1;
+                color: var(--rz-text-secondary-color);
+                font-size: 1.25rem;
+                border-radius: 4px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+                .modal-close-btn:hover:not(:disabled) {
+                    background: rgba(0, 0, 0, 0.06);
+                    color: var(--rz-text-color);
+                }
+
+                .modal-close-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+            .modal-body {
+                padding: 1.25rem;
+                flex: 1 1 auto;
+            }
+
+            .modal-body-text {
+                margin: 0 0 1rem 0;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.9375rem;
+                line-height: 1.5;
+            }
+
+            .modal-label {
+                display: block;
+                margin-bottom: 0.375rem;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+
+            .modal-validation {
+                min-height: 1.25rem;
+                margin-top: 0.5rem;
+                font-size: 0.8125rem;
+            }
+
+            .modal-validation-error {
+                color: var(--rz-danger, #f44336);
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+            }
+
+            .modal-footer {
+                display: flex;
+                justify-content: flex-end;
+                gap: 0.5rem;
+                padding: 1rem 1.25rem;
+                border-top: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.08));
+            }
+
+            /* On small screens, modal footer buttons stretch full-width
+                           and stack vertically for easier thumb-tapping. */
+            @@media (max-width: 576px) {
+                .modal-footer {
+                    flex-direction: column-reverse;
+                }
+
+                    .modal-footer .rz-button {
+                        width: 100%;
+                    }
+            }
     </style>
 </HeadContent>
 
@@ -381,10 +528,12 @@
 
                 @* ── Profile card ──
                    Read-only identity fields. FullName has an inline "Edit"
-                   button that opens a JS prompt (handled in the right-side
-                   action panel — here we just display the value). Group is
-                   shown only when _canManageGroup (Admin/Manager) — the
-                   handler already strips GroupName from Employee viewers. *@
+                   button that opens an in-page modal dialog (NOT a browser
+                   JS prompt — the modal gives us proper labels, validation
+                   messaging, and Save/Cancel buttons). The modal markup
+                   lives at the bottom of this file. Group is shown only
+                   when _canManageGroup (Admin/Manager) — the handler
+                   already strips GroupName from Employee viewers. *@
                 <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem; margin-bottom: 1rem;">
                     <RadzenText Text="@Loc["ProfileCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
 
@@ -456,13 +605,43 @@
 
                 @* ── Roles card ──
                    Shows the user's currently-assigned ASP.NET Identity roles.
-                   Admin viewers can remove roles (per-role Remove button) and
-                   add new roles (dropdown + Assign button). The dropdown is
-                   filtered to exclude already-assigned roles AND the Customer
-                   role (Customer is implicit — set at creation time, not
-                   assignable post-creation from this UI). The Remove button
-                   is hidden on the current user's own Admin role (handler
-                   rejects self-Admin-removal as defense-in-depth). *@
+
+                   SELF-ROLE-MANAGEMENT GUARD:
+                   When an admin views their OWN detail page, the entire
+                   "Assign role" + "Remove role" UI is hidden and replaced
+                   with an info alert. This is intentional UX — admins CAN
+                   change the roles of OTHER admins (including removing
+                   Admin from another admin), but they CANNOT modify their
+                   own roles from this page. The backend handler
+                   (RemoveUserRoleCommandHandler) ALSO rejects self-Admin-
+                   removal as defense-in-depth; the UI guard just makes
+                   this discoverable instead of letting the admin click
+                   and get an error toast.
+
+                   Why hide rather than disable: the admin's own roles are
+                   effectively read-only from this page (any change to
+                   their own roles would have to come from another admin's
+                   session). Showing disabled buttons would imply "you
+                   almost can" — misleading. A clean read-only view with
+                   an explanatory alert is more honest. Same pattern used
+                   by AdminUsers.razor for the self-Deactivate button.
+
+                   DROPDOWN BINDING (Phase 6.3 fix):
+                   Originally used RadzenDropDown TValue="string" with
+                   Data=List<RoleOption> + TextProperty/ValueProperty.
+                   That produced "Unable to cast RoleOption to String"
+                   inside Radzen.DropDownBase.SelectItem — Radzen 11.1.7's
+                   code path for primitive TValue + complex items does not
+                   reliably honor ValueProperty when the user clicks an
+                   item, and falls back to item.ToString(), producing the
+                   garbage label "TakOne.WebUI.Components.Pages.UserDetail+RoleOption".
+
+                   Fix: Data is now List<string> (raw role constants like
+                   "Admin", "Manager", ...). The dropdown value IS the
+                   role string — no casting needed. An ItemTemplate
+                   renders the localized label (GetRoleLabel) so the user
+                   sees translated text. Same primitive-binding pattern
+                   as AdminUsers.razor's activity-filter dropdown. *@
                 <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem; margin-bottom: 1rem;">
                     <RadzenText Text="@Loc["RolesCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
 
@@ -479,7 +658,19 @@
                                     <RadzenBadge Text="@GetRoleLabel(role)"
                                                  BadgeStyle="@GetRoleBadgeStyle(role)"
                                                  IsPill="true" />
-                                    @if (_canManageRoles && !(_currentUserId == _user.Id && role == Roles.Admin))
+                                    @* Remove button — hidden when:
+                                          (a) viewer can't manage roles, OR
+                                          (b) the viewer is viewing their OWN page
+                                              (entire self-role block is hidden
+                                              below — but this belt-and-suspenders
+                                              check guards against any edge case
+                                              where the markup below is shown but
+                                              the per-role button shouldn't be), OR
+                                          (c) it's the viewer's own Admin role
+                                              (handler also rejects this — but
+                                              since (b) already covers self, this
+                                              is redundant defense-in-depth). *@
+                                    @if (_canManageRoles && !_isViewingSelf && !(_currentUserId == _user.Id && role == Roles.Admin))
                                     {
                                         <button type="button"
                                                 class="role-remove-btn"
@@ -495,14 +686,28 @@
                         </div>
                     }
 
-                    @if (_canManageRoles)
+                    @* ── Role-management action row ──
+                       Three states:
+                         1. Viewer can manage roles AND is NOT viewing self:
+                            show Assign dropdown + button.
+                         2. Viewer can manage roles AND IS viewing self:
+                            show info alert explaining self-modification is
+                            not allowed.
+                         3. Viewer cannot manage roles (Manager/Employee):
+                            show hint that role management is Admin-only. *@
+                    @if (_canManageRoles && !_isViewingSelf)
                     {
                         <div class="inline-form">
                             <RadzenDropDown TValue="string"
                                             Data="@_assignableRoles"
                                             @bind-Value="_selectedRoleToAdd"
                                             Placeholder="@Loc["RoleSelectPlaceholder"]"
-                                            Style="flex: 1 1 180px; min-width: 160px;" />
+                                            Style="flex: 1 1 180px; min-width: 160px;"
+                                            Disabled="@(_isBusy || _assignableRoles.Count == 0)">
+                                <Template Context="roleItem">
+                                    @GetRoleLabel((string)roleItem)
+                                </Template>
+                            </RadzenDropDown>
                             <RadzenButton Text="@Loc["ActionAssignRole"]"
                                           Icon="add"
                                           ButtonStyle="ButtonStyle.Primary"
@@ -511,9 +716,27 @@
                                           Disabled="@(_isBusy || string.IsNullOrEmpty(_selectedRoleToAdd))"
                                           Click="@HandleAssignRoleAsync" />
                         </div>
-                        <RadzenText Text="@Loc["RolesHelpText"]"
-                                    TextStyle="TextStyle.Caption"
-                                    Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                        @if (_assignableRoles.Count == 0)
+                        {
+                            <RadzenText Text="@Loc["AllRolesAlreadyAssigned"]"
+                                        TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                        }
+                        else
+                        {
+                            <RadzenText Text="@Loc["RolesHelpText"]"
+                                        TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                        }
+                    }
+                    else if (_canManageRoles && _isViewingSelf)
+                    {
+                        <RadzenAlert Title="@Loc["CannotModifyOwnRolesTitle"]"
+                                     Text="@Loc["CannotModifyOwnRolesBody"]"
+                                     AlertStyle="AlertStyle.Info"
+                                     Variant="Variant.Outlined"
+                                     ShowIcon="true"
+                                     Style="margin-top: 0.75rem;" />
                     }
                     else
                     {
@@ -636,6 +859,85 @@
             </div>
         </div>
     }
+
+    @* ── Edit Full Name modal ──
+       Inline modal dialog for editing the user's FullName. Replaces the
+       previous JS prompt() implementation — gives us proper labels,
+       inline validation messaging, and styled Save/Cancel buttons.
+
+       WHY INLINE MODAL (not Radzen DialogService.OpenAsync):
+         - No separate .razor component file needed for a 2-field form.
+         - State stays in this component (no callback marshaling).
+         - Styling is consistent with the rest of the page (Radzen cards
+           + RadzenTextBox + RadzenButton).
+         - Focus management: the RadzenTextBox autofocuses when the modal
+           opens. Escape key closes the modal (handled by the inline
+           @onkeydown on the overlay).
+
+       ACCESSIBILITY:
+         - role="dialog" + aria-modal="true" on the dialog panel.
+         - aria-labelledby points to the modal title.
+         - Overlay click closes the modal (matches Radzen Dialog behavior).
+         - Escape key closes the modal. *@
+    @if (_isEditNameModalOpen)
+    {
+        <div class="modal-overlay" @onclick="CloseEditNameModal" role="presentation">
+            <div class="modal-dialog"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="edit-name-modal-title"
+                 @onclick:stopPropagation="true"
+                 @onkeydown="HandleEditNameModalKeydownAsync">
+                <div class="modal-header">
+                    <h2 id="edit-name-modal-title" class="modal-title">@Loc["EditNameModalTitle"]</h2>
+                    <button type="button"
+                            class="modal-close-btn"
+                            title="@Loc["ModalCancel"]"
+                            aria-label="@Loc["ModalCancel"]"
+                            disabled="@_isBusy"
+                            @onclick="CloseEditNameModal">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <p class="modal-body-text">@Loc["EditNameModalBody"]</p>
+
+                    <label class="modal-label" for="edit-name-input">@Loc["ColFullName"]</label>
+                    <RadzenTextBox @bind-Value="_editNameInput"
+                                   id="edit-name-input"
+                                   Placeholder="@Loc["EditNameModalPlaceholder"]"
+                                   Style="width: 100%;"
+                                   Disabled="@_isBusy"
+                                   autocomplete="off"
+                                   autofocus />
+                    @* Live region for inline validation — populated by
+                       ValidateEditNameInput(). Announced to screen readers. *@
+                    <div class="modal-validation" role="status" aria-live="polite">
+                        @if (!string.IsNullOrEmpty(_editNameError))
+                        {
+                            <span class="modal-validation-error">@_editNameError</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <RadzenButton Text="@Loc["ModalCancel"]"
+                                  Icon="close"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Outlined"
+                                  Disabled="@_isBusy"
+                                  Click="@CloseEditNameModal" />
+                    <RadzenButton Text="@Loc["ModalSave"]"
+                                  Icon="save"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Disabled="@_isBusy"
+                                  Click="@ConfirmEditNameAsync" />
+                </div>
+            </div>
+        </div>
+    }
 </RadzenStack>
 
 @code {
@@ -703,13 +1005,28 @@
     private string? _selectedRoleToAdd;
 
     /// <summary>
-    /// The list of roles available for assignment. Computed in
+    /// The list of role constants available for assignment. Computed in
     /// OnInitializedAsync and recomputed after each successful role
     /// Add/Remove (because the list excludes roles the user already has).
     /// Customer is intentionally excluded — Customer is implicit (set at
     /// creation time, not assignable post-creation from this UI).
+    ///
+    /// WHY List&lt;string&gt; (not List&lt;RoleOption&gt;):
+    ///   The previous implementation used a complex RoleOption class with
+    ///   Value + Label properties, paired with RadzenDropDown's
+    ///   TextProperty="Label" + ValueProperty="Value". That triggered a
+    ///   Radzen 11.1.7 bug: when TValue is a primitive (string) and Data
+    ///   is a list of complex objects, SelectItem falls back to
+    ///   item.ToString() instead of respecting ValueProperty, producing
+    ///   the garbage label "TakOne.WebUI.Components.Pages.UserDetail+RoleOption"
+    ///   in the dropdown and throwing InvalidCastException on click.
+    ///
+    ///   Switching to List&lt;string&gt; (raw role constants) eliminates the
+    ///   cast entirely — the dropdown value IS the role string. An
+    ///   ItemTemplate in the markup renders the localized label via
+    ///   GetRoleLabel(roleName), so the user still sees translated text.
     /// </summary>
-    private List<RoleOption> _assignableRoles = new();
+    private List<string> _assignableRoles = new();
 
     /// <summary>
     /// All staff-role options (excludes Customer) used to build the
@@ -719,11 +1036,30 @@
     private static readonly string[] StaffRoles =
         { Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly };
 
-    private sealed class RoleOption
-    {
-        public string Value { get; init; } = string.Empty;
-        public string Label { get; init; } = string.Empty;
-    }
+    // ── Edit Full Name modal state ────────────────────────────────────
+
+    /// <summary>
+    /// True when the Edit FullName modal is open. Toggled by
+    /// HandleEditFullNameAsync (open) and CloseEditNameModal/ConfirmEditNameAsync
+    /// (close). When true, the modal markup at the bottom of the file renders
+    /// above all other content via position:fixed + z-index.
+    /// </summary>
+    private bool _isEditNameModalOpen;
+
+    /// <summary>
+    /// The text currently typed into the modal's RadzenTextBox. Two-way
+    /// bound via @bind-Value. Pre-filled with the user's current FullName
+    /// when the modal opens (in HandleEditFullNameAsync). Validated by
+    /// ValidateEditNameInput before dispatching the command.
+    /// </summary>
+    private string _editNameInput = string.Empty;
+
+    /// <summary>
+    /// Inline validation message shown below the modal's text box. Cleared
+    /// on every input change (Blazor @bind-Value re-renders) and re-populated
+    /// by ValidateEditNameInput when Save is clicked. Empty string = no error.
+    /// </summary>
+    private string _editNameError = string.Empty;
 
     // ── Derived permission flags ───────────────────────────────────────
 
@@ -745,6 +1081,24 @@
     /// [RequireRoles(Manager, Admin)]).
     /// </summary>
     private bool _canManageGroup => _isAdmin || _isManager;
+
+    /// <summary>
+    /// True if the viewer is looking at their OWN user detail page
+    /// (_currentUserId == _user.Id). Used to gate self-role-management
+    /// UI (admins cannot assign/remove roles on themselves from this
+    /// page — they need another admin to do it). The backend handler
+    /// ALSO rejects self-Admin-removal as defense-in-depth.
+    ///
+    /// WHY THIS EXISTS:
+    ///   Admins CAN change the roles of OTHER admins (including removing
+    ///   Admin from another admin). They CANNOT modify their OWN roles
+    ///   from this page. Previously, the only protection was the backend
+    ///   rejecting self-Admin-removal — but the UI still showed the
+    ///   dropdown and Remove buttons, which led to confused clicks and
+    ///   error toasts. Now the entire role-management UI is hidden when
+    ///   _isViewingSelf is true, replaced with an info alert.
+    /// </summary>
+    private bool _isViewingSelf => _user is not null && _currentUserId == _user.Id;
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -809,12 +1163,60 @@
 
         try
         {
+            await LoadUserCoreAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Silent-reload variant used by ExecuteActionAsync after a successful
+    /// action. Skips toggling _isLoading so the page doesn't flash the
+    /// full-page loading spinner between a successful action and the
+    /// refreshed content. Mirrors the pattern SaleDetail.razor would use
+    /// if it had been written with this concern in mind (a P2 soft-issue
+    /// noted in phase-6.3-static-review — fixed here so UserDetail doesn't
+    /// inherit the SaleDetail quirk).
+    /// </summary>
+    private async Task ReloadUserSilentlyAsync()
+    {
+        // NOTE: do NOT touch _isLoading here — that would blank the page
+        // with the loading spinner. We keep _isBusy = true (set by the
+        // caller ExecuteActionAsync) so action buttons stay disabled while
+        // the reload is in flight.
+        try
+        {
+            await LoadUserCoreAsync();
+        }
+        catch (Exception)
+        {
+            // Silent-reload failures are non-fatal — the action itself
+            // already succeeded and we already toasted success. The next
+            // user interaction (or a manual page refresh) will surface
+            // any persistent load failure via the regular LoadUserAsync
+            // path. Logging would be nice but this is a UI-layer catch.
+        }
+    }
+
+    /// <summary>
+    /// Shared core for both LoadUserAsync (initial load + retry) and
+    /// ReloadUserSilentlyAsync (post-action refresh). Sets _user + _loadError
+    /// + refreshes the assignable-roles dropdown. Does NOT touch _isLoading —
+    /// that's the caller's responsibility.
+    /// </summary>
+    private async Task LoadUserCoreAsync()
+    {
+        try
+        {
             var query = new GetUserByIdQuery { UserId = Id };
             var result = await MessageBus.InvokeAsync<Result<UserDto>>(query);
 
             if (result.IsSuccess)
             {
                 _user = result.Value;
+                _loadError = null;
                 RefreshAssignableRoles();
             }
             else
@@ -830,10 +1232,6 @@
         {
             _loadError = Loc["Error_GenericLoad"];
             _user = null;
-        }
-        finally
-        {
-            _isLoading = false;
         }
     }
 
@@ -851,15 +1249,18 @@
             return;
         }
 
+        // Build a list of raw role constants (List<string>) — the
+        // dropdown's ItemTemplate will render the localized label via
+        // GetRoleLabel(roleName). See the _assignableRoles field remark
+        // for why we don't use a complex RoleOption class anymore.
         _assignableRoles = StaffRoles
             .Where(r => !_user.Roles.Contains(r))
-            .Select(r => new RoleOption { Value = r, Label = GetRoleLabel(r) })
             .ToList();
 
         // If the previously-selected role is no longer assignable (because
         // the user just got assigned it), clear the selection.
         if (_selectedRoleToAdd is not null
-            && !_assignableRoles.Any(o => o.Value == _selectedRoleToAdd))
+            && !_assignableRoles.Contains(_selectedRoleToAdd))
         {
             _selectedRoleToAdd = null;
         }
@@ -867,50 +1268,142 @@
 
     // ── Actions ────────────────────────────────────────────────────────
 
+    // ── Edit Full Name modal handlers ──
+
     /// <summary>
-    /// Edit FullName via JS prompt() pre-filled with the current FullName.
-    /// Client-side validates 1-200 chars (matches
-    /// UpdateUserFullNameCommandValidator.MaxFullNameLength=200) before
-    /// dispatching; the validator also enforces this server-side.
+    /// Opens the Edit FullName modal. Pre-fills the input with the user's
+    /// current FullName and clears any previous validation error. Called
+    /// from the "Edit name" buttons in the profile card and the action
+    /// panel.
+    ///
+    /// REPLACES the previous JS prompt() implementation — the modal gives
+    /// us proper labels, inline validation messaging, styled Save/Cancel
+    /// buttons, and consistent styling with the rest of the page. See the
+    /// modal markup at the bottom of this file for the dialog structure.
     /// </summary>
-    private async Task HandleEditFullNameAsync()
+    private void HandleEditFullNameAsync()
     {
         if (_user is null || _isBusy || !_canEditFullName) return;
 
-        var input = await JS.InvokeAsync<string?>(
-            "prompt",
-            Loc["Prompt_NewFullName"],
-            _user.FullName);
+        _editNameInput = _user.FullName;
+        _editNameError = string.Empty;
+        _isEditNameModalOpen = true;
+    }
 
-        // User clicked Cancel on the prompt, or entered empty/whitespace.
-        // Silent abort — no error toast (the user explicitly chose not to
-        // rename; we don't want to scold them).
-        if (string.IsNullOrWhiteSpace(input)) return;
+    /// <summary>
+    /// Closes the Edit FullName modal without saving. Called by:
+    ///   - The Cancel button
+    ///   - The X close button in the modal header
+    ///   - Clicking outside the dialog (on the overlay)
+    ///   - Pressing Escape (via HandleEditNameModalKeydownAsync)
+    /// Silent — no toast (the user explicitly chose not to save).
+    /// </summary>
+    private void CloseEditNameModal()
+    {
+        // Don't allow closing while a save is in flight — prevents
+        // orphaned state if the user clicks Cancel mid-dispatch.
+        if (_isBusy) return;
 
-        var newName = input.Trim();
+        _isEditNameModalOpen = false;
+        _editNameInput = string.Empty;
+        _editNameError = string.Empty;
+    }
 
-        if (newName.Length > 200)
+    /// <summary>
+    /// Keydown handler for the modal dialog. Closes the modal on Escape
+    /// (matches standard modal behavior across OSes). Other keys are
+    /// ignored. Wired via @onkeydown on the .modal-dialog div.
+    /// </summary>
+    private Task HandleEditNameModalKeydownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e?.Key == "Escape" && !_isBusy)
         {
-            await Toast.Warning(Loc["FullNameLengthError"], summary: Loc["ErrorTitle"]);
-            return;
+            CloseEditNameModal();
         }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Validates the modal's _editNameInput. Returns true if valid (and
+    /// populates _editNameError for inline display if invalid).
+    /// Mirrors the server-side validator:
+    ///   - Non-empty after trim
+    ///   - ≤ 200 chars (UpdateUserFullNameCommandValidator.MaxFullNameLength)
+    /// </summary>
+    private bool ValidateEditNameInput()
+    {
+        if (string.IsNullOrWhiteSpace(_editNameInput))
+        {
+            _editNameError = Loc["EditNameRequiredError"];
+            return false;
+        }
+
+        var trimmed = _editNameInput.Trim();
+        if (trimmed.Length > 200)
+        {
+            _editNameError = Loc["FullNameLengthError"];
+            return false;
+        }
+
+        _editNameError = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Save handler for the Edit FullName modal. Validates the input; if
+    /// valid, dispatches UpdateUserFullNameCommand via ExecuteActionAsync
+    /// (which toasts success/failure and reloads the user). On success,
+    /// the modal closes. On validation failure, the modal stays open and
+    /// the inline error is shown.
+    /// </summary>
+    private async Task ConfirmEditNameAsync()
+    {
+        if (_user is null || _isBusy || !_canEditFullName) return;
+
+        if (!ValidateEditNameInput()) return;
+
+        var newName = _editNameInput.Trim();
+
+        // Close the modal IMMEDIATELY so the user sees acknowledgment of
+        // their click — the actual save happens via ExecuteActionAsync,
+        // which sets _isBusy (disabling action buttons). The modal's
+        // own _isBusy guard prevents double-clicks during the brief
+        // window between modal-close and _isBusy=true.
+        _isEditNameModalOpen = false;
 
         await ExecuteActionAsync(
             Loc["ActionEditFullName"],
             () => MessageBus.InvokeAsync<Result>(
                 new UpdateUserFullNameCommand(_user.Id, newName)));
+
+        // Clear the input after the action completes (success or failure
+        // — either way, the modal is closed and the input is stale).
+        _editNameInput = string.Empty;
+        _editNameError = string.Empty;
     }
+
+    // ── Other action handlers ──
 
     /// <summary>
     /// Assign the currently-selected role (_selectedRoleToAdd) to the user.
     /// The dropdown is filtered to exclude already-assigned roles, so this
     /// should always be a new role — but the handler/validator is the
-    /// final authority server-side.
+    /// final authority server-side. Also rejects self-assignment
+    /// defensively (the markup hides the entire Assign UI on self-view).
     /// </summary>
     private async Task HandleAssignRoleAsync()
     {
         if (_user is null || _isBusy || !_canManageRoles) return;
         if (string.IsNullOrEmpty(_selectedRoleToAdd)) return;
+
+        // Defense-in-depth: the markup hides ALL role-management UI when
+        // _isViewingSelf is true. If a stale render or crafty click slips
+        // through, refuse to act on self.
+        if (_isViewingSelf)
+        {
+            await Toast.Warning(Loc["CannotModifyOwnRolesBody"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
         await ExecuteActionAsync(
             Loc["ActionAssignRole"],
@@ -919,15 +1412,25 @@
     }
 
     /// <summary>
-    /// Remove a specific role from the user. Hidden on the current user's
-    /// own Admin role (handler rejects it as defense-in-depth — see
-    /// RemoveUserRoleCommandHandler's self-removal guard — but hiding the
-    /// button is better UX).
+    /// Remove a specific role from the user. Hidden entirely when the
+    /// viewer is on their own page (the markup guards _isViewingSelf),
+    /// but this handler also rejects self-removal defensively in case
+    /// the markup is bypassed. The backend handler rejects self-Admin-
+    /// removal as a third line of defense.
     /// </summary>
     private async Task HandleRemoveRoleAsync(string role)
     {
         if (_user is null || _isBusy || !_canManageRoles) return;
         if (string.IsNullOrEmpty(role)) return;
+
+        // Defense-in-depth: the markup hides ALL role-management UI when
+        // _isViewingSelf is true, but if a stale render or a crafty click
+        // somehow reaches this handler, we refuse to act on self.
+        if (_isViewingSelf)
+        {
+            await Toast.Warning(Loc["CannotModifyOwnRolesBody"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
         // Belt-and-suspenders: the markup also hides this button, but the
         // check is cheap and the handler also rejects it. We don't want to
@@ -1036,8 +1539,10 @@
                 // Reload the user to refresh the roles list, group badge,
                 // and FullName display. Also rebuilds the assignable-roles
                 // dropdown (excludes the just-assigned role, or restores
-                // the just-removed role).
-                await LoadUserAsync();
+                // the just-removed role). Uses the SILENT variant so the
+                // page doesn't flash the full-page loading spinner between
+                // the toast and the refreshed content.
+                await ReloadUserSilentlyAsync();
             }
             else
             {

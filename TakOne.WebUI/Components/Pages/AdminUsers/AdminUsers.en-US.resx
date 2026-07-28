@@ -163,6 +163,9 @@
   <data name="ActionResetPassword" xml:space="preserve">
     <value>Reset password</value>
   </data>
+  <data name="ActionViewDetail" xml:space="preserve">
+    <value>View details</value>
+  </data>
 
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>

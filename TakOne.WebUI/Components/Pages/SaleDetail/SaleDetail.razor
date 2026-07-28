@@ -712,6 +712,51 @@
 
         try
         {
+            await LoadSaleCoreAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Silent-reload variant used by ExecuteActionAsync after a successful
+    /// action. Skips toggling _isLoading so the page doesn't flash the
+    /// full-page loading spinner between a successful action and the
+    /// refreshed content. Backported from UserDetail.razor (phase-6.3)
+    /// where the same pattern was introduced to fix a P2 soft-issue
+    /// flagged in phase-6.3-static-review.
+    /// </summary>
+    private async Task ReloadSaleSilentlyAsync()
+    {
+        // NOTE: do NOT touch _isLoading here — that would blank the page
+        // with the loading spinner. We keep _isBusy = true (set by the
+        // caller ExecuteActionAsync) so action buttons stay disabled while
+        // the reload is in flight.
+        try
+        {
+            await LoadSaleCoreAsync();
+        }
+        catch (Exception)
+        {
+            // Silent-reload failures are non-fatal — the action itself
+            // already succeeded and we already toasted success. The next
+            // user interaction (or a manual page refresh) will surface
+            // any persistent load failure via the regular LoadSaleAsync
+            // path. Logging would be nice but this is a UI-layer catch.
+        }
+    }
+
+    /// <summary>
+    /// Shared core for both LoadSaleAsync (initial load + retry) and
+    /// ReloadSaleSilentlyAsync (post-action refresh). Sets _sale + _loadError.
+    /// Does NOT touch _isLoading — that's the caller's responsibility.
+    /// </summary>
+    private async Task LoadSaleCoreAsync()
+    {
+        try
+        {
             var query = new GetSaleByIdQuery { SaleId = Id };
             var result = await MessageBus.InvokeAsync<Result<SaleDto>>(query);
 
@@ -732,10 +777,6 @@
         {
             _loadError = Loc["Error_GenericLoad"];
             _sale = null;
-        }
-        finally
-        {
-            _isLoading = false;
         }
     }
 
@@ -822,9 +863,12 @@
                     summary: Loc["ActionSuccessTitle"]);
 
                 // Reload the sale to refresh the status badge, audit trail,
-                // and action-button enabled states. This is the simplest way
-                // to keep the UI honest — no manual state-patching needed.
-                await LoadSaleAsync();
+                // and action-button enabled states. Uses the SILENT reload
+                // (not LoadSaleAsync) so the page doesn't flash the full-page
+                // loading spinner between the toast and the refreshed content.
+                // _isBusy stays true here (set at the top of this method) so
+                // action buttons remain disabled during the reload.
+                await ReloadSaleSilentlyAsync();
             }
             else
             {

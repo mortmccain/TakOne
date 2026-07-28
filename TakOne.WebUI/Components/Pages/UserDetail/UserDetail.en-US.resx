@@ -212,6 +212,37 @@
     <value>Enter the customer group name (1-100 characters):</value>
   </data>
 
+  <!-- Edit Full Name modal -->
+  <data name="EditNameModalTitle" xml:space="preserve">
+    <value>Edit full name</value>
+  </data>
+  <data name="EditNameModalBody" xml:space="preserve">
+    <value>Enter the new full name for this user. The change takes effect immediately.</value>
+  </data>
+  <data name="EditNameModalPlaceholder" xml:space="preserve">
+    <value>e.g. Ali Rezaei</value>
+  </data>
+  <data name="EditNameRequiredError" xml:space="preserve">
+    <value>Full name cannot be empty.</value>
+  </data>
+  <data name="ModalSave" xml:space="preserve">
+    <value>Save changes</value>
+  </data>
+  <data name="ModalCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
+  <!-- Self-role-management guard -->
+  <data name="CannotModifyOwnRolesTitle" xml:space="preserve">
+    <value>You cannot modify your own roles</value>
+  </data>
+  <data name="CannotModifyOwnRolesBody" xml:space="preserve">
+    <value>Ask another Administrator to change your roles. This protection prevents you from accidentally locking yourself out of the system.</value>
+  </data>
+  <data name="AllRolesAlreadyAssigned" xml:space="preserve">
+    <value>This user already has all available staff roles.</value>
+  </data>
+
   <!-- Confirm dialogs (JS confirm()) -->
   <data name="ConfirmRemoveRole" xml:space="preserve">
     <value>Remove the "{0}" role from {1}?</value>
@@ -266,7 +297,7 @@
     <value>What you can do here</value>
   </data>
   <data name="HelpPanel_EditFullName" xml:space="preserve">
-    <value>Edit name — opens a prompt to enter a new full name (1-200 characters).</value>
+    <value>Edit name — opens a dialog to enter a new full name (1-200 characters).</value>
   </data>
   <data name="HelpPanel_AssignRole" xml:space="preserve">
     <value>Assign role — adds a new ASP.NET Identity role to this user (Administrator-only).</value>

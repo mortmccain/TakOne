@@ -58,9 +58,13 @@ public sealed class GetSalesPaginatedQueryHandler
         // `ISpecification<Sale>` is the Ardalis interface. The repository's
         // SpecificationEvaluator translates whichever spec we hand it into
         // the appropriate LINQ query against the Sales DbSet.
+        //
+        // The optional Status filter (Phase 7 item E) is pushed down into
+        // the spec so it becomes part of the SQL WHERE clause — accurate
+        // TotalCount, no in-memory filtering, scales beyond one page.
         ISpecification<Sale> spec = canSeeAllSales
-            ? new AllSalesSpecification()
-            : new SaleByCreatorSpecification(currentUser.UserId);
+            ? new AllSalesSpecification(query.Status)
+            : new SaleByCreatorSpecification(currentUser.UserId, query.Status);
 
         // ------------------------------------------------------------------
         // 2. Clamp page parameters to safe values. Negative or zero page

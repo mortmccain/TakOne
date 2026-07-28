@@ -1,4 +1,4 @@
-﻿@* Sales.razor — Phase 4.2
+﻿* Sales.razor — Phase 4.2
 
    Customer-facing order history page at route `/Sales`. ALL authenticated
    users land here (the sidebar link in MainLayout.razor is wrapped in a
@@ -36,13 +36,16 @@
 
    DATA LOADING:
      - OnInitializedAsync: load the first page of sales.
-     - On search/page change: re-call GetSalesPaginatedQuery via Wolverine.
-       Search is debounced via RadzenTextBox's @bind-Value:after (fires on
-       Enter or blur, not every keystroke — same approach as Products.razor).
-     - Status filter is CLIENT-SIDE on the loaded page (the query doesn't
-       accept a status filter). For small per-user lists this is fine; for
-       staff with hundreds of sales, server-side status filtering is a
-       follow-up (would require extending GetSalesPaginatedQuery).
+     - On search/page/status-filter change: re-call GetSalesPaginatedQuery
+       via Wolverine. Search is debounced via RadzenTextBox's
+       @bind-Value:after (fires on Enter or blur, not every keystroke —
+       same approach as Products.razor). The status filter and page
+       changes also reload from the backend.
+     - Status filter is SERVER-SIDE (Phase 7 item E). The query accepts an
+       optional SaleStatus? that is pushed down into the spec → SQL WHERE
+       clause, so TotalCount is accurate and the filter scales beyond one
+       page. Previously this was client-side on the materialized page,
+       which broke pagination for staff with many sales.
 
    ROLE-GATED COLUMNS:
      - Customer / non-staff users see only: Sale number, Status, Total,
@@ -67,6 +70,7 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Sales.DTOs
 @using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.Domain.Sales.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @inject IMessageBus MessageBus
@@ -209,7 +213,7 @@
        Two flavors: no sales at all yet (fresh customer) vs. no sales match
        the current filters. The hint differs slightly to point the user at
        the right next action. *@
-    else if (_filteredSales.Count == 0)
+    else if (_sales.Count == 0)
     {
         <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
             <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
@@ -254,7 +258,7 @@
     else
     {
         <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
-            <RadzenDataGrid Data="@_filteredSales"
+            <RadzenDataGrid Data="@_sales"
                             AllowSorting="false"
                             AllowPaging="false"
                             AllowColumnResize="true"
@@ -412,25 +416,13 @@
     // ── State ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The full page of sales returned by the backend (BEFORE the
-    /// client-side status filter is applied). Kept around so toggling
-    /// the status filter doesn't require a round-trip.
+    /// The page of sales returned by the backend. As of Phase 7 item E,
+    /// the status filter is SERVER-SIDE — the query passes the selected
+    /// <see cref="SaleStatus"/> into the spec, which becomes part of the
+    /// SQL WHERE clause. So this list is already filtered; no client-side
+    /// projection needed.
     /// </summary>
     private List<SaleListItemDto> _sales = new();
-
-    /// <summary>
-    /// The sales actually rendered — _sales filtered by _statusFilter.
-    /// Computed once per render cycle.
-    /// </summary>
-    private List<SaleListItemDto> _filteredSales => _statusFilter switch
-    {
-        StatusFilter.Draft => _sales.Where(s => s.Status == nameof(StatusFilter.Draft)).ToList(),
-        StatusFilter.Pending => _sales.Where(s => s.Status == nameof(StatusFilter.Pending)).ToList(),
-        StatusFilter.Approved => _sales.Where(s => s.Status == nameof(StatusFilter.Approved)).ToList(),
-        StatusFilter.Invoiced => _sales.Where(s => s.Status == nameof(StatusFilter.Invoiced)).ToList(),
-        StatusFilter.Cancelled => _sales.Where(s => s.Status == nameof(StatusFilter.Cancelled)).ToList(),
-        _ => _sales
-    };
 
     /// <summary>
     /// True when the user has entered a search term OR selected a status
@@ -537,7 +529,22 @@
             {
                 PageNumber = _pageNumber,
                 PageSize = _pageSize,
-                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim()
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                // Map the UI's StatusFilter enum to the domain SaleStatus enum.
+                // StatusFilter.All → null (no filter). The other values line up
+                // 1:1 with SaleStatus by name. This mapping is checked at compile
+                // time by the switch expression — adding a new SaleStatus without
+                // adding it here would surface as a compiler warning.
+                Status = _statusFilter switch
+                {
+                    StatusFilter.All => null,
+                    StatusFilter.Draft => SaleStatus.Draft,
+                    StatusFilter.Pending => SaleStatus.Pending,
+                    StatusFilter.Approved => SaleStatus.Approved,
+                    StatusFilter.Invoiced => SaleStatus.Invoiced,
+                    StatusFilter.Cancelled => SaleStatus.Cancelled,
+                    _ => null
+                }
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
@@ -576,12 +583,16 @@
         await LoadSalesAsync();
     }
 
-    private Task OnStatusFilterChanged(StatusFilter filter)
+    private async Task OnStatusFilterChanged(StatusFilter filter)
     {
-        // Status filter is CLIENT-SIDE — no backend call needed. We just
-        // update the state and let the _filteredSales projection re-compute.
+        // Status filter is SERVER-SIDE (Phase 7 item E) — the filter value
+        // is pushed into the GetSalesPaginatedQuery.Status field, which
+        // becomes a SQL WHERE clause via the spec. So changing the filter
+        // requires a backend reload. We also reset to page 1 because the
+        // previous page number may be out of range for the filtered set.
         _statusFilter = filter;
-        return Task.CompletedTask;
+        _pageNumber = 1;
+        await LoadSalesAsync();
     }
 
     private async Task OnPageChanged(int newPage)

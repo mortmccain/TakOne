@@ -213,6 +213,37 @@
     <value>نام گروه مشتری را وارد کنید (۱ تا ۱۰۰ نویسه):</value>
   </data>
 
+  <!-- Edit Full Name modal -->
+  <data name="EditNameModalTitle" xml:space="preserve">
+    <value>ویرایش نام کامل</value>
+  </data>
+  <data name="EditNameModalBody" xml:space="preserve">
+    <value>نام کامل جدید این کاربر را وارد کنید. تغییر بلافاصله اعمال می‌شود.</value>
+  </data>
+  <data name="EditNameModalPlaceholder" xml:space="preserve">
+    <value>مثلاً علی رضایی</value>
+  </data>
+  <data name="EditNameRequiredError" xml:space="preserve">
+    <value>نام کامل نمی‌تواند خالی باشد.</value>
+  </data>
+  <data name="ModalSave" xml:space="preserve">
+    <value>ذخیره تغییرات</value>
+  </data>
+  <data name="ModalCancel" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+
+  <!-- Self-role-management guard -->
+  <data name="CannotModifyOwnRolesTitle" xml:space="preserve">
+    <value>شما نمی‌توانید نقش‌های خودتان را تغییر دهید</value>
+  </data>
+  <data name="CannotModifyOwnRolesBody" xml:space="preserve">
+    <value>از یک مدیر سیستم دیگر بخواهید نقش‌های شما را تغییر دهد. این محافظت جلوی قفل شدن تصادفی شما را بیرون از سیستم می‌گیرد.</value>
+  </data>
+  <data name="AllRolesAlreadyAssigned" xml:space="preserve">
+    <value>این کاربر هم‌اکنون همه نقش‌های کارکنان را دارد.</value>
+  </data>
+
   <!-- Confirm dialogs (JS confirm()) -->
   <data name="ConfirmRemoveRole" xml:space="preserve">
     <value>نقش «{0}» از «{1}» حذف شود؟</value>

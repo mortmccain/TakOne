@@ -1,5 +1,6 @@
 ﻿using Ardalis.Specification;
 using TakOne.Domain.Sales.Entities;
+using TakOne.Domain.Sales.Enums;
 
 namespace TakOne.Application.Sales.Specifications;
 
@@ -26,21 +27,39 @@ namespace TakOne.Application.Sales.Specifications;
 ///   reads as "if they can see all sales, use the all-sales spec; otherwise
 ///   restrict to their own". This is clearer than <c>null</c> vs <c>non-null</c>.
 ///
+/// OPTIONAL STATUS FILTER:
+///   The constructor accepts an optional <see cref="SaleStatus"/> filter. When
+///   supplied, a <c>Query.Where(sale => sale.Status == status)</c> clause is
+///   added. When null (the default), no status filter is applied — preserving
+///   the previous "match everything" semantics. This lets
+///   <c>GetSalesPaginatedQueryHandler</c> push the status filter down to SQL
+///   instead of filtering in-memory after the page is loaded (Phase 7 item E).
+///
 /// ARDALIS USAGE:
-///   Inherits from <c>Ardalis.Specification.Specification&lt;T&gt;</c>. Because
-///   we add no <c>Query.Where(...)</c> clauses, the
-///   <c>SpecificationEvaluator</c> will translate this to an unfiltered query
-///   (just <c>SELECT * FROM Sales</c> plus whatever ordering / pagination the
-///   repository adds separately).
+///   Inherits from <c>Ardalis.Specification.Specification&lt;T&gt;</c>. The
+///   <c>SpecificationEvaluator</c> translates whichever Where clauses we add
+///   into the appropriate LINQ query against the Sales DbSet.
 /// </summary>
 public sealed class AllSalesSpecification : Specification<Sale>
 {
-    public AllSalesSpecification()
+    public AllSalesSpecification() : this(status: null) { }
+
+    /// <param name="status">
+    /// Optional status filter. When non-null, restricts the spec to sales in
+    /// the given status. When null, matches all statuses.
+    /// </param>
+    public AllSalesSpecification(SaleStatus? status)
     {
-        // No Where clause = match everything. We DO add a default ordering so
-        // that pagination is deterministic (without ORDER BY, SQL Server does
-        // not guarantee row order across pages — rows could appear on multiple
-        // pages or be skipped entirely).
+        if (status.HasValue)
+        {
+            Query.Where(sale => sale.Status == status.Value);
+        }
+
+        // No further Where clause = match everything (modulo the optional
+        // status filter above). We DO add a default ordering so that
+        // pagination is deterministic (without ORDER BY, SQL Server does
+        // not guarantee row order across pages — rows could appear on
+        // multiple pages or be skipped entirely).
         Query.OrderByDescending(sale => sale.CreatedAtUtc);
     }
 }
