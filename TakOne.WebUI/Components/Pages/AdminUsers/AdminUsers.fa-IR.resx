@@ -205,4 +205,16 @@
   <data name="PageInfoFormat" xml:space="preserve">
     <value>صفحه {0} از {1} ({2} مورد)</value>
   </data>
+  <data name="ActionActivate" xml:space="preserve">
+    <value>فعال‌سازی</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی</value>
+  </data>
+  <data name="ActionResetPassword" xml:space="preserve">
+    <value>بازنشانی گذرواژه</value>
+  </data>
+  <data name="ActionViewDetail" xml:space="preserve">
+    <value>مشاهده جزئیات</value>
+  </data>
 </root>

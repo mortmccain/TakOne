@@ -1,0 +1,1133 @@
+﻿@* UserDetail.razor — Phase 6.3
+
+   Staff-facing user detail page at route `/Admin/Users/{Id:guid}`. Reached
+   from the /Admin/Users list page (Phase 6.1) by clicking the "View
+   details" (visibility) icon in the actions column. Page-level gate is
+   [Authorize(Roles = "Admin,Manager")] — same as the list page — and the
+   backend GetUserByIdQueryHandler additionally allows Employee to view
+   (but not edit) any user. Customers/ReadOnly can only view their own
+   profile via this same route (the handler enforces that defense-in-depth
+   by returning a generic "not found" for other users).
+
+   BACKEND CONTRACT:
+     - Load: GetUserByIdQuery { UserId } → Result<UserDto>
+       - Returns the UserDto (Id, WorkerId, FullName, Gender, GroupName?,
+         IsActive, Email? [currently always null — TODO in handler], Roles list).
+       - GroupName is only populated for Admin/Manager viewers; Employee
+         viewers get null (handler defense-in-depth).
+       - Returns Result.Failure("User '...' was not found.") for both
+         genuinely-missing users AND viewers-not-allowed-to-see (the
+         canonical "never leak existence" pattern, same as GetSaleByIdQuery).
+     - Edit FullName: UpdateUserFullNameCommand(UserId, NewFullName) → Result
+       - [RequireRoles(Manager, Admin)]. Validator: NewFullName non-empty,
+         ≤ 200 chars.
+     - Assign role: AssignUserRoleCommand(UserId, Role) → Result
+       - [RequireRoles(Admin)]. Validator: Role must be one of
+         {Admin, Manager, Employee, ReadOnly, Customer}.
+     - Remove role: RemoveUserRoleCommand(UserId, Role) → Result
+       - [RequireRoles(Admin)]. Handler rejects self-removal of own Admin
+         role (defense-in-depth). Validator: same as Assign.
+     - Assign to group: AssignUserToGroupCommand(UserId, GroupName) → Result
+       - [RequireRoles(Manager, Admin)]. Validator: GroupName non-empty,
+         ≤ 100 chars.
+     - Remove from group: RemoveUserFromGroupCommand(UserId) → Result
+       - [RequireRoles(Manager, Admin)]. Validator: UserId non-empty.
+
+   LAYOUT (responsive — mirrors SaleDetail.razor's 12-col grid):
+     Desktop / tablet (≥992px): two columns
+       Left  (8/12): profile card + roles card + group card
+       Right (4/12): sticky action panel (help + role-scope info + error)
+     Mobile (<992px): single column, action panel collapses to top
+
+   ROLE-RESOLUTION PATTERN:
+     _isAdmin, _isManager, _currentUserId are computed in OnInitializedAsync
+     via AuthStateProvider.GetAuthenticationStateAsync() — NOT via
+     ICurrentUserService.IsInRole (which returns false for everyone in
+     interactive Blazor Server mode because HttpContext is null over the
+     SignalR circuit). Same pattern as AdminUsers.razor (Phase 6.1) and
+     SaleDetail.razor (Phase 4.3). See those files' header comments for
+     the full rationale. The Wolverine command handlers ALSO enforce
+     [RequireRoles] server-side as defense-in-depth.
+
+   UX PATTERNS:
+     - Edit FullName: opens a JS prompt() pre-filled with the current
+       FullName. Same pattern as SaleDetail.razor's Cancel reason flow.
+       Client-side validates 1-200 chars (matches validator) before
+       dispatching; the validator also enforces this server-side.
+     - Assign role: RadzenDropDown (TValue=string, primitive key — matches
+       AdminUsers.razor's activity-filter pattern, NOT the complex-object
+       binding pattern that bit us in CreateUser.razor Phase 6.2). Dropdown
+       options are filtered to remove roles the user already has, AND to
+       remove Customer (Customer is implicit — set at creation time, not
+       assignable post-creation from this UI).
+     - Remove role: small icon button per assigned role. Hidden on the
+       current user's own Admin role (handler rejects this as
+       defense-in-depth, but hiding the button is better UX — same pattern
+       as AdminUsers.razor hiding self-Deactivate).
+     - Assign to group: JS prompt() pre-filled with the current GroupName
+       (or empty). Client-side validates 1-100 chars (matches validator).
+     - Remove from group: direct button click (with a JS confirm() because
+       it's destructive — removes the user's purchase-limit group).
+     - All actions are wrapped in ExecuteActionAsync (mirrors SaleDetail)
+       which: sets _isBusy, clears _actionError, dispatches, toasts on
+       success/failure, reloads the user on success.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All button clicks are async event handlers
+     that dispatch commands via Wolverine. The Blazor circuit's anti-forgery
+     token is established at circuit start. (Same as SaleDetail.razor.) *@
+
+@page "/Admin/Users/{Id:guid}"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Application.Users.Commands.UpdateUserFullName
+@using TakOne.Application.Users.Commands.AssignUserRole
+@using TakOne.Application.Users.Commands.RemoveUserRole
+@using TakOne.Application.Users.Commands.AssignUserToGroup
+@using TakOne.Application.Users.Commands.RemoveUserFromGroup
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<UserDetail> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>@(_user is null ? Loc["PageTitle"] : $"{_user.WorkerId} — {Loc["PageTitle"]}")</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
+                           Left = profile + roles + group cards (wider); right = sticky action panel.
+                           Mirrors SaleDetail.razor's .detail-grid structure. */
+            .detail-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 1.5rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .detail-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1rem;
+                }
+                    /* On mobile, action panel comes FIRST so help + role-scope
+                                   context is visible before the user scrolls to the cards. */
+                    .detail-grid .detail-action-panel {
+                        order: -1;
+                    }
+            }
+
+            /* Page header — worker ID (monospace) + active badge inline. */
+            .detail-header {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .detail-worker-id {
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 1.6rem;
+                font-weight: 700;
+                margin: 0;
+                line-height: 1.2;
+            }
+
+            /* Breadcrumb (same style as SaleDetail.razor). */
+            .breadcrumb {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                font-size: 0.875rem;
+                color: var(--rz-text-secondary-color);
+            }
+
+                .breadcrumb a {
+                    color: var(--rz-primary);
+                    text-decoration: none;
+                }
+
+                    .breadcrumb a:hover {
+                        text-decoration: underline;
+                    }
+
+            .crumb-sep {
+                opacity: 0.6;
+            }
+
+            .crumb-current {
+                color: var(--rz-text-secondary-color);
+                font-weight: 500;
+            }
+
+            /* Scope badge (large) in the action panel header — same shape
+                           as SaleDetail.razor's .status-badge-large. */
+            .status-badge-large {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.5rem 1rem;
+                border-radius: 9999px;
+                font-size: 1rem;
+                font-weight: 600;
+                min-width: 120px;
+                justify-content: center;
+            }
+
+            /* Per-scope background colors (semantic):
+                           - Admin   → primary  (highest privilege — visually distinct)
+                           - Manager → info     (mid privilege)
+                           - Viewer  → base     (read-only) */
+            .scope-bg-admin {
+                background: rgba(63, 81, 181, 0.18);
+                color: #1a237e;
+            }
+
+            .scope-bg-manager {
+                background: rgba(33, 150, 243, 0.18);
+                color: #0d47a1;
+            }
+
+            .scope-bg-viewer {
+                background: rgba(158, 158, 158, 0.18);
+                color: #424242;
+            }
+
+            /* Sticky action panel on desktop. */
+            @@media (min-width: 993px) {
+                .detail-action-panel {
+                    position: sticky;
+                    top: 1rem;
+                }
+            }
+
+            /* Profile card — 2-column field grid (label + value). */
+            .profile-grid {
+                display: grid;
+                grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr);
+                gap: 0.75rem 1.5rem;
+                align-items: baseline;
+            }
+
+            .profile-label {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+
+            .profile-value {
+                font-weight: 500;
+                word-break: break-word;
+            }
+
+            .profile-value-mono {
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-weight: 600;
+            }
+
+            .profile-value-muted {
+                color: var(--rz-text-secondary-color);
+                font-style: italic;
+            }
+
+            /* Role badges list — horizontal flex wrap with remove buttons. */
+            .role-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                align-items: center;
+            }
+
+            .role-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+
+            .role-remove-btn {
+                cursor: pointer;
+                background: transparent;
+                border: none;
+                color: inherit;
+                opacity: 0.7;
+                padding: 0;
+                line-height: 1;
+                font-size: 1rem;
+            }
+
+                .role-remove-btn:hover {
+                    opacity: 1;
+                }
+
+            .role-empty {
+                color: var(--rz-text-secondary-color);
+                font-style: italic;
+            }
+
+            /* Inline action forms — assign role / assign group rows. */
+            .inline-form {
+                display: flex;
+                gap: 0.5rem;
+                align-items: stretch;
+                flex-wrap: wrap;
+                margin-top: 0.75rem;
+            }
+
+                .inline-form .rz-dropdown {
+                    flex: 1 1 180px;
+                    min-width: 160px;
+                }
+
+            /* Help panel bullets. */
+            .help-list {
+                margin: 0;
+                padding-left: 1.25rem;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.875rem;
+                line-height: 1.55;
+            }
+
+                .help-list li {
+                    margin-bottom: 0.4rem;
+                }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Back button ──
+       Returns to /Admin/Users. forceLoad:false preserves the Blazor circuit. *@
+    <RadzenButton Text="@Loc["BackToList"]"
+                  Icon="arrow_back"
+                  ButtonStyle="ButtonStyle.Light"
+                  Variant="Variant.Text"
+                  Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state ── *@
+    else if (_loadError is not null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadUserAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Not found ──
+       The handler returns Result.Failure with a "not found" message for
+       both genuinely-missing users AND users the caller isn't allowed
+       to see (defense-in-depth — never leak existence). Either way, the
+       user sees the same friendly message. Same pattern as SaleDetail.razor. *@
+    else if (_user is null)
+    {
+        <RadzenAlert Title="@Loc["NotFoundTitle"]"
+                     Text="@Loc["NotFoundMessage"]"
+                     AlertStyle="AlertStyle.Warning"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Main content ── *@
+    else
+    {
+        <div class="detail-grid">
+            @* LEFT — profile + roles + group cards *@
+            <div>
+                @* Breadcrumb: Manage users / [Worker ID] *@
+                <nav class="breadcrumb" aria-label="breadcrumb" Style="margin-bottom: 0.5rem;">
+                    <a href="/Admin/Users">@Loc["BreadcrumbUsers"]</a>
+                    <span class="crumb-sep">/</span>
+                    <span class="crumb-current">@_user.WorkerId</span>
+                </nav>
+
+                @* Page header — worker ID + active badge inline *@
+                <div class="detail-header" Style="margin-bottom: 1rem;">
+                    <h1 class="detail-worker-id">@_user.WorkerId</h1>
+                    @if (_user.IsActive)
+                    {
+                        <RadzenBadge Text="@Loc["StatusActive"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                    }
+                    else
+                    {
+                        <RadzenBadge Text="@Loc["StatusInactive"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                    }
+                </div>
+
+                @* ── Profile card ──
+                   Read-only identity fields. FullName has an inline "Edit"
+                   button that opens a JS prompt (handled in the right-side
+                   action panel — here we just display the value). Group is
+                   shown only when _canManageGroup (Admin/Manager) — the
+                   handler already strips GroupName from Employee viewers. *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem; margin-bottom: 1rem;">
+                    <RadzenText Text="@Loc["ProfileCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
+
+                    <div class="profile-grid">
+                        <div class="profile-label">@Loc["ColWorkerId"]</div>
+                        <div class="profile-value profile-value-mono">@_user.WorkerId</div>
+
+                        <div class="profile-label">@Loc["ColFullName"]</div>
+                        <div class="profile-value">
+                            @_user.FullName
+                            @if (_canEditFullName)
+                            {
+                                <RadzenButton Icon="edit"
+                                              Text="@Loc["ActionEditFullName"]"
+                                              Variant="Variant.Text"
+                                              ButtonStyle="ButtonStyle.Info"
+                                              Size="ButtonSize.Small"
+                                              Disabled="@_isBusy"
+                                              Click="@HandleEditFullNameAsync"
+                                              Style="margin-left: 0.5rem;" />
+                            }
+                        </div>
+
+                        <div class="profile-label">@Loc["ColGender"]</div>
+                        <div class="profile-value">@GetGenderLabel(_user.Gender)</div>
+
+                        <div class="profile-label">@Loc["ColStatus"]</div>
+                        <div class="profile-value">
+                            @if (_user.IsActive)
+                            {
+                                <RadzenBadge Text="@Loc["StatusActive"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="@Loc["StatusInactive"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                            }
+                        </div>
+
+                        @* Email is currently always null in the DTO (TODO
+                           in handler — IUserAccountService has no GetEmailAsync
+                           yet). When the handler is extended, this row will
+                           light up automatically without UI changes. *@
+                        @if (!string.IsNullOrWhiteSpace(_user.Email))
+                        {
+                            <div class="profile-label">@Loc["ColEmail"]</div>
+                            <div class="profile-value profile-value-mono">@_user.Email</div>
+                        }
+
+                        @* Group row — only shown to Admin/Manager. The
+                           handler strips GroupName for Employee viewers, so
+                           showing an empty value would be misleading. We
+                           hide the whole row when the viewer lacks permission. *@
+                        @if (_canManageGroup)
+                        {
+                            <div class="profile-label">@Loc["ColGroup"]</div>
+                            <div class="profile-value">
+                                @if (string.IsNullOrWhiteSpace(_user.GroupName))
+                                {
+                                    <span class="profile-value-muted">@Loc["GroupNone"]</span>
+                                }
+                                else
+                                {
+                                    <RadzenBadge Text="@_user.GroupName" BadgeStyle="BadgeStyle.Base" IsPill="true" />
+                                }
+                            </div>
+                        }
+                    </div>
+                </RadzenCard>
+
+                @* ── Roles card ──
+                   Shows the user's currently-assigned ASP.NET Identity roles.
+                   Admin viewers can remove roles (per-role Remove button) and
+                   add new roles (dropdown + Assign button). The dropdown is
+                   filtered to exclude already-assigned roles AND the Customer
+                   role (Customer is implicit — set at creation time, not
+                   assignable post-creation from this UI). The Remove button
+                   is hidden on the current user's own Admin role (handler
+                   rejects self-Admin-removal as defense-in-depth). *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem; margin-bottom: 1rem;">
+                    <RadzenText Text="@Loc["RolesCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
+
+                    @if (_user.Roles.Count == 0)
+                    {
+                        <div class="role-empty">@Loc["NoRoles"]</div>
+                    }
+                    else
+                    {
+                        <div class="role-list">
+                            @foreach (var role in _user.Roles)
+                            {
+                                <span class="role-item">
+                                    <RadzenBadge Text="@GetRoleLabel(role)"
+                                                 BadgeStyle="@GetRoleBadgeStyle(role)"
+                                                 IsPill="true" />
+                                    @if (_canManageRoles && !(_currentUserId == _user.Id && role == Roles.Admin))
+                                    {
+                                        <button type="button"
+                                                class="role-remove-btn"
+                                                title="@string.Format(CultureInfo.CurrentCulture, Loc["ActionRemoveRoleTitle"], GetRoleLabel(role))"
+                                                aria-label="@string.Format(CultureInfo.CurrentCulture, Loc["ActionRemoveRoleTitle"], GetRoleLabel(role))"
+                                                disabled="@_isBusy"
+                                                @onclick="@(() => HandleRemoveRoleAsync(role))">
+                                            <RadzenIcon Icon="close" />
+                                        </button>
+                                    }
+                                </span>
+                            }
+                        </div>
+                    }
+
+                    @if (_canManageRoles)
+                    {
+                        <div class="inline-form">
+                            <RadzenDropDown TValue="string"
+                                            Data="@_assignableRoles"
+                                            @bind-Value="_selectedRoleToAdd"
+                                            Placeholder="@Loc["RoleSelectPlaceholder"]"
+                                            Style="flex: 1 1 180px; min-width: 160px;" />
+                            <RadzenButton Text="@Loc["ActionAssignRole"]"
+                                          Icon="add"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Size="ButtonSize.Small"
+                                          Disabled="@(_isBusy || string.IsNullOrEmpty(_selectedRoleToAdd))"
+                                          Click="@HandleAssignRoleAsync" />
+                        </div>
+                        <RadzenText Text="@Loc["RolesHelpText"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                    }
+                    else
+                    {
+                        <RadzenText Text="@Loc["RolesManagerOnlyHint"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                    }
+                </RadzenCard>
+
+                @* ── Group card ──
+                   Admin/Manager viewers can assign the user to a customer
+                   group (sets User.GroupName via AssignUserToGroupCommand)
+                   or remove them from their current group. Staff users have
+                   null GroupName by domain design (User.CreateStaff doesn't
+                   set one); customers may or may not have one. Removing a
+                   user from their group affects their purchase limits, so
+                   we use a JS confirm() before dispatching. *@
+                @if (_canManageGroup)
+                {
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <RadzenText Text="@Loc["GroupCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
+
+                        <div class="profile-grid">
+                            <div class="profile-label">@Loc["ColCurrentGroup"]</div>
+                            <div class="profile-value">
+                                @if (string.IsNullOrWhiteSpace(_user.GroupName))
+                                {
+                                    <span class="profile-value-muted">@Loc["GroupNone"]</span>
+                                }
+                                else
+                                {
+                                    <RadzenBadge Text="@_user.GroupName" BadgeStyle="BadgeStyle.Base" IsPill="true" />
+                                }
+                            </div>
+                        </div>
+
+                        <div class="inline-form">
+                            <RadzenButton Text="@Loc["ActionAssignGroup"]"
+                                          Icon="group_add"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Size="ButtonSize.Small"
+                                          Disabled="@_isBusy"
+                                          Click="@HandleAssignGroupAsync" />
+
+                            @if (!string.IsNullOrWhiteSpace(_user.GroupName))
+                            {
+                                <RadzenButton Text="@Loc["ActionRemoveGroup"]"
+                                              Icon="group_remove"
+                                              ButtonStyle="ButtonStyle.Danger"
+                                              Variant="Variant.Outlined"
+                                              Size="ButtonSize.Small"
+                                              Disabled="@_isBusy"
+                                              Click="@HandleRemoveGroupAsync" />
+                            }
+                        </div>
+                        <RadzenText Text="@Loc["GroupHelpText"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                    </RadzenCard>
+                }
+            </div>
+
+            @* RIGHT — sticky action panel: scope info + inline error + help *@
+            <div class="detail-action-panel">
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                    <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                        @* Role-scope badge — at-a-glance who the viewer is. *@
+                        <div style="display: flex; justify-content: center;">
+                            <span class="status-badge-large @GetScopeBadgeCssClass()">
+                                <RadzenIcon Icon="@GetScopeIcon()" />
+                                @GetScopeLabel()
+                            </span>
+                        </div>
+
+                        @* Manager-scope informational alert — explains
+                           what Managers can vs cannot do on this page. *@
+                        @if (!_isAdmin)
+                        {
+                            <RadzenAlert Title="@Loc["ManagerScopeTitle"]"
+                                         Text="@Loc["ManagerScopeBody"]"
+                                         AlertStyle="AlertStyle.Info"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true" />
+                        }
+
+                        @* Inline action error — populated by ExecuteActionAsync. *@
+                        @if (!string.IsNullOrEmpty(_actionError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_actionError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Filled"
+                                         ShowIcon="true" />
+                        }
+
+                        @* Quick action buttons — disabled while an action is in flight. *@
+                        @if (_canEditFullName)
+                        {
+                            <RadzenButton Text="@Loc["ActionEditFullName"]"
+                                          Icon="edit"
+                                          ButtonStyle="ButtonStyle.Info"
+                                          Variant="Variant.Outlined"
+                                          Disabled="@_isBusy"
+                                          Click="@HandleEditFullNameAsync"
+                                          Style="width: 100%;" />
+                        }
+
+                        @* Help panel — explains what each action does. *@
+                        <RadzenText Text="@Loc["HelpPanelTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;" />
+                        <ul class="help-list">
+                            <li>@Loc["HelpPanel_EditFullName"]</li>
+                            <li>@Loc["HelpPanel_AssignRole"]</li>
+                            <li>@Loc["HelpPanel_RemoveRole"]</li>
+                            <li>@Loc["HelpPanel_AssignGroup"]</li>
+                            <li>@Loc["HelpPanel_RemoveGroup"]</li>
+                        </ul>
+                    </RadzenStack>
+                </RadzenCard>
+            </div>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// User ID from the route (/Admin/Users/{Id:guid}). Bound by the Blazor
+    /// router. Invalid Guid values trigger the router's NotFound template.
+    /// </summary>
+    [Parameter]
+    public Guid Id { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private UserDto? _user;
+    private string? _loadError;
+    private bool _isLoading = true;
+
+    /// <summary>
+    /// True if the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false over the SignalR
+    /// circuit because HttpContext is null). Gates role-management UI
+    /// (Assign/Remove role buttons). The Wolverine handlers also enforce
+    /// [RequireRoles(Admin)] server-side as defense-in-depth.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// True if the current user is in the Manager role. Combined with
+    /// _isAdmin to gate FullName editing and group management UI (both
+    /// commands have [RequireRoles(Manager, Admin)]).
+    /// </summary>
+    private bool _isManager;
+
+    /// <summary>
+    /// The current user's Domain User Id (from the "UserId" claim set by
+    /// our custom IClaimsPrincipalFactory in Infrastructure). Used to hide
+    /// self-Admin-removal (handler also rejects this, but hiding the button
+    /// is better UX — same pattern as AdminUsers.razor hiding self-Deactivate).
+    /// </summary>
+    private Guid _currentUserId;
+
+    /// <summary>
+    /// True while any action (Edit FullName / Assign Role / Remove Role /
+    /// Assign Group / Remove Group) is in flight. Disables ALL action
+    /// buttons to prevent double-clicks.
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// Inline error message for the action panel. Populated when an action
+    /// fails (e.g. "User '...' was not found."). Cleared at the start of
+    /// the next action by ExecuteActionAsync.
+    /// </summary>
+    private string _actionError = string.Empty;
+
+    /// <summary>
+    /// The role selected in the "Assign role" dropdown. Bound via
+    /// @bind-Value (two-way) — RadzenDropDown with TValue=string (primitive
+    /// key, matches AdminUsers.razor's activity-filter pattern, NOT the
+    /// complex-object binding that bit us in CreateUser.razor Phase 6.2).
+    /// Reset to null after a successful Assign.
+    /// </summary>
+    private string? _selectedRoleToAdd;
+
+    /// <summary>
+    /// The list of roles available for assignment. Computed in
+    /// OnInitializedAsync and recomputed after each successful role
+    /// Add/Remove (because the list excludes roles the user already has).
+    /// Customer is intentionally excluded — Customer is implicit (set at
+    /// creation time, not assignable post-creation from this UI).
+    /// </summary>
+    private List<RoleOption> _assignableRoles = new();
+
+    /// <summary>
+    /// All staff-role options (excludes Customer) used to build the
+    /// assignable-roles list. The 4 staff roles match the AllowedStaffRoles
+    /// set on CreateStaffCommandValidator.
+    /// </summary>
+    private static readonly string[] StaffRoles =
+        { Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly };
+
+    private sealed class RoleOption
+    {
+        public string Value { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+    }
+
+    // ── Derived permission flags ───────────────────────────────────────
+
+    /// <summary>
+    /// True if the current user can edit FullName (matches
+    /// UpdateUserFullNameCommand's [RequireRoles(Manager, Admin)]).
+    /// </summary>
+    private bool _canEditFullName => _isAdmin || _isManager;
+
+    /// <summary>
+    /// True if the current user can manage roles (matches
+    /// AssignUserRoleCommand + RemoveUserRoleCommand's [RequireRoles(Admin)]).
+    /// </summary>
+    private bool _canManageRoles => _isAdmin;
+
+    /// <summary>
+    /// True if the current user can manage group assignment (matches
+    /// AssignUserToGroupCommand + RemoveUserFromGroupCommand's
+    /// [RequireRoles(Manager, Admin)]).
+    /// </summary>
+    private bool _canManageGroup => _isAdmin || _isManager;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Compute _isAdmin, _isManager, _currentUserId synchronously via
+        // AuthStateProvider so the action-stack visibility doesn't flicker
+        // on first render. NOTE: we deliberately do NOT use
+        // ICurrentUserService.IsInRole here — in interactive Blazor Server
+        // mode, ICurrentUserService resolves from IHttpContextAccessor.HttpContext,
+        // which is null over the SignalR circuit (only populated during the
+        // initial prerender). The AuthStateProvider is the canonical source
+        // for interactive components. The Wolverine command handlers also
+        // enforce [RequireRoles] server-side (defense-in-depth).
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                // The UserId claim is set by our custom IClaimsPrincipalFactory
+                // in the Infrastructure layer — it's the Domain User's Guid Id.
+                // Fallback to NameIdentifier for safety (same claim-resolution
+                // pattern as AdminUsers.razor lines 522-523).
+                var idClaim = user.FindFirst("UserId")?.Value
+                              ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                if (Guid.TryParse(idClaim, out var parsedId))
+                {
+                    _currentUserId = parsedId;
+                }
+
+                _isAdmin = user.IsInRole(Roles.Admin);
+                _isManager = user.IsInRole(Roles.Manager);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _currentUserId stays Guid.Empty (no self-action
+            // buttons hidden, which is safe but slightly worse UX) and
+            // _isAdmin/_isManager stay false (all action UI hidden — safer
+            // fallback if role resolution fails). The handler still enforces
+            // [RequireRoles] server-side.
+        }
+
+        try
+        {
+            await LoadUserAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    private async Task LoadUserAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var query = new GetUserByIdQuery { UserId = Id };
+            var result = await MessageBus.InvokeAsync<Result<UserDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _user = result.Value;
+                RefreshAssignableRoles();
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message.
+                // For "not found" (covers both genuinely-missing AND
+                // permission-denied), we show the same NotFound UI.
+                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _user = null;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_GenericLoad"];
+            _user = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the assignable-roles list, excluding roles the user
+    /// already has. Called after every successful Load (initial + reload
+    /// after each action) so the dropdown never shows already-assigned
+    /// roles. Customer is intentionally never in this list.
+    /// </summary>
+    private void RefreshAssignableRoles()
+    {
+        if (_user is null)
+        {
+            _assignableRoles = new();
+            return;
+        }
+
+        _assignableRoles = StaffRoles
+            .Where(r => !_user.Roles.Contains(r))
+            .Select(r => new RoleOption { Value = r, Label = GetRoleLabel(r) })
+            .ToList();
+
+        // If the previously-selected role is no longer assignable (because
+        // the user just got assigned it), clear the selection.
+        if (_selectedRoleToAdd is not null
+            && !_assignableRoles.Any(o => o.Value == _selectedRoleToAdd))
+        {
+            _selectedRoleToAdd = null;
+        }
+    }
+
+    // ── Actions ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Edit FullName via JS prompt() pre-filled with the current FullName.
+    /// Client-side validates 1-200 chars (matches
+    /// UpdateUserFullNameCommandValidator.MaxFullNameLength=200) before
+    /// dispatching; the validator also enforces this server-side.
+    /// </summary>
+    private async Task HandleEditFullNameAsync()
+    {
+        if (_user is null || _isBusy || !_canEditFullName) return;
+
+        var input = await JS.InvokeAsync<string?>(
+            "prompt",
+            Loc["Prompt_NewFullName"],
+            _user.FullName);
+
+        // User clicked Cancel on the prompt, or entered empty/whitespace.
+        // Silent abort — no error toast (the user explicitly chose not to
+        // rename; we don't want to scold them).
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        var newName = input.Trim();
+
+        if (newName.Length > 200)
+        {
+            await Toast.Warning(Loc["FullNameLengthError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        await ExecuteActionAsync(
+            Loc["ActionEditFullName"],
+            () => MessageBus.InvokeAsync<Result>(
+                new UpdateUserFullNameCommand(_user.Id, newName)));
+    }
+
+    /// <summary>
+    /// Assign the currently-selected role (_selectedRoleToAdd) to the user.
+    /// The dropdown is filtered to exclude already-assigned roles, so this
+    /// should always be a new role — but the handler/validator is the
+    /// final authority server-side.
+    /// </summary>
+    private async Task HandleAssignRoleAsync()
+    {
+        if (_user is null || _isBusy || !_canManageRoles) return;
+        if (string.IsNullOrEmpty(_selectedRoleToAdd)) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionAssignRole"],
+            () => MessageBus.InvokeAsync<Result>(
+                new AssignUserRoleCommand(_user.Id, _selectedRoleToAdd)));
+    }
+
+    /// <summary>
+    /// Remove a specific role from the user. Hidden on the current user's
+    /// own Admin role (handler rejects it as defense-in-depth — see
+    /// RemoveUserRoleCommandHandler's self-removal guard — but hiding the
+    /// button is better UX).
+    /// </summary>
+    private async Task HandleRemoveRoleAsync(string role)
+    {
+        if (_user is null || _isBusy || !_canManageRoles) return;
+        if (string.IsNullOrEmpty(role)) return;
+
+        // Belt-and-suspenders: the markup also hides this button, but the
+        // check is cheap and the handler also rejects it. We don't want to
+        // even attempt the dispatch.
+        if (_currentUserId == _user.Id && role == Roles.Admin)
+        {
+            await Toast.Warning(Loc["CannotRemoveOwnAdminRole"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // JS confirm() — role removal is reversible (re-assign) but worth
+        // one click of friction so the admin doesn't accidentally lock
+        // themselves or another user out of a feature.
+        var confirmMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["ConfirmRemoveRole"],
+            GetRoleLabel(role),
+            _user.FullName);
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionRemoveRole"],
+            () => MessageBus.InvokeAsync<Result>(
+                new RemoveUserRoleCommand(_user.Id, role)));
+    }
+
+    /// <summary>
+    /// Assign the user to a customer group via JS prompt() pre-filled with
+    /// the current GroupName (or empty). Client-side validates 1-100 chars
+    /// (matches AssignUserToGroupCommandValidator.MaxGroupNameLength=100).
+    /// </summary>
+    private async Task HandleAssignGroupAsync()
+    {
+        if (_user is null || _isBusy || !_canManageGroup) return;
+
+        var input = await JS.InvokeAsync<string?>(
+            "prompt",
+            Loc["Prompt_NewGroupName"],
+            _user.GroupName ?? string.Empty);
+
+        // Silent abort on Cancel / empty input.
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        var groupName = input.Trim();
+
+        if (groupName.Length > 100)
+        {
+            await Toast.Warning(Loc["GroupNameLengthError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        await ExecuteActionAsync(
+            Loc["ActionAssignGroup"],
+            () => MessageBus.InvokeAsync<Result>(
+                new AssignUserToGroupCommand(_user.Id, groupName)));
+    }
+
+    /// <summary>
+    /// Remove the user from their current group. Uses JS confirm() because
+    /// removing a customer from their group affects their purchase limits.
+    /// </summary>
+    private async Task HandleRemoveGroupAsync()
+    {
+        if (_user is null || _isBusy || !_canManageGroup) return;
+        if (string.IsNullOrWhiteSpace(_user.GroupName)) return;
+
+        var confirmMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["ConfirmRemoveGroup"],
+            _user.GroupName,
+            _user.FullName);
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionRemoveGroup"],
+            () => MessageBus.InvokeAsync<Result>(
+                new RemoveUserFromGroupCommand(_user.Id)));
+    }
+
+    /// <summary>
+    /// Common wrapper for all 5 actions: sets _isBusy, clears the previous
+    /// _actionError, dispatches the command, handles success (toast + reload
+    /// the user to refresh roles/group/FullName) and failure (inline
+    /// _actionError banner + error toast). Mirrors SaleDetail.razor's
+    /// ExecuteActionAsync pattern exactly.
+    /// </summary>
+    private async Task ExecuteActionAsync(string actionName, Func<Task<Result>> dispatch)
+    {
+        _isBusy = true;
+        _actionError = string.Empty;
+
+        try
+        {
+            var result = await dispatch();
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActionSuccessFormat"], actionName),
+                    summary: Loc["ActionSuccessTitle"]);
+
+                // Reload the user to refresh the roles list, group badge,
+                // and FullName display. Also rebuilds the assignable-roles
+                // dropdown (excludes the just-assigned role, or restores
+                // the just-removed role).
+                await LoadUserAsync();
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message
+                // (e.g. "User '...' was not found.", or "You cannot remove
+                // your own Admin role. Assign Admin to another user first.").
+                _actionError = result.Error ?? Loc["Error_GenericAction"];
+                await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            _actionError = Loc["Error_GenericAction"];
+            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the localized label for a Gender enum value. Same mapping
+    /// as AdminUsers.razor's GetGenderLabel (Phase 6.1) — duplicated here
+    /// so the detail page is self-contained without depending on
+    /// AdminUsers.resx.
+    /// </summary>
+    private string GetGenderLabel(Gender gender) => gender switch
+    {
+        Gender.Male => Loc["GenderMale"],
+        Gender.Female => Loc["GenderFemale"],
+        _ => gender.ToString()
+    };
+
+    /// <summary>
+    /// Returns the localized label for a role constant. Falls back to the
+    /// raw role name if no translation is defined. Same mapping as
+    /// CreateUser.razor's role labels.
+    /// </summary>
+    private string GetRoleLabel(string role) => role switch
+    {
+        Roles.Admin => Loc["RoleAdmin"],
+        Roles.Manager => Loc["RoleManager"],
+        Roles.Employee => Loc["RoleEmployee"],
+        Roles.ReadOnly => Loc["RoleReadOnly"],
+        Roles.Customer => Loc["RoleCustomer"],
+        _ => role
+    };
+
+    /// <summary>
+    /// Maps a role to a Radzen BadgeStyle for color coding. Admin gets
+    /// Danger (highest privilege — visually distinct). Manager gets
+    /// Warning. Employee gets Info. ReadOnly gets Base. Customer gets
+    /// Success (buyer role — positive connotation).
+    /// </summary>
+    private static BadgeStyle GetRoleBadgeStyle(string role) => role switch
+    {
+        Roles.Admin => BadgeStyle.Danger,
+        Roles.Manager => BadgeStyle.Warning,
+        Roles.Employee => BadgeStyle.Info,
+        Roles.ReadOnly => BadgeStyle.Base,
+        Roles.Customer => BadgeStyle.Success,
+        _ => BadgeStyle.Base
+    };
+
+    /// <summary>
+    /// Returns the localized label for the current viewer's scope (shown
+    /// in the action panel header).
+    /// </summary>
+    private string GetScopeLabel() => _isAdmin
+        ? Loc["ScopeAdmin"]
+        : _isManager
+            ? Loc["ScopeManager"]
+            : Loc["ScopeViewer"];
+
+    /// <summary>
+    /// Returns a Material icon name for the current viewer's scope.
+    /// </summary>
+    private static string GetScopeIcon() => "shield_person";
+
+    /// <summary>
+    /// Returns a CSS class for the scope badge. Admin = primary (highest
+    /// privilege — visually distinct). Manager = info. Anything else =
+    /// base (read-only viewer).
+    /// </summary>
+    private string GetScopeBadgeCssClass() => _isAdmin
+        ? "scope-bg-admin"
+        : _isManager
+            ? "scope-bg-manager"
+            : "scope-bg-viewer";
+}

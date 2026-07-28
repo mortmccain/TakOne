@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UserDetail.fa-IR.resx — Persian (Farsi) strings for UserDetail.razor (Phase 6.3).
+
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. Role-name translations
+     match the conventions in CreateUser.fa-IR.resx (Admin → مدیر سیستم,
+     Manager → مدیر, Employee → کارمند, ReadOnly → فقط‌خواندنی, Customer → مشتری). -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve">
+    <value>جزئیات کاربر — تک‌وان</value>
+  </data>
+  <data name="BackToList" xml:space="preserve">
+    <value>بازگشت به فهرست کاربران</value>
+  </data>
+  <data name="BreadcrumbUsers" xml:space="preserve">
+    <value>مدیریت کاربران</value>
+  </data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve">
+    <value>در حال بارگذاری جزئیات کاربر…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>بارگذاری این کاربر ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_GenericAction" xml:space="preserve">
+    <value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+  <data name="NotFoundTitle" xml:space="preserve">
+    <value>کاربر یافت نشد</value>
+  </data>
+  <data name="NotFoundMessage" xml:space="preserve">
+    <value>این کاربر وجود ندارد، یا شما اجازه مشاهده آن را ندارید.</value>
+  </data>
+
+  <!-- Status badges -->
+  <data name="StatusActive" xml:space="preserve">
+    <value>فعال</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+
+  <!-- Profile card -->
+  <data name="ProfileCardTitle" xml:space="preserve">
+    <value>پروفایل</value>
+  </data>
+  <data name="ColWorkerId" xml:space="preserve">
+    <value>شناسه کارگری</value>
+  </data>
+  <data name="ColFullName" xml:space="preserve">
+    <value>نام کامل</value>
+  </data>
+  <data name="ColGender" xml:space="preserve">
+    <value>جنسیت</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="ColEmail" xml:space="preserve">
+    <value>ایمیل</value>
+  </data>
+  <data name="ColGroup" xml:space="preserve">
+    <value>گروه</value>
+  </data>
+  <data name="ColCurrentGroup" xml:space="preserve">
+    <value>گروه فعلی</value>
+  </data>
+  <data name="GroupNone" xml:space="preserve">
+    <value>گروهی تعیین نشده</value>
+  </data>
+
+  <!-- Gender labels -->
+  <data name="GenderMale" xml:space="preserve">
+    <value>مرد</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>زن</value>
+  </data>
+
+  <!-- Role labels — match CreateUser.fa-IR.resx conventions -->
+  <data name="RoleAdmin" xml:space="preserve">
+    <value>مدیر سیستم</value>
+  </data>
+  <data name="RoleManager" xml:space="preserve">
+    <value>مدیر</value>
+  </data>
+  <data name="RoleEmployee" xml:space="preserve">
+    <value>کارمند</value>
+  </data>
+  <data name="RoleReadOnly" xml:space="preserve">
+    <value>فقط‌خواندنی</value>
+  </data>
+  <data name="RoleCustomer" xml:space="preserve">
+    <value>مشتری</value>
+  </data>
+
+  <!-- Roles card -->
+  <data name="RolesCardTitle" xml:space="preserve">
+    <value>نقش‌ها</value>
+  </data>
+  <data name="NoRoles" xml:space="preserve">
+    <value>این کاربر هیچ نقشی ندارد.</value>
+  </data>
+  <data name="RoleSelectPlaceholder" xml:space="preserve">
+    <value>نقشی برای افزودن انتخاب کنید…</value>
+  </data>
+  <data name="RolesHelpText" xml:space="preserve">
+    <value>نقش «مشتری» ضمنی است — هنگام ایجاد کاربر تعیین می‌شود و در اینجا قابل افزودن نیست.</value>
+  </data>
+  <data name="RolesManagerOnlyHint" xml:space="preserve">
+    <value>فقط مدیران سیستم می‌توانند نقش‌ها را افزوده یا حذف کنند.</value>
+  </data>
+  <data name="ActionRemoveRoleTitle" xml:space="preserve">
+    <value>حذف نقش «{0}»</value>
+    <comment>{0} = برچسب جایگزین‌شده نقش (مثلاً «مدیر سیستم»)</comment>
+  </data>
+
+  <!-- Group card -->
+  <data name="GroupCardTitle" xml:space="preserve">
+    <value>گروه مشتری</value>
+  </data>
+  <data name="GroupHelpText" xml:space="preserve">
+    <value>حذف مشتری از گروهش بر سقف خرید او تأثیر می‌گذارد.</value>
+  </data>
+
+  <!-- Action buttons -->
+  <data name="ActionEditFullName" xml:space="preserve">
+    <value>ویرایش نام</value>
+  </data>
+  <data name="ActionAssignRole" xml:space="preserve">
+    <value>افزودن نقش</value>
+  </data>
+  <data name="ActionRemoveRole" xml:space="preserve">
+    <value>حذف نقش</value>
+  </data>
+  <data name="ActionAssignGroup" xml:space="preserve">
+    <value>افزودن به گروه</value>
+  </data>
+  <data name="ActionRemoveGroup" xml:space="preserve">
+    <value>حذف از گروه</value>
+  </data>
+
+  <!-- JS prompts -->
+  <data name="Prompt_NewFullName" xml:space="preserve">
+    <value>نام کامل جدید را وارد کنید (۱ تا ۲۰۰ نویسه):</value>
+  </data>
+  <data name="Prompt_NewGroupName" xml:space="preserve">
+    <value>نام گروه مشتری را وارد کنید (۱ تا ۱۰۰ نویسه):</value>
+  </data>
+
+  <!-- Confirm dialogs (JS confirm()) -->
+  <data name="ConfirmRemoveRole" xml:space="preserve">
+    <value>نقش «{0}» از «{1}» حذف شود؟</value>
+    <comment>{0} = برچسب نقش؛ {1} = نام کامل کاربر</comment>
+  </data>
+  <data name="ConfirmRemoveGroup" xml:space="preserve">
+    <value>«{1}» از گروه «{0}» حذف شود؟ این کار سقف خرید او را بازنشانی می‌کند.</value>
+    <comment>{0} = نام گروه؛ {1} = نام کامل کاربر</comment>
+  </data>
+
+  <!-- Validation errors -->
+  <data name="FullNameLengthError" xml:space="preserve">
+    <value>نام کامل باید ۱ تا ۲۰۰ نویسه باشد.</value>
+  </data>
+  <data name="GroupNameLengthError" xml:space="preserve">
+    <value>نام گروه باید ۱ تا ۱۰۰ نویسه باشد.</value>
+  </data>
+  <data name="CannotRemoveOwnAdminRole" xml:space="preserve">
+    <value>شما نمی‌توانید نقش «مدیر سیستم» خودتان را حذف کنید. ابتدا این نقش را به کاربر دیگری بسپارید.</value>
+  </data>
+
+  <!-- Action result toasts -->
+  <data name="ActionSuccessTitle" xml:space="preserve">
+    <value>انجام شد</value>
+  </data>
+  <data name="ActionSuccessFormat" xml:space="preserve">
+    <value>{0} با موفقیت انجام شد.</value>
+    <comment>{0} = نام عملیات (مثلاً «ویرایش نام»، «افزودن نقش»)</comment>
+  </data>
+
+  <!-- Manager scope alert -->
+  <data name="ManagerScopeTitle" xml:space="preserve">
+    <value>دامنه دسترسی مدیر</value>
+  </data>
+  <data name="ManagerScopeBody" xml:space="preserve">
+    <value>به‌عنوان مدیر، می‌توانید نام کاربر را ویرایش کرده و گروه مشتری او را افزوده یا حذف کنید. مدیریت نقش‌ها فقط در اختیار مدیران سیستم است.</value>
+  </data>
+
+  <!-- Scope badges (viewer's own scope, shown in the action panel header) -->
+  <data name="ScopeAdmin" xml:space="preserve">
+    <value>مدیر سیستم</value>
+  </data>
+  <data name="ScopeManager" xml:space="preserve">
+    <value>مدیر</value>
+  </data>
+  <data name="ScopeViewer" xml:space="preserve">
+    <value>بیننده</value>
+  </data>
+
+  <!-- Help panel -->
+  <data name="HelpPanelTitle" xml:space="preserve">
+    <value>کارهایی که اینجا می‌توانید انجام دهید</value>
+  </data>
+  <data name="HelpPanel_EditFullName" xml:space="preserve">
+    <value>ویرایش نام — پنجره‌ای برای وارد کردن نام کامل جدید باز می‌شود (۱ تا ۲۰۰ نویسه).</value>
+  </data>
+  <data name="HelpPanel_AssignRole" xml:space="preserve">
+    <value>افزودن نقش — یک نقش جدید ASP.NET Identity به این کاربر اضافه می‌کند (فقط مدیر سیستم).</value>
+  </data>
+  <data name="HelpPanel_RemoveRole" xml:space="preserve">
+    <value>حذف نقش — یک نقش از این کاربر حذف می‌شود. نمی‌توانید نقش «مدیر سیستم» خودتان را حذف کنید.</value>
+  </data>
+  <data name="HelpPanel_AssignGroup" xml:space="preserve">
+    <value>افزودن به گروه — گروه مشتری را تعیین یا تغییر می‌دهد که سقف خرید او را کنترل می‌کند.</value>
+  </data>
+  <data name="HelpPanel_RemoveGroup" xml:space="preserve">
+    <value>حذف از گروه — انتساب گروه مشتری را پاک می‌کند. نیاز به تأیید دارد.</value>
+  </data>
+</root>

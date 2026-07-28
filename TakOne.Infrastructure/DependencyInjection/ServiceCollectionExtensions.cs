@@ -528,6 +528,95 @@ public static class ServiceCollectionExtensions
         opts.UseRuntimeCompilation();
 
         // ------------------------------------------------------------------
+        // (0b) Surgical service-location opt-in for ASP.NET Identity's
+        //      UserManager<ApplicationUser>.
+        //
+        // WHY THIS IS REQUIRED — Wolverine 6.x codegen + Identity:
+        //   Wolverine 6.0 changed the default ServiceLocationPolicy from
+        //   AllowedButWarn to NotAllowed. When Wolverine JIT-compiles a
+        //   message handler, its codegen walks the constructor dependency
+        //   graph of every service the handler needs, attempting to INLINE
+        //   each construction (emit `new TImpl(...)` instead of
+        //   `sp.GetRequiredService<T>()`).
+        //
+        //   For handlers that touch IUserAccountService, the chain is:
+        //
+        //     GetUserByIdQueryHandler
+        //       → IUserAccountService  = UserAccountService (Scoped)
+        //         → UserManager<ApplicationUser> (Scoped)
+        //           → IServiceProvider   ← Wolverine refuses to inline this
+        //
+        //   `UserManager<TUser>` is a SEALED Microsoft class. Its constructor
+        //   signature takes `IServiceProvider` directly (Microsoft uses it
+        //   internally to lazily resolve IUserStore<T>, IPasswordHasher<T>,
+        //   the validators, etc.). We cannot change this — it's framework
+        //   code, not ours.
+        //
+        //   When Wolverine's codegen reaches the IServiceProvider parameter
+        //   of UserManager's constructor, it considers that "service
+        //   location" (an anti-pattern) and — under NotAllowed — REFUSES to
+        //   generate the handler. The host throws at the first attempt to
+        //   dispatch GetUserByIdQuery:
+        //
+        //     fail: Wolverine.Runtime.WolverineRuntime[0]
+        //       Failed to create a message handler for
+        //       TakOne.Application.Users.Queries.GetUserById.GetUserByIdQuery
+        //     Wolverine.Configuration.InvalidServiceLocationException:
+        //       Found service locations while generating code for Message
+        //       Handler for ... but ServiceLocationPolicy.NotAllowed is in
+        //       effect ...
+        //       Service TakOne.Application.Common.Interfaces.IUserAccountService:
+        //         Dependency: UserManager<ApplicationUser>
+        //         Dependency: System.IServiceProvider
+        //         Your code is directly using IServiceProvider
+        //
+        //   Note: this is a FALSE POSITIVE. The IServiceProvider usage is
+        //   inside Microsoft's UserManager<T>, not in our code. But
+        //   Wolverine can't tell the difference — it just sees the
+        //   dependency chain.
+        //
+        // WHY THE SURGICAL OPT-IN (not the global one):
+        //   Wolverine's docs (https://wolverinefx.net/guide/codegen.html)
+        //   recommend the surgical API:
+        //
+        //     opts.CodeGeneration.AlwaysUseServiceLocationFor<TService>();
+        //
+        //   This tells Wolverine: "whenever you encounter a constructor
+        //   dependency on TService, emit `sp.GetRequiredService<TService>()`
+        //   instead of trying to inline-construct it." It is the MINIMAL
+        //   opt-in — only the named type is resolved via the service
+        //   locator; every other dependency stays constructor-inlined.
+        //
+        //   The alternative (`opts.ServiceLocationPolicy =
+        //   ServiceLocationPolicy.AlwaysAllowed`) would disable the check
+        //   globally, masking any FUTURE genuine service-location
+        //   anti-patterns we might accidentally introduce. The surgical
+        //   API keeps Wolverine's safety net intact for everything else.
+        //
+        // WHY THIS LIVES IN INFRASTRUCTURE (not Application):
+        //   - UserManager<T> and ApplicationUser are Infrastructure-layer
+        //     types. The Application layer has no knowledge of them.
+        //   - This is a Wolverine FRAMEWORK-GLUE concern (compensating for
+        //     a quirk of ASP.NET Identity), not an Application-layer
+        //     concern. The Application layer's ConfigureApplicationWolverine
+        //     only wires engine-agnostic things (handler discovery,
+        //     middleware, FluentValidation).
+        //   - Co-located with `opts.UseRuntimeCompilation()` and the SQL
+        //     Server message store — both also framework/engine glue.
+        //
+        // SCOPE OF IMPACT:
+        //   Affects every handler that takes IUserAccountService as a
+        //   constructor parameter (currently: GetUserByIdQueryHandler,
+        //   CreateStaffCommandHandler, CreateCustomerCommandHandler,
+        //   AssignUserRoleCommandHandler, RemoveUserRoleCommandHandler,
+        //   ResetUserPasswordCommandHandler). Without this opt-in, ALL of
+        //   those handlers fail to JIT-compile and the pages that call them
+        //   (UserDetail, CreateUser, AdminUsers, ForgotPassword,
+        //   ResetPassword) throw at runtime.
+        // ------------------------------------------------------------------
+        opts.CodeGeneration.AlwaysUseServiceLocationFor<UserManager<ApplicationUser>>();
+
+        // ------------------------------------------------------------------
         // (a) SQL Server message store — durably persists outgoing messages
         //     until processed. Uses the same connection string as
         //     ApplicationDbContext (re-parsed from configuration above).

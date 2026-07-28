@@ -16,20 +16,19 @@
        5. Reset a user's password (Admin only — managers cannot reset
           passwords, per ResetUserPasswordCommand's [RequireRoles(Admin)]).
 
-   WHAT THIS PAGE DOES NOT DO (out of scope for v1 — see Phase 6.2+):
-     - Create user UI (form for CreateStaffCommand / CreateCustomerCommand).
-       The commands + handlers already exist; the create-user FORM is
-       deferred. For now, users are seeded via the DB seed or created via
-       direct API calls.
-     - User detail page with role assignment UI (AssignUserRoleCommand /
-       RemoveUserRoleCommand exist; the UI is deferred). For now, role
-       changes require DB access.
-     - Edit user full name (UpdateUserFullNameCommand exists; UI deferred).
-     - Group management (AssignUserToGroupCommand / RemoveUserFromGroupCommand
-       exist; UI deferred).
+   WHAT THIS PAGE DOES NOT DO (deferred to later phases):
      - Group-name dropdown filter (would need a "list all groups" query,
        which doesn't exist yet — currently GetCustomersByGroupQuery goes
        the other direction).
+     - Group-name autocomplete on the CreateUser form (would need the same
+       "list all groups" query).
+
+   Phase 6.3 (User Detail page at /Admin/Users/{Id}) is now wired up —
+   the "visibility" icon in the actions column navigates to it. That page
+   handles Edit FullName, Assign/Remove Role, and Assign/Remove Group
+   via the 5 commands that previously existed without a UI. The Activate
+   / Deactivate / Reset Password actions stay on THIS list page (they
+   are short, single-click operations that don't need a detail view). 
 
    LAYOUT:
      1. Page header: title + (deferred) "Create user" button placeholder.
@@ -337,11 +336,29 @@
 
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Title="@Loc["ColActions"]"
-                                          Width="180px"
+                                          Width="220px"
                                           TextAlign="TextAlign.Center"
                                           Sortable="false">
                         <Template Context="user">
                             <div class="row-actions">
+                                @* View details — navigates to the Phase 6.3
+                                   user detail page at /Admin/Users/{Id}. This
+                                   is the primary per-row action (first button
+                                   in the actions column). Visible to all
+                                   Admin/Manager viewers (the page itself is
+                                   gated by [Authorize(Roles="Admin,Manager")]
+                                   defense-in-depth). The detail handler
+                                   (GetUserByIdQuery) additionally allows
+                                   Employee viewers to see any user — but this
+                                   list page is Admin/Manager-only, so we don't
+                                   need a per-row role check here. *@
+                                <RadzenButton Icon="visibility"
+                                              Variant="Variant.Text"
+                                              ButtonStyle="ButtonStyle.Info"
+                                              title="@Loc["ActionViewDetail"]"
+                                              aria-label="@Loc["ActionViewDetail"]"
+                                              Click="@(() => Navigation.NavigateTo($"/Admin/Users/{user.Id}", forceLoad: false))" />
+
                                 @* Activate / Deactivate toggle.
                                    Hidden on the current user's own row —
                                    self-deactivation is rejected by the
