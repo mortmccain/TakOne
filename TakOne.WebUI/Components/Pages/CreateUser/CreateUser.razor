@@ -92,6 +92,7 @@
 @page "/Admin/Users/Create"
 @attribute [Authorize(Roles = "Admin,Manager")]
 @using System.Globalization
+@using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
@@ -488,12 +489,51 @@
     /// </summary>
     private sealed class CreateUserFormModel
     {
+        // Validation attributes mirror the union of CreateStaffCommandValidator
+        // and CreateCustomerCommandValidator rules. Fields used by BOTH
+        // validators (WorkerId, FullName, Email, InitialPassword, Gender) get
+        // the shared rules. Fields used by only one (GroupName = customer-only,
+        // StaffRole = staff-only) are validated conditionally in HandleSubmitAsync
+        // (the existing manual checks at lines ~600-610 already do this and
+        // produce localized Error_GroupNameRequired / Error_StaffRoleRequired
+        // messages — we don't want to duplicate that logic with [Required]
+        // because the attribute would fire even when the wrong UserType is
+        // selected).
+        //
+        // The FluentValidation validators on the commands still run server-side
+        // as defense-in-depth. Localized messages will be wired in Phase 7
+        // item D (FluentValidation LanguageManager); for now, DataAnnotations'
+        // default English messages are shown by <ValidationMessage> if added
+        // to the markup.
+
         public UserType UserType { get; set; } = UserType.Customer;
+
+        [Required(ErrorMessage = "Worker ID is required.")]
+        [StringLength(100, ErrorMessage = "Worker ID cannot exceed 100 characters.")]
         public string WorkerId { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Full name is required.")]
+        [StringLength(200, ErrorMessage = "Full name cannot exceed 200 characters.")]
         public string FullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email is required.")]
+        [StringLength(256, ErrorMessage = "Email cannot exceed 256 characters.")]
+        [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
         public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Initial password is required.")]
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be between 8 and 100 characters.")]
         public string InitialPassword { get; set; } = string.Empty;
+
+        // Gender enum — default Male. EnumDataType validates that the value
+        // is a defined member (mirrors FluentValidation's IsInEnum).
+        [EnumDataType(typeof(Domain.Users.Gender), ErrorMessage = "Gender must be a valid value (Male or Female).")]
         public Domain.Users.Gender Gender { get; set; } = Domain.Users.Gender.Male;
+
+        // Customer-only — validated conditionally in HandleSubmitAsync
+        // (Error_GroupNameRequired). No [Required] here because that would
+        // fire even when UserType is Staff.
+        [StringLength(100, ErrorMessage = "Group name cannot exceed 100 characters.")]
         public string GroupName { get; set; } = string.Empty;
 
         /// <summary>
@@ -505,6 +545,10 @@
         /// StaffRoleOption object) to match the sibling dropdown pattern.
         /// The Label is looked up from _staffRoleOptions at display time
         /// (e.g. for the success toast).
+        ///
+        /// Staff-only — validated conditionally in HandleSubmitAsync
+        /// (Error_StaffRoleRequired). No [Required] here because that would
+        /// fire even when UserType is Customer.
         /// </summary>
         public string? StaffRole { get; set; }
     }

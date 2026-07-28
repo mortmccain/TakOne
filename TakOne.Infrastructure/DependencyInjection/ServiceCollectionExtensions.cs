@@ -399,6 +399,23 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserAccountService, UserAccountService>();
 
         // ------------------------------------------------------------------
+        // 5b. File storage (Phase 7 item C).
+        //
+        //    IFileStorage → LocalFileStorage — Scoped. Writes uploads to a
+        //    configurable root directory (default wwwroot/uploads; override
+        //    via FileStorage:RootPath in appsettings.json for prod so the
+        //    folder survives app redeployments). Atomic writes, magic-byte
+        //    content-type sniffing, max-size enforcement — see
+        //    LocalFileStorage.cs for the full design rationale.
+        //
+        //    Scoped (not Singleton) per the IFileStorage docstring — the
+        //    current impl is stateless beyond config, but Scoped is the
+        //    safer default for a future impl that might need per-request
+        //    state.
+        // ------------------------------------------------------------------
+        services.AddScoped<IFileStorage, Storage.LocalFileStorage>();
+
+        // ------------------------------------------------------------------
         // 5. Wolverine host configuration.
         //
         //    CRITICAL (Wolverine 6.22 behavior):
@@ -659,7 +676,7 @@ public static class ServiceCollectionExtensions
         //     (Wolverine's docs sample uses "Events", but the generic
         //     overload accepts any delegate returning IEnumerable<TEvent>.)
         // ------------------------------------------------------------------
-        opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>(
-            agg => agg.DomainEvents);
+        opts.PublishDomainEventsFromEntityFrameworkCore<AggregateRoot, BaseDomainEvent>
+            (agg => agg.DomainEvents);
     }
 }

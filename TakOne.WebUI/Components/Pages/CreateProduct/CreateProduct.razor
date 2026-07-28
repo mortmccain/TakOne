@@ -58,6 +58,7 @@
 @page "/Admin/Products/Create"
 @attribute [Authorize(Roles = "Admin,Manager,Employee")]
 @using System.Globalization
+@using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using Wolverine
@@ -73,6 +74,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<CreateProduct> Loc
 @inject ToastService Toast
+@inject HttpClient Http
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -354,19 +356,67 @@
                             <ValidationMessage For="@(() => _model.CategoryId)" />
                         </div>
 
-                        @* Picture URL (optional) *@
+                        @* Picture URL (optional) — upload OR paste-a-URL *@
                         <div>
                             <RadzenFormField Text="@Loc["FieldPictureUrl"]" Style="width: 100%;">
-                                <RadzenTextBox @bind-Value="_model.PictureUrl"
-                                               Placeholder="@Loc["FieldPictureUrlPlaceholder"]"
-                                               TValue="string"
-                                               Style="width: 100%;" />
+                                <ChildContent>
+                                    <RadzenUpload Url="/api/product-image"
+                                                  Multiple="false"
+                                                  ShowChoose="true"
+                                                  ShowUpload="true"
+                                                  AutoUpload="true"
+                                                  Accept="image/jpeg,image/png,image/webp"
+                                                  MaxFileSize="5242880"
+                                                  ProgressPercent="@_uploadProgress"
+                                                  UploadComplete="@OnUploadComplete"
+                                                  UploadError="@OnUploadError"
+                                                  Change="@OnUploadChange"
+                                                  Style="width: 100%;" />
+                                </ChildContent>
                             </RadzenFormField>
+
+                            @* Show the current URL in a read-only box so the
+                               user sees what's about to be saved. They can also
+                               paste a custom URL here if they prefer (e.g. a
+                               CDN URL they already manage). *@
+                            <RadzenTextBox @bind-Value="_model.PictureUrl"
+                                           Placeholder="@Loc["FieldPictureUrlPlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%; margin-top: 0.5rem;" />
                             <ValidationMessage For="@(() => _model.PictureUrl)" />
+
+                            @* Live preview thumbnail if a URL is set. The img
+                               is hidden until a URL exists; the onerror handler
+                               hides it again if the URL points to a non-existent
+                               file (e.g. typed-in URL that 404s). *@
+                            @if (!string.IsNullOrWhiteSpace(_model.PictureUrl))
+                            {
+                                <div style="margin-top: 0.75rem; text-align: center;">
+                                    <img src="@_model.PictureUrl"
+                                         alt="@Loc["PicturePreviewAlt"]"
+                                         style="max-width: 200px; max-height: 200px; border-radius: 6px; border: 1px solid var(--rz-border-base-color);"
+                                         @onerror="HidePreviewOnError" />
+                                </div>
+                            }
+
                             <RadzenText TextStyle="TextStyle.Caption"
                                         Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
                                 @Loc["PictureUrlHint"]
                             </RadzenText>
+
+                            @if (_uploadProgress > 0 && _uploadProgress < 100)
+                            {
+                                <RadzenProgressBar Value="@_uploadProgress" ShowValue="true" Mode="ProgressBarMode.Determinate" Style="margin-top: 0.5rem;" />
+                            }
+                            @if (!string.IsNullOrEmpty(_uploadError))
+                            {
+                                <RadzenAlert Title="@Loc["UploadErrorTitle"]"
+                                             Text="@_uploadError"
+                                             ShowIcon="true"
+                                             Variant="Variant.Filled"
+                                             Severity="AlertSeverity.Error"
+                                             Style="margin-top: 0.5rem;" />
+                            }
                         </div>
 
                         @* Form actions *@
@@ -419,14 +469,43 @@
     /// </summary>
     private sealed class CreateProductFormModel
     {
+        // Validation attributes mirror CreateProductCommandValidator's rules
+        // so the user gets immediate client-side feedback without a round-trip
+        // to the server. The FluentValidation validator on the command still
+        // runs server-side as defense-in-depth. Localized messages will be
+        // wired in Phase 7 item D (FluentValidation LanguageManager); for
+        // now, DataAnnotations' default English messages are shown by the
+        // existing <ValidationMessage> components.
+
+        [Required(ErrorMessage = "Product name is required.")]
+        [StringLength(200, ErrorMessage = "Product name cannot exceed 200 characters.")]
         public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Product description is required.")]
+        [StringLength(2000, ErrorMessage = "Product description cannot exceed 2000 characters.")]
         public string Description { get; set; } = string.Empty;
+
+        [Range(0.0001, double.MaxValue, ErrorMessage = "Product price must be greater than zero.")]
         public decimal PriceAmount { get; set; } = 1m;
+
+        [Required(ErrorMessage = "Currency is required.")]
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "Currency must be a 3-letter ISO 4217 code (e.g. USD, IRR).")]
         public string PriceCurrency { get; set; } = "USD";
+
+        [Range(0, 1_000_000, ErrorMessage = "Initial stock quantity must be between 0 and 1,000,000.")]
         public int InitialStockQuantity { get; set; } = 0;
+
+        [Required(ErrorMessage = "Category ID is required.")]
         public Guid? CategoryId { get; set; }
+
+        // No validation — SubCategoryId and SubSubCategoryId are optional.
+        // The cross-field "cannot set SubSubCategory without SubCategory"
+        // rule is enforced server-side by CreateProductCommandValidator.
         public Guid? SubCategoryId { get; set; }
         public Guid? SubSubCategoryId { get; set; }
+
+        [StringLength(500, ErrorMessage = "Picture URL cannot exceed 500 characters.")]
+        [Url(ErrorMessage = "Picture URL must be a valid absolute URL (e.g. https://...).")]
         public string? PictureUrl { get; set; }
     }
 
@@ -450,7 +529,7 @@
     /// </summary>
     private readonly List<string> _currencyOptions = new()
     {
-        "USD", "EUR", "GBP", "IRR", "JPY", "CNY", "AED", "TRY", "CAD", "AUD"
+      "IRR" , "EUR", "GBP", "USD", "JPY", "CNY", "AED", "TRY", "CAD", "AUD"
     };
 
     // ── Lifecycle ────────────────────────────────────────────────────────
@@ -584,8 +663,21 @@
                 _submitError = result.Error ?? Loc["Error_GenericCreate"];
             }
         }
+        catch (FluentValidation.ValidationException vex)
+        {
+            // Validation failures from CreateProductCommandValidator (and
+            // any other validator Wolverine runs before the handler). Each
+            // failure.ErrorMessage is already localized by
+            // TakOneLanguageManager (Phase 7 item D) via the "@"-prefixed
+            // resource key in .WithMessage(...). Join them with newline
+            // so the UI can render multi-line errors.
+            _submitError = vex.GetJoinedMessages();
+        }
         catch
         {
+            // Any other exception (network, DI, handler-thrown) — surface a
+            // generic localized message. The actual exception is logged by
+            // Wolverine's LoggingMiddleware.
             _submitError = Loc["Error_GenericCreate"];
         }
         finally

@@ -48,6 +48,7 @@
 @page "/Admin/Categories"
 @attribute [Authorize(Roles = "Admin,Manager")]
 @using System.Globalization
+@using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using Wolverine
@@ -255,8 +256,8 @@
                                 {
                                     <span class="cat-meta">
                                         (@string.Format(CultureInfo.CurrentCulture,
-                                                                                    Loc["SubsubcategoryCount"],
-                                                                                    sub.SubSubCategories.Count))
+                                                                                                                            Loc["SubsubcategoryCount"],
+                                                                                                                            sub.SubSubCategories.Count))
                                     </span>
                                     <ul class="subsubcategory-list">
                                         @foreach (var ssub in sub.SubSubCategories)
@@ -279,6 +280,11 @@
 
     private sealed class NewCategoryFormModel
     {
+        // Validation mirrors CreateCategoryCommandValidator (NotEmpty +
+        // MaximumLength(100)). The cross-aggregate name-uniqueness check
+        // is the handler's responsibility (requires DB access).
+        [Required(ErrorMessage = "Category name is required.")]
+        [StringLength(100, ErrorMessage = "Category name cannot exceed 100 characters.")]
         public string Name { get; set; } = string.Empty;
     }
 

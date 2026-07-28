@@ -1,4 +1,4 @@
-﻿* Sales.razor — Phase 4.2
+﻿@* Sales.razor — Phase 4.2
 
    Customer-facing order history page at route `/Sales`. ALL authenticated
    users land here (the sidebar link in MainLayout.razor is wrapped in a
@@ -38,7 +38,7 @@
      - OnInitializedAsync: load the first page of sales.
      - On search/page/status-filter change: re-call GetSalesPaginatedQuery
        via Wolverine. Search is debounced via RadzenTextBox's
-       @bind-Value:after (fires on Enter or blur, not every keystroke —
+       bind-Value:after (fires on Enter or blur, not every keystroke —
        same approach as Products.razor). The status filter and page
        changes also reload from the backend.
      - Status filter is SERVER-SIDE (Phase 7 item E). The query accepts an

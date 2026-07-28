@@ -56,6 +56,7 @@
 		-->
 		<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.10" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
 
 
@@ -82,7 +83,7 @@
 
       Version pinning matches Wolverine's major release line.
     -->
-		<PackageReference Include="WolverineFx" Version="6.22.0" />
+		<PackageReference Include="WolverineFx" Version="6.23.1" />
 
 
 		
@@ -91,7 +92,7 @@
       command pipeline so any AbstractValidator<TCommand> runs automatically before
       the handler. Version must match the WolverineFx version above.
     -->
-		<PackageReference Include="WolverineFx.FluentValidation" Version="6.22.0" />
+		<PackageReference Include="WolverineFx.FluentValidation" Version="6.23.1" />
 
 
 	</ItemGroup>

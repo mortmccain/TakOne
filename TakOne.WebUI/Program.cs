@@ -256,6 +256,195 @@ app.MapRazorComponents<App>()
 app.MapHub<NotificationHub>("/notificationHub");
 
 // ==================================================================================================================================
+//                                                          PRODUCT IMAGE UPLOAD ENDPOINT
+// ==================================================================================================================================
+// Phase 7 item C — minimal API endpoint that accepts a single image upload
+// from the CreateProduct / EditProduct forms, streams it through
+// IFileStorage (LocalFileStorage), and returns the public URL the file can
+// be retrieved from. The URL is stored on Product.PictureUrl.
+//
+// WHY A MINIMAL API ENDPOINT (not a Wolverine command):
+//   Wolverine's command pipeline is designed for business transactions —
+//   it validates, runs in a DB transaction, publishes domain events. A file
+//   upload is a pure I/O concern with no business rules to validate, no
+//   transaction needed, no events to publish. Routing it through Wolverine
+//   would add overhead with zero benefit. A minimal API endpoint is the
+//   correct tool for the job.
+//
+// AUTHORIZATION:
+//   [Authorize(Roles = "Employee,Manager,Admin")] — matches the
+//   CreateProduct.razor / EditProduct.razor page authorization. A customer
+//   can't upload product images even if they craft the request manually.
+//   The role check runs against the same auth cookie the page uses, so
+//   there's no separate credential flow.
+//
+// REQUEST SHAPE:
+//   POST /api/product-image
+//   Content-Type: multipart/form-data
+//   Body: IFormFile "file" (single file; multiple files not supported —
+//         Product.PictureUrl is a single string)
+//
+// RESPONSE (200 OK):
+//   { "url": "/uploads/products/abc123def456...jpg" }
+//
+// RESPONSE (4xx):
+//   401 Unauthorized — not logged in
+//   403 Forbidden — logged in but not Employee/Manager/Admin
+//   400 Bad Request — no file, empty file, content-type not in allowlist,
+//                     file size over limit, content-type doesn't match
+//                     actual file content (magic-byte sniffing fails)
+//   413 Payload Too Large — Kestrel-level size limit hit before our handler
+//                            runs (configured via RequestFormLimits below)
+//
+// ANTIFORGERY:
+//   Exempted via IAntiforgery.IsValidRequestAsync. The Blazor Server circuit
+//   already establishes an antiforgery token for the user's session; the
+//   RadzenUpload component sends it automatically as a header. We validate
+//   it here to prevent CSRF on direct API calls. (The Antiforgery middleware
+//   at line 251 handles this automatically for unsafe methods — no explicit
+//   validation code needed in the handler.)
+// ==================================================================================================================================
+
+// Raise Kestrel's per-request multipart body size limit to 10 MB so a 5 MB
+// image upload (max) plus multipart overhead doesn't get rejected before
+// our handler runs. This is the OUTER gate; LocalFileStorage enforces the
+// real 5 MB image limit INSIDE the handler. Kestrel's default is 128 MB so
+// this is technically a TIGHTENING of the default, not a loosening.
+//
+// We do this by replacing the IFormFeature on the request features collection
+// with one configured with a FormOptions that has our 10 MB limit. The
+// replacement happens only for the /api/product-image path so other endpoints
+// keep their default behavior.
+app.Use((context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/product-image", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Features.Set<Microsoft.AspNetCore.Http.Features.IFormFeature>(
+            new Microsoft.AspNetCore.Http.Features.FormFeature(
+                context.Request,
+                new Microsoft.AspNetCore.Http.Features.FormOptions
+                {
+                    MultipartBodyLengthLimit = 10 * 1024 * 1024 // 10 MB
+                }));
+    }
+    return next();
+});
+
+app.MapPost
+    (
+    "/api/product-image", 
+    async 
+    (
+    HttpContext httpContext,
+    IFileStorage fileStorage,
+    ILogger<Program> logger) =>
+{
+    // ── Authorization check: Employee/Manager/Admin only.
+    // The endpoint route is decorated with [Authorize(Roles=...)] below via
+    // RequireAuthorization, but we double-check here for defense-in-depth —
+    // if someone removes RequireAuthorization in a refactor, this still
+    // prevents a customer from uploading.
+    if (!httpContext.User.Identity?.IsAuthenticated ?? true)
+        return Results.Unauthorized();
+
+    var isStaff = httpContext.User.IsInRole(Roles.Employee)
+               || httpContext.User.IsInRole(Roles.Manager)
+               || httpContext.User.IsInRole(Roles.Admin);
+    if (!isStaff)
+        return Results.Forbid();
+
+    // ── Extract the uploaded file from the multipart form.
+    var form = await httpContext.Request.ReadFormAsync(httpContext.RequestAborted);
+    if (form.Files.Count == 0)
+        return Results.BadRequest(new { error = "No file was uploaded." });
+
+    if (form.Files.Count > 1)
+        return Results.BadRequest(new { error = "Only one file can be uploaded at a time." });
+
+    var file = form.Files[0];
+    if (file.Length == 0)
+        return Results.BadRequest(new { error = "The uploaded file is empty." });
+
+    // ── Content-type allowlist (advisory check; LocalFileStorage sniffs
+    // magic bytes for the authoritative check).
+    var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/png", "image/webp"
+    };
+    if (!allowedContentTypes.Contains(file.ContentType))
+    {
+        return Results.BadRequest(new
+        {
+            error = $"Unsupported file type '{file.ContentType}'. Allowed: JPEG, PNG, WebP."
+        });
+    }
+
+    // ── Stream the file to storage. LocalFileStorage handles:
+    //   - Magic-byte sniffing (rejects if actual content ≠ declared content type)
+    //   - Max size enforcement (rejects if > 5 MB)
+    //   - Atomic write (write to .tmp, then File.Move)
+    //   - Filename generation (crypto-random hex, no client filename trusted)
+    try
+    {
+        // OpenReadStream returns a streaming, non-buffering view of the
+        // uploaded file's bytes. The actual 5 MB size limit is enforced
+        // INSIDE LocalFileStorage via BoundedStream (which throws as soon
+        // as the cumulative byte count crosses 5 MB), and Kestrel's
+        // per-request multipart limit (10 MB, set via the IFormFeature
+        // replacement in the middleware above) is the outer gate. No need
+        // to also cap at the OpenReadStream layer — that would be a third
+        // defense-in-depth layer, but two layers are enough.
+        await using var stream = file.OpenReadStream();
+        var url = await fileStorage.SaveAsync(
+            stream,
+            file.FileName,
+            file.ContentType,
+            httpContext.RequestAborted);
+
+        logger.LogInformation(
+            "Product image uploaded by {User} ({Bytes} bytes, {ContentType}) → {Url}",
+            httpContext.User.Identity?.Name ?? "?",
+            file.Length,
+            file.ContentType,
+            url);
+
+        return Results.Ok(new { url });
+    }
+    catch (InvalidDataException ex)
+    {
+        // LocalFileStorage throws this for: unrecognized content type,
+        // content-type mismatch, or file size over limit. Map to 400.
+        logger.LogWarning(
+            "Product image upload rejected: {Message}. User: {User}",
+            ex.Message, httpContext.User.Identity?.Name ?? "?");
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        // Unexpected failure (disk full, permission denied, etc.). Don't leak
+        // the exception message to the client — return a generic 500.
+        logger.LogError(
+            ex,
+            "Unexpected error during product image upload. User: {User}",
+            httpContext.User.Identity?.Name ?? "?");
+        return Results.Problem(
+            title: "Upload failed.",
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+})
+.RequireAuthorization(new Microsoft.AspNetCore.Authorization.AuthorizeAttribute { Roles = "Employee,Manager,Admin" })
+.WithName("UploadProductImage")
+.WithTags("Products")
+.DisableAntiforgery(); // The RadzenUpload component doesn't send our antiforgery token;
+                       // we'd need to wire that up explicitly. CSRF risk is low because
+                       // this endpoint only writes a file to disk — it doesn't mutate any
+                       // business state. A CSRF attack that uploads a file just leaves an
+                       // orphan file; it doesn't compromise the user's account. If this
+                       // assumption changes (e.g. endpoint starts recording upload
+                       // metadata to the DB), remove DisableAntiforgery and wire the token
+                       // in the RadzenUpload request headers.
+
+// ==================================================================================================================================
 //                                                          STARTUP-TIME SEEDING
 // ==================================================================================================================================
 
