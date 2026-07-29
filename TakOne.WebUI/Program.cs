@@ -141,6 +141,29 @@ builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
 // --- WebUI-only services ---
 builder.Services.AddScoped<ToastService>();
 
+// --- HttpClient for client-side API calls from Blazor Server circuits ---
+//
+// Used by the RadzenUpload component on CreateProduct.razor / ProductDetail.razor
+// to POST uploaded product images to the /api/product-image minimal API endpoint.
+// The browser's auth cookie is automatically attached to the request by the
+// underlying fetch() call, so the same auth flow that protects pages protects
+// the upload endpoint — no separate token wiring needed.
+//
+// Registered as a transient factory because HttpClient is lightweight and
+// IHttpClientFactory-based clients are the recommended pattern (avoids socket
+// exhaustion). The BaseAddress is set from the current request so relative
+// URLs like "/api/product-image" resolve correctly.
+builder.Services.AddHttpClient("TakOne", (sp, client) =>
+{
+    var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var request = httpContextAccessor.HttpContext?.Request;
+    if (request is not null)
+    {
+        client.BaseAddress = new Uri($"{request.Scheme}://{request.Host}");
+    }
+});
+builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("TakOne"));
+
 // --- Localization (Persian default + English secondary, see roadmap Section 5) ---
 //
 // AddLocalization() registers IStringLocalizer<T> and IStringLocalizerFactory
@@ -305,14 +328,17 @@ app.MapHub<NotificationHub>("/notificationHub");
 //   validation code needed in the handler.)
 // ==================================================================================================================================
 
-// Raise Kestrel's per-request multipart body size limit to 10 MB so a 5 MB
-// image upload (max) plus multipart overhead doesn't get rejected before
-// our handler runs. This is the OUTER gate; LocalFileStorage enforces the
-// real 5 MB image limit INSIDE the handler. Kestrel's default is 128 MB so
-// this is technically a TIGHTENING of the default, not a loosening.
+// Raise Kestrel's per-request multipart body size limit to 50 MB so a
+// 5 MB image upload (LocalFileStorage's max) plus multipart overhead doesn't
+// get rejected before our handler runs. The previous 10 MB limit was too
+// tight — a single modern phone photo (often 8-12 MB) could exceed it and
+// crash with an unhandled InvalidDataException before LocalFileStorage had
+// a chance to return a clean 400. With 50 MB headroom, LocalFileStorage's
+// 5 MB cap is what users actually hit, producing a friendly error message
+// instead of a crash.
 //
 // We do this by replacing the IFormFeature on the request features collection
-// with one configured with a FormOptions that has our 10 MB limit. The
+// with one configured with a FormOptions that has our 50 MB limit. The
 // replacement happens only for the /api/product-image path so other endpoints
 // keep their default behavior.
 app.Use((context, next) =>
@@ -324,7 +350,7 @@ app.Use((context, next) =>
                 context.Request,
                 new Microsoft.AspNetCore.Http.Features.FormOptions
                 {
-                    MultipartBodyLengthLimit = 10 * 1024 * 1024 // 10 MB
+                    MultipartBodyLengthLimit = 50 * 1024 * 1024 // 50 MB
                 }));
     }
     return next();
@@ -332,106 +358,106 @@ app.Use((context, next) =>
 
 app.MapPost
     (
-    "/api/product-image", 
-    async 
+    "/api/product-image",
+    async
     (
     HttpContext httpContext,
     IFileStorage fileStorage,
     ILogger<Program> logger) =>
-{
-    // ── Authorization check: Employee/Manager/Admin only.
-    // The endpoint route is decorated with [Authorize(Roles=...)] below via
-    // RequireAuthorization, but we double-check here for defense-in-depth —
-    // if someone removes RequireAuthorization in a refactor, this still
-    // prevents a customer from uploading.
-    if (!httpContext.User.Identity?.IsAuthenticated ?? true)
-        return Results.Unauthorized();
+    {
+        // ── Authorization check: Employee/Manager/Admin only.
+        // The endpoint route is decorated with [Authorize(Roles=...)] below via
+        // RequireAuthorization, but we double-check here for defense-in-depth —
+        // if someone removes RequireAuthorization in a refactor, this still
+        // prevents a customer from uploading.
+        if (!httpContext.User.Identity?.IsAuthenticated ?? true)
+            return Results.Unauthorized();
 
-    var isStaff = httpContext.User.IsInRole(Roles.Employee)
-               || httpContext.User.IsInRole(Roles.Manager)
-               || httpContext.User.IsInRole(Roles.Admin);
-    if (!isStaff)
-        return Results.Forbid();
+        var isStaff = httpContext.User.IsInRole(Roles.Employee)
+                   || httpContext.User.IsInRole(Roles.Manager)
+                   || httpContext.User.IsInRole(Roles.Admin);
+        if (!isStaff)
+            return Results.Forbid();
 
-    // ── Extract the uploaded file from the multipart form.
-    var form = await httpContext.Request.ReadFormAsync(httpContext.RequestAborted);
-    if (form.Files.Count == 0)
-        return Results.BadRequest(new { error = "No file was uploaded." });
+        // ── Extract the uploaded file from the multipart form.
+        var form = await httpContext.Request.ReadFormAsync(httpContext.RequestAborted);
+        if (form.Files.Count == 0)
+            return Results.BadRequest(new { error = "No file was uploaded." });
 
-    if (form.Files.Count > 1)
-        return Results.BadRequest(new { error = "Only one file can be uploaded at a time." });
+        if (form.Files.Count > 1)
+            return Results.BadRequest(new { error = "Only one file can be uploaded at a time." });
 
-    var file = form.Files[0];
-    if (file.Length == 0)
-        return Results.BadRequest(new { error = "The uploaded file is empty." });
+        var file = form.Files[0];
+        if (file.Length == 0)
+            return Results.BadRequest(new { error = "The uploaded file is empty." });
 
-    // ── Content-type allowlist (advisory check; LocalFileStorage sniffs
-    // magic bytes for the authoritative check).
-    var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        // ── Content-type allowlist (advisory check; LocalFileStorage sniffs
+        // magic bytes for the authoritative check).
+        var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "image/jpeg", "image/png", "image/webp"
     };
-    if (!allowedContentTypes.Contains(file.ContentType))
-    {
-        return Results.BadRequest(new
+        if (!allowedContentTypes.Contains(file.ContentType))
         {
-            error = $"Unsupported file type '{file.ContentType}'. Allowed: JPEG, PNG, WebP."
-        });
-    }
+            return Results.BadRequest(new
+            {
+                error = $"Unsupported file type '{file.ContentType}'. Allowed: JPEG, PNG, WebP."
+            });
+        }
 
-    // ── Stream the file to storage. LocalFileStorage handles:
-    //   - Magic-byte sniffing (rejects if actual content ≠ declared content type)
-    //   - Max size enforcement (rejects if > 5 MB)
-    //   - Atomic write (write to .tmp, then File.Move)
-    //   - Filename generation (crypto-random hex, no client filename trusted)
-    try
-    {
-        // OpenReadStream returns a streaming, non-buffering view of the
-        // uploaded file's bytes. The actual 5 MB size limit is enforced
-        // INSIDE LocalFileStorage via BoundedStream (which throws as soon
-        // as the cumulative byte count crosses 5 MB), and Kestrel's
-        // per-request multipart limit (10 MB, set via the IFormFeature
-        // replacement in the middleware above) is the outer gate. No need
-        // to also cap at the OpenReadStream layer — that would be a third
-        // defense-in-depth layer, but two layers are enough.
-        await using var stream = file.OpenReadStream();
-        var url = await fileStorage.SaveAsync(
-            stream,
-            file.FileName,
-            file.ContentType,
-            httpContext.RequestAborted);
+        // ── Stream the file to storage. LocalFileStorage handles:
+        //   - Magic-byte sniffing (rejects if actual content ≠ declared content type)
+        //   - Max size enforcement (rejects if > 5 MB)
+        //   - Atomic write (write to .tmp, then File.Move)
+        //   - Filename generation (crypto-random hex, no client filename trusted)
+        try
+        {
+            // OpenReadStream returns a streaming, non-buffering view of the
+            // uploaded file's bytes. The actual 5 MB size limit is enforced
+            // INSIDE LocalFileStorage via BoundedStream (which throws as soon
+            // as the cumulative byte count crosses 5 MB), and Kestrel's
+            // per-request multipart limit (10 MB, set via the IFormFeature
+            // replacement in the middleware above) is the outer gate. No need
+            // to also cap at the OpenReadStream layer — that would be a third
+            // defense-in-depth layer, but two layers are enough.
+            await using var stream = file.OpenReadStream();
+            var url = await fileStorage.SaveAsync(
+                stream,
+                file.FileName,
+                file.ContentType,
+                httpContext.RequestAborted);
 
-        logger.LogInformation(
-            "Product image uploaded by {User} ({Bytes} bytes, {ContentType}) → {Url}",
-            httpContext.User.Identity?.Name ?? "?",
-            file.Length,
-            file.ContentType,
-            url);
+            logger.LogInformation(
+                "Product image uploaded by {User} ({Bytes} bytes, {ContentType}) → {Url}",
+                httpContext.User.Identity?.Name ?? "?",
+                file.Length,
+                file.ContentType,
+                url);
 
-        return Results.Ok(new { url });
-    }
-    catch (InvalidDataException ex)
-    {
-        // LocalFileStorage throws this for: unrecognized content type,
-        // content-type mismatch, or file size over limit. Map to 400.
-        logger.LogWarning(
-            "Product image upload rejected: {Message}. User: {User}",
-            ex.Message, httpContext.User.Identity?.Name ?? "?");
-        return Results.BadRequest(new { error = ex.Message });
-    }
-    catch (Exception ex)
-    {
-        // Unexpected failure (disk full, permission denied, etc.). Don't leak
-        // the exception message to the client — return a generic 500.
-        logger.LogError(
-            ex,
-            "Unexpected error during product image upload. User: {User}",
-            httpContext.User.Identity?.Name ?? "?");
-        return Results.Problem(
-            title: "Upload failed.",
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
-})
+            return Results.Ok(new { url });
+        }
+        catch (InvalidDataException ex)
+        {
+            // LocalFileStorage throws this for: unrecognized content type,
+            // content-type mismatch, or file size over limit. Map to 400.
+            logger.LogWarning(
+                "Product image upload rejected: {Message}. User: {User}",
+                ex.Message, httpContext.User.Identity?.Name ?? "?");
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            // Unexpected failure (disk full, permission denied, etc.). Don't leak
+            // the exception message to the client — return a generic 500.
+            logger.LogError(
+                ex,
+                "Unexpected error during product image upload. User: {User}",
+                httpContext.User.Identity?.Name ?? "?");
+            return Results.Problem(
+                title: "Upload failed.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+    })
 .RequireAuthorization(new Microsoft.AspNetCore.Authorization.AuthorizeAttribute { Roles = "Employee,Manager,Admin" })
 .WithName("UploadProductImage")
 .WithTags("Products")

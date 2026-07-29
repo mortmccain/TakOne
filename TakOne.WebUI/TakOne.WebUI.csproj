@@ -74,5 +74,8 @@
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="wwwroot\uploads\products\" />
+  </ItemGroup>
 
 </Project>

@@ -34,7 +34,7 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
             .MaximumLength(MaxPictureUrlLength)
             .WithMessage($"Picture URL cannot exceed {MaxPictureUrlLength} characters.")
             .Must(BeValidUrl).When(x => !string.IsNullOrWhiteSpace(x.PictureUrl))
-            .WithMessage("Picture URL must be a valid absolute URL (e.g. https://...).");
+            .WithMessage("Picture URL must be a valid URL (e.g. /uploads/products/abc.jpg or https://example.com/img.png).");
 
         RuleFor(x => x.Price)
             .NotNull().WithMessage("Price is required.");
@@ -64,5 +64,12 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
             .WithMessage("Cannot specify a SubSubCategoryId without a SubCategoryId.");
     }
 
-    private static bool BeValidUrl(string? url) => Uri.TryCreate(url, UriKind.Absolute, out _);
+    /// <summary>
+    /// Accepts BOTH relative URLs (e.g. "/uploads/products/abc.jpg" — what
+    /// our own /api/product-image endpoint returns) AND absolute URLs
+    /// (e.g. "https://cdn.example.com/img.png" — for external images).
+    /// Uri.TryCreate with UriKind.AbsoluteOrRelative is used so that
+    /// relative paths from our upload endpoint are not rejected.
+    /// </summary>
+    private static bool BeValidUrl(string? url) => Uri.TryCreate(url, UriKind.RelativeOrAbsolute, out _);
 }

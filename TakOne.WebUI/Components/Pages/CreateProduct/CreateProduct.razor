@@ -21,7 +21,10 @@
      6. Category          (required — top-level category dropdown)
      7. SubCategory       (optional — filtered by selected Category)
      8. SubSubCategory    (optional — filtered by selected SubCategory)
-     9. Picture URL       (optional — must be a valid absolute URL if set)
+     9. Picture           (optional — single image upload, JPEG/PNG/WebP,
+                           max 5 MB. Held in memory until submit; only
+                           saved to /uploads/products/ when "Create
+                           product" is clicked.)
 
    VALIDATION:
      - FluentValidation runs server-side via Wolverine's pipeline (the
@@ -69,6 +72,7 @@
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
+@using TakOne.WebUI.Extensions
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
@@ -136,6 +140,150 @@
             .form-error {
                 margin-bottom: 1rem;
             }
+
+            /* ── Image upload area ──
+                           Modern dropzone-style container. Big, inviting, with icon +
+                           headline + helper text. The native <input type="file">
+                           rendered by Blazor's InputFile component sits inside this
+                           container; we style its ::file-selector-button pseudo-element
+                           so it looks like a primary CTA that matches the rest of the
+                           Radzen-styled page. */
+            .upload-area {
+                padding: 2rem 1.5rem;
+                border: 2px dashed var(--rz-border-base-color);
+                border-radius: 12px;
+                background: var(--rz-base-background-color);
+                text-align: center;
+                transition: border-color 0.2s, background-color 0.2s, transform 0.1s;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+                .upload-area:hover {
+                    border-color: var(--rz-primary);
+                    background: var(--rz-primary-light);
+                }
+
+                .upload-area .upload-icon {
+                    font-size: 2.5rem;
+                    color: var(--rz-text-secondary-color);
+                    margin-bottom: 0.25rem;
+                }
+
+                .upload-area .upload-headline {
+                    font-weight: 600;
+                    color: var(--rz-text-color);
+                }
+
+                .upload-area .upload-hint {
+                    font-size: 0.85rem;
+                    color: var(--rz-text-secondary-color);
+                }
+
+                /* Style the InputFile's native file input button to match
+                           the Radzen primary button look. ::file-selector-button is
+                           the standard pseudo-element supported by all modern
+                           browsers (Chrome 119+, Firefox, Safari, Edge) for styling
+                           the file-picker button on a file input. We keep the native
+                           input (rather than hiding it and using a wrapping label
+                           element) so keyboard focus and screen-reader behavior
+                           work out of the box. */
+                .upload-area .upload-input {
+                    margin-top: 0.75rem;
+                    max-width: 100%;
+                }
+
+                    .upload-area .upload-input::file-selector-button {
+                        padding: 0.5rem 1.25rem;
+                        margin-inline-end: 0.5rem;
+                        border: 1px solid var(--rz-primary);
+                        border-radius: var(--rz-border-radius);
+                        background: var(--rz-primary);
+                        color: var(--rz-primary-contrast-text-color, #fff);
+                        font-weight: 500;
+                        font-size: 0.95rem;
+                        cursor: pointer;
+                        transition: background-color 0.15s, border-color 0.15s;
+                    }
+
+                        .upload-area .upload-input::file-selector-button:hover {
+                            background: var(--rz-primary-dark, var(--rz-primary));
+                            border-color: var(--rz-primary-dark, var(--rz-primary));
+                        }
+
+                        .upload-area .upload-input::file-selector-button:disabled {
+                            opacity: 0.6;
+                            cursor: not-allowed;
+                        }
+
+            /* Preview card — REPLACES the dropzone once the user has
+                           picked a file. Shows a downscaled thumbnail (generated
+                           client-side via IBrowserFile.RequestImageFileAsync), the
+                           filename + size, and a Remove button. The actual upload
+                           to the server happens later, when the user submits the
+                           form — so the card shows "selected" not "uploaded". */
+            .preview-card {
+                display: flex;
+                gap: 1rem;
+                align-items: stretch;
+                padding: 1rem;
+                background: var(--rz-base-background-color);
+                border: 1px solid var(--rz-border-base-color);
+                border-radius: 8px;
+            }
+
+                .preview-card .preview-img-wrap {
+                    flex: 0 0 140px;
+                    width: 140px;
+                    height: 140px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--rz-secondary-background-color);
+                    border-radius: 6px;
+                    overflow: hidden;
+                }
+
+                .preview-card .preview-img {
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                }
+
+                .preview-card .preview-info {
+                    flex: 1 1 auto;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                    min-width: 0;
+                    justify-content: center;
+                }
+
+                    .preview-card .preview-info .preview-label {
+                        font-weight: 600;
+                        color: var(--rz-text-color);
+                        display: flex;
+                        align-items: center;
+                        gap: 0.35rem;
+                    }
+
+                    .preview-card .preview-info .preview-url {
+                        font-family: monospace;
+                        font-size: 0.8rem;
+                        color: var(--rz-text-secondary-color);
+                        word-break: break-all;
+                        background: var(--rz-secondary-background-color);
+                        padding: 0.25rem 0.5rem;
+                        border-radius: 4px;
+                    }
+
+                .preview-card .preview-actions {
+                    flex: 0 0 auto;
+                    display: flex;
+                    align-items: center;
+                }
 
             /* Help panel on the right */
             .help-panel {
@@ -356,84 +504,121 @@
                             <ValidationMessage For="@(() => _model.CategoryId)" />
                         </div>
 
-                        @* Picture URL (optional) — upload OR paste-a-URL *@
+                        @* Picture (optional) — DEFERRED upload.
+                           Visual design: a modern dropzone with icon +
+                           headline + hint. When the user picks a file, we
+                           capture it in memory as an IBrowserFile and
+                           generate a small data-URL preview thumbnail — but
+                           we do NOT upload it yet. The file is only sent to
+                           the server when the user clicks "Create product"
+                           (see HandleSubmitAsync). If the user cancels,
+                           picks a different file, or fails client-side
+                           validation, NO file is ever written to disk.
+                           This fixes the original bug where every selected
+                           image was immediately saved to /uploads/products/,
+                           leaving orphan files when the form was never
+                           submitted. *@
                         <div>
-                            <RadzenFormField Text="@Loc["FieldPictureUrl"]" Style="width: 100%;">
-                                <ChildContent>
-                                    <RadzenUpload Url="/api/product-image"
-                                                  Multiple="false"
-                                                  ShowChoose="true"
-                                                  ShowUpload="true"
-                                                  AutoUpload="true"
-                                                  Accept="image/jpeg,image/png,image/webp"
-                                                  MaxFileSize="5242880"
-                                                  ProgressPercent="@_uploadProgress"
-                                                  UploadComplete="@OnUploadComplete"
-                                                  UploadError="@OnUploadError"
-                                                  Change="@OnUploadChange"
-                                                  Style="width: 100%;" />
-                                </ChildContent>
-                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Subtitle2"
+                                        Style="font-weight: 600; display: block; margin-bottom: 0.5rem;">
+                                @Loc["FieldPictureUrl"]
+                            </RadzenText>
 
-                            @* Show the current URL in a read-only box so the
-                               user sees what's about to be saved. They can also
-                               paste a custom URL here if they prefer (e.g. a
-                               CDN URL they already manage). *@
-                            <RadzenTextBox @bind-Value="_model.PictureUrl"
-                                           Placeholder="@Loc["FieldPictureUrlPlaceholder"]"
-                                           TValue="string"
-                                           Style="width: 100%; margin-top: 0.5rem;" />
-                            <ValidationMessage For="@(() => _model.PictureUrl)" />
-
-                            @* Live preview thumbnail if a URL is set. The img
-                               is hidden until a URL exists; the onerror handler
-                               hides it again if the URL points to a non-existent
-                               file (e.g. typed-in URL that 404s). *@
-                            @if (!string.IsNullOrWhiteSpace(_model.PictureUrl))
+                            @* Dropzone-style upload area — hidden once a
+                               file is selected. The user can click "Remove"
+                               on the preview to bring the dropzone back. *@
+                            @if (_selectedFile is null)
                             {
-                                <div style="margin-top: 0.75rem; text-align: center;">
-                                    <img src="@_model.PictureUrl"
-                                         alt="@Loc["PicturePreviewAlt"]"
-                                         style="max-width: 200px; max-height: 200px; border-radius: 6px; border: 1px solid var(--rz-border-base-color);"
-                                         @onerror="HidePreviewOnError" />
+                                <div class="upload-area">
+                                    <RadzenIcon Icon="cloud_upload" Class="upload-icon" />
+                                    <div class="upload-headline">@Loc["UploadHeadline"]</div>
+                                    <div class="upload-hint">@Loc["UploadHint"]</div>
+                                    <InputFile OnChange="@OnInputFileChange"
+                                               Accept="image/jpeg,image/png,image/webp"
+                                               Class="upload-input"
+                                               Disabled="@(_isSubmitting || _isUploading)" />
+                                </div>
+                            }
+
+                            @* Preview card — REPLACES the dropzone once the
+                               user has picked a file. Shows a downscaled
+                               thumbnail (generated client-side from the
+                               IBrowserFile via RequestImageFileAsync), the
+                               filename + size, and a Remove button. The
+                               actual upload happens later, on submit. *@
+                            @if (_selectedFile is not null)
+                            {
+                                <div class="preview-card">
+                                    <div class="preview-img-wrap">
+                                        @if (!string.IsNullOrEmpty(_previewDataUrl))
+                                        {
+                                            <img src="@_previewDataUrl"
+                                                 alt="@Loc["PicturePreviewAlt"]"
+                                                 class="preview-img" />
+                                        }
+                                        else
+                                        {
+                                            <RadzenIcon Icon="image"
+                                                        Style="font-size: 2rem; color: var(--rz-text-secondary-color);" />
+                                        }
+                                    </div>
+                                    <div class="preview-info">
+                                        <div class="preview-label">
+                                            <RadzenIcon Icon="check_circle" Style="color: var(--rz-success);" />
+                                            @Loc["PictureSelected"]
+                                        </div>
+                                        <span class="preview-url">@_selectedFile.Name · @FormatBytes(_selectedFile.Size)</span>
+                                        <RadzenText TextStyle="TextStyle.Caption"
+                                                    Style="color: var(--rz-text-secondary-color);">
+                                            @Loc["PictureSelectedHint"]
+                                        </RadzenText>
+                                    </div>
+                                    <div class="preview-actions">
+                                        <RadzenButton Text="@Loc["RemoveImage"]"
+                                                      Icon="delete_outline"
+                                                      ButtonStyle="ButtonStyle.Danger"
+                                                      Variant="Variant.Outlined"
+                                                      Size="ButtonSize.Small"
+                                                      Disabled="@(_isSubmitting || _isUploading)"
+                                                      Click="@RemoveImage" />
+                                    </div>
                                 </div>
                             }
 
                             <RadzenText TextStyle="TextStyle.Caption"
-                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
                                 @Loc["PictureUrlHint"]
                             </RadzenText>
 
-                            @if (_uploadProgress > 0 && _uploadProgress < 100)
-                            {
-                                <RadzenProgressBar Value="@_uploadProgress" ShowValue="true" Mode="ProgressBarMode.Determinate" Style="margin-top: 0.5rem;" />
-                            }
                             @if (!string.IsNullOrEmpty(_uploadError))
                             {
                                 <RadzenAlert Title="@Loc["UploadErrorTitle"]"
                                              Text="@_uploadError"
                                              ShowIcon="true"
                                              Variant="Variant.Filled"
-                                             Severity="AlertSeverity.Error"
+                                             AlertStyle="AlertStyle.Danger"
                                              Style="margin-top: 0.5rem;" />
                             }
                         </div>
 
-                        @* Form actions *@
+                        @* Form actions. Both buttons are disabled during
+                           submit AND during the upload phase (which runs
+                           as part of submit when a file is selected). The
+                           submit button's icon swaps to a spinner during
+                           upload so the user sees something is happening. *@
                         <div class="form-actions">
                             <RadzenButton Text="@Loc["CancelButton"]"
                                           Icon="close"
                                           ButtonStyle="ButtonStyle.Light"
                                           Variant="Variant.Outlined"
-                                          Disabled="@_isSubmitting"
+                                          Disabled="@(_isSubmitting || _isUploading)"
                                           Click="@(() => Navigation.NavigateTo("/Admin/Products", forceLoad: false))" />
-                            <RadzenButton Text="@Loc["SubmitButton"]"
-                                          Icon="save"
+                            <RadzenButton Text="@(_isUploading ? Loc["UploadingButton"] : Loc["SubmitButton"])"
+                                          Icon="@(_isUploading ? "hourglass_top" : "save")"
                                           ButtonType="ButtonType.Submit"
                                           ButtonStyle="ButtonStyle.Primary"
                                           Variant="Variant.Filled"
-                                          Disabled="@_isSubmitting"
-                                          Click="@(async () => await Task.CompletedTask)" />
+                                          Disabled="@(_isSubmitting || _isUploading)" />
                         </div>
                     </div>
                 </EditForm>
@@ -504,9 +689,14 @@
         public Guid? SubCategoryId { get; set; }
         public Guid? SubSubCategoryId { get; set; }
 
-        [StringLength(500, ErrorMessage = "Picture URL cannot exceed 500 characters.")]
-        [Url(ErrorMessage = "Picture URL must be a valid absolute URL (e.g. https://...).")]
-        public string? PictureUrl { get; set; }
+        // PictureUrl is NOT on the form model. The picture is held in
+        // memory as IBrowserFile? _selectedFile (captured by the
+        // InputFile component) and only converted to a URL when the
+        // user submits — the upload POSTs the file to /api/product-image
+        // and the returned URL is passed directly to CreateProductCommand.
+        // This avoids the orphan-files bug where picking an image without
+        // submitting the form would leave a saved-but-unreferenced file
+        // under wwwroot/uploads/products/.
     }
 
     private CreateProductFormModel _model = new();
@@ -521,6 +711,72 @@
     private string? _categoriesLoadError;
     private bool _isSubmitting;
     private string? _submitError;
+
+    // ── Deferred image-upload state ─────────────────────────────────────
+    //
+    // The original implementation used RadzenUpload with Auto=true, which
+    // immediately POSTed the selected file to /api/product-image and saved
+    // it to disk. This produced orphan files whenever the user picked an
+    // image but never submitted the form (cancelled, hit validation
+    // errors, navigated away, etc.).
+    //
+    // The fix: capture the file in memory as an IBrowserFile (via
+    // Blazor's InputFile component) and only POST it during the submit
+    // handler. The file is held server-side in the Blazor circuit's
+    // memory; nothing is written to disk until "Create product" is
+    // clicked. If the user cancels or validation fails, no file is
+    // saved.
+    //
+    // - _selectedFile:        the in-memory IBrowserFile picked by the
+    //                          user. Null until they pick something,
+    //                          cleared by RemoveImage or by picking a
+    //                          new file (InputFile fires OnChange with
+    //                          the new file, replacing the old).
+    // - _previewDataUrl:      a downscaled data: URL generated client-
+    //                          side via IBrowserFile.RequestImageFileAsync
+    //                          (400×400 max). Used as the <img src> for
+    //                          the preview thumbnail. Generation is best-
+    //                          effort — if it fails (e.g. corrupt image),
+    //                          we just show a generic icon instead.
+    // - _alreadyUploadedUrl:  the URL returned by /api/product-image on a
+    //                          previous successful upload attempt during
+    //                          THIS form's lifetime. If the command then
+    //                          fails (e.g. name not unique) and the user
+    //                          retries, we reuse this URL instead of
+    //                          re-uploading — avoiding duplicate orphan
+    //                          files on retry. Cleared by RemoveImage and
+    //                          by picking a new file (different file =
+    //                          different upload needed).
+    // - _uploadError:         validation/parse error message from the
+    //                          file-selection step (bad type, too large,
+    //                          etc.). Shown inline below the dropzone.
+    // - _isUploading:         true during the POST to /api/product-image
+    //                          inside HandleSubmitAsync. Disables both
+    //                          buttons + the file input so the user can't
+    //                          start a second upload mid-flight.
+    private IBrowserFile? _selectedFile;
+    private string? _previewDataUrl;
+    private string? _alreadyUploadedUrl;
+    private string? _uploadError;
+    private bool _isUploading;
+
+    /// <summary>
+    /// Maximum accepted file size (matches LocalFileStorage's cap).
+    /// Enforced client-side via IBrowserFile.Size check + OpenReadStream
+    /// (which throws if the stream exceeds the limit).
+    /// </summary>
+    private const long MaxFileSize = 5 * 1024 * 1024; // 5 MB
+
+    /// <summary>
+    /// Content types accepted by the upload. Matches the allowlist in
+    /// the /api/product-image endpoint (Program.cs) and in
+    /// LocalFileStorage. Validated client-side here for immediate
+    /// feedback; validated again server-side as defense-in-depth.
+    /// </summary>
+    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/png", "image/webp"
+    };
 
     /// <summary>
     /// The most common ISO 4217 currency codes. The user can type a
@@ -537,6 +793,223 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadCategoriesAsync();
+    }
+
+    // ── Image selection handlers ────────────────────────────────────────
+    //
+    // InputFile (Blazor's built-in file picker) fires OnChange when the
+    // user picks a file (or cancels the picker with no selection). We get
+    // direct access to the IBrowserFile here — no upload happens yet.
+    // The file is held in memory in the Blazor circuit; it's only POSTed
+    // to /api/product-image inside HandleSubmitAsync when the user clicks
+    // "Create product". This is the fix for the orphan-files bug.
+    //
+    // Validation here mirrors the server-side checks in /api/product-image
+    // (Program.cs) and LocalFileStorage. Doing it client-side too gives
+    // immediate feedback without a round-trip; the server-side checks
+    // remain as defense-in-depth in case the client is bypassed.
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+
+        // User cancelled the OS file picker — keep the previous selection
+        // (if any) intact. InputFile fires OnChange with FileCount==0 in
+        // this case.
+        if (e.FileCount == 0)
+        {
+            return;
+        }
+
+        var file = e.File;
+
+        // ── Validate content type.
+        if (!AllowedContentTypes.Contains(file.ContentType))
+        {
+            _uploadError = Loc["UploadInvalidType"];
+            _selectedFile = null;
+            _previewDataUrl = null;
+            _alreadyUploadedUrl = null;
+            return;
+        }
+
+        // ── Validate size.
+        if (file.Size > MaxFileSize)
+        {
+            _uploadError = Loc["UploadInvalidSize"];
+            _selectedFile = null;
+            _previewDataUrl = null;
+            _alreadyUploadedUrl = null;
+            return;
+        }
+
+        // ── Accept the file. Clear any previous upload URL — picking a
+        //    new file invalidates a previous successful upload (the old
+        //    file is no longer the one we want associated with this
+        //    product, so we can't reuse its /uploads/products/... path).
+        _selectedFile = file;
+        _alreadyUploadedUrl = null;
+        _previewDataUrl = await GeneratePreviewDataUrlAsync(file);
+    }
+
+    /// <summary>
+    /// Generates a downscaled data: URL preview of the selected image.
+    /// Uses IBrowserFile.RequestImageFileAsync which produces a server-
+    /// side resized copy (max 400×400) — keeps the data URL small
+    /// (~50 KB even for multi-megabyte source images). Best-effort:
+    /// returns null if preview generation fails (e.g. corrupt image);
+    /// the UI then falls back to a generic icon.
+    /// </summary>
+    private async Task<string?> GeneratePreviewDataUrlAsync(IBrowserFile file)
+    {
+        try
+        {
+            // RequestImageFileAsync takes the target format, max width,
+            // max height. It preserves aspect ratio within the bounds.
+            // We pass the source content type so the resized image keeps
+            // the same format (JPEG stays JPEG, etc.).
+            var resized = await file.RequestImageFileAsync(file.ContentType, 400, 400);
+
+            // OpenReadStream with a 2 MB cap is plenty for a 400×400
+            // thumbnail. The cap is defense-in-depth against a malicious
+            // file that lies about its dimensions to try to allocate a
+            // huge buffer.
+            await using var stream = resized.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+            return $"data:{file.ContentType};base64,{base64}";
+        }
+        catch
+        {
+            // Non-fatal: preview is a UI nicety, not required for submit.
+            // The actual file content is still uploaded to the server
+            // (where LocalFileStorage does its own magic-byte sniffing
+            // and will reject the file if it's genuinely corrupt).
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Clears the selected file + preview + any cached upload URL.
+    /// Called by the "Remove" button on the preview card. After this,
+    /// the user can pick a different image or just submit with no
+    /// picture (PictureUrl is optional).
+    /// </summary>
+    private void RemoveImage()
+    {
+        _selectedFile = null;
+        _previewDataUrl = null;
+        _alreadyUploadedUrl = null;
+        _uploadError = null;
+    }
+
+    /// <summary>
+    /// Formats a byte count as a human-readable string (e.g. "1.2 MB").
+    /// Used in the preview card to show the selected file's size.
+    /// </summary>
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.#} {units[unit]}";
+    }
+
+    /// <summary>
+    /// Uploads the selected file to /api/product-image. Returns the
+    /// public URL on success, or an error message on failure. Called
+    /// from HandleSubmitAsync — NOT from OnInputFileChange — so the
+    /// file is only written to disk when the user actually submits the
+    /// form.
+    ///
+    /// The endpoint returns:
+    ///   200 OK       { "url": "/uploads/products/..." }
+    ///   400/413/etc. { "error": "..." }
+    /// </summary>
+    private async Task<(string? Url, string? Error)> UploadSelectedFileAsync()
+    {
+        if (_selectedFile is null)
+        {
+            // Nothing to upload — caller should treat null URL as "no
+            // picture on this product".
+            return (Url: null, Error: null);
+        }
+
+        try
+        {
+            // OpenReadStream enforces the 5 MB cap server-side in the
+            // Blazor circuit (separate from the IBrowserFile.Size check
+            // we already did in OnInputFileChange). Passing the cap here
+            // makes the stream throw IOExceededMemoryLimitException as
+            // soon as the cumulative byte count crosses 5 MB, instead of
+            // buffering the whole file first.
+            await using var stream = _selectedFile.OpenReadStream(maxAllowedSize: MaxFileSize);
+
+            using var content = new MultipartFormDataContent
+            {
+                { new StreamContent(stream), "file", _selectedFile.Name }
+            };
+
+            var response = await Http.PostAsync("/api/product-image", content);
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Try to extract a server-provided error message from
+                // { "error": "..." }. Fall back to a generic message.
+                string? serverError = null;
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+                    if (doc.RootElement.TryGetProperty("error", out var errProp))
+                    {
+                        serverError = errProp.GetString();
+                    }
+                }
+                catch
+                {
+                    // Response wasn't JSON — leave serverError null and
+                    // fall through to the generic message.
+                }
+
+                return (Url: null, Error: serverError ?? Loc["UploadErrorGeneric"]);
+            }
+
+            // Parse { "url": "/uploads/products/..." } from the 200 body.
+            string? url = null;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+                if (doc.RootElement.TryGetProperty("url", out var urlProp))
+                {
+                    url = urlProp.GetString();
+                }
+            }
+            catch
+            {
+                // JSON parse failure on a 200 response is a server bug.
+                // Treat as a malformed-response error.
+            }
+
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return (Url: null, Error: Loc["UploadErrorResponseFormat"]);
+            }
+
+            return (Url: url, Error: null);
+        }
+        catch
+        {
+            // Network failure, request cancellation, stream size limit,
+            // etc. Don't leak exception details — return a generic message.
+            return (Url: null, Error: Loc["UploadErrorGeneric"]);
+        }
     }
 
     // ── Data loading ────────────────────────────────────────────────────
@@ -607,6 +1080,20 @@
     }
 
     // ── Submit ──────────────────────────────────────────────────────────
+    //
+    // Submit is now a TWO-PHASE operation when a file is selected:
+    //   Phase 1 (upload): POST the selected file to /api/product-image,
+    //                      get back the public URL it's been saved at.
+    //                      Sets _isUploading=true to disable all buttons.
+    //   Phase 2 (create): Dispatch CreateProductCommand with the uploaded
+    //                      URL (or null if no file was selected). Standard
+    //                      Wolverine pipeline.
+    //
+    // If Phase 1 fails, we abort before Phase 2 — no product is created
+    // and the file error is shown above the form. If Phase 1 succeeds
+    // but Phase 2 fails (e.g. name not unique), we cache the uploaded
+    // URL in _alreadyUploadedUrl so a retry skips Phase 1 — otherwise
+    // each retry would upload a fresh copy and leave orphan files.
 
     private async Task HandleSubmitAsync()
     {
@@ -627,10 +1114,41 @@
 
         try
         {
+            // ── Phase 1: upload the selected file (if any) ──
+            // Reuse _alreadyUploadedUrl if it's set — this happens when
+            // a previous submit attempt uploaded the file successfully
+            // but the create command failed. Re-uploading would create
+            // a second orphan file under /uploads/products/.
+            string? pictureUrl = _alreadyUploadedUrl;
+            if (pictureUrl is null && _selectedFile is not null)
+            {
+                _isUploading = true;
+                try
+                {
+                    var (url, error) = await UploadSelectedFileAsync();
+                    if (error is not null)
+                    {
+                        // Upload failed — abort the whole submit. The user
+                        // can fix the issue (pick a smaller file, etc.) and
+                        // retry. The selected file is still in memory so
+                        // they don't need to re-pick.
+                        _submitError = error;
+                        return;
+                    }
+                    pictureUrl = url;
+                    _alreadyUploadedUrl = url; // cache for retry
+                }
+                finally
+                {
+                    _isUploading = false;
+                }
+            }
+
+            // ── Phase 2: dispatch the create command ──
             var command = new CreateProductCommand(
                 Name: _model.Name.Trim(),
                 Description: _model.Description.Trim(),
-                PictureUrl: string.IsNullOrWhiteSpace(_model.PictureUrl) ? null : _model.PictureUrl.Trim(),
+                PictureUrl: pictureUrl,
                 Price: new MoneyDto
                 {
                     Amount = _model.PriceAmount,
@@ -660,6 +1178,17 @@
                 // handler (e.g. "A product with the name 'X' already exists.
                 // Choose a different name." OR "Category '...' was not found."
                 // OR "SubCategory '...' does not belong to Category '...'.")
+                //
+                // NOTE: if Phase 1 uploaded a file, that file is now an
+                // orphan on disk (no product references it). We accept this
+                // trade-off — the alternative (rolling back the upload by
+                // deleting the file) would require tracking the file's
+                // identity, which LocalFileStorage doesn't expose. The
+                // orphan rate is now ~0% on the happy path (upload only
+                // happens at submit time) and only happens on the rare
+                // command-fails-after-successful-upload path. A future
+                // cleanup task can sweep /uploads/products/ for files not
+                // referenced by any Product.PictureUrl.
                 _submitError = result.Error ?? Loc["Error_GenericCreate"];
             }
         }

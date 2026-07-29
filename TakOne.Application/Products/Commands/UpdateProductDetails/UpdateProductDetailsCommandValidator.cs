@@ -30,7 +30,7 @@ public sealed class UpdateProductDetailsCommandValidator : AbstractValidator<Upd
             .MaximumLength(CreateProductCommandValidator.MaxPictureUrlLength)
             .WithMessage($"Picture URL cannot exceed {CreateProductCommandValidator.MaxPictureUrlLength} characters.")
             .Must(BeValidUrl).When(x => !string.IsNullOrWhiteSpace(x.PictureUrl))
-            .WithMessage("Picture URL must be a valid absolute URL (e.g. https://...).");
+            .WithMessage("Picture URL must be a valid URL (e.g. /uploads/products/abc.jpg or https://example.com/img.png).");
 
         RuleFor(x => x.Price)
             .NotNull().WithMessage("Price is required.");
@@ -45,5 +45,10 @@ public sealed class UpdateProductDetailsCommandValidator : AbstractValidator<Upd
             .When(x => x.Price is not null);
     }
 
-    private static bool BeValidUrl(string? url) => Uri.TryCreate(url, UriKind.Absolute, out _);
+    /// <summary>
+    /// Accepts BOTH relative URLs (e.g. "/uploads/products/abc.jpg" — what
+    /// our own /api/product-image endpoint returns) AND absolute URLs
+    /// (e.g. "https://cdn.example.com/img.png" — for external images).
+    /// </summary>
+    private static bool BeValidUrl(string? url) => Uri.TryCreate(url, UriKind.RelativeOrAbsolute, out _);
 }
