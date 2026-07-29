@@ -133,14 +133,35 @@
   <data name="OptionalPlaceholder" xml:space="preserve">
     <value>— Optional —</value>
   </data>
-  <data name="FieldPictureUrl" xml:space="preserve">
-    <value>Picture URL (optional)</value>
+  <data name="FieldPicture" xml:space="preserve">
+    <value>Picture (optional)</value>
   </data>
-  <data name="FieldPictureUrlPlaceholder" xml:space="preserve">
-    <value>https://example.com/product.png</value>
+  <data name="PictureHint" xml:space="preserve">
+    <value>JPEG, PNG, or WebP. Max 5 MB. The image is uploaded when you click "Create product".</value>
   </data>
-  <data name="PictureUrlHint" xml:space="preserve">
-    <value>A product picture is optional. Upload an image file, or leave empty for no picture.</value>
+  <data name="UploadDropzoneTitle" xml:space="preserve">
+    <value>Click to upload a picture</value>
+  </data>
+  <data name="UploadDropzoneHint" xml:space="preserve">
+    <value>JPEG, PNG, or WebP · max 5 MB</value>
+  </data>
+  <data name="RemoveImage" xml:space="preserve">
+    <value>Remove image</value>
+  </data>
+  <data name="UploadErrorTitle" xml:space="preserve">
+    <value>Upload failed</value>
+  </data>
+  <data name="UploadInvalidType" xml:space="preserve">
+    <value>Unsupported file type. Allowed: JPEG, PNG, WebP.</value>
+  </data>
+  <data name="UploadInvalidSize" xml:space="preserve">
+    <value>The file is too large. Maximum size is 5 MB.</value>
+  </data>
+  <data name="UploadErrorResponseFormat" xml:space="preserve">
+    <value>The server response was not in the expected format. Try again.</value>
+  </data>
+  <data name="UploadErrorGeneric" xml:space="preserve">
+    <value>The upload failed. Please try again.</value>
   </data>
 
   <data name="SubmitButton" xml:space="preserve">
@@ -172,64 +193,10 @@
   <data name="HelpCategory" xml:space="preserve">
     <value>Category is required. Sub-categories are optional and cascade — selecting a new category clears the lower levels.</value>
   </data>
-  <data name="HelpPictureUrl" xml:space="preserve">
-    <value>Product picture is optional. You can upload an image file or paste an external URL.</value>
+  <data name="HelpPicture" xml:space="preserve">
+    <value>Picture is optional. JPEG, PNG, or WebP up to 5 MB. The image is only saved when you submit the form.</value>
   </data>
   <data name="HelpPurchaseLimits" xml:space="preserve">
     <value>Purchase limits per customer group can be set after creation from the product detail page.</value>
-  </data>
-  <data name="PicturePreviewAlt" xml:space="preserve">
-    <value>Product picture preview</value>
-  </data>
-  <data name="PictureAttached" xml:space="preserve">
-    <value>Picture attached</value>
-  </data>
-  <data name="PictureAttachedHint" xml:space="preserve">
-    <value>This image will be saved with the product. Click Remove to upload a different one.</value>
-  </data>
-  <data name="PictureSelected" xml:space="preserve">
-    <value>Picture selected</value>
-  </data>
-  <data name="PictureSelectedHint" xml:space="preserve">
-    <value>The image will be saved when you click "Create product". Click Remove to clear it.</value>
-  </data>
-  <data name="UploadingButton" xml:space="preserve">
-    <value>Uploading…</value>
-  </data>
-  <data name="UploadChooseText" xml:space="preserve">
-    <value>Choose image to upload</value>
-  </data>
-  <data name="UploadHeadline" xml:space="preserve">
-    <value>Drag and drop an image here, or click the button below</value>
-  </data>
-  <data name="UploadHint" xml:space="preserve">
-    <value>JPEG, PNG, or WebP — maximum 5 MB. The image is saved when you create the product.</value>
-  </data>
-  <data name="UploadInvalidType" xml:space="preserve">
-    <value>Unsupported file type. Please select a JPEG, PNG, or WebP image.</value>
-  </data>
-  <data name="UploadInvalidSize" xml:space="preserve">
-    <value>The selected file is too large. Maximum size is 5 MB.</value>
-  </data>
-  <data name="RemoveImage" xml:space="preserve">
-    <value>Remove</value>
-  </data>
-  <data name="UploadErrorTitle" xml:space="preserve">
-    <value>Upload failed</value>
-  </data>
-  <data name="UploadSuccessMessage" xml:space="preserve">
-    <value>Image uploaded successfully.</value>
-  </data>
-  <data name="UploadSuccessSummary" xml:space="preserve">
-    <value>Upload complete</value>
-  </data>
-  <data name="UploadErrorResponseFormat" xml:space="preserve">
-    <value>The server response was not in the expected format. Try again.</value>
-  </data>
-  <data name="UploadParseException" xml:space="preserve">
-    <value>Could not parse the upload response: {0}</value>
-  </data>
-  <data name="UploadErrorGeneric" xml:space="preserve">
-    <value>The upload failed. Please try again.</value>
   </data>
 </root>

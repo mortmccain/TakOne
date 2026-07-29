@@ -1,0 +1,688 @@
+﻿/* ===========================================================================
+   Tak Light — Radzen theme override
+   ---------------------------------------------------------------------------
+   Inspired by the Tak Makaron employee-portal HTML design.
+
+   COLOR PALETTE (from the source HTML):
+     tm-green         #0E4D3C   primary brand color (deep forest green)
+     tm-green-dark    #0A3528   hover/active state for primary
+     tm-green-light   #1A6B52   lighter primary variant
+     tm-green-mint    #E8F2EE   very light green background tint
+     tm-gold          #C9A227   accent color (awards, badges, highlights)
+     tm-gold-bright   #D4AF37   brighter gold for emphasis
+     tm-gold-soft     #F4E4A1   soft gold for image backdrops
+     tm-gold-tint     #FBF4D6   very light gold background tint
+     tm-cream         #FAF7F0   page background (warm off-white)
+     tm-gray          #6B7280   secondary text
+     tm-text          #1F2937   primary text (slate-800)
+
+   USAGE:
+     This file is loaded as an OVERRIDE on top of Radzen's built-in "standard"
+     (light) theme. The Radzen theme provides the structural CSS for all
+     Radzen components; this file re-points the CSS custom properties
+     (variables) to Tak's brand palette and adds a few Tak-specific
+     utility classes + polish rules (card hover lift, gold scrollbar,
+     Vazirmatn font, etc.).
+
+   LOADING ORDER (managed by wwwroot/js/theme.js):
+     1. /_content/Radzen.Blazor/Radzen.Blazor.css           (base component CSS)
+     2. /_content/Radzen.Blazor/css/standard.css            (Radzen light theme)
+     3. /css/themes/tak-light.css                           (THIS file — override)
+
+   When the user picks a different Radzen theme (e.g. "dark"), this file is
+   removed from <head> by theme.js so the standard Radzen look takes over.
+   =========================================================================== */
+
+/* ---- Vazirmatn font -------------------------------------------------------
+   The source HTML loads Vazirmatn from Google Fonts. It's a high-quality
+   open-source Persian/Latin font that handles both fa-IR and en-US well.
+   Loaded via @import so the theme is self-contained — no extra <link>
+   needed in App.razor. The display=swap parameter means text renders
+   immediately in the fallback font and swaps to Vazirmatn once it loads,
+   avoiding invisible-text flash. */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+
+/* ---- Tak design tokens ----------------------------------------------------
+   Exposed as CSS variables under the --tm-* namespace so pages can use
+   them directly (e.g. `color: var(--tm-gold)`) without having to remember
+   the hex values. These are the source-of-truth for the palette — the
+   Radzen variable overrides below reference these. */
+:root {
+    /* Brand greens */
+    --tm-green: #0E4D3C;
+    --tm-green-dark: #0A3528;
+    --tm-green-light: #1A6B52;
+    --tm-green-mint: #E8F2EE;
+    /* Accent golds */
+    --tm-gold: #C9A227;
+    --tm-gold-bright: #D4AF37;
+    --tm-gold-soft: #F4E4A1;
+    --tm-gold-tint: #FBF4D6;
+    /* Neutrals */
+    --tm-cream: #FAF7F0;
+    --tm-text: #1F2937;
+    --tm-gray: #6B7280;
+    --tm-gray-light: #E5E7EB;
+    /* Semantic aliases (kept stable even if palette evolves) */
+    --tm-primary: var(--tm-green);
+    --tm-primary-hover: var(--tm-green-light);
+    --tm-primary-active: var(--tm-green-dark);
+    --tm-accent: var(--tm-gold);
+    --tm-accent-hover: var(--tm-gold-bright);
+    --tm-surface: #FFFFFF;
+    --tm-surface-muted: var(--tm-cream);
+    --tm-on-primary: #FFFFFF;
+    --tm-on-accent: var(--tm-green-dark);
+    /* Effects */
+    --tm-radius-sm: 8px;
+    --tm-radius: 12px; /* rounded-xl feel */
+    --tm-radius-lg: 16px; /* rounded-2xl feel */
+    --tm-radius-pill: 9999px;
+    --tm-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --tm-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --tm-shadow-lg: 0 18px 30px -8px rgba(14, 77, 60, 0.18);
+    --tm-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===========================================================================
+   Radzen variable overrides
+   ---------------------------------------------------------------------------
+   These are the official Radzen.Blazor 11.x CSS custom properties. By
+   re-pointing them to Tak's palette, every Radzen component (Button, Card,
+   DataGrid, Sidebar, DropDown, etc.) automatically picks up the Tak Light
+   look. Pages don't need to be modified — the theme propagates through
+   the variable system.
+   =========================================================================== */
+:root {
+    /* Primary color — used by primary buttons, active nav items, focused
+       inputs, checkbox/radio checked state, etc. */
+    --rz-primary: var(--tm-green);
+    --rz-primary-50: #E8F2EE;
+    --rz-primary-100: #C7DFD3;
+    --rz-primary-200: #9FC1AE;
+    --rz-primary-300: #6FA287;
+    --rz-primary-400: #3F8462;
+    --rz-primary-500: var(--tm-green); /* #0E4D3C */
+    --rz-primary-600: #0C4233;
+    --rz-primary-700: var(--tm-green-dark); /* #0A3528 */
+    --rz-primary-800: #08291F;
+    --rz-primary-900: #061E16;
+    --rz-primary-lighter: var(--tm-green-mint); /* hover backgrounds */
+    --rz-primary-darker: var(--tm-green-dark); /* active/hover for primary */
+    --rz-primary-contrast: #FFFFFF; /* text/icon color on primary */
+    /* Secondary color — used by secondary buttons. We use a soft gold here
+       so the secondary action visibly pairs with the green primary. */
+    --rz-secondary: var(--tm-gold);
+    --rz-secondary-lighter: var(--tm-gold-tint);
+    --rz-secondary-darker: #B08C1F;
+    --rz-secondary-contrast: var(--tm-green-dark);
+    /* Info / Success / Warning / Danger — keep the standard semantic
+       palette but nudge them slightly toward Tak's warm tonality. */
+    --rz-info: #3B82F6;
+    --rz-info-lighter: #DBEAFE;
+    --rz-info-darker: #1D4ED8;
+    --rz-info-contrast: #FFFFFF;
+    --rz-success: #16A34A;
+    --rz-success-lighter: #DCFCE7;
+    --rz-success-darker: #15803D;
+    --rz-success-contrast: #FFFFFF;
+    --rz-warning: #F59E0B;
+    --rz-warning-lighter: #FEF3C7;
+    --rz-warning-darker: #D97706;
+    --rz-warning-contrast: #1F2937;
+    --rz-danger: #DC2626;
+    --rz-danger-lighter: #FEE2E2;
+    --rz-danger-darker: #B91C1C;
+    --rz-danger-contrast: #FFFFFF;
+    /* Base surface + text */
+    --rz-base-background-color: var(--tm-cream);
+    --rz-base-text-color: var(--tm-text);
+    --rz-background-color: var(--tm-cream);
+    --rz-text-color: var(--tm-text);
+    --rz-text-secondary-color: var(--tm-gray);
+    --rz-text-tertiary-color: #9CA3AF;
+    --rz-text-disabled-color: #D1D5DB;
+    /* Component surfaces */
+    --rz-component-background-color: #FFFFFF;
+    --rz-component-text-color: var(--tm-text);
+    --rz-component-border-color: var(--tm-gray-light);
+    /* Borders + radii */
+    --rz-border-color: var(--tm-gray-light);
+    --rz-border-color-light: #F3F4F6;
+    --rz-border-radius: var(--tm-radius);
+    --rz-border-radius-sm: var(--tm-radius-sm);
+    --rz-border-radius-lg: var(--tm-radius-lg);
+    --rz-border-radius-pill: var(--tm-radius-pill);
+    /* Hover / focus backgrounds */
+    --rz-hover-background-color: var(--tm-cream);
+    --rz-focus-background-color: var(--tm-green-mint);
+    --rz-selected-background-color: var(--tm-green);
+    --rz-selected-text-color: #FFFFFF;
+    /* Links */
+    --rz-link-color: var(--tm-green);
+    --rz-link-hover-color: var(--tm-green-light);
+    /* Typography */
+    --rz-font-family: 'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --rz-font-size: 14px;
+    --rz-font-size-sm: 12px;
+    --rz-font-size-lg: 16px;
+    --rz-font-size-xl: 18px;
+    --rz-line-height: 1.6;
+    /* Elevation — keep Radzen's 24-level scale but tint shadows slightly
+       toward green for the larger elevations (matches the HTML's
+       `0 18px 30px -8px rgba(14, 77, 60, 0.18)` lift effect). */
+    --rz-shadow-0: none;
+    --rz-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --rz-shadow-2: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --rz-shadow-3: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --rz-shadow-4: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --rz-shadow-5: var(--tm-shadow-lg);
+    --rz-shadow-6: 0 25px 50px -12px rgba(14, 77, 60, 0.20);
+    /* Sidebar + Header — Tak's design uses a darker green sidebar to anchor
+       the layout against the cream body.
+
+       SIDEBAR MENU ITEM 3-STATE COLOR SCHEME (per user spec):
+         - Normal  : green     (transparent → shows sidebar's dark green bg)
+         - Hover   : dark gold (a deeper gold so the user sees where the
+                      cursor is)
+         - Active  : light gold (the selected page stands out as a cream-gold
+                      pill against the green sidebar)
+       Icons are gold in normal/hover state, dark green in active state
+       (for contrast against the light gold active background). */
+    --rz-sidebar-background-color: var(--tm-green-dark);
+    --rz-sidebar-text-color: #E5E7EB;
+    --rz-sidebar-hover-background-color: #8B6F1A; /* dark gold */
+    --rz-sidebar-active-background-color: var(--tm-gold-tint); /* light gold */
+    --rz-sidebar-active-text-color: var(--tm-green-dark);
+    /* Header — gold bar with dark green text. Rounded bottom corners so
+       it feels card-like rather than a flat slab. */
+    --rz-header-background-color: var(--tm-gold);
+    --rz-header-text-color: var(--tm-green-dark);
+    --rz-header-border-color: var(--tm-gold-bright);
+    /* DataGrid striping — keep it subtle, on the cream side */
+    --rz-datagrid-even-row-background-color: #FFFFFF;
+    --rz-datagrid-odd-row-background-color: var(--tm-cream);
+    --rz-datagrid-hover-row-background-color: var(--tm-green-mint);
+    --rz-datagrid-selected-row-background-color: var(--tm-green-mint);
+    /* Chart series — Tak palette: green primary, then gold, then alternating
+       light/dark variants for distinguishability. */
+    --rz-series-1: var(--tm-green);
+    --rz-series-2: var(--tm-gold);
+    --rz-series-3: var(--tm-green-light);
+    --rz-series-4: var(--tm-gold-bright);
+    --rz-series-5: #3F8462;
+    --rz-series-6: var(--tm-gold-soft);
+    --rz-series-7: var(--tm-green-dark);
+    --rz-series-8: #B08C1F;
+}
+
+/* ===========================================================================
+   Body baseline
+   =========================================================================== */
+body {
+    font-family: var(--rz-font-family);
+    background-color: var(--rz-base-background-color);
+    color: var(--rz-base-text-color);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Persian digit feature — Vazirmatn ships an "ss01" OpenType feature that
+   renders Latin digits with a Persian-style silhouette. The source HTML
+   applies it via `font-feature-settings: "ss01"`. Harmless in English
+   mode (the feature just doesn't apply). */
+.number-persian,
+[dir="rtl"] body {
+    font-feature-settings: "ss01";
+}
+
+/* ===========================================================================
+   Scrollbar styling
+   ---------------------------------------------------------------------------
+   The source HTML uses a thin 6px scrollbar with a gold thumb on a soft
+   gold track. We apply it globally for the Tak Light theme — it's a
+   subtle but distinctive brand touch. WebKit-only; Firefox falls back
+   to its native scrollbar. */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--tm-gold-tint);
+    border-radius: var(--tm-radius-pill);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--tm-gold);
+    border-radius: var(--tm-radius-pill);
+    border: 2px solid var(--tm-gold-tint);
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--tm-gold-bright);
+    }
+
+/* Thin variant — opt-in via .scrollbar-thin for inline scroll areas
+   (cart preview, dropdown panels, etc.). Mirrors the HTML source. */
+.scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+    background: var(--tm-gold-soft);
+    border-radius: 10px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--tm-gold);
+    border-radius: 10px;
+}
+
+/* ===========================================================================
+   Component polish
+   ---------------------------------------------------------------------------
+   These rules add Tak-specific touches on top of Radzen's component CSS.
+   They're written to be opt-in or low-specificity so they don't fight
+   page-level .razor.css overrides.
+   =========================================================================== */
+
+/* Cards — soft shadow, rounded corners, subtle border.
+   The HTML uses `rounded-2xl shadow-sm border border-gray-50` on cards.
+   RadzenCard uses .rz-card. */
+.rz-card {
+    border-radius: var(--tm-radius-lg);
+    box-shadow: var(--tm-shadow-sm);
+    border: 1px solid #F3F4F6;
+    background-color: #FFFFFF;
+}
+
+/* Hover lift for cards opted-in via class="product-card" (the HTML's
+   pattern). Transform + green-tinted shadow. */
+.product-card {
+    transition: var(--tm-transition);
+}
+
+    .product-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--tm-shadow-lg);
+    }
+
+/* Buttons — pill shape by default (matches HTML's `rounded-full` on
+   most buttons), with smooth color transition. */
+.rz-button {
+    border-radius: var(--tm-radius);
+    transition: var(--tm-transition);
+    font-weight: 600;
+}
+
+    .rz-button.rz-variant-filled.rz-primary {
+        background-color: var(--tm-green);
+        border-color: var(--tm-green);
+        color: #FFFFFF;
+    }
+
+        .rz-button.rz-variant-filled.rz-primary:hover {
+            background-color: var(--tm-green-light);
+            border-color: var(--tm-green-light);
+        }
+
+        .rz-button.rz-variant-filled.rz-primary:active {
+            background-color: var(--tm-green-dark);
+            border-color: var(--tm-green-dark);
+        }
+
+    /* Light/Outlined variant — cream hover instead of gray */
+    .rz-button.rz-variant-outlined:hover,
+    .rz-button.rz-variant-text:hover {
+        background-color: var(--tm-cream);
+    }
+
+/* Inputs — focus ring matches Tak's gold focus state (from HTML:
+   `focus:border-tm-gold focus:ring-2 focus:ring-tm-gold/20`). */
+.rz-textbox:focus,
+.rz-textarea:focus,
+.rz-inputtext:focus,
+.rz-dropdown:focus,
+.rz-numeric:focus {
+    border-color: var(--tm-gold) !important;
+    box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18) !important;
+    outline: none !important;
+}
+
+/* ===========================================================================
+   Sidebar panel menu items — 3-state color scheme
+   ---------------------------------------------------------------------------
+   Per user spec:
+     - Normal  : green (transparent → blends with sidebar's dark green bg)
+     - Hover   : dark gold background, cream text/icons
+     - Active  : light gold background, dark green text/icons
+   Icons are gold in normal state (the brand accent against the green sidebar).
+
+   WHY !important: Radzen's base "standard" theme applies its own background
+   colors to .rz-panel-menu-item. Without !important, our overrides lose to
+   Radzen's selectors which have the same specificity but load later in the
+   cascade (Radzen.Blazor.css loads before our override, but Radzen's
+   component CSS has higher specificity in some cases). Using !important
+   here is intentional and safe — this is a theme override file whose
+   entire purpose is to win these cascading battles.
+   =========================================================================== */
+
+/* NORMAL state — transparent background (shows sidebar's green), gold icons,
+   light cream text. This is the resting state for unselected menu items. */
+.rz-panel-menu .rz-panel-menu-item {
+    background-color: transparent !important;
+    color: #E5E7EB !important;
+}
+
+    .rz-panel-menu .rz-panel-menu-item .rz-navigation-item-icon {
+        color: var(--tm-gold) !important;
+    }
+
+    .rz-panel-menu .rz-panel-menu-item .rz-navigation-item-text {
+        color: #E5E7EB !important;
+    }
+
+    /* HOVER state — dark gold background, cream icons/text for contrast.
+   The cursor is now over the item; the user needs to see it highlighted. */
+    .rz-panel-menu .rz-panel-menu-item:hover {
+        background-color: #8B6F1A !important; /* dark gold */
+    }
+
+        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-icon {
+            color: #FAF7F0 !important; /* cream */
+        }
+
+        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-text {
+            color: #FAF7F0 !important; /* cream */
+        }
+
+    /* ACTIVE/SELECTED state — light gold background (the "you are here" pill),
+   dark green text/icons for maximum contrast against the pale gold. */
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active {
+        background-color: var(--tm-gold-tint) !important; /* light gold #FBF4D6 */
+    }
+
+        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-icon {
+            color: var(--tm-green-dark) !important;
+        }
+
+        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-text {
+            color: var(--tm-green-dark) !important;
+        }
+
+        /* Also handle the collapsed parent item ("Admin Section") — when it's
+   active/expanded, it should use the same active styling. */
+        .rz-panel-menu .rz-panel-menu-item.rz-state-active > .rz-navigation-item-wrapper {
+            background-color: var(--tm-gold-tint) !important;
+        }
+
+/* ===========================================================================
+   Header — gold bar with rounded bottom corners + dark green text
+   =========================================================================== */
+
+.rz-header {
+    background: linear-gradient(90deg, var(--tm-gold) 0%, var(--tm-gold-bright) 100%) !important;
+    color: var(--tm-green-dark) !important;
+    border-bottom: 3px solid var(--tm-gold-bright) !important;
+    border-radius: 0 0 var(--tm-radius-lg) var(--tm-radius-lg) !important;
+    box-shadow: var(--tm-shadow) !important;
+}
+
+/* In RTL mode, flip the gradient direction so the brighter gold is on
+   the correct side (right side in RTL = "starting" side). */
+[dir="rtl"] .rz-header {
+    background: linear-gradient(270deg, var(--tm-gold) 0%, var(--tm-gold-bright) 100%) !important;
+}
+
+/* Header toolbar text — dark green for contrast on gold */
+.rz-header .takone-toolbar,
+.rz-header .takone-toolbar .rz-text {
+    color: var(--tm-green-dark) !important;
+}
+
+/* Header dropdowns — ensure text is dark green on the gold background.
+   Radzen dropdowns inherit color from the parent, but the dropdown
+   panel (when open) should still be on a white surface for readability. */
+.rz-header .rz-dropdown .rz-inputtext {
+    color: var(--tm-green-dark) !important;
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    border-color: var(--tm-green-dark) !important;
+}
+
+/* Header buttons (hamburger, logout) — dark green icon on gold */
+.rz-header .rz-button .rz-button-icon {
+    color: var(--tm-green-dark) !important;
+}
+
+/* Header badges — keep visible on gold */
+.rz-header .rz-badge {
+    background-color: var(--tm-green-dark) !important;
+    color: var(--tm-gold-bright) !important;
+}
+
+/* ===========================================================================
+   KPI summary cards — dark green background for Dashboard
+   ===========================================================================
+
+   The Dashboard's 6 KPI cards (Total Sales, Draft, Pending, Approved,
+   Cancelled, Active Customers) use RadzenCard with class="summary-card".
+   We add the .tm-kpi-card class to make them dark green with white text.
+   The colored border-top (set inline per-card) stays as the status
+   color indicator — it matches the donut chart slice colors.
+
+   WHY !important: the cards have inline Style="color: var(--rz-X)" on
+   the icon and stat-value span. Inline styles win over stylesheet rules
+   by default, so we need !important to override them with white. */
+
+.tm-kpi-card {
+    background-color: var(--tm-green-dark) !important;
+    color: #FFFFFF !important;
+    border-radius: var(--tm-radius-lg) !important;
+    box-shadow: var(--tm-shadow) !important;
+}
+
+    .tm-kpi-card .stat-value {
+        color: #FFFFFF !important;
+    }
+
+    .tm-kpi-card .rz-icon {
+        color: #FFFFFF !important;
+    }
+
+    .tm-kpi-card .rz-text {
+        color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+        /* Radzen applies .rz-text-secondary when ThemeColor="TextColor.Secondary".
+   Override it too — the default secondary color (gray) is unreadable on
+   the dark green card background. */
+        .tm-kpi-card .rz-text.rz-text-secondary,
+        .tm-kpi-card .rz-text-secondary {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+    /* Hover effect — slightly lighter green + lift */
+    .tm-kpi-card.summary-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--tm-shadow-lg) !important;
+    }
+
+/* Keep the colored border-top visible — it's 3px-4px solid and sits
+   above the dark green bg, so the status color is clearly visible. */
+
+/* DataGrid headers — green tint to anchor the table */
+.rz-datatable .rz-datatable-thead > tr > th {
+    background-color: var(--tm-green-mint);
+    color: var(--tm-green-dark);
+    font-weight: 600;
+    border-bottom: 2px solid var(--tm-green);
+}
+
+/* Badges — pill shape by default */
+.rz-badge {
+    border-radius: var(--tm-radius-pill);
+    font-weight: 600;
+}
+
+/* ===========================================================================
+   Tak utility classes
+   ---------------------------------------------------------------------------
+   Opt-in classes pages can use to apply Tak-specific visual treatments
+   that don't map cleanly to Radzen variables. These will be used when
+   we redesign pages (Products grid, etc.) — included here so they're
+   available from day one of the Tak Light theme.
+   =========================================================================== */
+
+/* Card with cream-tinted background (alternative to plain white card).
+   Mirrors the HTML's `bg-tm-cream` panels inside a white section. */
+.tm-card-cream {
+    background-color: var(--tm-cream);
+    border-radius: var(--tm-radius-lg);
+    padding: 1.25rem;
+}
+
+/* Card with mint-tinted background — used for callouts / hints. */
+.tm-card-mint {
+    background-color: var(--tm-green-mint);
+    border-radius: var(--tm-radius-lg);
+    padding: 1.25rem;
+}
+
+/* Card with gold-tinted background — used for highlights / awards. */
+.tm-card-gold {
+    background-color: var(--tm-gold-tint);
+    border-radius: var(--tm-radius-lg);
+    padding: 1.25rem;
+}
+
+/* Text color utilities — keep parity with the --tm-* tokens. */
+.tm-text-primary {
+    color: var(--tm-green);
+}
+
+.tm-text-accent {
+    color: var(--tm-gold);
+}
+
+.tm-text-muted {
+    color: var(--tm-gray);
+}
+
+.tm-text-on-green {
+    color: #FFFFFF;
+}
+
+.tm-text-on-gold {
+    color: var(--tm-green-dark);
+}
+
+/* Background color utilities */
+.tm-bg-cream {
+    background-color: var(--tm-cream);
+}
+
+.tm-bg-mint {
+    background-color: var(--tm-green-mint);
+}
+
+.tm-bg-gold-tint {
+    background-color: var(--tm-gold-tint);
+}
+
+.tm-bg-green {
+    background-color: var(--tm-green);
+    color: #FFFFFF;
+}
+
+.tm-bg-gold {
+    background-color: var(--tm-gold);
+    color: var(--tm-green-dark);
+}
+
+/* Gradient header — green-to-dark-green (mirrors the HTML's
+   `bg-gradient-to-l from-tm-green-dark via-tm-green to-tm-green`). */
+.tm-gradient-green {
+    background: linear-gradient(to left, var(--tm-green-dark), var(--tm-green), var(--tm-green));
+    color: #FFFFFF;
+}
+
+/* Gradient gold — for the "submit order" style primary CTA. */
+.tm-gradient-gold {
+    background: linear-gradient(to left, var(--tm-gold), var(--tm-gold-bright));
+    color: var(--tm-green-dark);
+}
+
+/* Pulse dot — small green/gold dot used for "live" indicators
+   (e.g. "ويژه کارکنان" badge in the HTML). */
+.tm-pulse-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--tm-radius-pill);
+    background-color: currentColor;
+    animation: tm-pulse 2s infinite;
+}
+
+@keyframes tm-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Gold shimmer bar — the animated announcement strip at the top of the
+   HTML. Use as: <div class="tm-gold-shimmer">...</div>. */
+.tm-gold-shimmer {
+    background: linear-gradient(110deg, var(--tm-gold) 0%, var(--tm-gold-soft) 45%, var(--tm-gold) 90%);
+    background-size: 200% 100%;
+    animation: tm-shimmer 4s linear infinite;
+    color: var(--tm-green-dark);
+}
+
+@keyframes tm-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Wheat pattern — subtle radial-gradient overlay used on hero sections
+   in the HTML. Apply as a background layer. */
+.tm-wheat-pattern {
+    background-image: radial-gradient(circle at 20% 50%, rgba(201, 162, 39, 0.08) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(201, 162, 39, 0.06) 0%, transparent 40%);
+}
+
+/* ===========================================================================
+   RTL tweaks
+   ---------------------------------------------------------------------------
+   Persian (fa-IR) renders RTL. The source HTML uses `dir="rtl"` on <html>
+   and the Vazirmatn font handles bidirectional text correctly. Radzen has
+   built-in RTL support — these rules just nudge a few Tak-specific bits.
+   =========================================================================== */
+[dir="rtl"] .tm-gradient-green,
+[dir="rtl"] .tm-gradient-gold {
+    background: linear-gradient(to right, var(--tm-green-dark), var(--tm-green), var(--tm-green));
+}
+
+[dir="rtl"] .tm-gradient-gold {
+    background: linear-gradient(to right, var(--tm-gold), var(--tm-gold-bright));
+}
+
+/* In RTL mode, the gold focus ring should still appear on the correct side.
+   Radzen handles input focus borders; this just ensures our gold box-shadow
+   is symmetric so it doesn't look off-center. */
+[dir="rtl"] .rz-textbox:focus,
+[dir="rtl"] .rz-textarea:focus,
+[dir="rtl"] .rz-inputtext:focus,
+[dir="rtl"] .rz-dropdown:focus,
+[dir="rtl"] .rz-numeric:focus {
+    box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18) !important;
+}

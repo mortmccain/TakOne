@@ -110,7 +110,9 @@
 
                 <div class="takone-spacer" style="flex: 1 1 auto;"></div>
 
-                @* Theme switcher — 10 free Radzen themes, persisted to localStorage.
+                @* Theme switcher — Tak custom themes (tak-light) + 10 free Radzen themes.
+                   Persisted to localStorage via window.takTheme.set().
+
                    NOTE on callback choice: an earlier draft used `@bind-Value`
                    + `Change`. RadzenDropDown<T>.Change is EventCallback<object?>
                    (NOT EventCallback<string>), so a lambda `args => Handler(args)`
@@ -125,9 +127,19 @@
                    @bind-Value (since ValueChanged replaces its auto-generated
                    setter) and bind Value + ValueChanged manually. The handler
                    already assigns _selectedTheme, so two-way binding is
-                   preserved. *@
+                   preserved.
+
+                   DISPLAY NAMES: previously _themes was List<string> and the
+                   dropdown showed the raw key ("tak-light", "standard-dark").
+                   Now it's List<ThemeOption> so the dropdown shows friendly
+                   names ("Tak Light", "Standard Dark") while binding to the
+                   underlying key ("tak-light", "standard-dark") via
+                   TextProperty="Display" ValueProperty="Key". Same pattern as
+                   the currency dropdown on CreateProduct.razor. *@
                 <RadzenDropDown Value="_selectedTheme"
                                 Data="_themes"
+                                TextProperty="Display"
+                                ValueProperty="Key"
                                 Style="width: 180px;"
                                 ValueChanged="@OnThemeChanged"
                                 TValue="string" />
@@ -160,7 +172,7 @@
 
 @code {
     private RadzenSidebar? sidebar;
-    private string _selectedTheme = "standard-dark";
+    private string _selectedTheme = "tak-light";
 
     // Initialize from the current UI culture so the dropdown shows the
     // ACTUAL active culture on first render (was previously hardcoded to
@@ -171,14 +183,37 @@
     private string _displayName = string.Empty;
     private string _roleBadge = string.Empty;
 
-    private readonly List<string> _themes = new()
+    // Theme list — Tak custom themes (tak-light, future tak-dark) appear
+    // first as "recommended" options; the 10 free Radzen themes follow as
+    // fallbacks. The Display string is what the user sees in the dropdown;
+    // the Key is what we persist to localStorage and pass to takTheme.set.
+    //
+    // To add a new Tak theme:
+    //   1. Add the CSS file at wwwroot/css/themes/{key}.css
+    //   2. Register the (key, base, override) tuple in TAK_THEMES in
+    //      wwwroot/js/theme.js
+    //   3. Add a new ThemeOption entry to _themes below
+    private readonly List<ThemeOption> _themes = new()
     {
-        "standard-dark", "standard",
-        "material-dark", "material",
-        "software-dark", "software",
-        "humanistic-dark", "humanistic",
-        "dark", "default"
+        new(Key: "tak-light",       Display: "Tak Light"),
+        new(Key: "standard-dark",   Display: "Standard Dark"),
+        new(Key: "standard",        Display: "Standard"),
+        new(Key: "material-dark",   Display: "Material Dark"),
+        new(Key: "material",        Display: "Material"),
+        new(Key: "software-dark",   Display: "Software Dark"),
+        new(Key: "software",        Display: "Software"),
+        new(Key: "humanistic-dark", Display: "Humanistic Dark"),
+        new(Key: "humanistic",      Display: "Humanistic"),
+        new(Key: "dark",            Display: "Dark"),
+        new(Key: "default",         Display: "Default")
     };
+
+    /// <summary>
+    /// Simple (Key, Display) record for binding the theme dropdown. The
+    /// RadzenDropDown uses TextProperty="Display" ValueProperty="Key" to
+    /// show the friendly name while persisting the underlying theme key.
+    /// </summary>
+    private sealed record ThemeOption(string Key, string Display);
 
     private readonly List<string> _cultures = new() { "fa-IR", "en-US" };
 
@@ -208,6 +243,59 @@
         }
     }
 
+    // Sync the theme dropdown with the actually-applied theme after the
+    // first interactive render.
+    //
+    // WHY THIS IS NEEDED:
+    //   - _selectedTheme is initialized to "tak-light" (the project default)
+    //     so the dropdown shows SOMETHING on the very first paint.
+    //   - But theme.js's IIFE reads localStorage and applies whatever is
+    //     actually saved — which might be "standard", "dark", etc. if the
+    //     user previously picked a different theme.
+    //   - Without this sync, the dropdown would show "Tak Light" while the
+    //     page actually rendered as (say) "Standard" — a confusing mismatch.
+    //
+    // WHY OnAfterRenderAsync (not OnInitializedAsync):
+    //   - OnInitializedAsync runs TWICE in InteractiveServer + prerender:
+    //     once during static prerender (no circuit yet — JS interop throws),
+    //     and once after hydration (circuit ready — JS interop works).
+    //   - Calling JS interop during the prerender pass throws and is noisy.
+    //   - OnAfterRenderAsync(firstRender: true) runs ONLY ONCE, after the
+    //     circuit is established. JS interop definitely works here.
+    //
+    // BRIEF FLASH TRADE-OFF:
+    //   - The dropdown paints with "Tak Light" on first render, then updates
+    //     to the saved theme after this method runs. If the saved theme IS
+    //     "tak-light" (the common case for new users), there's no flash.
+    //     For users with a different saved theme, the brief flash is
+    //     acceptable — the alternative (cookie-based theme sync) adds
+    //     complexity for marginal gain.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("takTheme.get");
+            // Only update + re-render if the saved theme differs from what
+            // the dropdown currently shows. Avoids a needless StateHasChanged
+            // call in the common case where saved == "tak-light".
+            if (!string.IsNullOrEmpty(saved) && saved != _selectedTheme)
+            {
+                _selectedTheme = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // If JS interop fails (e.g. theme.js didn't load due to a network
+            // error), leave _selectedTheme at its "tak-light" default. The
+            // dropdown still works for showing the user's intended theme;
+            // only the runtime switch (takTheme.set) would also fail, and
+            // that's a separate problem to surface via the error UI.
+        }
+    }
+
     private void ToggleSidebar()
     {
         // NOTE on the two earlier compile errors this resolves:
@@ -231,13 +319,39 @@
 
     private async Task OnThemeChanged(string theme)
     {
-        // RadzenDropDown<string>.Change is EventCallback<string> — not
+        // RadzenDropDown<string>.ValueChanged is EventCallback<string> — not
         // EventCallback<object> — so the parameter type must be `string`.
         // (The previous `object` parameter failed to convert at the call
         // site when @bind-Value was strongly typed to string.)
         _selectedTheme = theme;
-        await JS.InvokeVoidAsync("eval", $"document.querySelector('head link[href*=\"Radzen.Blazor/css/\"]').href = '/_content/Radzen.Blazor/css/{theme}.css'");
-        await JS.InvokeVoidAsync("eval", $"localStorage.setItem('radzen_theme', '{theme}')");
+
+        // Delegate ALL theme-swapping logic to wwwroot/js/theme.js. It handles:
+        //   - Built-in Radzen themes (single CSS file swap)
+        //   - Custom Tak themes (Radzen base + override CSS layer)
+        //   - localStorage persistence
+        // Keeping the JS as the single source of truth means the FOUC-safe
+        // initial-load path and the runtime-switch path use the exact same
+        // code — no risk of drift between them.
+        //
+        // DEFENSIVE TRY/CATCH: if theme.js failed to load for any reason
+        // (network error, browser extension blocking it, stale cached OLD
+        // version that didn't yet define window.takTheme, etc.), the JS
+        // interop call throws JSException. WITHOUT this catch, that exception
+        // escapes the EventCallback and crashes the Blazor circuit — the user
+        // sees a "Reconnect" modal and loses their current page state. WITH
+        // this catch, the dropdown still updates (we set _selectedTheme above)
+        // but the actual theme swap silently fails. The user can retry by
+        // reloading the page, which re-runs theme.js's IIFE.
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", theme);
+        }
+        catch (JSException)
+        {
+            // Swallow — see comment above. StateHasChanged is implicit
+            // because EventCallback methods trigger a re-render after
+            // they return (even partially).
+        }
     }
 
     private async Task OnCultureChanged(string culture)

@@ -133,14 +133,35 @@
   <data name="OptionalPlaceholder" xml:space="preserve">
     <value>— اختیاری —</value>
   </data>
-  <data name="FieldPictureUrl" xml:space="preserve">
-    <value>آدرس تصویر (اختیاری)</value>
+  <data name="FieldPicture" xml:space="preserve">
+    <value>تصویر (اختیاری)</value>
   </data>
-  <data name="FieldPictureUrlPlaceholder" xml:space="preserve">
-    <value>https://example.com/product.png</value>
+  <data name="PictureHint" xml:space="preserve">
+    <value>JPEG، PNG یا WebP. حداکثر ۵ مگابایت. تصویر هنگام کلیک روی «ایجاد محصول» آپلود می‌شود.</value>
   </data>
-  <data name="PictureUrlHint" xml:space="preserve">
-    <value>تصویر محصول اختیاری است. یک فایل تصویر بارگذاری کنید، یا خالی بگذارید تا تصویری ثبت نشود.</value>
+  <data name="UploadDropzoneTitle" xml:space="preserve">
+    <value>برای آپلود تصویر کلیک کنید</value>
+  </data>
+  <data name="UploadDropzoneHint" xml:space="preserve">
+    <value>JPEG، PNG یا WebP · حداکثر ۵ مگابایت</value>
+  </data>
+  <data name="RemoveImage" xml:space="preserve">
+    <value>حذف تصویر</value>
+  </data>
+  <data name="UploadErrorTitle" xml:space="preserve">
+    <value>آپلود ناموفق</value>
+  </data>
+  <data name="UploadInvalidType" xml:space="preserve">
+    <value>نوع فایل پشتیبانی نمی‌شود. انواع مجاز: JPEG، PNG، WebP.</value>
+  </data>
+  <data name="UploadInvalidSize" xml:space="preserve">
+    <value>فایل خیلی بزرگ است. حداکثر اندازه ۵ مگابایت است.</value>
+  </data>
+  <data name="UploadErrorResponseFormat" xml:space="preserve">
+    <value>پاسخ سرور در قالب مورد انتظار نبود. دوباره امتحان کنید.</value>
+  </data>
+  <data name="UploadErrorGeneric" xml:space="preserve">
+    <value>آپلود ناموفق بود. لطفاً دوباره امتحان کنید.</value>
   </data>
 
   <data name="SubmitButton" xml:space="preserve">
@@ -172,64 +193,10 @@
   <data name="HelpCategory" xml:space="preserve">
     <value>دسته‌بندی الزامی است. زیردسته‌ها اختیاری و آبشاری هستند — انتخاب دسته‌بندی جدید، سطوح پایین‌تر را پاک می‌کند.</value>
   </data>
-  <data name="HelpPictureUrl" xml:space="preserve">
-    <value>تصویر محصول اختیاری است. می‌توانید یک فایل تصویر بارگذاری کنید یا یک آدرس تصویر خارجی وارد کنید.</value>
+  <data name="HelpPicture" xml:space="preserve">
+    <value>تصویر اختیاری است. JPEG، PNG یا WebP تا ۵ مگابایت. تصویر تنها هنگام ثبت فرم ذخیره می‌شود.</value>
   </data>
   <data name="HelpPurchaseLimits" xml:space="preserve">
     <value>سقف خرید برای هر گروه مشتری پس از ایجاد محصول از صفحه جزئیات محصول قابل تنظیم است.</value>
-  </data>
-  <data name="PicturePreviewAlt" xml:space="preserve">
-    <value>پیش‌نمایش تصویر محصول</value>
-  </data>
-  <data name="PictureAttached" xml:space="preserve">
-    <value>تصویر پیوست شد</value>
-  </data>
-  <data name="PictureAttachedHint" xml:space="preserve">
-    <value>این تصویر همراه با محصول ذخیره خواهد شد. برای بارگذاری تصویر دیگر روی «حذف» کلیک کنید.</value>
-  </data>
-  <data name="PictureSelected" xml:space="preserve">
-    <value>تصویر انتخاب شد</value>
-  </data>
-  <data name="PictureSelectedHint" xml:space="preserve">
-    <value>تصویر هنگامی که روی «ایجاد محصول» کلیک کنید ذخیره می‌شود. برای پاک کردن آن روی «حذف» کلیک کنید.</value>
-  </data>
-  <data name="UploadingButton" xml:space="preserve">
-    <value>در حال بارگذاری…</value>
-  </data>
-  <data name="UploadChooseText" xml:space="preserve">
-    <value>انتخاب تصویر برای بارگذاری</value>
-  </data>
-  <data name="UploadHeadline" xml:space="preserve">
-    <value>یک تصویر را اینجا بکشید و رها کنید، یا روی دکمه زیر کلیک کنید</value>
-  </data>
-  <data name="UploadHint" xml:space="preserve">
-    <value>JPEG، PNG یا WebP — حداکثر ۵ مگابایت. تصویر هنگام ایجاد محصول ذخیره می‌شود.</value>
-  </data>
-  <data name="UploadInvalidType" xml:space="preserve">
-    <value>نوع فایل پشتیبانی نمی‌شود. لطفاً یک تصویر JPEG، PNG یا WebP انتخاب کنید.</value>
-  </data>
-  <data name="UploadInvalidSize" xml:space="preserve">
-    <value>فایل انتخاب‌شده بیش از حد بزرگ است. حداکثر اندازه ۵ مگابایت است.</value>
-  </data>
-  <data name="RemoveImage" xml:space="preserve">
-    <value>حذف</value>
-  </data>
-  <data name="UploadErrorTitle" xml:space="preserve">
-    <value>بارگذاری ناموفق بود</value>
-  </data>
-  <data name="UploadSuccessMessage" xml:space="preserve">
-    <value>تصویر با موفقیت بارگذاری شد.</value>
-  </data>
-  <data name="UploadSuccessSummary" xml:space="preserve">
-    <value>بارگذاری کامل شد</value>
-  </data>
-  <data name="UploadErrorResponseFormat" xml:space="preserve">
-    <value>پاسخ سرور در قالب مورد انتظار نبود. دوباره تلاش کنید.</value>
-  </data>
-  <data name="UploadParseException" xml:space="preserve">
-    <value>پاسخ بارگذاری قابل تجزیه نبود: {0}</value>
-  </data>
-  <data name="UploadErrorGeneric" xml:space="preserve">
-    <value>بارگذاری ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
 </root>

@@ -128,7 +128,40 @@ builder.Services.AddRazorComponents()
 builder.Services.AddRadzenComponents();
 
 // --- SignalR (used by NotificationHub + Blazor circuit) ---
-builder.Services.AddSignalR();
+//
+// CRITICAL: We MUST raise MaximumReceiveMessageSize from its default of
+// 32 KB to a value large enough for product-image uploads. Blazor Server
+// streams IBrowserFile bytes over the SignalR circuit; with the default
+// 32 KB cap, ANY file > 32 KB passed to OpenReadStream throws:
+//
+//   System.IO.InvalidDataException:
+//     The maximum message length of 32768B was exceeded.
+//
+// SYMPTOM (the bug this fixes):
+//   The user picks an image in /Admin/Products/Create, fills the form,
+//   clicks "Create product". The .razor page calls
+//   _selectedFile.OpenReadStream(maxAllowedSize: 5MB) which streams the
+//   file bytes from the browser to the server over the circuit. The
+//   moment the cumulative byte count crosses 32 KB, SignalR aborts the
+//   stream with an exception. The exception bubbles up to the page's
+//   catch block, which sets _submitError to "The upload failed. Please
+//   try again." and shows the error banner. Nothing appears in the
+//   server logs because the catch (silently, before this fix's logging
+//   was added) swallowed the exception.
+//
+//   Files <= 32 KB work fine, which is why the bug is intermittent —
+//   small thumbnails upload successfully, real photos (typically
+//   500 KB–5 MB) fail.
+//
+// FIX:
+//   Raise MaximumReceiveMessageSize to 10 MB. This is the per-message
+//   cap on incoming SignalR frames; Blazor chunks file uploads into
+//   messages, so the cap applies to each chunk, not the whole file.
+//   10 MB gives comfortable headroom over our 5 MB LocalFileStorage cap.
+builder.Services.AddSignalR(options =>
+{
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
+});
 
 // --- Current user service (Blazor Server specific) ---
 // ICurrentUserService is defined in Application (sync interface for now).

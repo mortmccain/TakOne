@@ -112,8 +112,8 @@
   <data name="Kpi_Cancelled" xml:space="preserve">
     <value>لغو شده</value>
   </data>
-  <data name="Kpi_ActiveCustomers" xml:space="preserve">
-    <value>مشتریان فعال</value>
+  <data name="Kpi_Invoiced" xml:space="preserve">
+    <value>فاکتور شده</value>
   </data>
 
   <!-- Chart titles + subtitles -->

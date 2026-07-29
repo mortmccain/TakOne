@@ -73,15 +73,14 @@
                 line-height: 1;
             }
 
-            .summary-card {
-                transition: transform 0.18s ease, box-shadow 0.18s ease;
-                cursor: default;
-            }
-
-                .summary-card:hover {
-                    transform: scale(1.03);
-                    box-shadow: 0 12px 2px rgba(49, 45, 47, 0.8);
-                }
+            /* NOTE: the .summary-card hover-lift + shadow rules used to live
+                           here, but they leaked across ALL themes via the
+                           `var(--tm-shadow-lg, ...)` fallback (other Radzen themes don't
+                           define --tm-shadow-lg, so they got the green-tinted rgba fallback
+                           — a Tak-specific look bleeding into non-Tak themes).
+                           The hover effect now lives ONLY in tak-light.css under the
+                           .tm-kpi-card.summary-card:hover selector, so non-Tak themes
+                           get the default Radzen card behavior with no forced shadow. */
 
             .status-chart .rz-legend-bottom {
                 bottom: -50px !important;
@@ -160,13 +159,15 @@ else if (_stats is not null)
        TOP ROW — 6-Column Summary Cards Grid
        ════════════════════════════════════════ *@
     <RadzenRow Gap="7" Style="margin-bottom: 1rem;">
-        @* Total Sales *@
+        @* Total Sales — the .tm-kpi-total class lets the Tak Light theme
+           override the top-bar color to purple (per user spec). Other themes
+           keep whatever --rz-primary resolves to. *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid var(--rz-primary); height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card tm-kpi-total" Style="border-top: 4px solid var(--rz-primary); height: 100%;">
                 <RadzenStack Gap="0.4rem">
                     <RadzenIcon Icon="receipt_long"
-                                Style="color: var(--rz-primary); font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: var(--rz-primary);">
+                                Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
                         @_stats.TotalSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
@@ -178,11 +179,11 @@ else if (_stats is not null)
 
         @* Draft *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid var(--rz-info); height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-info); height: 100%;">
                 <RadzenStack Gap="0.4rem">
                     <RadzenIcon Icon="edit_note"
-                                Style="color: var(--rz-text-secondary-color); font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: var(--rz-text-secondary-color);">
+                                Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
                         @_stats.DraftSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
@@ -194,11 +195,11 @@ else if (_stats is not null)
 
         @* Pending *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid var(--rz-warning); height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-warning); height: 100%;">
                 <RadzenStack Gap="0.4rem">
                     <RadzenIcon Icon="hourglass_empty"
-                                Style="color: var(--rz-warning); font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: var(--rz-warning);">
+                                Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
                         @_stats.PendingSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
@@ -210,11 +211,11 @@ else if (_stats is not null)
 
         @* Approved *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid var(--rz-success); height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-success); height: 100%;">
                 <RadzenStack Gap="0.4rem">
                     <RadzenIcon Icon="check_circle"
-                                Style="color: var(--rz-success); font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: var(--rz-success);">
+                                Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
                         @_stats.ApprovedSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
@@ -226,11 +227,11 @@ else if (_stats is not null)
 
         @* Cancelled *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid var(--rz-danger); height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-danger); height: 100%;">
                 <RadzenStack Gap="0.4rem">
                     <RadzenIcon Icon="cancel"
-                                Style="color: var(--rz-danger); font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: var(--rz-danger);">
+                                Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
                         @_stats.CancelledSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
@@ -240,16 +241,25 @@ else if (_stats is not null)
             </RadzenCard>
         </RadzenColumn>
 
-        @* Active Customers *@
+        @* Invoiced — replaces the previous "Active Customers" card per user
+           spec. The Invoiced count is sourced from the donut chart's
+           StatusBreakdown (computed by the dashboard handler — one row per
+           SaleStatus value present in scope). If no sales are in Invoiced
+           status, the count falls back to 0.
+
+           The border-top color #14B8A6 (teal) MATCHES the Invoiced donut
+           slice color (see GetStatusColor("Invoiced") below) — so the card
+           and the chart slice are visually cross-referenceable, just like
+           the other 4 status cards (Draft/Pending/Approved/Cancelled). *@
         <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card" Style="border-top: 3px solid #9c27b0; height: 100%;">
+            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid #14B8A6; height: 100%;">
                 <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="people" Style="color: #9c27b0; font-size: 1.5rem;" />
-                    <span class="stat-value" Style="color: #9c27b0;">
-                        @_stats.ActiveCustomersCount
+                    <RadzenIcon Icon="request_quote" Style="font-size: 1.5rem;" />
+                    <span class="stat-value">
+                        @InvoicedSalesCount
                     </span>
                     <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_ActiveCustomers"]
+                        @Loc["Kpi_Invoiced"]
                     </RadzenText>
                 </RadzenStack>
             </RadzenCard>
@@ -375,10 +385,18 @@ else if (_stats is not null)
                     {
                         <RadzenChart class="status-chart"
                                      Style="height: 260px;">
+                            @* Fills — per-slice colors matching the KPI card border-tops:
+                               Draft=blue(info), Pending=orange(warning),
+                               Approved=green(success), Invoiced=teal,
+                               Cancelled=red(danger).
+                               This makes the donut slices visually match the
+                               card accents so the user can cross-reference at
+                               a glance (e.g. red slice = cancelled = red card top). *@
                             <RadzenDonutSeries Data="@_stats.StatusBreakdown"
                                                Title="@Loc["ChartLegend_Count"]"
                                                CategoryProperty="Status"
-                                               ValueProperty="Count">
+                                               ValueProperty="Count"
+                                               Fills="@(_stats.StatusBreakdown.Select(s => GetStatusColor(s.Status)).ToList())">
                             </RadzenDonutSeries>
                             <RadzenLegend Position="LegendPosition.Bottom" />
                         </RadzenChart>
@@ -462,6 +480,27 @@ else if (_stats is not null)
     private DashboardStatsDto? _stats;
     private bool _isLoading = true;
     private string _loadError = string.Empty;
+
+    /// <summary>
+    /// Number of sales currently in <c>SaleStatus.Invoiced</c> status, within
+    /// the caller's scope. Sourced from <c>_stats.StatusBreakdown</c> (the
+    /// same data the donut chart binds to) — the dashboard handler emits one
+    /// <c>StatusCountDto</c> per status value present in scope, so we just
+    /// look up the "Invoiced" row and fall back to 0 if no sales are in
+    /// that status (e.g. an Employee-scoped dashboard with no invoiced sales
+    /// they personally approved).
+    ///
+    /// WHY NOT A DEDICATED DTO FIELD: the handler already produces the
+    /// StatusBreakdown list for the donut chart — adding a separate
+    /// <c>InvoicedSalesCount</c> property to <c>DashboardStatsDto</c> would
+    /// be redundant. The other 4 status cards (Draft, Pending, Approved,
+    /// Cancelled) DO have dedicated fields because they pre-date the
+    /// StatusBreakdown donut (added in task 7.2). Adding Invoiced directly
+    /// to the breakdown lookup keeps this card's data source consistent
+    /// with the donut's — they can never drift apart.
+    /// </summary>
+    private int InvoicedSalesCount =>
+        _stats?.StatusBreakdown?.FirstOrDefault(s => s.Status == "Invoiced")?.Count ?? 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -559,4 +598,35 @@ else if (_stats is not null)
         if (amount >= 1_000m) return $"{amount / 1_000m:F1}K";
         return amount.ToString("N0");
     }
+
+    /// <summary>
+    /// Maps a SaleStatus name (stringified by the DTO handler) to the hex
+    /// color used for the corresponding KPI card's border-top. This makes
+    /// the donut chart slices visually match the card accents — e.g. the
+    /// "Cancelled" slice is red, matching the red border-top on the
+    /// Cancelled KPI card.
+    ///
+    /// WHY HARDCODED HEX (not CSS variables): Radzen charts render slices
+    /// as SVG &lt;path fill="..."&gt; elements. SVG fill attributes do NOT
+    /// resolve CSS custom properties (var(--rz-info)) reliably across
+    /// browsers — the fill would be transparent. So we use the literal hex
+    /// values that the Radzen variables resolve to (defined in
+    /// tak-light.css's :root block).
+    ///
+    /// Color mapping:
+    ///   Draft     → #3B82F6  (blue,    matches --rz-info / card border-top)
+    ///   Pending   → #F59E0B  (orange,  matches --rz-warning)
+    ///   Approved  → #16A34A  (green,   matches --rz-success)
+    ///   Invoiced  → #14B8A6  (teal,    distinct from Approved's green)
+    ///   Cancelled → #DC2626  (red,     matches --rz-danger)
+    /// </summary>
+    private static string GetStatusColor(string status) => status switch
+    {
+        "Draft" => "#3B82F6",
+        "Pending" => "#F59E0B",
+        "Approved" => "#16A34A",
+        "Invoiced" => "#14B8A6",
+        "Cancelled" => "#DC2626",
+        _ => "#0E4D3C"  // fallback: tm-green
+    };
 }

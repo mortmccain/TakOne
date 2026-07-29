@@ -18,24 +18,52 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
-    <RadzenTheme theme="standard-dark" />
+
+    @* Radzen theme <link> — STATIC, with a stable ID.
+       --------------------------------------------------------------------
+       WHY NOT <RadzenTheme theme="standard-dark" />:
+       In .NET 10 InteractiveServer mode, <RadzenTheme> renders its <link>
+       through the HeadOutlet, which means the link is NOT in the initial
+       prerendered HTML — it's only injected AFTER Blazor hydrates and
+       establishes the circuit. Our FOUC-prevention script (js/theme.js)
+       runs synchronously in <head> BEFORE Blazor hydrates, so it would
+       find NO link to swap — the saved theme would never be applied on
+       initial load, and the page would always flash the default.
+
+       By emitting the <link> as plain static HTML with id="tak-radzen-theme",
+       the link is GUARANTEED to be in the DOM when theme.js's IIFE runs.
+       theme.js then finds it by ID (100% reliable — no selector matching
+       against Radzen's internal href format) and swaps the href to the
+       saved theme. This also makes runtime theme switching (via
+       takTheme.set) reliable — the link is always findable.
+
+       The href below is the DEFAULT theme (standard-dark). theme.js's IIFE
+       will swap it to the user's saved preference (or 'tak-light' as the
+       new default) before the browser paints. *@
+    <link rel="stylesheet" id="tak-radzen-theme"
+          href="_content/Radzen.Blazor/css/standard-dark.css" />
+
     <link rel="stylesheet" href="_content/Radzen.Blazor/Radzen.Blazor.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="TakOne.WebUI.styles.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
 
     @* FOUC-prevention script — extracted to wwwroot/js/theme.js (roadmap Phase 0.5).
-       Runs synchronously before the browser paints a single pixel. The
-       RadzenTheme component above already injected the standard-dark
-       <link> in the DOM, so querySelector finds it instantly and swaps
-       the href to the user's saved theme. This avoids the flash of the
-       default theme that would otherwise appear for ~50ms. *@
-    <script src="js/theme.js"></script>
+       Runs synchronously before the browser paints a single pixel. Finds the
+       #tak-radzen-theme link above and swaps its href to the saved theme.
+       This avoids the flash of the default theme that would otherwise appear.
+
+       CACHE-BUSTING: the ?v=5 query string forces the browser to fetch the
+       file fresh when the version is bumped. Bump the version number every
+       time theme.js (or notificationHub.js) changes in a way that the
+       browser MUST see. *@
+    <script src="js/theme.js?v=5"></script>
 
     @* SignalR client + our hub bridge (roadmap Phase 0.6). Loaded in <head>
-       so it's ready before any page tries to call notificationHub.start(). *@
+       so it's ready before any page tries to call notificationHub.start().
+       Same cache-bust rationale as theme.js. *@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-    <script src="js/notificationHub.js"></script>
+    <script src="js/notificationHub.js?v=5"></script>
 
     <HeadOutlet @rendermode="@RenderModeForPage" />
 </head>

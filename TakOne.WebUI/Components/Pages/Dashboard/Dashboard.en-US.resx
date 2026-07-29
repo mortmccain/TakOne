@@ -109,8 +109,8 @@
   <data name="Kpi_Cancelled" xml:space="preserve">
     <value>Cancelled</value>
   </data>
-  <data name="Kpi_ActiveCustomers" xml:space="preserve">
-    <value>Active Customers</value>
+  <data name="Kpi_Invoiced" xml:space="preserve">
+    <value>Invoiced</value>
   </data>
 
   <!-- Chart titles + subtitles -->
