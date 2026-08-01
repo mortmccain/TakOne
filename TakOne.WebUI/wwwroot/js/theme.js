@@ -64,8 +64,8 @@
     var TAK_THEMES = {
         'tak-light': {
             base: 'standard',                                  // Radzen light theme
-            override: '/css/themes/tak-light.css?v=3'           // Tak Light palette + utilities
-            // ?v=3 cache-bust: bump when tak-light.css changes
+            override: '/css/themes/tak-light.css?v=4'           // Tak Light palette + utilities
+            // ?v=4 cache-bust: bump when tak-light.css changes
         }
         // Future: 'tak-dark' will go here, with base='dark' or 'standard-dark'.
     };

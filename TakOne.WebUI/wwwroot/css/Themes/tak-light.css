@@ -463,54 +463,114 @@ body {
 }
 
 /* ===========================================================================
-   KPI summary cards — dark green background for Dashboard
+   KPI summary cards — green gradient + gold text/icons (Tak Light only)
    ===========================================================================
 
-   The Dashboard's 6 KPI cards (Total Sales, Draft, Pending, Approved,
-   Cancelled, Active Customers) use RadzenCard with class="summary-card".
-   We add the .tm-kpi-card class to make them dark green with white text.
+   The Dashboard's KPI cards (Total Sales, Draft, Pending, Approved,
+   Cancelled, Invoiced) use RadzenCard with class="summary-card tm-kpi-card".
+   This rule gives them:
+     - A subtle green gradient background (mirrors the source HTML's
+       `bg-gradient-to-br from-tm-green to-tm-green-dark` diagonal flow).
+     - GOLD text, numbers, and icons (per user spec — Tak's accent color
+       against the green for high contrast + brand consistency).
+     - A DARK GREEN shadow under the cards (per user spec — only in Tak
+       Light; non-Tak themes use Radzen's default card shadow).
+     - A hover lift with an even deeper dark-green shadow.
+
    The colored border-top (set inline per-card) stays as the status
-   color indicator — it matches the donut chart slice colors.
+   color indicator — it matches the donut chart slice colors so the
+   user can cross-reference at a glance.
 
    WHY !important: the cards have inline Style="color: var(--rz-X)" on
    the icon and stat-value span. Inline styles win over stylesheet rules
-   by default, so we need !important to override them with white. */
+   by default, so we need !important to override them with gold. */
 
 .tm-kpi-card {
-    background-color: var(--tm-green-dark) !important;
-    color: #FFFFFF !important;
+    /* Green gradient — diagonal from tm-green (#0E4D3C) to tm-green-dark
+       (#0A3528). Mirrors the source HTML's `bg-gradient-to-br from-tm-green
+       to-tm-green-dark`. The slight tonal shift gives a 3D feel without
+       being garish. */
+    background: linear-gradient(135deg, var(--tm-green) 0%, var(--tm-green-dark) 100%) !important;
+    color: var(--tm-gold-bright) !important;
     border-radius: var(--tm-radius-lg) !important;
-    box-shadow: var(--tm-shadow) !important;
+    /* Remove the WHITE side/bottom borders that the .rz-card rule applies
+       (border: 1px solid #F3F4F6). We only override the right/bottom/left
+       sides — the top stays untouched so the inline
+       Style="border-top: 4px solid <status-color>" keeps its colored
+       status indicator (blue/orange/green/red/teal/purple per card). */
+    border-right: none !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    /* GREEN shadow — Tak Light ONLY. RGB(14, 77, 60) is --tm-green (#0E4D3C),
+       a brighter, unambiguously-green shade (vs. the previous --tm-green-dark
+       which read as near-black). Three layers: tight inner for depth +
+       wide middle for body + soft outer glow for a visibly-green halo. */
+    box-shadow: 0 4px 8px -2px rgba(14, 77, 60, 0.40), 0 10px 22px -6px rgba(14, 77, 60, 0.45), 0 16px 32px -10px rgba(14, 77, 60, 0.30) !important;
+    /* Smooth transition for both transform (the hover lift) and box-shadow
+       (the deeper green shadow on hover). 0.22s feels responsive but not
+       snappy — matches the source HTML's transition feel. */
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-    .tm-kpi-card .stat-value {
-        color: #FFFFFF !important;
+    /* ── GOLD EVERYTHING INSIDE THE CARD ────────────────────────────────────
+   The user wants text, icons, AND the number inside the KPI cards to be
+   gold. The previous version used targeted selectors (.stat-value, .rz-icon,
+   .rz-text, .rz-text-secondary) — but Radzen's ThemeColor="TextColor.Secondary"
+   parameter applies an INLINE `style="color: var(--rz-text-secondary-color)"`
+   to the rendered <span>, and that inline style needs to be overridden with
+   an even stronger !important rule.
+
+   The wildcard descendant selector (.tm-kpi-card *) is the most aggressive
+   override possible — it catches EVERY descendant element (spans, icons,
+   paragraphs, text nodes inheriting from any wrapper) and forces gold.
+   Combined with !important, this wins against:
+     - Radzen's stylesheet rules (.rz-text-secondary, .rz-icon, etc.)
+     - Radzen's inline ThemeColor styles (style="color: var(--rz-...)")
+     - The page's own .stat-value inline <style> rule (no color set, but
+       defensive against future edits)
+
+   All text/icon/number inside the card becomes --tm-gold-bright (#D4AF37),
+   the brightest gold in the Tak palette — high contrast against the dark
+   green gradient and unambiguously "gold" to the eye.
+
+   The explicit element/class selectors (.stat-value, .rz-icon, .rz-text,
+   span, i, p) are listed ALONGSIDE the wildcard for defense-in-depth: if a
+   future browser ever introduces a quirk where `*` doesn't catch a specific
+   element type, the explicit selectors still apply. */
+    .tm-kpi-card *,
+    .tm-kpi-card .stat-value,
+    .tm-kpi-card .rz-icon,
+    .tm-kpi-card .rz-text,
+    .tm-kpi-card .rz-text.rz-text-secondary,
+    .tm-kpi-card .rz-text-secondary,
+    .tm-kpi-card span,
+    .tm-kpi-card i,
+    .tm-kpi-card p {
+        color: var(--tm-gold-bright) !important;
     }
 
-    .tm-kpi-card .rz-icon {
-        color: #FFFFFF !important;
-    }
-
-    .tm-kpi-card .rz-text {
-        color: rgba(255, 255, 255, 0.85) !important;
-    }
-
-        /* Radzen applies .rz-text-secondary when ThemeColor="TextColor.Secondary".
-   Override it too — the default secondary color (gray) is unreadable on
-   the dark green card background. */
-        .tm-kpi-card .rz-text.rz-text-secondary,
-        .tm-kpi-card .rz-text-secondary {
-            color: rgba(255, 255, 255, 0.7) !important;
-        }
-
-    /* Hover effect — slightly lighter green + lift */
+    /* Hover — lift + deeper GREEN shadow. Tak Light ONLY (this rule lives in
+   tak-light.css, so non-Tak themes get Radzen's default card behavior).
+   The lift is now -6px (was -3px) for a more noticeable, satisfying
+   movement. The shadow deepens and spreads further, all in the same
+   --tm-green (#0E4D3C) hue so the green halo is unmistakable. */
     .tm-kpi-card.summary-card:hover {
-        transform: translateY(-3px);
-        box-shadow: var(--tm-shadow-lg) !important;
+        transform: translateY(-6px) !important;
+        box-shadow: 0 8px 16px -4px rgba(14, 77, 60, 0.55), 0 18px 36px -6px rgba(14, 77, 60, 0.55), 0 24px 48px -12px rgba(14, 77, 60, 0.40) !important;
+    }
+
+    /* Total Sales card — purple top-bar in Tak Light.
+   The Total Sales card's top bar can have a different color per theme;
+   in Tak Light we make it purple (#9C27B0) per user spec. Other themes
+   keep their default (whatever --rz-primary resolves to).
+   The card's inline Style="border-top: 4px solid var(--rz-primary)" is
+   overridden here via !important. */
+    .tm-kpi-card.tm-kpi-total {
+        border-top-color: #9C27B0 !important;
     }
 
 /* Keep the colored border-top visible — it's 3px-4px solid and sits
-   above the dark green bg, so the status color is clearly visible. */
+   above the green gradient bg, so the status color is clearly visible. */
 
 /* DataGrid headers — green tint to anchor the table */
 .rz-datatable .rz-datatable-thead > tr > th {
