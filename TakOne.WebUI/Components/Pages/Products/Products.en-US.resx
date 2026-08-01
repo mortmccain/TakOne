@@ -61,6 +61,21 @@
   <data name="UserMenuTitle" xml:space="preserve">
     <value>View profile and settings</value>
   </data>
+  <data name="PageTitle" xml:space="preserve">
+    <value>Tak Makaron | Employee ordering portal</value>
+  </data>
+  <data name="MenuTitle" xml:space="preserve">
+    <value>Menu</value>
+  </data>
+  <data name="MenuAriaLabel" xml:space="preserve">
+    <value>Open menu</value>
+  </data>
+  <data name="RefreshProductsTitle" xml:space="preserve">
+    <value>Reload products</value>
+  </data>
+  <data name="PortalTitle" xml:space="preserve">
+    <value>Tak Makaron</value>
+  </data>
   <data name="SearchPlaceholder" xml:space="preserve">
     <value>Search products, codes, or categories...</value>
   </data>
@@ -98,7 +113,7 @@
     <value>Employees only</value>
   </data>
   <data name="HeroTitleWhite" xml:space="preserve">
-    <value>Only at the peak,</value>
+    <value>Alone at the Zenith,</value>
   </data>
   <data name="HeroTitleGold" xml:space="preserve">
     <value>Tak Makaron</value>

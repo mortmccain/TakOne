@@ -43,6 +43,53 @@
     min-height: 100vh;
 }
 
+    /* -----------------------------------------------------------------------------
+   GLOBAL SVG RULE (CRITICAL FIX):
+   -----------------------------------------------------------------------------
+   Radzen.Blazor.css applies global rules to inline <svg> elements (e.g.
+   `svg { fill: currentColor; }`) that can OVERRIDE the `stroke="currentColor"`
+   attribute on our Heroicons-style SVGs, causing the path to render as an
+   empty rectangle.
+
+   This rule re-asserts `fill: none` on every SVG inside the shop page so the
+   stroke-only icons (hamburger, cart, search, arrows, etc.) actually paint.
+   Specific selectors below (`.tm-hamburger svg`, `.tm-icon-button svg`, etc.)
+   further set the stroke color so each icon gets its intended brand color.
+
+   We also set `display: block` to remove the inline-element baseline gap
+   that adds 3-4px of unwanted whitespace below each SVG.
+   -------------------------------------------------------------------------- */
+    .tm-shop-page svg {
+        fill: none !important;
+        display: block;
+        flex-shrink: 0;
+    }
+
+        /* -----------------------------------------------------------------------------
+   HIGH-SPECIFICITY SVG PATH RULE (CRITICAL FIX v2):
+   -----------------------------------------------------------------------------
+   The previous fix (`.tm-shop-page svg { fill: none }`) sets `fill` on the
+   SVG element, expecting it to inherit to the <path>. But Radzen.Blazor.css
+   has MORE SPECIFIC selectors (e.g. `.rz-svg-icon path`, `.rz-button svg path`)
+   that override the inherited value, leaving the path with `fill: black` and
+   `stroke: none` — the path fills its bounding box instead of painting its
+   stroke, OR renders invisibly (empty rectangle).
+
+   This rule targets the <path> DIRECTLY with high specificity, ensuring the
+   stroke-only Heroicons-style paths paint correctly regardless of Radzen's
+   global rules. `!important` is the nuclear option — we need it because
+   Radzen's CSS uses `!important` on some of its SVG rules too.
+
+   NOTE: This sets a DEFAULT stroke color (tm-green). Individual icons can
+   override via their own more-specific rules (e.g. `.tm-stat-icon-gold svg path`
+   uses gold). The `currentColor` value is NOT used because Radzen's CSS
+   interferes with `currentColor` resolution on inline SVGs.
+   -------------------------------------------------------------------------- */
+        .tm-shop-page svg path {
+            fill: none !important;
+            stroke: var(--tm-green, #0E4D3C);
+        }
+
 /* =============================================================================
    1. TOP BAR — search bar + portal name + user/cart icons
    ========================================================================== */
@@ -106,6 +153,51 @@
     font-weight: 700;
 }
 
+/* Hamburger button — toggles the ShopLayout sidebar.
+   Sits beside the portal icon in the shop header.
+
+   WHY EXPLICIT COLOR ON THE SVG (not currentColor inheritance):
+   Radzen's base CSS (Radzen.Blazor.css) sets global `svg { fill: ... }`
+   rules that can override `stroke="currentColor"` on inline SVGs, leaving
+   the path unpainted — the SVG renders as an empty box. Setting
+   `stroke: var(--tm-green)` directly on the SVG element bypasses any
+   inherited fill rule and guarantees the path is visible. We also set
+   explicit width/height on the SVG itself (not just via CSS) so the SVG
+   always has a non-zero rendered size even before CSS loads. */
+.tm-hamburger {
+    width: 44px;
+    height: 44px;
+    border: 1px solid #e5e7eb;
+    background: transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--tm-green);
+    transition: background 0.18s ease, border-color 0.18s ease;
+    padding: 0;
+}
+
+    .tm-hamburger:hover {
+        background: var(--tm-green-mint);
+        border-color: var(--tm-green);
+    }
+
+    .tm-hamburger svg {
+        width: 24px;
+        height: 24px;
+        stroke: var(--tm-green);
+        fill: none !important;
+        display: block;
+    }
+
+        .tm-hamburger svg path {
+            stroke: var(--tm-green) !important;
+            fill: none !important;
+            stroke-width: 2;
+        }
+
 .tm-portal-text {
     display: flex;
     flex-direction: column;
@@ -161,6 +253,7 @@
     width: 20px;
     height: 20px;
     color: var(--tm-green);
+    stroke: var(--tm-green);
     pointer-events: none;
 }
 
@@ -215,7 +308,14 @@
     .tm-icon-button svg {
         width: 24px;
         height: 24px;
+        stroke: var(--tm-green);
+        fill: none !important;
     }
+
+        .tm-icon-button svg path {
+            stroke: var(--tm-green) !important;
+            fill: none !important;
+        }
 
     .tm-icon-button .tm-badge {
         position: absolute;
@@ -235,6 +335,90 @@
         border: 2px solid #fff;
         line-height: 1;
     }
+
+/* User avatar block — circle with first-initial + access-level text.
+   Matches the HTML reference design at /upload/tak-makaron-pc-design.html. */
+.tm-user-block {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 12px;
+    transition: background 0.18s ease;
+    color: inherit;
+    font-family: inherit;
+}
+
+    .tm-user-block:hover {
+        background: var(--tm-cream);
+    }
+
+.tm-user-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.2;
+}
+
+.tm-user-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--tm-green);
+    margin: 0;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tm-user-role {
+    font-size: 0.7rem;
+    color: var(--tm-gray);
+    margin: 0;
+}
+
+.tm-user-avatar {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    /* WHY !important on border-radius:
+       Radzen.Blazor.css has rules like `.rz-avatar { border-radius: 4px; }`
+       that can leak onto our custom avatar via class-collision or selector
+       inheritance. Without !important, the avatar renders as a rounded
+       SQUARE (4px radius) instead of a true circle (50%). The user reported
+       "the circle shows as a default rectangle" — this is the fix. */
+    border-radius: 50% !important;
+    -webkit-border-radius: 50% !important;
+    -moz-border-radius: 50% !important;
+    background: linear-gradient(135deg, var(--tm-green), var(--tm-green-dark)) !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.3), 0 2px 8px rgba(14, 77, 60, 0.3);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.tm-user-avatar-initial {
+    color: var(--tm-gold-bright);
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.tm-user-status-dot {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    background: #22c55e;
+    border: 2px solid #fff;
+    border-radius: 50%;
+}
 
 /* =============================================================================
    2. GOLDEN SHIMMER LINE — animated gradient under the header
@@ -308,7 +492,14 @@
 .tm-stat-icon svg {
     width: 24px;
     height: 24px;
+    stroke: currentColor;
+    fill: none !important;
 }
+
+    .tm-stat-icon svg path {
+        stroke: currentColor !important;
+        fill: none !important;
+    }
 
 .tm-stat-body {
     min-width: 0;
@@ -340,6 +531,21 @@
     border-radius: 12px;
     padding: 8px;
     margin: -8px;
+    /* WHY pointer-events: auto !important:
+       The stats bar sits directly under the sticky header (z-index: 50).
+       If any sibling/ancestor element accidentally captures pointer events
+       (e.g. an invisible overlay div, or a transformed ancestor creating a
+       new stacking context), the button's @onclick never fires — the user
+       clicks but nothing happens. Forcing pointer-events: auto here ensures
+       the button ALWAYS receives the click, regardless of what's around it. */
+    pointer-events: auto !important;
+    /* position: relative + z-index: 1 lifts the button above sibling
+       stat-items in the same grid cell, so its negative-margin extended
+       clickable area isn't covered by the next stat-item. */
+    position: relative;
+    z-index: 1;
+    font-family: inherit;
+    color: inherit;
 }
 
     .tm-stat-item--button:hover {
@@ -461,6 +667,7 @@
 .tm-cat-icon-bg svg {
     width: 16px;
     height: 16px;
+    stroke: currentColor;
 }
 
 .tm-cat-count {
@@ -856,6 +1063,7 @@
     .tm-add-btn svg {
         width: 16px;
         height: 16px;
+        stroke: currentColor;
     }
 
 .tm-add-btn-text-full {
@@ -972,6 +1180,7 @@
     width: 20px;
     height: 20px;
     color: var(--tm-gold-bright);
+    stroke: var(--tm-gold-bright);
 }
 
 .tm-cart-header-title {
@@ -1201,6 +1410,7 @@
     .tm-submit-btn svg {
         width: 16px;
         height: 16px;
+        stroke: currentColor;
     }
 
 /* =============================================================================

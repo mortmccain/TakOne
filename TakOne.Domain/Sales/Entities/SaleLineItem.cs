@@ -71,6 +71,31 @@ public sealed class SaleLineItem : BaseEntity
     /// Internal constructor. Only Sale (the aggregate root, same assembly)
     /// can create SaleLineItems, via <see cref="Sale.AddLineItem"/>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>DEFENSIVE COPY OF <paramref name="unitPrice"/>:</b>
+    /// <see cref="Money"/> is a <c>class</c> (reference type) mapped as an
+    /// <c>OwnsOne</c> value object on BOTH <c>Product.Price</c> and
+    /// <c>SaleLineItem.UnitPrice</c>. If the caller passes the SAME
+    /// <c>Money</c> instance that is already owned by a tracked
+    /// <c>Product</c> (which is exactly what every sale-creation handler
+    /// does — they pass <c>product.Price</c> directly), EF Core's change
+    /// tracker ends up with one <c>Money</c> instance claimed by two
+    /// different aggregate roots. On <c>SaveChangesAsync</c> this confuses
+    /// the change tracker into emitting a spurious UPDATE against the
+    /// existing <c>Product</c> row whose WHERE clause matches 0 rows, which
+    /// surfaces as:
+    /// <c>DbUpdateConcurrencyException: The database operation was expected
+    /// to affect 1 row(s), but actually affected 0 row(s)</c>.
+    /// </para>
+    /// <para>
+    /// Value objects should never be shared across aggregate boundaries —
+    /// even when immutable — because EF Core tracks owned types by
+    /// reference identity, not by value equality. We therefore clone the
+    /// incoming <c>Money</c> here so each <c>SaleLineItem</c> owns a
+    /// distinct <c>Money</c> instance, while preserving value semantics.
+    /// </para>
+    /// </remarks>
     internal SaleLineItem(
         Guid productId,
         string productName,
@@ -87,7 +112,12 @@ public sealed class SaleLineItem : BaseEntity
         ProductId = productId;
         ProductName = productName;
         Quantity = quantity;
-        UnitPrice = unitPrice;
+
+        // DEFENSIVE COPY — see XML doc on this constructor for the full
+        // rationale. Never assign the caller's Money reference directly;
+        // always construct a fresh instance with the same value.
+        UnitPrice = new Money(unitPrice.Amount, unitPrice.Currency);
+
         LineNumber = lineNumber;
     }
 

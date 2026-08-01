@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace TakOne.Infrastructure.Persistence.Migrations
+namespace TakOne.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

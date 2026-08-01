@@ -56,6 +56,37 @@ public sealed class RemoveSaleLineItemCommandHandler
 
         sale.RemoveLineItem(command.LineItemId);
 
+        // ------------------------------------------------------------------
+        // GHOST-DRAFT GUARD:
+        //   If the line we just removed was the LAST line on this draft, the
+        //   sale is now empty (zero line items, Total = 0). Persisting such
+        //   a draft creates a "ghost draft": a real Sales row in Draft status
+        //   that the Cart UI renders as empty (because CartDto with 0 lines
+        //   looks identical to "no cart"), but that subsequent Add-to-cart
+        //   attempts will find via GetActiveDraftForUserAsync — sending them
+        //   down the APPEND path on a draft the user can't see.
+        //
+        //   The original bug: the ghost draft persisted, blocked all future
+        //   cart additions, and was invisible to the user. Fix: hard-delete
+        //   the now-empty draft so the user's next Add-to-cart starts fresh.
+        //
+        //   We ONLY do this for drafts (the Status check at the top already
+        //   guarantees Status == Draft). SaleRepository.DeleteAsync adds a
+        //   second defensive Draft-only check.
+        // ------------------------------------------------------------------
+        if (sale.LineItems.Count == 0)
+        {
+            await saleRepository.DeleteAsync(sale, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation(
+                "RemoveSaleLineItem: line {LineItemId} was the last line on draft {SaleId}; " +
+                "draft hard-deleted to prevent ghost-draft state.",
+                command.LineItemId, sale.Id);
+
+            return Result.Success();
+        }
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(

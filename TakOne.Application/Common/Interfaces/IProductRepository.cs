@@ -27,6 +27,31 @@ public interface IProductRepository
         );
 
     /// <summary>
+    /// READ-ONLY batch load — same as <see cref="GetByIdsAsync"/> but returns
+    /// <c>AsNoTracking()</c> entities. USE THIS in handlers that ALSO load or
+    /// mutate a <c>Sale</c> (with its owned <c>Money</c> Total) in the same
+    /// DbContext — tracking Products alongside SaleLineItems that share the
+    /// same <c>Money</c> CLR type as an owned value object causes EF Core's
+    /// change tracker to confuse the owned instances and throw
+    /// <c>DbUpdateConcurrencyException</c> at SaveChanges.
+    ///
+    /// The canonical caller is <c>QuickReorderLastSaleCommandHandler</c>:
+    /// it loads multiple Products (to snapshot prices + check stock + look up
+    /// purchase limits) AND loads/creates the user's Draft Sale (which gets
+    /// new SaleLineItems added). Loading the Products AsNoTracking keeps
+    /// them out of the change tracker entirely, leaving only the Sale
+    /// (which we DO want to mutate + save) in the tracking equation.
+    ///
+    /// Same defensive semantics as <see cref="GetByIdsAsync"/>: empty input
+    /// returns an empty list; missing Ids are absent from the result.
+    /// </summary>
+    Task<List<Product>> GetByIdsReadOnlyAsync
+        (
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default
+        );
+
+    /// <summary>
     /// Returns a paginated list of products, optionally filtered by category.
     /// Used by the customer-facing shop view.
     /// </summary>

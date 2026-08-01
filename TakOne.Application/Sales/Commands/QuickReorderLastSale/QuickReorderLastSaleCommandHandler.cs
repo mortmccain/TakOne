@@ -52,7 +52,17 @@ public sealed class QuickReorderLastSaleCommandHandler
         // 2. Find or create the user's active Draft. We need it loaded WITH
         //    line items so we can compute "remaining limit" = limit - existing
         //    quantity already in the draft for the same product.
+        //
+        //    GHOST-DRAFT GUARD:
+        //      We track whether WE created the draft in this handler invocation
+        //      (`createdNewDraftInThisCall`). If we did AND the reorder adds
+        //      zero lines (everything skipped due to stock/limit), we will NOT
+        //      persist the empty draft — see step 5. This prevents the
+        //      "ghost draft" bug where an empty Sales row in Draft status
+        //      blocked all future Add-to-cart attempts.
         // ------------------------------------------------------------------
+        var createdNewDraftInThisCall = false;
+
         var draft = await saleRepository.GetActiveDraftForUserAsync
             (currentUser.UserId, cancellationToken);
 
@@ -72,6 +82,7 @@ public sealed class QuickReorderLastSaleCommandHandler
                 );
 
             await saleRepository.AddAsync(draft, cancellationToken);
+            createdNewDraftInThisCall = true;
         }
 
         // ------------------------------------------------------------------
@@ -157,12 +168,83 @@ public sealed class QuickReorderLastSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 5. Persist. Even if addedCount == 0, we may have created a fresh
-        //    empty draft (step 2) — SaveChanges will insert it. That's fine:
-        //    an empty cart is the same UI state as "no cart", and the user
-        //    can add items manually. The alternative (rolling back the empty
-        //    draft creation) adds complexity for no UX benefit.
+        // 5. Persist — with GHOST-DRAFT GUARD.
+        //
+        //    THREE cases:
+        //      A. We created a fresh draft in this call AND added ≥1 line:
+        //         SaveChanges inserts the Sale + its new line items. Normal path.
+        //
+        //      B. We created a fresh draft in this call AND added 0 lines
+        //         (everything skipped due to stock/limit): do NOT call
+        //         SaveChanges. The draft we AddAsync'd is only staged in the
+        //         ChangeTracker — skipping SaveChanges means it is NEVER
+        //         written to the DB. The DbContextScope will be disposed at
+        //         the end of the Wolverine handler invocation, dropping the
+        //         uncommitted tracked entity. This is the fix for the
+        //         "ghost draft" bug: previously we always persisted, leaving
+        //         an empty Draft row that blocked all future Add-to-cart.
+        //
+        //      C. We found an EXISTING draft (created in a prior call):
+        //         - If that existing draft had ≥1 line item before this call,
+        //           the line items we may have added (or not) get saved
+        //           normally — no ghost risk.
+        //         - If that existing draft was ALREADY empty (a ghost from
+        //           the old buggy code) AND we added 0 lines now, hard-delete
+        //           it to clean up the ghost. This is self-healing: even
+        //           users who already have a ghost draft from before this
+        //           fix will have it cleaned up the first time they hit
+        //           Quick Reorder.
         // ------------------------------------------------------------------
+        if (addedCount == 0)
+        {
+            if (createdNewDraftInThisCall)
+            {
+                // Case B — discard the never-persisted draft we staged.
+                // Detach would also work; just not calling SaveChanges is
+                // enough because AddAsync only stages the entity in the
+                // change tracker.
+                logger.LogInformation
+                    ("QuickReorderLastSale: user {UserId} repeated sale {LastSaleId} " +
+                     "but added 0 lines (all skipped due to stock/limit). " +
+                     "Newly-created draft was discarded — no empty draft persisted.",
+                    currentUser.UserId, lastSale.Id);
+
+                return Result<Guid>.Failure
+                    ("هیچ کالایی برای افزودن به سبد وجود نداشت — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+            }
+
+            // Case C — existing draft. If it's empty, hard-delete the ghost.
+            if (draft.LineItems.Count == 0)
+            {
+                await saleRepository.DeleteAsync(draft, cancellationToken);
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+
+                logger.LogInformation
+                    ("QuickReorderLastSale: user {UserId} repeated sale {LastSaleId} " +
+                     "but added 0 lines. Existing ghost draft {DraftId} was hard-deleted " +
+                     "to restore a clean cart state.",
+                    currentUser.UserId, lastSale.Id, draft.Id);
+
+                return Result<Guid>.Failure
+                    ("هیچ کالایی برای افزودن به سبد وجود نداشت — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+            }
+
+            // Existing draft with line items, nothing new to add —
+            // still SaveChanges so any incidental tracked changes (none
+            // in current code, but defensively) commit. No-op for the
+            // user's cart state.
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation
+                ("QuickReorderLastSale: user {UserId} repeated sale {LastSaleId} into draft {DraftId}. " +
+                 "Added {Added} lines, skipped {Skipped} (out of stock or limit-exhausted).",
+                currentUser.UserId, lastSale.Id, draft.Id, addedCount, skippedCount);
+
+            return Result<Guid>.Failure
+                ("هیچ کالای جدیدی به سبد شما اضافه نشد — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+        }
+
+        // Case A (or Case C with additions) — normal persist.
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation

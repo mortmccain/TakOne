@@ -8,7 +8,7 @@ using TakOne.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace TakOne.Infrastructure.Persistence.Migrations
+namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
     partial class ApplicationDbContextModelSnapshot : ModelSnapshot

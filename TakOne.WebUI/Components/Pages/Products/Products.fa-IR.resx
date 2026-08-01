@@ -61,6 +61,21 @@
   <data name="UserMenuTitle" xml:space="preserve">
     <value>مشاهده پروفایل و تنظیمات</value>
   </data>
+  <data name="PageTitle" xml:space="preserve">
+    <value>تک ماکارون | پورتال سفارش کارکنان</value>
+  </data>
+  <data name="MenuTitle" xml:space="preserve">
+    <value>منو</value>
+  </data>
+  <data name="MenuAriaLabel" xml:space="preserve">
+    <value>باز کردن منو</value>
+  </data>
+  <data name="RefreshProductsTitle" xml:space="preserve">
+    <value>بارگذاری مجدد محصولات</value>
+  </data>
+  <data name="PortalTitle" xml:space="preserve">
+    <value>تک ماکارون</value>
+  </data>
   <data name="SearchPlaceholder" xml:space="preserve">
     <value>جستجوی محصول، کد کالا یا دسته‌بندی...</value>
   </data>

@@ -9,10 +9,10 @@ using TakOne.Infrastructure.Persistence;
 
 #nullable disable
 
-namespace TakOne.Infrastructure.Persistence.Migrations
+namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260726115738_InitialCreate")]
+    [Migration("20260801113752_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

@@ -99,6 +99,34 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Product>> GetByIdsReadOnlyAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // READ-ONLY batch load — AsNoTracking variant of GetByIdsAsync.
+        // Used by QuickReorderLastSaleCommandHandler to avoid the EF Core
+        // owned-Money tracking conflict (see IProductRepository.GetByIdsReadOnlyAsync
+        // XML doc for the full rationale).
+        //
+        // AsNoTracking materializes entities WITHOUT adding them to the change
+        // tracker. The owned Money Price and the owned PurchaseLimits
+        // collection are also materialized without tracking.
+        // ------------------------------------------------------------------
+        var idList = ids as IList<Guid> ?? ids.ToList();
+
+        if (idList.Count == 0)
+        {
+            return new List<Product>();
+        }
+
+        return await _db.Products
+            .AsNoTracking()
+            .Where(p => idList.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<PaginatedResult<Product>> GetPaginatedAsync(
         Guid? categoryId = null,
         Guid? subCategoryId = null,

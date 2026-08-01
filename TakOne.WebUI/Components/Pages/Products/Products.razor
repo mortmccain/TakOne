@@ -82,7 +82,7 @@
 @inject IJSRuntime JS
 @inject IStringLocalizer<Products> Loc
 
-<PageTitle>تک ماکارون | پورتال سفارش کارکنان</PageTitle>
+<PageTitle>@Loc["PageTitle"]</PageTitle>
 
 @* Use ShopLayout (no default top bar — full-screen shop experience).
    The shop header below sticks to the top via CSS position: sticky. *@
@@ -103,24 +103,33 @@
                    the concrete layout type so we can call ToggleSidebar(). *@
                 <button type="button"
                         class="tm-hamburger"
-                        title="منو"
-                        aria-label="باز کردن منو"
+                        title="@Loc["MenuTitle"]"
+                        aria-label="@Loc["MenuAriaLabel"]"
                         @onclick="ToggleSidebar">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                    @* Inline style on <path> as a DEFENSIVE fallback — the CSS
+                       rule `.tm-hamburger svg path { stroke: var(--tm-green) !important; }`
+                       is the primary fix, but if Radzen's CSS somehow overrides
+                       even !important (e.g. via a runtime-injected style), this
+                       inline style has the highest priority and guarantees the
+                       hamburger lines are visible. Hardcoded color (not var())
+                       because CSS variables don't work in inline SVG attributes
+                       outside of style="" — and we want this to work even if
+                       the .tm-shop-page variable scope somehow isn't applied. *@
+                    <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
                     </svg>
                 </button>
                 <button type="button"
                         class="tm-portal-icon"
-                        title="بارگذاری مجدد محصولات"
+                        title="@Loc["RefreshProductsTitle"]"
                         @onclick="RefreshPage">
                     @* The user said they'll set the image later. Until then,
                        show a fallback "ت" letter (first letter of تک ماکارون). *@
                     <span class="tm-portal-icon-fallback">ت</span>
                 </button>
                 <div class="tm-portal-text">
-                    <span class="tm-portal-title">تک ماکارون</span>
-                    <span class="tm-portal-subtitle">پورتال سفارش کارکنان</span>
+                    <span class="tm-portal-title">@Loc["PortalTitle"]</span>
+                    <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
                 </div>
             </div>
 
@@ -129,11 +138,11 @@
                 <input type="text"
                        id="tm-shop-search-input"
                        class="tm-search-input"
-                       placeholder="جستجوی محصول، کد کالا یا دسته‌بندی..."
+                       placeholder="@Loc["SearchPlaceholder"]"
                        value="@_searchTerm"
                        @oninput="OnSearchInput"
                        @onkeypress="OnSearchKeypress" />
-                <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
                 </svg>
                 <div class="tm-search-kbd">
@@ -146,9 +155,9 @@
             <div class="tm-actions-block">
                 <button type="button"
                         class="tm-icon-button"
-                        title="سبد خرید"
+                        title="@Loc["CartTitle"]"
                         @onclick="GoToCart">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
                     </svg>
                     @if (_cart is { } c && c.TotalItemCount > 0)
@@ -169,7 +178,15 @@
                         <p class="tm-user-name">@CurrentUser.FullName</p>
                         <p class="tm-user-role">@GetRoleLabel()</p>
                     </div>
-                    <div class="tm-user-avatar">
+                    @* Inline style on the avatar div as a DEFENSIVE fallback.
+                       The CSS rule `.tm-user-avatar { border-radius: 50% !important; }`
+                       is the primary fix, but if a Radzen rule somehow overrides
+                       even !important, this inline style guarantees the avatar
+                       stays circular. Hardcoded gradient (not var()) because
+                       CSS variables in inline styles CAN work here (the element
+                       is inside .tm-shop-page) but we want maximum robustness. *@
+                    <div class="tm-user-avatar"
+                         style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
                         <span class="tm-user-avatar-initial">@GetUserInitial()</span>
                         <span class="tm-user-status-dot" aria-hidden="true"></span>
                     </div>
@@ -188,25 +205,25 @@
             @* سفارش های این ماه *@
             <div class="tm-stat-item">
                 <div class="tm-stat-icon tm-stat-icon-gold">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
                     </svg>
                 </div>
                 <div class="tm-stat-body">
-                    <p class="tm-stat-label">سفارش‌های این ماه</p>
-                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.OrdersThisMonth ?? 0) سفارش</p>
+                    <p class="tm-stat-label">@Loc["StatOrdersThisMonth"]</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.OrdersThisMonth ?? 0) @Loc["StatOrdersUnit"]</p>
                 </div>
             </div>
 
             @* مجموع خرید های این ماه *@
             <div class="tm-stat-item">
                 <div class="tm-stat-icon tm-stat-icon-green">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
                     </svg>
                 </div>
                 <div class="tm-stat-body">
-                    <p class="tm-stat-label">مجموع خریدهای این ماه</p>
+                    <p class="tm-stat-label">@Loc["StatMonthlyTotal"]</p>
                     <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats?.MonthlyTotal)</p>
                 </div>
             </div>
@@ -214,12 +231,12 @@
             @* مجموع خرید های این سال *@
             <div class="tm-stat-item">
                 <div class="tm-stat-icon tm-stat-icon-gold">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
                     </svg>
                 </div>
                 <div class="tm-stat-body">
-                    <p class="tm-stat-label">مجموع خریدهای این سال</p>
+                    <p class="tm-stat-label">@Loc["StatYearlyTotal"]</p>
                     <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats?.YearlyTotal)</p>
                 </div>
             </div>
@@ -227,13 +244,13 @@
             @* تعداد اجناس موجود *@
             <div class="tm-stat-item">
                 <div class="tm-stat-icon tm-stat-icon-green">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
                     </svg>
                 </div>
                 <div class="tm-stat-body">
-                    <p class="tm-stat-label">تعداد اجناس موجود</p>
-                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.InStockProductCount ?? 0) کالا</p>
+                    <p class="tm-stat-label">@Loc["StatInStockCount"]</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.InStockProductCount ?? 0) @Loc["StatInStockUnit"]</p>
                 </div>
             </div>
 
@@ -241,16 +258,16 @@
             <button type="button"
                     class="tm-stat-item tm-stat-item--button"
                     disabled="@_isReordering"
-                    title="سفارش آخرین خرید را در سبد شما بارگذاری می‌کند (با توجه به سقف جدید)"
+                    title="@Loc["StatQuickReorderTitle"]"
                     @onclick="QuickReorderAsync">
                 <div class="tm-stat-icon tm-stat-icon-gold">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                     </svg>
                 </div>
                 <div class="tm-stat-body">
-                    <p class="tm-stat-label">سفارش سریع</p>
-                    <p class="tm-stat-value">تکرار سفارش</p>
+                    <p class="tm-stat-label">@Loc["StatQuickReorder"]</p>
+                    <p class="tm-stat-value">@Loc["StatQuickReorderValue"]</p>
                 </div>
             </button>
         </div>
@@ -262,7 +279,7 @@
         @* ── 4a. RIGHT (col 2/12): CATEGORIES SIDEBAR ── *@
         <aside>
             <div class="tm-categories-card">
-                <h3 class="tm-categories-title">دسته‌بندی محصولات</h3>
+                <h3 class="tm-categories-title">@Loc["CategoriesTitle"]</h3>
                 <nav>
                     <ul class="tm-cat-list">
                         <li>
@@ -270,11 +287,11 @@
                                     class="tm-cat-item @(_selectedCategoryId is null ? "is-active" : "")"
                                     @onclick="(() => OnCategoryChanged(null))">
                                 <span class="tm-cat-icon-bg">
-                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zm9.75 0A2.25 2.25 0 0115.75 3.75H18A2.25 2.25 0 0120.25 6v2.25a2.25 2.25 0 01-2.25 2.25h-2.25A2.25 2.25 0 0113.5 8.25V6zm-9.75 9.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zm9.75 0a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
                                     </svg>
                                 </span>
-                                <span>همه محصولات</span>
+                                <span>@Loc["AllCategories"]</span>
                                 <span class="tm-cat-count tm-persian-num">@ToPersian(_totalCount)</span>
                             </button>
                         </li>
@@ -286,7 +303,7 @@
                                         class="tm-cat-item @(_selectedCategoryId == catId ? "is-active" : "")"
                                         @onclick="(() => OnCategoryChanged(catId))">
                                     <span class="tm-cat-icon-bg">
-                                        <svg fill="currentColor" viewBox="0 0 24 24">
+                                        <svg fill="currentColor" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                                             <path d="M4 4h16v2H4zm0 4h16v2H4zm0 4h16v2H4zm0 4h16v2H4z" />
                                         </svg>
                                     </span>
@@ -313,22 +330,22 @@
                 <div class="tm-hero-content">
                     <span class="tm-hero-badge">
                         <span class="tm-pulse-dot"></span>
-                        ویژه کارکنان
+                        @Loc["HeroBadge"]
                     </span>
                     <h2 class="tm-hero-title">
-                        تنها در اوج،
-                        <span class="tm-hero-title-gold">تک ماکارون</span>
+                        @Loc["HeroTitleWhite"]
+                        <span class="tm-hero-title-gold">@Loc["HeroTitleGold"]</span>
                     </h2>
                     @* No subtitle paragraph — removed per spec *@
                     <div class="tm-hero-buttons">
                         <button type="button" class="tm-hero-btn-gold" @onclick="GoToMyOrders">
-                            سفارش‌های من
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                            @Loc["HeroButtonMyOrders"]
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" width="16" height="16" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
                         <button type="button" class="tm-hero-btn-green" @onclick="GoToCart">
-                            سبد خرید
+                            @Loc["HeroButtonCart"]
                         </button>
                     </div>
                 </div>
@@ -337,8 +354,8 @@
             @* PRODUCTS HEADER (count only — filter/sort bar deferred to a later iteration) *@
             <div class="tm-products-header">
                 <div class="tm-products-title-block">
-                    <h3 class="tm-products-title">محبوب‌ترین محصولات</h3>
-                    <span class="tm-products-count tm-persian-num">@ToPersian(_totalCount) کالا</span>
+                    <h3 class="tm-products-title">@Loc["ProductsHeading"]</h3>
+                    <span class="tm-products-count tm-persian-num">@ToPersian(_totalCount) @Loc["ProductsCountUnit"]</span>
                 </div>
             </div>
 
@@ -347,25 +364,25 @@
             {
                 <div class="tm-loading">
                     <div class="tm-spinner"></div>
-                    <p class="tm-loading-text">در حال بارگذاری محصولات…</p>
+                    <p class="tm-loading-text">@Loc["LoadingProducts"]</p>
                 </div>
             }
             else if (!string.IsNullOrEmpty(_loadError))
             {
                 <div class="tm-empty">
                     <div class="tm-empty-icon">⚠</div>
-                    <h4 class="tm-empty-title">خطا در بارگذاری</h4>
-                    <p class="tm-empty-text">@_loadError</p>
-                    <button type="button" class="tm-clear-btn" @onclick="LoadProductsAsync">تلاش مجدد</button>
+                    <h4 class="tm-empty-title">@Loc["LoadErrorTitle"]</h4>
+                    <p class="tm-empty-text">@(string.IsNullOrEmpty(_loadError) ? Loc["LoadErrorDefault"] : _loadError)</p>
+                    <button type="button" class="tm-clear-btn" @onclick="LoadProductsAsync">@Loc["RetryButton"]</button>
                 </div>
             }
             else if (_filteredProducts.Count == 0)
             {
                 <div class="tm-empty">
                     <div class="tm-empty-icon">🔍</div>
-                    <h4 class="tm-empty-title">محصولی یافت نشد</h4>
-                    <p class="tm-empty-text">با فیلترهای فعلی محصولی برای نمایش وجود ندارد. می‌توانید فیلترها را پاک کنید.</p>
-                    <button type="button" class="tm-clear-btn" @onclick="ClearFilters">پاک کردن فیلترها</button>
+                    <h4 class="tm-empty-title">@Loc["EmptyTitle"]</h4>
+                    <p class="tm-empty-text">@Loc["EmptyMessage"]</p>
+                    <button type="button" class="tm-clear-btn" @onclick="ClearFilters">@Loc["ClearFiltersButton"]</button>
                 </div>
             }
             else
@@ -396,21 +413,21 @@
                                 {
                                     <span class="tm-stock-badge">
                                         <span class="tm-stock-dot tm-stock-dot-out"></span>
-                                        ناموجود
+                                        @Loc["StockOut"]
                                     </span>
                                 }
                                 else if (product.StockQuantity <= 10)
                                 {
                                     <span class="tm-stock-badge">
                                         <span class="tm-stock-dot tm-stock-dot-low"></span>
-                                        موجودی محدود
+                                        @Loc["StockLow"]
                                     </span>
                                 }
                                 else
                                 {
                                     <span class="tm-stock-badge">
                                         <span class="tm-stock-dot tm-stock-dot-in"></span>
-                                        موجود
+                                        @Loc["StockIn"]
                                     </span>
                                 }
                             </div>
@@ -443,14 +460,14 @@
                                         <button type="button"
                                                 class="tm-add-btn tm-add-btn-text-full"
                                                 disabled
-                                                title="به سقف خرید این محصول رسیده‌اید">
-                                            به سقف خرید رسیده‌اید
+                                                title="@Loc["AddButtonLimitReachedTitle"]">
+                                            @Loc["AddButtonLimitReached"]
                                         </button>
                                     }
                                     else if (stockOut)
                                     {
                                         <button type="button" class="tm-add-btn" disabled>
-                                            ناموجود
+                                            @Loc["AddButtonStockOut"]
                                         </button>
                                     }
                                     else
@@ -465,10 +482,10 @@
                                             }
                                             else
                                             {
-                                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" width="16" height="16" aria-hidden="true">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272" />
                                                 </svg>
-                                                <span>افزودن</span>
+                                                <span>@Loc["AddButtonText"]</span>
                                             }
                                         </button>
                                     }
@@ -512,7 +529,7 @@
                         </button>
 
                         <span class="tm-pager-info tm-persian-num">
-                            صفحه @ToPersian(_pageNumber) از @ToPersian(totalPages) — @ToPersian(_totalCount) کالا
+                            @string.Format(Loc["PagerInfo"], ToPersian(_pageNumber), ToPersian(totalPages), ToPersian(_totalCount))
                         </span>
                     </div>
                 }
@@ -523,21 +540,21 @@
         <aside class="tm-mini-cart">
             <div class="tm-cart-header">
                 <div class="tm-cart-header-left">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272" />
                     </svg>
-                    <h3 class="tm-cart-header-title">سبد سفارش</h3>
+                    <h3 class="tm-cart-header-title">@Loc["CartTitle"]</h3>
                 </div>
                 @if (_cart is { } cart && cart.TotalItemCount > 0)
                 {
-                    <span class="tm-cart-header-badge tm-persian-num">@ToPersian(cart.TotalItemCount) کالا</span>
+                    <span class="tm-cart-header-badge tm-persian-num">@ToPersian(cart.TotalItemCount) @Loc["CartUnit"]</span>
                 }
             </div>
 
             @if (_cart is null || _cart.LineItems.Count == 0)
             {
                 <div class="tm-cart-empty">
-                    سبد شما خالی است.
+                    @Loc["CartEmpty"]
                 </div>
             }
             else
@@ -581,15 +598,15 @@
                 <div class="tm-cart-footer">
                     <div class="tm-cart-totals">
                         <div class="tm-cart-totals-row">
-                            <span class="tm-cart-totals-label">جمع کالاها</span>
+                            <span class="tm-cart-totals-label">@Loc["CartSubtotal"]</span>
                             <span class="tm-cart-totals-value tm-persian-num">@FormatPrice(_cart.Total)</span>
                         </div>
                         <div class="tm-cart-totals-row">
-                            <span class="tm-cart-totals-label">هزینه ارسال</span>
-                            <span class="tm-cart-totals-value">رایگان</span>
+                            <span class="tm-cart-totals-label">@Loc["CartShipping"]</span>
+                            <span class="tm-cart-totals-value">@Loc["CartShippingFree"]</span>
                         </div>
                         <div class="tm-cart-totals-row tm-cart-totals-row--grand">
-                            <span class="tm-cart-totals-label">مبلغ نهایی</span>
+                            <span class="tm-cart-totals-label">@Loc["CartGrandTotal"]</span>
                             <span class="tm-cart-totals-value tm-persian-num">@FormatPrice(_cart.Total)</span>
                         </div>
                     </div>
@@ -599,12 +616,12 @@
                             @onclick="SubmitCartAsync">
                         @if (_isSubmitting)
                         {
-                            <span>در حال ثبت…</span>
+                            <span>@Loc["SubmittingOrder"]</span>
                         }
                         else
                         {
-                            <span>ثبت سفارش</span>
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                            <span>@Loc["SubmitOrder"]</span>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" width="16" height="16" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
                         }
@@ -742,7 +759,7 @@
         }
         catch (Exception)
         {
-            _loadError = "بارگذاری محصولات با خطا مواجه شد.";
+            _loadError = Loc["LoadErrorDefault"];
         }
         finally
         {
@@ -910,7 +927,7 @@
         var qty = GetQtyForProduct(product.Id);
         if (qty < 1)
         {
-            await Toast.Warning("تعداد باید حداقل ۱ باشد.");
+            await Toast.Warning(Loc["ToastQtyMin"]);
             return;
         }
 
@@ -922,13 +939,13 @@
         var remaining = GetRemainingForProduct(product);
         if (remaining <= 0)
         {
-            await Toast.Warning("به سقف خرید این محصول رسیده‌اید.");
+            await Toast.Warning(Loc["ToastLimitReached"]);
             return;
         }
         if (qty > remaining)
         {
             qty = remaining;
-            await Toast.Info($"تنها {ToPersian(remaining)} عدد دیگر می‌توانید اضافه کنید — به این مقدار تنظیم شد.");
+            await Toast.Info(string.Format(Loc["ToastQtyClamped"], ToPersian(remaining)));
         }
 
         _addingProductId = product.Id;
@@ -939,7 +956,7 @@
 
             if (result.IsSuccess)
             {
-                await Toast.Success("به سبد اضافه شد.");
+                await Toast.Success(Loc["ToastAddedToCart"]);
                 // Reload cart so the mini-cart + remaining limits reflect reality.
                 await LoadCartAsync();
                 // Reset the qty selector to 1 for the next add.
@@ -947,12 +964,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? "افزودن به سبد ناموفق بود.");
+                await Toast.Error(result.Error ?? Loc["ToastAddFailed"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error("خطای غیرمنتظره هنگام افزودن به سبد.");
+            await Toast.Error(Loc["ToastAddError"]);
         }
         finally
         {
@@ -978,12 +995,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? "به‌روزرسانی سبد ناموفق بود.");
+                await Toast.Error(result.Error ?? Loc["ToastUpdateFailed"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error("خطای غیرمنتظره هنگام به‌روزرسانی سبد.");
+            await Toast.Error(Loc["ToastUpdateError"]);
         }
         finally
         {
@@ -1005,18 +1022,18 @@
 
             if (result.IsSuccess)
             {
-                await Toast.Success("سفارش با موفقیت ثبت شد.");
+                await Toast.Success(Loc["ToastSubmitSuccess"]);
                 _cart = null; // cart is now in Pending status — active draft is gone
                 Navigation.NavigateTo("/Sales", forceLoad: false);
             }
             else
             {
-                await Toast.Error(result.Error ?? "ثبت سفارش ناموفق بود.");
+                await Toast.Error(result.Error ?? Loc["ToastSubmitFailed"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error("خطای غیرمنتظره هنگام ثبت سفارش.");
+            await Toast.Error(Loc["ToastSubmitError"]);
         }
         finally
         {
@@ -1036,7 +1053,7 @@
 
             if (result.IsSuccess)
             {
-                await Toast.Success("آخرین سفارش شما در سبد بارگذاری شد.");
+                await Toast.Success(Loc["ToastReorderSuccess"]);
                 await LoadCartAsync();
                 // Also reload products so the "remaining limit" indicators
                 // reflect the new state of the cart.
@@ -1044,12 +1061,12 @@
             }
             else
             {
-                await Toast.Warning(result.Error ?? "سفارشی برای تکرار یافت نشد.");
+                await Toast.Warning(result.Error ?? Loc["ToastReorderNoOrders"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error("خطای غیرمنتظره هنگام تکرار سفارش.");
+            await Toast.Error(Loc["ToastReorderError"]);
         }
         finally
         {
