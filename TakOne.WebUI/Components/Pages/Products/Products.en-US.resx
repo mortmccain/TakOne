@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Products.en-US.resx — English strings for Products.razor (shop page). -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="UserMenuTitle" xml:space="preserve">
+    <value>View profile and settings</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>Search products, codes, or categories...</value>
+  </data>
+  <data name="PortalSubtitle" xml:space="preserve">
+    <value>Employee ordering portal</value>
+  </data>
+  <data name="StatOrdersThisMonth" xml:space="preserve">
+    <value>Orders this month</value>
+  </data>
+  <data name="StatOrdersUnit" xml:space="preserve">
+    <value>orders</value>
+  </data>
+  <data name="StatMonthlyTotal" xml:space="preserve">
+    <value>Total purchases this month</value>
+  </data>
+  <data name="StatYearlyTotal" xml:space="preserve">
+    <value>Total purchases this year</value>
+  </data>
+  <data name="StatInStockCount" xml:space="preserve">
+    <value>In-stock products</value>
+  </data>
+  <data name="StatInStockUnit" xml:space="preserve">
+    <value>items</value>
+  </data>
+  <data name="StatQuickReorder" xml:space="preserve">
+    <value>Quick reorder</value>
+  </data>
+  <data name="StatQuickReorderValue" xml:space="preserve">
+    <value>Repeat last order</value>
+  </data>
+  <data name="StatQuickReorderTitle" xml:space="preserve">
+    <value>Loads your last submitted order into the cart, respecting current limits</value>
+  </data>
+  <data name="HeroBadge" xml:space="preserve">
+    <value>Employees only</value>
+  </data>
+  <data name="HeroTitleWhite" xml:space="preserve">
+    <value>Only at the peak,</value>
+  </data>
+  <data name="HeroTitleGold" xml:space="preserve">
+    <value>Tak Makaron</value>
+  </data>
+  <data name="HeroButtonMyOrders" xml:space="preserve">
+    <value>My orders</value>
+  </data>
+  <data name="HeroButtonCart" xml:space="preserve">
+    <value>Cart</value>
+  </data>
+  <data name="ProductsHeading" xml:space="preserve">
+    <value>Most popular products</value>
+  </data>
+  <data name="ProductsCountUnit" xml:space="preserve">
+    <value>items</value>
+  </data>
+  <data name="LoadingProducts" xml:space="preserve">
+    <value>Loading products...</value>
+  </data>
+  <data name="LoadErrorTitle" xml:space="preserve">
+    <value>Failed to load</value>
+  </data>
+  <data name="LoadErrorDefault" xml:space="preserve">
+    <value>Could not load products. Please try again.</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>No products found</value>
+  </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>No products match the current filters. Try clearing them.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>Clear filters</value>
+  </data>
+  <data name="StockOut" xml:space="preserve">
+    <value>Out of stock</value>
+  </data>
+  <data name="StockLow" xml:space="preserve">
+    <value>Limited stock</value>
+  </data>
+  <data name="StockIn" xml:space="preserve">
+    <value>In stock</value>
+  </data>
+  <data name="AddButtonLimitReached" xml:space="preserve">
+    <value>Max reached</value>
+  </data>
+  <data name="AddButtonLimitReachedTitle" xml:space="preserve">
+    <value>You have already selected the maximum available per person</value>
+  </data>
+  <data name="AddButtonStockOut" xml:space="preserve">
+    <value>Out of stock</value>
+  </data>
+  <data name="AddButtonText" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="PagerInfo" xml:space="preserve">
+    <value>Page {0} of {1} — {2} items</value>
+  </data>
+  <data name="CategoriesTitle" xml:space="preserve">
+    <value>Product categories</value>
+  </data>
+  <data name="AllCategories" xml:space="preserve">
+    <value>All products</value>
+  </data>
+  <data name="CartTitle" xml:space="preserve">
+    <value>Order cart</value>
+  </data>
+  <data name="CartUnit" xml:space="preserve">
+    <value>items</value>
+  </data>
+  <data name="CartEmpty" xml:space="preserve">
+    <value>Your cart is empty.</value>
+  </data>
+  <data name="CartSubtotal" xml:space="preserve">
+    <value>Items total</value>
+  </data>
+  <data name="CartShipping" xml:space="preserve">
+    <value>Shipping</value>
+  </data>
+  <data name="CartShippingFree" xml:space="preserve">
+    <value>Free</value>
+  </data>
+  <data name="CartGrandTotal" xml:space="preserve">
+    <value>Final amount</value>
+  </data>
+  <data name="SubmitOrder" xml:space="preserve">
+    <value>Submit order</value>
+  </data>
+  <data name="SubmittingOrder" xml:space="preserve">
+    <value>Submitting...</value>
+  </data>
+  <data name="ToastAddedToCart" xml:space="preserve">
+    <value>Added to cart.</value>
+  </data>
+  <data name="ToastAddFailed" xml:space="preserve">
+    <value>Could not add to cart.</value>
+  </data>
+  <data name="ToastAddError" xml:space="preserve">
+    <value>Unexpected error while adding to cart.</value>
+  </data>
+  <data name="ToastQtyMin" xml:space="preserve">
+    <value>Quantity must be at least 1.</value>
+  </data>
+  <data name="ToastLimitReached" xml:space="preserve">
+    <value>You have reached the purchase limit for this product.</value>
+  </data>
+  <data name="ToastQtyClamped" xml:space="preserve">
+    <value>You can only add {0} more — quantity adjusted.</value>
+  </data>
+  <data name="ToastUpdateFailed" xml:space="preserve">
+    <value>Could not update cart.</value>
+  </data>
+  <data name="ToastUpdateError" xml:space="preserve">
+    <value>Unexpected error while updating cart.</value>
+  </data>
+  <data name="ToastSubmitSuccess" xml:space="preserve">
+    <value>Order submitted successfully.</value>
+  </data>
+  <data name="ToastSubmitFailed" xml:space="preserve">
+    <value>Could not submit order.</value>
+  </data>
+  <data name="ToastSubmitError" xml:space="preserve">
+    <value>Unexpected error while submitting order.</value>
+  </data>
+  <data name="ToastReorderSuccess" xml:space="preserve">
+    <value>Your last order has been loaded into the cart.</value>
+  </data>
+  <data name="ToastReorderNoOrders" xml:space="preserve">
+    <value>No previous order to repeat.</value>
+  </data>
+  <data name="ToastReorderError" xml:space="preserve">
+    <value>Unexpected error while repeating order.</value>
+  </data>
+  <data name="RoleAdmin" xml:space="preserve">
+    <value>admin</value>
+  </data>
+  <data name="RoleEmployee" xml:space="preserve">
+    <value>Employee</value>
+  </data>
+  <data name="RoleManager" xml:space="preserve">
+    <value>Manager</value>
+  </data>
+  <data name="RoleCustomer" xml:space="preserve">
+    <value>Employee</value>
+  </data>
+  <data name="RoleReadOnly" xml:space="preserve">
+    <value>Manager</value>
+  </data>
+</root>

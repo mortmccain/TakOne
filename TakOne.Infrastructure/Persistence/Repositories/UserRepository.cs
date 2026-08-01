@@ -211,6 +211,28 @@ public sealed class UserRepository : IUserRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<string>> GetDistinctGroupNamesAsync(CancellationToken cancellationToken = default)
+    {
+        // SELECT DISTINCT GroupName FROM DomainUsers
+        //   WHERE GroupName IS NOT NULL AND GroupName != ''
+        //   ORDER BY GroupName
+        //
+        // Staff users have GroupName = null and are filtered out. We also
+        // filter empty strings defensively (a buggy creation flow could
+        // store "" instead of null — the domain guard should prevent it,
+        // but this is cheap insurance).
+        //
+        // Distinct + OrderBy are translated by EF Core into SQL DISTINCT +
+        // ORDER BY — single round-trip, no client-side grouping.
+        return await _db.DomainUsers
+            .Where(u => u.GroupName != null && u.GroupName != string.Empty)
+            .Select(u => u.GroupName!)
+            .Distinct()
+            .OrderBy(name => name)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)
     {
         // AddAsync queues the Domain User for INSERT on the next SaveChanges.

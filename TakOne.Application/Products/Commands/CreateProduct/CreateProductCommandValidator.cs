@@ -62,6 +62,34 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
         RuleFor(x => x)
             .Must(x => x.SubCategoryId is not null || x.SubSubCategoryId is null)
             .WithMessage("Cannot specify a SubSubCategoryId without a SubCategoryId.");
+
+        // ── Per-group purchase limits ────────────────────────────────────
+        // Each entry must have a non-empty GroupName (1..100 chars, matching
+        // the domain CustomerGroupPurchaseLimit guard) and a Limit >= 1.
+        // The handler also checks for duplicate group names across the list
+        // (a list-level invariant that requires full-list context, which
+        // FluentValidation can do but is cleaner in the handler).
+        //
+        // WHY .When(...) instead of `x => x.PurchaseLimits ?? Array.Empty<...>()`:
+        //   FluentValidation's RuleForEach needs to infer a property name from
+        //   the lambda body. A null-coalescing expression (??) breaks that
+        //   inference — it throws InvalidOperationException at validation time:
+        //     "Could not infer property name for expression: x => (x.PurchaseLimits ?? Empty())"
+        //   The fix is to pass the property directly (which FluentValidation
+        //   CAN infer) and guard the whole rule with .When(...) so an empty
+        //   or null list simply skips validation (no entries to validate).
+        RuleForEach(x => x.PurchaseLimits)
+            .ChildRules(entry =>
+            {
+                entry.RuleFor(e => e.GroupName)
+                    .NotEmpty().WithMessage("Group name is required for each purchase limit.")
+                    .MaximumLength(100).WithMessage("Group name cannot exceed 100 characters.");
+
+                entry.RuleFor(e => e.Limit)
+                    .GreaterThanOrEqualTo(1).WithMessage("Purchase limit must be at least 1.")
+                    .LessThanOrEqualTo(10_000).WithMessage("Purchase limit cannot exceed 10,000.");
+            })
+            .When(x => x.PurchaseLimits is { Count: > 0 });
     }
 
     /// <summary>

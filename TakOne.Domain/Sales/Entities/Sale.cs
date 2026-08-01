@@ -512,6 +512,23 @@ public sealed class Sale : AggregateRoot
     /// <summary>
     /// Recalculates the Sale Total from line items.
     /// Called after every line item change.
+    ///
+    /// NOTE ON EF CORE TRACKING:
+    ///   This method REPLACES the `Total` reference with a brand-new Money
+    ///   instance (the `+` operator on Money always returns a new instance).
+    ///   This is safe ONLY because Money's properties have `private set`
+    ///   (see Money.cs for the full rationale). When EF Core's change tracker
+    ///   detects that `Sale.Total` now references a different Money object,
+    ///   it updates the OLD tracked Money instance's Amount and Currency
+    ///   in place (via the private setters, using reflection) to match the
+    ///   new reference's values. The tracked instance becomes Modified, and
+    ///   SaveChanges generates a correct UPDATE that affects 1 row.
+    ///
+    ///   If Money's properties were get-only (no setters at all), EF Core
+    ///   could NOT update the tracked instance in place, and SaveChanges
+    ///   would throw DbUpdateConcurrencyException:
+    ///     "The database operation was expected to affect 1 row(s),
+    ///      but actually affected 0 row(s)"
     /// </summary>
     private void RecalculateTotal()
     {

@@ -59,6 +59,7 @@
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
+@using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductsPaginated
@@ -70,6 +71,7 @@
 @using TakOne.Application.Sales.Commands.UpdateSaleLineItem
 @using TakOne.Application.Sales.Commands.SubmitSale
 @using TakOne.Application.Sales.Commands.QuickReorderLastSale
+@using TakOne.Application.Sales.Queries.GetCustomerShopStats
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
@@ -78,20 +80,36 @@
 @inject NavigationManager Navigation
 @inject ToastService Toast
 @inject IJSRuntime JS
+@inject IStringLocalizer<Products> Loc
 
 <PageTitle>تک ماکارون | پورتال سفارش کارکنان</PageTitle>
+
+@* Use ShopLayout (no default top bar — full-screen shop experience).
+   The shop header below sticks to the top via CSS position: sticky. *@
+@layout TakOne.WebUI.Components.Layout.ShopLayout
 
 @* products.css is loaded globally by App.razor (scoped under .tm-shop-page,
    so it doesn't affect other routes). No per-page <link> needed here. *@
 
 <div class="tm-shop-page">
 
-    @* ── 1. HEADER: portal name | search bar | user/cart icons ── *@
+    @* ── 1. HEADER: hamburger + portal name | search bar | cart + user avatar ── *@
     <header class="tm-shop-header">
         <div class="tm-shop-header-inner">
 
-            @* Right side (RTL): portal name + refresh icon (image placeholder) *@
+            @* Right side (RTL): hamburger + portal name + refresh icon *@
             <div class="tm-portal-block">
+                @* Hamburger — toggles the ShopLayout's sidebar. Cast to
+                   the concrete layout type so we can call ToggleSidebar(). *@
+                <button type="button"
+                        class="tm-hamburger"
+                        title="منو"
+                        aria-label="باز کردن منو"
+                        @onclick="ToggleSidebar">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
                 <button type="button"
                         class="tm-portal-icon"
                         title="بارگذاری مجدد محصولات"
@@ -124,16 +142,8 @@
                 </div>
             </div>
 
-            @* Left side (RTL): user icon → settings, cart icon → cart page *@
+            @* Left side (RTL): cart icon + user avatar (circle with initial + role) *@
             <div class="tm-actions-block">
-                <button type="button"
-                        class="tm-icon-button"
-                        title="تنظیمات"
-                        @onclick="GoToSettings">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                </button>
                 <button type="button"
                         class="tm-icon-button"
                         title="سبد خرید"
@@ -145,6 +155,24 @@
                     {
                         <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
                     }
+                </button>
+
+                @* User avatar — circle with first initial of the user's actual
+                   name (NOT their worker ID) + their access level. Clicking it
+                   goes to /Settings (same as the previous gear icon).
+                   Matches the HTML reference design at /upload/tak-makaron-pc-design.html. *@
+                <button type="button"
+                        class="tm-user-block"
+                        title="@Loc["UserMenuTitle"]"
+                        @onclick="GoToSettings">
+                    <div class="tm-user-text">
+                        <p class="tm-user-name">@CurrentUser.FullName</p>
+                        <p class="tm-user-role">@GetRoleLabel()</p>
+                    </div>
+                    <div class="tm-user-avatar">
+                        <span class="tm-user-avatar-initial">@GetUserInitial()</span>
+                        <span class="tm-user-status-dot" aria-hidden="true"></span>
+                    </div>
                 </button>
             </div>
         </div>
@@ -166,7 +194,7 @@
                 </div>
                 <div class="tm-stat-body">
                     <p class="tm-stat-label">سفارش‌های این ماه</p>
-                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats.OrdersThisMonth) سفارش</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.OrdersThisMonth ?? 0) سفارش</p>
                 </div>
             </div>
 
@@ -179,7 +207,7 @@
                 </div>
                 <div class="tm-stat-body">
                     <p class="tm-stat-label">مجموع خریدهای این ماه</p>
-                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats.MonthlyTotal)</p>
+                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats?.MonthlyTotal)</p>
                 </div>
             </div>
 
@@ -192,7 +220,7 @@
                 </div>
                 <div class="tm-stat-body">
                     <p class="tm-stat-label">مجموع خریدهای این سال</p>
-                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats.YearlyTotal)</p>
+                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats?.YearlyTotal)</p>
                 </div>
             </div>
 
@@ -205,7 +233,7 @@
                 </div>
                 <div class="tm-stat-body">
                     <p class="tm-stat-label">تعداد اجناس موجود</p>
-                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats.InStockProductCount) کالا</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats?.InStockProductCount ?? 0) کالا</p>
                 </div>
             </div>
 
@@ -591,6 +619,14 @@
 @code {
     // ── State ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Receives the ShopLayout instance via cascade so the shop header's
+    /// hamburger button can call ToggleSidebar() on it. The ShopLayout
+    /// wraps its @Body in <c>&lt;CascadingValue Value="this" TValue="ShopLayout"&gt;</c>
+    /// to publish itself.
+    /// </summary>
+    [CascadingParameter] public TakOne.WebUI.Components.Layout.ShopLayout? ShopLayoutRef { get; set; }
+
     private List<ProductListItemDto> _products = new();
     private List<ProductListItemDto> _filteredProducts => _products; // stock filter is server-side now
 
@@ -624,21 +660,9 @@
     // Default value is 1 when the product is first rendered.
     private readonly Dictionary<Guid, int> _qtyByProduct = new();
 
-    // Stub stats — TODO: replace with a real backend query later.
-    // (The user said "do these now and we'll talk about the rest later".)
-    private StatsDto _stats = new();
-
-    /// <summary>
-    /// Lightweight DTO for the 4 numeric stats. The quick-reorder "stat" is
-    /// a button, not a value, so it's not in here.
-    /// </summary>
-    private sealed class StatsDto
-    {
-        public int OrdersThisMonth { get; set; }
-        public MoneyDto MonthlyTotal { get; set; } = new();
-        public MoneyDto YearlyTotal { get; set; } = new();
-        public int InStockProductCount { get; set; }
-    }
+    // Stats — loaded from the real backend query (GetCustomerShopStatsQuery).
+    // Null while loading; the UI shows 0/— until the first load completes.
+    private CustomerShopStatsDto? _stats;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -649,7 +673,8 @@
             await Task.WhenAll(
                 LoadCategoriesAsync(),
                 LoadProductsAsync(),
-                LoadCartAsync());
+                LoadCartAsync(),
+                LoadStatsAsync());
         }
         finally
         {
@@ -741,6 +766,27 @@
         }
     }
 
+    /// <summary>
+    /// Loads the 4 numeric shop stats (orders this month, monthly/yearly
+    /// totals, in-stock count) from GetCustomerShopStatsQuery. Non-fatal —
+    /// on failure the cards just show 0/—.
+    /// </summary>
+    private async Task LoadStatsAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CustomerShopStatsDto>>(
+                new GetCustomerShopStatsQuery());
+
+            _stats = result.IsSuccess ? result.Value : null;
+        }
+        catch
+        {
+            // Non-fatal: stats cards show 0/—.
+            _stats = null;
+        }
+    }
+
     // ── Filter handlers ─────────────────────────────────────────────────
 
     private async Task OnSearchInput(ChangeEventArgs e)
@@ -802,25 +848,38 @@
     }
 
     /// <summary>
-    /// Remaining purchase-limit units the current user can still add for this
-    /// product = (limit) - (already in cart). For staff (no limit) returns
-    /// int.MaxValue. Negative clamp: if the cart already exceeds the limit
-    /// (e.g. limit was tightened after the cart was loaded), returns 0.
+    /// How many MORE units the current user can add for this product in a
+    /// single click = min(remaining stock, remaining limit), where:
+    ///   - remaining stock = StockQuantity - already in this user's cart
+    ///   - remaining limit = MyPurchaseLimit - already in this user's cart
+    ///     (for staff with no limit, this is int.MaxValue — bounded only by stock)
+    ///
+    /// Returns 0 when either stock or limit is exhausted (the Add button is
+    /// then replaced with the "you have already selected the maximum"
+    /// disabled state).
+    ///
+    /// WHY we subtract in-cart from BOTH: stock is shared across all users
+    /// (another user could grab it between page load and add-to-cart), but
+    /// the per-user cap on stock is "what's left after I've reserved my
+    /// share". The backend re-checks both; the frontend clamp is best-effort
+    /// for UX, not a security boundary.
     /// </summary>
     private int GetRemainingForProduct(ProductListItemDto product)
     {
-        if (!product.MyPurchaseLimit.HasValue)
-        {
-            // Staff — no per-product cap. The remaining is bounded only by stock.
-            return product.StockQuantity;
-        }
-
         var inCart = _cart?.LineItems
             .Where(li => li.ProductId == product.Id)
             .Sum(li => li.Quantity) ?? 0;
 
-        var remaining = product.MyPurchaseLimit.Value - inCart;
-        return Math.Max(0, remaining);
+        var remainingStock = Math.Max(0, product.StockQuantity - inCart);
+
+        if (!product.MyPurchaseLimit.HasValue)
+        {
+            // Staff — no per-product cap. Bounded only by remaining stock.
+            return remainingStock;
+        }
+
+        var remainingLimit = Math.Max(0, product.MyPurchaseLimit.Value - inCart);
+        return Math.Min(remainingStock, remainingLimit);
     }
 
     private void IncrementQty(Guid productId)
@@ -849,16 +908,28 @@
     private async Task AddToCartAsync(ProductListItemDto product)
     {
         var qty = GetQtyForProduct(product.Id);
-        if (qty < 1) return;
+        if (qty < 1)
+        {
+            await Toast.Warning("تعداد باید حداقل ۱ باشد.");
+            return;
+        }
 
         // Clamp defensively against a stale UI (cart changed server-side
-        // since the page was loaded).
+        // since the page was loaded). If the clamp brings qty to 0, the
+        // user's limit is exhausted — surface a friendly toast instead of
+        // silently returning (the original silent-return was the cause of
+        // "add buttons don't actually add anything to cart" reports).
         var remaining = GetRemainingForProduct(product);
-        if (product.MyPurchaseLimit.HasValue && qty > remaining)
+        if (remaining <= 0)
+        {
+            await Toast.Warning("به سقف خرید این محصول رسیده‌اید.");
+            return;
+        }
+        if (qty > remaining)
         {
             qty = remaining;
+            await Toast.Info($"تنها {ToPersian(remaining)} عدد دیگر می‌توانید اضافه کنید — به این مقدار تنظیم شد.");
         }
-        if (qty < 1) return;
 
         _addingProductId = product.Id;
         try
@@ -1010,6 +1081,57 @@
     private void GoToMyOrders()
     {
         Navigation.NavigateTo("/Sales", forceLoad: false);
+    }
+
+    /// <summary>
+    /// Toggles the ShopLayout's sidebar (the hamburger button in the shop
+    /// header calls this). The ShopLayout exposes ToggleSidebar() as a
+    /// public method on the layout component itself.
+    /// </summary>
+    private void ToggleSidebar()
+    {
+        ShopLayoutRef?.ToggleSidebar();
+    }
+
+    // ── User avatar helpers ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the first character of the current user's ACTUAL NAME (not
+    /// their worker ID / username). Used as the single-letter initial
+    /// inside the circle avatar in the shop header — matches the HTML
+    /// reference design at /upload/tak-makaron-pc-design.html.
+    ///
+    /// Falls back to "؟" (Persian question mark) if the name is empty/null
+    /// (shouldn't happen — ICurrentUserService.FullName falls back to the
+    /// worker ID — but defensive).
+    /// </summary>
+    private string GetUserInitial()
+    {
+        var name = CurrentUser.FullName?.Trim();
+        return string.IsNullOrEmpty(name) ? "؟" : name.Substring(0, 1);
+    }
+
+    /// <summary>
+    /// Returns the user's access level as a localized label for the avatar
+    /// badge. The mapping (per user spec):
+    ///   Admin     → "admin"   (English — the only English label)
+    ///   Manager   → "مدیر"     (Director/Manager)
+    ///   Employee  → "کارمند"   (Employee)
+    ///   Customer  → "کارمند"   (Employee — same label, per spec)
+    ///   ReadOnly  → "مدیر"     (Director/Manager — same label, per spec)
+    ///
+    /// IsInRole checks are used (not a single role string) because a user
+    /// can have multiple roles — Admin+Manager is common. We check in
+    /// priority order: Admin > Manager > Employee > ReadOnly > Customer.
+    /// </summary>
+    private string GetRoleLabel()
+    {
+        if (CurrentUser.IsInRole(Roles.Admin)) return Loc["RoleAdmin"];
+        if (CurrentUser.IsInRole(Roles.Manager)) return Loc["RoleManager"];
+        if (CurrentUser.IsInRole(Roles.Employee)) return Loc["RoleEmployee"];
+        if (CurrentUser.IsInRole(Roles.ReadOnly)) return Loc["RoleReadOnly"];
+        if (CurrentUser.IsInRole(Roles.Customer)) return Loc["RoleCustomer"];
+        return Loc["RoleEmployee"]; // fallback
     }
 
     // ── Display helpers ─────────────────────────────────────────────────

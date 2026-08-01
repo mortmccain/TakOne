@@ -173,6 +173,33 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// READ-ONLY load — returns an <c>AsNoTracking</c> entity. The caller
+    /// MUST NOT mutate the returned Product; any mutations would be silently
+    /// discarded on SaveChanges (because the change tracker doesn't hold a
+    /// reference). See <see cref="IProductRepository.GetByIdReadOnlyAsync"/>
+    /// for the full rationale of when to use this vs <see cref="GetByIdAsync"/>.
+    /// </remarks>
+    public async Task<Product?> GetByIdReadOnlyAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // AsNoTracking tells EF Core to materialize the entity WITHOUT adding
+        // it to the change tracker. The owned Money Price and the owned
+        // PurchaseLimits collection are also materialized without tracking.
+        //
+        // FirstOrDefaultAsync (not FindAsync) because FindAsync ALWAYS
+        // returns a tracked entity — there's no AsNoTracking overload of
+        // FindAsync. FirstOrDefaultAsync with a Where predicate is the
+        // canonical AsNoTracking read pattern.
+        //
+        // Price + PurchaseLimits auto-load (owned) — no .Include() needed.
+        // ------------------------------------------------------------------
+        return await _db.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         // AnyAsync translates to SELECT TOP(1) 1 FROM Products WHERE Id = @id —
@@ -203,5 +230,17 @@ public sealed class ProductRepository : IProductRepository
         // Price (owned) and PurchaseLimits (owned) are added automatically
         // because they're part of the Product aggregate's table layout.
         await _db.Products.AddAsync(product, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountInStockAsync(CancellationToken cancellationToken = default)
+    {
+        // SELECT COUNT(*) FROM Products WHERE StockQuantity > 0
+        // CountAsync with a predicate translates to a SQL COUNT(*) — no
+        // entity materialization, no tracking. Fast even on large catalogs
+        // since StockQuantity isn't indexed (we'd need an index if this
+        // query ever shows up in perf profiling).
+        return await _db.Products
+            .CountAsync(p => p.StockQuantity > 0, cancellationToken);
     }
 }

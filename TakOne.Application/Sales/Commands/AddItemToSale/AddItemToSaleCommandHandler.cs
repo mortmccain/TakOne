@@ -3,6 +3,7 @@ using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
 using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.ValueObjects;
 
 namespace TakOne.Application.Sales.Commands.AddItemToSale;
 
@@ -61,8 +62,17 @@ public sealed class AddItemToSaleCommandHandler
         //   - price snapshot (added to the line)
         //   - stock check
         //   - per-group purchase-limit lookup
+        //
+        // READ-ONLY LOAD (AsNoTracking): same rationale as
+        // CreateOrAppendSaleCommandHandler — we never mutate the Product
+        // here, only snapshot its data into the SaleLineItem. Tracking it
+        // would add Product.Price#Money to the change tracker alongside
+        // the Sale.Total#Money and SaleLineItem.UnitPrice#Money owned
+        // instances, which can confuse EF Core and produce
+        // DbUpdateConcurrencyException at SaveChanges. AsNoTracking keeps
+        // the Product out of the tracking equation entirely.
         // ------------------------------------------------------------------
-        var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
+        var product = await productRepository.GetByIdReadOnlyAsync(command.ProductId, cancellationToken);
         if (product is null)
         {
             return Result.Failure($"Product '{command.ProductId}' was not found.");
@@ -119,12 +129,20 @@ public sealed class AddItemToSaleCommandHandler
         // Add the line. The aggregate handles the limit check (throwing
         // DomainException on violation) and either creates a new line or
         // increments an existing one for the same product.
+        //
+        // SNAPSHOT THE PRICE — pass a NEW Money instance, NOT product.Price
+        // by reference. EF Core tracks owned value objects by reference, so
+        // if SaleLineItem.UnitPrice and Product.Price point to the SAME Money
+        // object, the change tracker throws DbUpdateConcurrencyException:
+        //   "The same entity is being tracked as different entity types
+        //    'SaleLineItem.UnitPrice#Money' and 'Product.Price#Money'"
+        // See CreateOrAppendSaleCommandHandler for the full rationale.
         // ------------------------------------------------------------------
         sale.AddLineItem(
             productId: product.Id,
             productName: product.Name,
             quantity: command.Quantity,
-            unitPrice: product.Price,
+            unitPrice: new Money(product.Price.Amount, product.Price.Currency),
             purchaseLimit: purchaseLimit);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

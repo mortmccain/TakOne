@@ -43,6 +43,17 @@ public interface IUserRepository
     Task<bool> WorkerIdExistsAsync(string workerId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the distinct set of customer group names that currently have
+    /// at least one user assigned. Used by the CreateProduct page to render
+    /// a dropdown of "known groups" so staff can attach per-group purchase
+    /// limits without having to type the group name from memory.
+    ///
+    /// Staff users have <c>GroupName = null</c> and are excluded. Returns
+    /// an empty list (not null) when no customer groups exist yet.
+    /// </summary>
+    Task<List<string>> GetDistinctGroupNamesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the count of active users currently in the <c>Customer</c>
     /// role. Used by the Dashboard's "Active Customers" KPI card.
     ///

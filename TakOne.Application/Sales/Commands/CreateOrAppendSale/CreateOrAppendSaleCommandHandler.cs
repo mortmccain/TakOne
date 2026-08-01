@@ -2,6 +2,7 @@
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.ValueObjects;
 
 namespace TakOne.Application.Sales.Commands.CreateOrAppendSale;
 
@@ -72,8 +73,34 @@ public sealed class CreateOrAppendSaleCommandHandler
         //      - price snapshot (added to the line)
         //      - stock check
         //      - per-group purchase-limit lookup
+        //
+        // READ-ONLY LOAD (AsNoTracking): we never mutate the Product in this
+        // handler — we only read its data to snapshot into the SaleLineItem.
+        // Loading it AsNoTracking keeps the Product (and its owned Money
+        // Price, and its owned PurchaseLimits collection) OUT of the change
+        // tracker entirely. This is critical because:
+        //
+        //   - The SAME Money CLR type is configured as OwnsOne on THREE
+        //     different entities in this DbContext:
+        //       Product.Price#Money
+        //       SaleLineItem.UnitPrice#Money
+        //       Sale.Total#Money
+        //   - When the Product is tracked, EF Core tracks its Money Price as
+        //     Product.Price#Money. At the same time, the Sale (loaded below)
+        //     has its Money Total tracked as Sale.Total#Money, and each
+        //     existing SaleLineItem has its Money UnitPrice tracked as
+        //     SaleLineItem.UnitPrice#Money.
+        //   - The change tracker can confuse these owned instances and
+        //     generate UPDATEs that affect 0 rows (DbUpdateConcurrencyException:
+        //     "expected to affect 1 row(s), but actually affected 0 row(s)").
+        //   - AsNoTracking eliminates the Product from the tracking equation,
+        //     leaving only the Sale (which we DO want to mutate + save).
+        //
+        // The new Money(amount, currency) snapshot below still applies —
+        // it guarantees the SaleLineItem's UnitPrice is a fresh instance,
+        // not a reference to the (now-untracked) Product.Price.
         // ------------------------------------------------------------------
-        var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
+        var product = await productRepository.GetByIdReadOnlyAsync(command.ProductId, cancellationToken);
         if (product is null)
         {
             logger.LogWarning
@@ -139,12 +166,24 @@ public sealed class CreateOrAppendSaleCommandHandler
             // The aggregate enforces the purchase limit (throws DomainException
             // on violation) and either creates a new line or increments an
             // existing one for the same product.
+            //
+            // SNAPSHOT THE PRICE — pass a NEW Money instance, NOT product.Price
+            // by reference. EF Core tracks owned value objects by reference,
+            // so if SaleLineItem.UnitPrice and Product.Price point to the SAME
+            // Money object, the change tracker sees one entity owned by two
+            // parents and throws DbUpdateConcurrencyException at SaveChanges:
+            //   "The same entity is being tracked as different entity types
+            //    'SaleLineItem.UnitPrice#Money' and 'Product.Price#Money'"
+            // Creating a new Money(value, currency) breaks the reference
+            // sharing so EF tracks each owned Money independently. This also
+            // matches the DDD intent: the line's unit price is a SNAPSHOT at
+            // sale time, not a live pointer to the product's current price.
             sale.AddLineItem
                 (
                 productId: product.Id,
                 productName: product.Name,
                 quantity: command.Quantity,
-                unitPrice: product.Price,
+                unitPrice: new Money(product.Price.Amount, product.Price.Currency),
                 purchaseLimit: purchaseLimit
                 );
 
@@ -171,12 +210,15 @@ public sealed class CreateOrAppendSaleCommandHandler
             createdByName: currentUser.FullName
             );
 
+        // Same snapshot-the-price fix as the APPEND path above — pass a
+        // NEW Money instance so EF Core doesn't see the same reference owned
+        // by both Product.Price and SaleLineItem.UnitPrice.
         sale.AddLineItem
             (
             productId: product.Id,
             productName: product.Name,
             quantity: command.Quantity,
-            unitPrice: product.Price,
+            unitPrice: new Money(product.Price.Amount, product.Price.Currency),
             purchaseLimit: purchaseLimit
             );
 

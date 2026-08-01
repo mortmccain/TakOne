@@ -64,8 +64,17 @@ public sealed class UpdateSaleLineItemCommandHandler
         // Load the product so we can:
         //   - check stock against the new quantity
         //   - re-resolve the per-group purchase limit
+        //
+        // READ-ONLY load (AsNoTracking): we only READ from the Product here
+        // (stock + purchase limit). The mutation goes through the Sale
+        // aggregate's UpdateLineItemQuantity, not through the Product.
+        // Tracking the Product would put its owned Money Price into the
+        // change tracker alongside the Sale's owned Money Total and the
+        // SaleLineItem's owned Money UnitPrice, which can trigger
+        // DbUpdateConcurrencyException at SaveChanges. See
+        // CreateOrAppendSaleCommandHandler for the full rationale.
         // ------------------------------------------------------------------
-        var product = await productRepository.GetByIdAsync(lineItem.ProductId, cancellationToken);
+        var product = await productRepository.GetByIdReadOnlyAsync(lineItem.ProductId, cancellationToken);
         if (product is null)
         {
             // Defensive — the product existed when the line was added. If it's

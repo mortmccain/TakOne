@@ -2,6 +2,7 @@
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.ValueObjects;
 
 namespace TakOne.Application.Sales.Commands.CreateSale;
 
@@ -146,11 +147,14 @@ public sealed class CreateSaleCommandHandler
                 purchaseLimit = limitVo?.Limit;
             }
 
+            // SNAPSHOT THE PRICE — pass a NEW Money instance, NOT product.Price
+            // by reference. See CreateOrAppendSaleCommandHandler for the full
+            // rationale (EF Core shared-owned-entity tracking issue).
             sale.AddLineItem(
                 productId: product.Id,
                 productName: product.Name,
                 quantity: item.Quantity,
-                unitPrice: product.Price,
+                unitPrice: new Money(product.Price.Amount, product.Price.Currency),
                 purchaseLimit: purchaseLimit);
         }
 

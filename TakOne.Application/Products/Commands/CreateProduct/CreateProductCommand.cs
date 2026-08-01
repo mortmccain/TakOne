@@ -40,5 +40,20 @@ public sealed record CreateProductCommand
     int InitialStockQuantity,
     Guid CategoryId,
     Guid? SubCategoryId,
-    Guid? SubSubCategoryId
+    Guid? SubSubCategoryId,
+
+    /// <summary>
+    /// Per-group purchase limits to attach to the new product. Optional —
+    /// pass an empty list (or null) when no limits are needed.
+    ///
+    /// DDD NOTE: This is a list of <see cref="PurchaseLimitInputDto"/>
+    /// (application-layer DTOs), NOT a list of domain
+    /// <c>CustomerGroupPurchaseLimit</c> value objects. The handler
+    /// converts each DTO into a domain VO via
+    /// <c>Product.SetPurchaseLimit(groupName, limit)</c> — the Product
+    /// aggregate owns the value-object creation, preserving the DDD
+    /// invariant that domain value objects are only ever created by their
+    /// parent aggregate.
+    /// </summary>
+    IReadOnlyList<PurchaseLimitInputDto>? PurchaseLimits = null
     );

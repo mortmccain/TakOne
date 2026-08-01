@@ -197,6 +197,45 @@
     <value>Picture is optional. JPEG, PNG, or WebP up to 5 MB. The image is only saved when you submit the form.</value>
   </data>
   <data name="HelpPurchaseLimits" xml:space="preserve">
-    <value>Purchase limits per customer group can be set after creation from the product detail page.</value>
+    <value>Purchase limits per customer group can be set during creation or edited later from the product detail page.</value>
+  </data>
+  <data name="FieldPurchaseLimits" xml:space="preserve">
+    <value>Purchase limits per group</value>
+  </data>
+  <data name="PurchaseLimitsHint" xml:space="preserve">
+    <value>Set the maximum quantity a single user in each group can have in their cart at once. Every existing group must have a limit. Click "Add new group" below to set a limit for a group that doesn't exist yet.</value>
+  </data>
+  <data name="AddNewGroupRow" xml:space="preserve">
+    <value>Add new group</value>
+  </data>
+  <data name="RemoveLimitRow" xml:space="preserve">
+    <value>Remove this limit</value>
+  </data>
+  <data name="NoLimitRows" xml:space="preserve">
+    <value>No customer groups exist yet. Click "Add new group" below to create one.</value>
+  </data>
+  <data name="LoadingGroups" xml:space="preserve">
+    <value>Loading customer groups...</value>
+  </data>
+  <data name="FieldLimitGroup" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="FieldLimitValue" xml:space="preserve">
+    <value>Max quantity</value>
+  </data>
+  <data name="LimitGroupPlaceholder" xml:space="preserve">
+    <value>Type a new group name</value>
+  </data>
+  <data name="LimitValuePlaceholder" xml:space="preserve">
+    <value>Enter limit</value>
+  </data>
+  <data name="Error_LimitsRequired" xml:space="preserve">
+    <value>A purchase limit is required for every group. Missing limit for: {0}</value>
+  </data>
+  <data name="Error_CustomGroupNameRequired" xml:space="preserve">
+    <value>Every new group must have a name. Please fill in the group name or remove the empty row.</value>
+  </data>
+  <data name="Error_CustomLimitsMissing" xml:space="preserve">
+    <value>{0} new group(s) without a limit</value>
   </data>
 </root>

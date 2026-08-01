@@ -136,6 +136,54 @@ public sealed class CreateProductCommandHandler
             );
 
         // ------------------------------------------------------------------
+        // 4b. Attach per-group purchase limits.
+        //
+        //     DDD INVARIANT: we DON'T pass domain value objects
+        //     (CustomerGroupPurchaseLimit) in from the command — that would
+        //     let the application layer construct domain VOs directly,
+        //     bypassing the aggregate. Instead the command carries a flat
+        //     DTO (PurchaseLimitInputDto with just GroupName + Limit), and
+        //     we delegate VO creation to Product.SetPurchaseLimit, which
+        //     internally calls CustomerGroupPurchaseLimit.Create + replaces
+        //     any existing entry for the same group.
+        //
+        //     Duplicate-group deduplication is handled by SetPurchaseLimit
+        //     itself (last entry wins). We still validate that the same
+        //     group isn't listed twice with different limits — that's a
+        //     user input error, not a domain invariant, so we surface it as
+        //     a friendly Result.Failure before touching the aggregate.
+        // ------------------------------------------------------------------
+        if (command.PurchaseLimits is { Count: > 0 })
+        {
+            // Detect duplicate group names in the input list. The validator
+            // already enforces non-empty group names + limit >= 1; this is
+            // a secondary check that requires the full list context.
+            var seenGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in command.PurchaseLimits)
+            {
+                if (!seenGroups.Add(entry.GroupName))
+                {
+                    logger.LogWarning
+                        ("CreateProduct: duplicate purchase-limit entry for group '{Group}'. User {UserId} rejected.",
+                        entry.GroupName, currentUser.UserId);
+
+                    return Result<Guid>.Failure
+                        ($"Duplicate purchase limit for group '{entry.GroupName}'. Each group may only appear once.");
+                }
+            }
+
+            // All entries are unique — delegate to the aggregate.
+            foreach (var entry in command.PurchaseLimits)
+            {
+                // SetPurchaseLimit calls CustomerGroupPurchaseLimit.Create
+                // internally, which enforces GroupName (1..100) + Limit (>=1).
+                // Invalid values throw DomainException → middleware converts
+                // to Result.Failure with a friendly message.
+                product.SetPurchaseLimit(entry.GroupName.Trim(), entry.Limit);
+            }
+        }
+
+        // ------------------------------------------------------------------
         // 5. Persist. EF Core tracks the Product and its owned collection of
         //    CustomerGroupPurchaseLimit value objects as a single unit.
         // ------------------------------------------------------------------

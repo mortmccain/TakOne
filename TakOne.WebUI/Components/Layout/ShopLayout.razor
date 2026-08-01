@@ -1,0 +1,205 @@
+﻿@* ShopLayout.razor — full-screen shop layout (no default top bar)
+   Used by /Products (and potentially /Cart in the future) to get a
+   full-screen shop experience without the MainLayout's RadzenHeader bar.
+
+   DIFFERENCES FROM MainLayout:
+     - NO RadzenHeader (the shop page provides its own header inside @Body
+       via the .tm-shop-header element in Products.razor)
+     - The sidebar is still present (RadzenSidebar + RadzenPanelMenu) —
+       same role-gated nav as MainLayout
+     - The sidebar toggle (hamburger) is exposed as a CSS-only floating
+       button OR controlled by the shop page itself. For now we keep the
+       sidebar always-visible on desktop and toggleable via the same
+       RadzenSidebar.Toggle() method — the shop page can call it via a
+       hamburger button placed inside .tm-shop-header.
+     - Theme/culture switchers + logout are NOT in this layout — they live
+       in the sidebar's footer area instead (so they're still accessible
+       without the top bar). The shop page's user-icon dropdown can also
+       surface these later.
+
+   WHY A SEPARATE LAYOUT (instead of a "hide header" flag on MainLayout):
+     Blazor layouts don't easily let a child page set parameters on its
+     host layout. The canonical Blazor pattern for "this page has a
+     different chrome" is a separate layout (same as LoginLayout.razor).
+     This keeps MainLayout stable for all other pages.
+
+   THEME/CULTURE/LOGOUT:
+     These are duplicated from MainLayout so the sidebar still has them.
+     In a future refactor, both layouts could share a base class — but
+     for now, duplication is the established convention (LoginLayout
+     duplicates the auth/culture logic too). *@
+
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Globalization
+
+<RadzenLayout>
+    @* Sidebar with role-gated navigation (same as MainLayout) *@
+    <RadzenSidebar @ref="sidebar" Style="width: 240px;">
+        <RadzenPanelMenu>
+            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
+                <RadzenPanelMenuItem Text="@Localizer["Dashboard"]" Icon="dashboard" Path="/" />
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Products"]" Icon="inventory_2" Path="/Products" />
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["MyOrders"]" Icon="receipt_long" Path="/Sales" />
+            </AuthorizeView>
+
+            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
+            </AuthorizeView>
+            <AuthorizeView Roles="@Roles.Customer">
+                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
+            </AuthorizeView>
+
+            <AuthorizeView Context="adminSectionCtx"
+                           Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                <RadzenPanelMenuItem Text="@Localizer["AdminSection"]" Icon="admin_panel_settings">
+                    <AuthorizeView Context="adminProductsCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageProducts"]" Icon="inventory" Path="/Admin/Products" />
+                    </AuthorizeView>
+                    <AuthorizeView Context="adminCategoriesCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageCategories"]" Icon="category" Path="/Admin/Categories" />
+                    </AuthorizeView>
+                    <AuthorizeView Context="adminUsersCtx"
+                                   Roles="@(Roles.Admin + "," + Roles.Manager)">
+                        <RadzenPanelMenuItem Text="@Localizer["ManageUsers"]" Icon="group" Path="/Admin/Users" />
+                    </AuthorizeView>
+                </RadzenPanelMenuItem>
+            </AuthorizeView>
+
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Profile"]" Icon="account_circle" Path="/Profile" />
+            </AuthorizeView>
+            <AuthorizeView>
+                <RadzenPanelMenuItem Text="@Localizer["Settings"]" Icon="settings" Path="/Settings" />
+            </AuthorizeView>
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+
+    <RadzenBody>
+        @* NO RadzenHeader here — the shop page provides its own header
+           inside @Body (the .tm-shop-header element in Products.razor).
+           The shop header is sticky (position: sticky; top: 0) so it
+           behaves like a top bar without needing RadzenHeader. *@
+
+        @* NO padding on RadzenContent — the shop page manages its own
+           spacing via .tm-shop-page. The default 24px padding would
+           create a gap around the full-width shop header. *@
+        <RadzenContent Style="padding: 0;">
+            @* Wrap @Body in a CascadingValue so child pages (Products.razor)
+               can receive this layout instance via [CascadingParameter] and
+               call ToggleSidebar() on it. This is the standard Blazor pattern
+               for a page-to-layout method call. *@
+            <CascadingValue Value="this" TValue="ShopLayout">
+                @Body
+            </CascadingValue>
+        </RadzenContent>
+    </RadzenBody>
+</RadzenLayout>
+
+<ReconnectModal />
+
+@code {
+    private RadzenSidebar? sidebar;
+    private string _selectedTheme = "tak-light";
+    private string _selectedCulture = CultureInfo.CurrentUICulture.Name;
+
+    private readonly List<ThemeOption> _themes = new()
+    {
+        new(Key: "tak-light",       Display: "Tak Light"),
+        new(Key: "standard-dark",   Display: "Standard Dark"),
+        new(Key: "standard",        Display: "Standard"),
+        new(Key: "material-dark",   Display: "Material Dark"),
+        new(Key: "material",        Display: "Material"),
+        new(Key: "software-dark",   Display: "Software Dark"),
+        new(Key: "software",        Display: "Software"),
+        new(Key: "humanistic-dark", Display: "Humanistic Dark"),
+        new(Key: "humanistic",      Display: "Humanistic"),
+        new(Key: "dark",            Display: "Dark"),
+        new(Key: "default",         Display: "Default")
+    };
+
+    private sealed record ThemeOption(string Key, string Display);
+
+    private readonly List<string> _cultures = new() { "fa-IR", "en-US" };
+
+    [Inject] private IStringLocalizer<MainLayout> Localizer { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Start the SignalR connection to NotificationHub (same as MainLayout).
+        try
+        {
+            await JS.InvokeVoidAsync("notificationHub.start");
+        }
+        catch
+        {
+            // Non-fatal — UI still works without real-time, just no push refresh.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("takTheme.get");
+            if (!string.IsNullOrEmpty(saved) && saved != _selectedTheme)
+            {
+                _selectedTheme = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // If JS interop fails, leave _selectedTheme at its default.
+        }
+    }
+
+    /// <summary>
+    /// Toggles the sidebar's collapsed/expanded state. Called by the
+    /// shop page's hamburger button via a public method on this layout.
+    /// </summary>
+    public void ToggleSidebar()
+    {
+        sidebar?.Toggle();
+    }
+
+    private async Task OnThemeChanged(string theme)
+    {
+        _selectedTheme = theme;
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", theme);
+        }
+        catch (JSException)
+        {
+            // Swallow — see MainLayout for rationale.
+        }
+    }
+
+    private async Task OnCultureChanged(string culture)
+    {
+        _selectedCulture = culture;
+        var cookieValue = $"c={culture}|uic={culture}";
+        await JS.InvokeVoidAsync("eval",
+            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    private void DoLogout()
+    {
+        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
+    }
+}

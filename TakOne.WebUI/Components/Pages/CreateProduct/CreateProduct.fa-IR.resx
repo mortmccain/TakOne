@@ -197,6 +197,45 @@
     <value>تصویر اختیاری است. JPEG، PNG یا WebP تا ۵ مگابایت. تصویر تنها هنگام ثبت فرم ذخیره می‌شود.</value>
   </data>
   <data name="HelpPurchaseLimits" xml:space="preserve">
-    <value>سقف خرید برای هر گروه مشتری پس از ایجاد محصول از صفحه جزئیات محصول قابل تنظیم است.</value>
+    <value>سقف خرید برای هر گروه مشتری هنگام ایجاد محصول یا بعده‌تر از صفحه جزئیات محصول قابل تنظیم است.</value>
+  </data>
+  <data name="FieldPurchaseLimits" xml:space="preserve">
+    <value>سقف خرید هر گروه</value>
+  </data>
+  <data name="PurchaseLimitsHint" xml:space="preserve">
+    <value>حداکثر تعداد قابل افزودن به سبد برای هر کاربر گروه را تعیین کنید. تعیین سقف برای همه گروه‌های موجود الزامی است. برای تعریف سقف برای گروهی که هنوز وجود ندارد روی «افزودن گروه جدید» در پایین بزنید.</value>
+  </data>
+  <data name="AddNewGroupRow" xml:space="preserve">
+    <value>افزودن گروه جدید</value>
+  </data>
+  <data name="RemoveLimitRow" xml:space="preserve">
+    <value>حذف این سقف</value>
+  </data>
+  <data name="NoLimitRows" xml:space="preserve">
+    <value>هنوز گروه مشتری‌ای تعریف نشده است. برای ایجاد یکی روی «افزودن گروه جدید» در پایین بزنید.</value>
+  </data>
+  <data name="LoadingGroups" xml:space="preserve">
+    <value>در حال بارگذاری گروه‌های مشتری…</value>
+  </data>
+  <data name="FieldLimitGroup" xml:space="preserve">
+    <value>نام گروه</value>
+  </data>
+  <data name="FieldLimitValue" xml:space="preserve">
+    <value>حداکثر تعداد</value>
+  </data>
+  <data name="LimitGroupPlaceholder" xml:space="preserve">
+    <value>نام گروه جدید را وارد کنید</value>
+  </data>
+  <data name="LimitValuePlaceholder" xml:space="preserve">
+    <value>سقف را وارد کنید</value>
+  </data>
+  <data name="Error_LimitsRequired" xml:space="preserve">
+    <value>تعیین سقف خرید برای همه گروه‌ها الزامی است. سقف این گروه‌ها مشخص نشده: {0}</value>
+  </data>
+  <data name="Error_CustomGroupNameRequired" xml:space="preserve">
+    <value>هر گروه جدید باید نام داشته باشد. نام گروه را وارد کنید یا ردیف خالی را حذف کنید.</value>
+  </data>
+  <data name="Error_CustomLimitsMissing" xml:space="preserve">
+    <value>{0} گروه جدید بدون سقف</value>
   </data>
 </root>
