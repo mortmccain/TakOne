@@ -46,8 +46,7 @@
 
 <HeadContent>
     <style>
-            .action-tile 
-            {
+            .action-tile {
                 transition: all 0.2s ease;
                 cursor: pointer;
                 padding: 1rem;
@@ -56,8 +55,7 @@
             }
 
                 .action-tile:hover,
-                .action-tile:active 
-                {
+                .action-tile:active {
                     background: var(--rz-panelmenu-item-hover-background-color);
                     border-color: gray;
                     color: gray;
@@ -65,29 +63,51 @@
                 }
 
                     .action-tile:hover .rz-icon,
-                    .action-tile:hover RadzenText 
-                    {
+                    .action-tile:hover RadzenText {
                         color: var(--rz-primary);
                     }
 
-            .stat-value 
-            {
+            .stat-value {
                 font-size: 1.75rem;
                 font-weight: 700;
                 line-height: 1;
             }
 
-            /* NOTE: the .summary-card hover-lift + shadow rules used to live
-                           here, but they leaked across ALL themes via the
-                           `var(--tm-shadow-lg, ...)` fallback (other Radzen themes don't
-                           define --tm-shadow-lg, so they got the green-tinted rgba fallback
-                           — a Tak-specific look bleeding into non-Tak themes).
-                           The hover effect now lives ONLY in tak-light.css under the
-                           .tm-kpi-card.summary-card:hover selector, so non-Tak themes
-                           get the default Radzen card behavior with no forced shadow. */
+            /* ── KPI CARD SHADOW + HOVER (applies to ALL themes) ─────────────
+                           These rules EXACTLY REPLICATE the ERP app's card hover effect
+                           (from erp-reference/ERP.WebUI/Components/Pages/Home.razor):
+                             .summary-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+                             .summary-card:hover { transform: scale(1.03); box-shadow: 0 12px 2px rgba(49, 45, 47, 0.8); }
 
-            .status-chart .rz-legend-bottom 
-            {
+                           The shadow color rgba(49, 45, 47, 0.8) is a dark warm-gray/purple
+                           tint — the ERP app's signature card shadow. The transform is
+                           scale(1.03) (a slight zoom-in), NOT translateY.
+
+                           They live here in the page's inline style block (NOT in app.css)
+                           because:
+                             1. The inline style block is guaranteed to load with the page in
+                                every theme — no CSS file loading order issues.
+                             2. It renders via HeadContent/HeadOutlet AFTER Radzen's theme
+                                CSS, so it wins any same-specificity tie.
+
+                           TAK LIGHT OVERRIDE: tak-light.css re-declares these same
+                           selectors with !important and a GREEN shadow + translateY(-6px)
+                           lift (instead of scale). Since tak-light.css loads AFTER this
+                           inline style (theme.js appends it post-hydration) and uses
+                           !important, the green + lift wins in Tak Light. In all other
+                           themes, tak-light.css is absent, so the ERP shadow + scale
+                           below applies. */
+            .summary-card.tm-kpi-card {
+                transition: transform 0.18s ease, box-shadow 0.18s ease;
+                cursor: default;
+            }
+
+                .summary-card.tm-kpi-card:hover {
+                    transform: scale(1.03);
+                    box-shadow: 0 12px 2px rgba(49, 45, 47, 0.8);
+                }
+
+            .status-chart .rz-legend-bottom {
                 bottom: -50px !important;
             }
     </style>

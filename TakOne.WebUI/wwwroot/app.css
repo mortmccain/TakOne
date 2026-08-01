@@ -1,151 +1,80 @@
-/* app.css — Phase 0.19
-   Global overrides for Radzen + TakOne responsive breakpoints.
-   This file is loaded by App.razor after the Radzen theme CSS, so any
-   rule here wins over the theme. Use sparingly — most styling should
-   come from Radzen's own classes + per-page .razor.css isolation. */
+/* =============================================================================
+   app.css — TakOne WebUI global styles (apply to ALL themes)
+   -----------------------------------------------------------------------------
+   This file is loaded by App.razor AFTER the Radzen base component CSS
+   (Radzen.Blazor.css) and BEFORE any Tak theme override (e.g. tak-light.css).
 
-/* ---- RTL baseline ---------------------------------------------------- *
- * When <html dir="rtl"> is set (Persian), flip the layout direction for
- * most elements. Radzen has built-in RTL support, but we add a few
- * explicit overrides for our custom bits. */
-[dir="rtl"] body {
-    direction: rtl;
-    text-align: right;
+   LOAD ORDER:
+     1. _content/Radzen.Blazor/css/{theme}.css   — Radzen theme variables
+     2. _content/Radzen.Blazor/Radzen.Blazor.css — Radzen component CSS
+     3. css/app.css                               ← THIS FILE (global overrides)
+     4. TakOne.WebUI.styles.css                   — Blazor scoped CSS
+     5. /css/themes/tak-light.css                 — Tak Light override (only if tak-light is active)
+
+   WHAT GOES HERE:
+     - Rules that should apply to EVERY theme (Standard, Material, Dark,
+       Tak Light, etc.) — e.g. card shadows, layout utilities, RTL tweaks.
+     - Rules that are NOT theme-specific.
+
+   WHAT DOES NOT GO HERE:
+     - Tak Light-specific styling → goes in /css/themes/tak-light.css
+     - Component-scoped styling → goes in Component.razor.css
+
+   The Tak Light theme can OVERRIDE any rule here by using a more specific
+   selector or !important (since tak-light.css loads after this file).
+   ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+   KPI summary cards — ERP-style shadow (applies to ALL themes)
+   -----------------------------------------------------------------------------
+   The Dashboard's KPI cards (Total Sales, Draft, Pending, Approved,
+   Cancelled, Invoiced) use RadzenCard with class="summary-card tm-kpi-card".
+
+   This rule gives them a professional, soft gray shadow — the "ERP look"
+   the user wants across all themes. The shadow is two layers:
+     1. A tight inner shadow for subtle depth.
+     2. A wider outer shadow for the lift effect.
+
+   The hover state lifts the card slightly and deepens the shadow — the
+   classic "card hover" interaction from ERP dashboards.
+
+   NOTE: The Tak Light theme OVERRIDES this with a GREEN shadow in
+   tak-light.css under .tm-kpi-card { box-shadow: ... }. CSS load order
+   ensures tak-light.css wins (it loads after app.css).
+   -------------------------------------------------------------------------- */
+
+/* Base shadow for KPI summary cards — applies to ALL themes. */
+.summary-card.tm-kpi-card {
+    box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.08), 0 6px 12px -4px rgba(0, 0, 0, 0.10);
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-[dir="ltr"] body {
-    direction: ltr;
-    text-align: left;
-}
-
-/* ---- Touch targets --------------------------------------------------- *
- * On touch devices (phones, tablets, touch monitors), enlarge click
- * targets to the WCAG-recommended 44x44px minimum. Radzen's default is
- * 32x32px which is fine for mouse but too small for fingers. */
-@media (hover: none) and (pointer: coarse) {
-    .rz-icon-button,
-    .rz-button-icon {
-        min-width: 44px;
-        min-height: 44px;
-    }
-}
-
-@media (hover: none) and (pointer: coarse) and (min-width: 1024px) {
-    /* Touch monitor — slightly larger still, more generous padding. */
-    .rz-icon-button,
-    .rz-button-icon {
-        min-width: 48px;
-        min-height: 48px;
-    }
-}
-
-/* ---- Phone-specific tweaks ------------------------------------------- */
-@media (max-width: 640px) {
-    /* Hide hover-only tooltips on touch — they get in the way. */
-    .rz-tooltip {
-        display: none !important;
-    }
-
-    /* Compact data grids on phones — drop non-essential columns via
-       CSS. Pages will add class="compact" to grids where this is wanted. */
-    .rz-datatable.compact .rz-datatable-thead > tr > th:nth-child(n+4),
-    .rz-datatable.compact .rz-datatable-data > tr > td:nth-child(n+4) {
-        display: none;
-    }
-}
-
-/* ---- Card grid (product catalog) ------------------------------------- *
- * Used by /Products page. Responsive: 1 column on phone, 2 on tablet,
- * 3 on touch monitor, 4 on PC. */
-.product-grid {
-    display: grid;
-    gap: 16px;
-    grid-template-columns: 1fr;
-}
-
-@media (min-width: 640px) {
-    .product-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-@media (min-width: 1024px) {
-    .product-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
-@media (min-width: 1280px) {
-    .product-grid {
-        grid-template-columns: repeat(4, 1fr);
-    }
-}
-
-/* ---- Loading spinner (used by <Authorizing> in Routes.razor) -------- *
- * Bootstrap-compat classes that the default Blazor template uses. We
- * keep them since Radzen doesn't ship its own full-screen spinner. */
-.spinner-border {
-    display: inline-block;
-    width: 2rem;
-    height: 2rem;
-    vertical-align: text-bottom;
-    border: 0.2em solid currentColor;
-    border-right-color: transparent;
-    border-radius: 50%;
-    animation: spinner-border 0.75s linear infinite;
-}
-
-@keyframes spinner-border {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.visually-hidden {
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    padding: 0 !important;
-    margin: -1px !important;
-    overflow: hidden !important;
-    clip: rect(0, 0, 0, 0) !important;
-    white-space: nowrap !important;
-    border: 0 !important;
-}
-
-/* ---- Blazor error UI (kept from default template) ------------------ *
- * Shown when an unhandled exception escapes a component. Hidden by
- * default; Blazor adds the .show class when it needs to display. */
-#blazor-error-ui {
-    background: lightyellow;
-    bottom: 0;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
-    display: none;
-    left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
-    position: fixed;
-    width: 100%;
-    z-index: 1000;
-}
-
-    #blazor-error-ui .dismiss {
-        cursor: pointer;
-        position: absolute;
-        right: 0.75rem;
-        top: 0.5rem;
+    /* Hover lift — applies to ALL themes (the ERP-style "card moves up"
+   interaction). Tak Light overrides the shadow color to green in
+   tak-light.css under .tm-kpi-card.summary-card:hover. */
+    .summary-card.tm-kpi-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.12), 0 12px 24px -6px rgba(0, 0, 0, 0.16), 0 18px 36px -10px rgba(0, 0, 0, 0.10);
     }
 
-/* ---- Login layout RTL ----------------------------------------------- *
- * When the page is rendered in RTL mode (Persian), flip the login screen's
- * gradient direction so the bright "spotlight" stays on the correct side.
- *
- * This rule used to live in Components/Layout/LoginLayout.razor.css as
- * `:global([dir="rtl"]) .login-bg { ... }` — but Blazor's CSS isolation
- * doesn't support the `:global(...)` pseudo-class (it's a CSS Modules
- * feature). And since `[dir="rtl"]` lives on the <html> element (which is
- * OUTSIDE the LoginLayout component's scope), scoped CSS isolation would
- * strip the rule's matching before it could apply. So it MUST live here
- * in the global app.css instead. */
-[dir="rtl"] .login-bg {
-    background: radial-gradient(circle at 80% 30%, rgba(59, 130, 246, 0.25) 0%, transparent 50%), radial-gradient(circle at 20% 70%, rgba(139, 92, 246, 0.20) 0%, transparent 50%), linear-gradient(225deg, #0f172a 0%, #1e293b 100%);
+/* -----------------------------------------------------------------------------
+   General Radzen card polish — applies to ALL themes
+   -----------------------------------------------------------------------------
+   A subtle default shadow for all RadzenCard elements (not just KPI cards).
+   This gives the app a consistent, professional "ERP dashboard" feel. */
+.rz-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 6px -2px rgba(0, 0, 0, 0.06);
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* -----------------------------------------------------------------------------
+   RTL support
+   -----------------------------------------------------------------------------
+   Persian (fa-IR) renders RTL. These rules ensure transforms and shadows
+   look correct in both LTR and RTL. The translateY(-6px) lift is
+   direction-agnostic, so no RTL override is needed for the hover effect. */
+[dir="rtl"] .summary-card.tm-kpi-card,
+[dir="rtl"] .rz-card {
+    /* Shadows are symmetric, so no RTL flip needed. This rule exists
+       purely as documentation that we considered RTL. */
 }

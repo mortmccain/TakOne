@@ -178,6 +178,42 @@ public sealed class SaleRepository : ISaleRepository
     }
 
     /// <inheritdoc />
+    public async Task<Sale?> GetLastSubmittedSaleForUserAsync
+        (
+        Guid userId,
+        CancellationToken cancellationToken = default
+        )
+    {
+        // Defensive: Guid.Empty would match no Sale (CustomerId is non-nullable
+        // in the schema and validated in the Sale factory).
+        if (userId == Guid.Empty)
+        {
+            return null;
+        }
+
+        // CustomerId == userId filter; Status in {Pending, Approved, Invoiced}
+        // (i.e. > Draft AND != Cancelled). Eager-load LineItems because the
+        // Quick Reorder handler iterates the lines to re-add them to the draft.
+        //
+        // OrderByDescending(SubmittedAtUtc) picks the most-recently submitted
+        // order. SubmittedAtUtc is null only for Drafts (which are already
+        // excluded by the Status filter), so the ordering is well-defined.
+        //
+        // TRACKING: returns a TRACKED entity — the Quick Reorder handler reads
+        // the line items but doesn't mutate THIS sale (it adds lines to the
+        // user's DRAFT, not to this historical sale). Tracking is harmless
+        // because we SaveChanges once at the end of the handler, and the
+        // historical sale is never mutated in memory.
+        return await _db.Sales
+            .Include(s => s.LineItems)
+            .Where(s => s.CustomerId == userId
+                        && s.Status != SaleStatus.Draft
+                        && s.Status != SaleStatus.Cancelled)
+            .OrderByDescending(s => s.SubmittedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task AddAsync(Sale sale, CancellationToken cancellationToken = default)
     {
         // AddAsync queues the Sale (and reachable LineItems, since they're

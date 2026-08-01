@@ -75,6 +75,31 @@ public interface ISaleRepository
         CancellationToken cancellationToken = default
         );
 
+    /// <summary>
+    /// Returns the user's most-recently SUBMITTED sale (with line items
+    /// eagerly loaded), or <c>null</c> if the user has never submitted an
+    /// order. "Submitted" here means any status <c>&gt; Draft</c> and not
+    /// <c>Cancelled</c> (i.e. Pending, Approved, or Invoiced) — once an
+    /// order leaves the cart state, it's a "past order" the user can repeat.
+    ///
+    /// Used by the "Quick Reorder" feature on the shop page: we fetch the
+    /// last order's line items and re-add them to the user's current draft,
+    /// clamping each quantity to the current stock + current per-group
+    /// purchase limit (so a re-order doesn't bypass a limit that was
+    /// tightened after the original order).
+    ///
+    /// Ordering: by <c>SubmittedAtUtc</c> descending (the most recent
+    /// submission wins). If two submissions have the same timestamp
+    /// (millisecond-level race), the higher <c>Id</c> wins as a tie-breaker
+    /// — but in practice this never happens because each submission is its
+    /// own transaction.
+    /// </summary>
+    Task<Sale?> GetLastSubmittedSaleForUserAsync
+        (
+        Guid userId,
+        CancellationToken cancellationToken = default
+        );
+
     Task AddAsync(Sale sale, CancellationToken cancellationToken = default);
 
     /// <summary>

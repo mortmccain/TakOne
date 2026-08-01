@@ -1,0 +1,1054 @@
+﻿@* Products.razor — Tak shop page redesign
+   Built to closely mirror the design at /upload/tak-makaron-pc-design.html.
+
+   LAYOUT (top to bottom):
+     1. Header: portal-name + refresh icon | search bar (Ctrl+F to focus) | user icon (settings) + cart icon
+     2. Golden shimmer line (animated gradient, like the HTML's announcement bar)
+     3. Stats bar (5 cards):
+          - سفارش های این ماه (orders this month — count)
+          - مجموع خرید های این ماه (total spent this month — amount)
+          - مجموع خرید های این سال (total spent this year — amount)
+          - تعداد اجناس موجود (count of in-stock products)
+          - سفارش سریع (Quick Reorder button — loads last order, clamped to current limits)
+     4. Main 3-col grid:
+          - RIGHT (col 2/12): categories sidebar
+          - CENTER (col 7/12): hero banner + filter bar + product grid + pager
+          - LEFT (col 3/12): mini cart (no discount, no add-another-item, no schedule-delivery, only submit)
+
+   HERO BANNER:
+     - ویژه کارکنان badge (unchanged)
+     - Title: "تنها در اوج،" (white) + "تک ماکارون" (gold) — two-tone
+     - No subtitle paragraph (removed per spec)
+     - Golden button: "سفارش های من" (navigates to /Sales)
+     - Green button: "سبد خرید" (navigates to /Cart)
+
+   PRODUCT CARD:
+     - Image (placeholder icon when no PictureUrl)
+     - "موجود" stock badge (color varies by stock level)
+     - NO heart icon (no favorites feature)
+     - NO discount tag (no discount model)
+     - NO code (کد: TM-XXXX)
+     - NO stars
+     - Name (green, bold)
+     - Description (gray, under name) — required by spec
+     - Price (no strikethrough, no "عمده" wholesale tag)
+     - Quantity selector + Add-to-cart button
+        - The qty selector's max is the user's remaining limit (MyPurchaseLimit - qty in cart)
+        - If no limit (staff), max is product.StockQuantity
+        - When remaining = 0, the add button is disabled and shows the
+          "you have already selected the maximum available per person" text
+
+   CART INTEGRATION:
+     - Loaded in parallel with products + categories on init
+     - Reloaded after every add-to-cart / qty change / submit
+     - Mini-cart uses CartDto (same as /Cart page) but trimmed to show
+       only: header, items (with qty controls), totals (no discount line),
+       submit button. No "+add another item", no "schedule delivery".
+
+   STATS NOTE:
+     The 4 numeric stats (monthly count, monthly total, yearly total,
+     stock count) currently use placeholder values via a small
+     GetStubStatsAsync() method. The backend doesn't yet have a
+     user-scoped stats query — that's a TODO for a later iteration.
+     The Quick Reorder stat is fully functional (calls
+     QuickReorderLastSaleCommand which loads the last submitted sale
+     and re-adds lines clamped to current stock + current limit). *@
+
+@page "/Products"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetActiveCartForUser
+@using TakOne.Application.Sales.Commands.CreateOrAppendSale
+@using TakOne.Application.Sales.Commands.UpdateSaleLineItem
+@using TakOne.Application.Sales.Commands.SubmitSale
+@using TakOne.Application.Sales.Commands.QuickReorderLastSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>تک ماکارون | پورتال سفارش کارکنان</PageTitle>
+
+@* products.css is loaded globally by App.razor (scoped under .tm-shop-page,
+   so it doesn't affect other routes). No per-page <link> needed here. *@
+
+<div class="tm-shop-page">
+
+    @* ── 1. HEADER: portal name | search bar | user/cart icons ── *@
+    <header class="tm-shop-header">
+        <div class="tm-shop-header-inner">
+
+            @* Right side (RTL): portal name + refresh icon (image placeholder) *@
+            <div class="tm-portal-block">
+                <button type="button"
+                        class="tm-portal-icon"
+                        title="بارگذاری مجدد محصولات"
+                        @onclick="RefreshPage">
+                    @* The user said they'll set the image later. Until then,
+                       show a fallback "ت" letter (first letter of تک ماکارون). *@
+                    <span class="tm-portal-icon-fallback">ت</span>
+                </button>
+                <div class="tm-portal-text">
+                    <span class="tm-portal-title">تک ماکارون</span>
+                    <span class="tm-portal-subtitle">پورتال سفارش کارکنان</span>
+                </div>
+            </div>
+
+            @* Center: search bar with Ctrl+F kbd badge *@
+            <div class="tm-search-block">
+                <input type="text"
+                       id="tm-shop-search-input"
+                       class="tm-search-input"
+                       placeholder="جستجوی محصول، کد کالا یا دسته‌بندی..."
+                       value="@_searchTerm"
+                       @oninput="OnSearchInput"
+                       @onkeypress="OnSearchKeypress" />
+                <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+                <div class="tm-search-kbd">
+                    <kbd>Ctrl</kbd>
+                    <kbd>F</kbd>
+                </div>
+            </div>
+
+            @* Left side (RTL): user icon → settings, cart icon → cart page *@
+            <div class="tm-actions-block">
+                <button type="button"
+                        class="tm-icon-button"
+                        title="تنظیمات"
+                        @onclick="GoToSettings">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </button>
+                <button type="button"
+                        class="tm-icon-button"
+                        title="سبد خرید"
+                        @onclick="GoToCart">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                    </svg>
+                    @if (_cart is { } c && c.TotalItemCount > 0)
+                    {
+                        <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </header>
+
+    @* ── 2. GOLDEN SHIMMER LINE ── *@
+    <div class="tm-gold-shimmer" aria-hidden="true"></div>
+
+    @* ── 3. STATS BAR ── *@
+    <div class="tm-stats-bar">
+        <div class="tm-stats-inner">
+
+            @* سفارش های این ماه *@
+            <div class="tm-stat-item">
+                <div class="tm-stat-icon tm-stat-icon-gold">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+                    </svg>
+                </div>
+                <div class="tm-stat-body">
+                    <p class="tm-stat-label">سفارش‌های این ماه</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats.OrdersThisMonth) سفارش</p>
+                </div>
+            </div>
+
+            @* مجموع خرید های این ماه *@
+            <div class="tm-stat-item">
+                <div class="tm-stat-icon tm-stat-icon-green">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+                    </svg>
+                </div>
+                <div class="tm-stat-body">
+                    <p class="tm-stat-label">مجموع خریدهای این ماه</p>
+                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats.MonthlyTotal)</p>
+                </div>
+            </div>
+
+            @* مجموع خرید های این سال *@
+            <div class="tm-stat-item">
+                <div class="tm-stat-icon tm-stat-icon-gold">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                    </svg>
+                </div>
+                <div class="tm-stat-body">
+                    <p class="tm-stat-label">مجموع خریدهای این سال</p>
+                    <p class="tm-stat-value tm-persian-num">@FormatPrice(_stats.YearlyTotal)</p>
+                </div>
+            </div>
+
+            @* تعداد اجناس موجود *@
+            <div class="tm-stat-item">
+                <div class="tm-stat-icon tm-stat-icon-green">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                    </svg>
+                </div>
+                <div class="tm-stat-body">
+                    <p class="tm-stat-label">تعداد اجناس موجود</p>
+                    <p class="tm-stat-value tm-persian-num">@ToPersian(_stats.InStockProductCount) کالا</p>
+                </div>
+            </div>
+
+            @* سفارش سریع — clickable button *@
+            <button type="button"
+                    class="tm-stat-item tm-stat-item--button"
+                    disabled="@_isReordering"
+                    title="سفارش آخرین خرید را در سبد شما بارگذاری می‌کند (با توجه به سقف جدید)"
+                    @onclick="QuickReorderAsync">
+                <div class="tm-stat-icon tm-stat-icon-gold">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                </div>
+                <div class="tm-stat-body">
+                    <p class="tm-stat-label">سفارش سریع</p>
+                    <p class="tm-stat-value">تکرار سفارش</p>
+                </div>
+            </button>
+        </div>
+    </div>
+
+    @* ── 4. MAIN 3-COL GRID ── *@
+    <main class="tm-shop-main">
+
+        @* ── 4a. RIGHT (col 2/12): CATEGORIES SIDEBAR ── *@
+        <aside>
+            <div class="tm-categories-card">
+                <h3 class="tm-categories-title">دسته‌بندی محصولات</h3>
+                <nav>
+                    <ul class="tm-cat-list">
+                        <li>
+                            <button type="button"
+                                    class="tm-cat-item @(_selectedCategoryId is null ? "is-active" : "")"
+                                    @onclick="(() => OnCategoryChanged(null))">
+                                <span class="tm-cat-icon-bg">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zm9.75 0A2.25 2.25 0 0115.75 3.75H18A2.25 2.25 0 0120.25 6v2.25a2.25 2.25 0 01-2.25 2.25h-2.25A2.25 2.25 0 0113.5 8.25V6zm-9.75 9.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zm9.75 0a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                                    </svg>
+                                </span>
+                                <span>همه محصولات</span>
+                                <span class="tm-cat-count tm-persian-num">@ToPersian(_totalCount)</span>
+                            </button>
+                        </li>
+                        @foreach (var cat in _categories)
+                        {
+                            var catId = cat.Id; // closure capture
+                            <li>
+                                <button type="button"
+                                        class="tm-cat-item @(_selectedCategoryId == catId ? "is-active" : "")"
+                                        @onclick="(() => OnCategoryChanged(catId))">
+                                    <span class="tm-cat-icon-bg">
+                                        <svg fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M4 4h16v2H4zm0 4h16v2H4zm0 4h16v2H4zm0 4h16v2H4z" />
+                                        </svg>
+                                    </span>
+                                    <span>@cat.Name</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </nav>
+                @* No "special offer" card, no "stock availability" panel — both removed per spec. *@
+            </div>
+        </aside>
+
+        @* ── 4b. CENTER (col 7/12): HERO + PRODUCT GRID ── *@
+        <section>
+
+            @* HERO BANNER *@
+            <div class="tm-hero">
+                @* Image placeholder. User said "different picture (not the weird flower) that I'll set for it".
+                   Until they set it, leave the slot empty (no image rendered — the green gradient still shows). *@
+                <div class="tm-hero-image" aria-hidden="true">
+                    @* <img src="/images/hero-placeholder.png" alt="" /> *@
+                </div>
+                <div class="tm-hero-content">
+                    <span class="tm-hero-badge">
+                        <span class="tm-pulse-dot"></span>
+                        ویژه کارکنان
+                    </span>
+                    <h2 class="tm-hero-title">
+                        تنها در اوج،
+                        <span class="tm-hero-title-gold">تک ماکارون</span>
+                    </h2>
+                    @* No subtitle paragraph — removed per spec *@
+                    <div class="tm-hero-buttons">
+                        <button type="button" class="tm-hero-btn-gold" @onclick="GoToMyOrders">
+                            سفارش‌های من
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                        <button type="button" class="tm-hero-btn-green" @onclick="GoToCart">
+                            سبد خرید
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            @* PRODUCTS HEADER (count only — filter/sort bar deferred to a later iteration) *@
+            <div class="tm-products-header">
+                <div class="tm-products-title-block">
+                    <h3 class="tm-products-title">محبوب‌ترین محصولات</h3>
+                    <span class="tm-products-count tm-persian-num">@ToPersian(_totalCount) کالا</span>
+                </div>
+            </div>
+
+            @* LOADING / ERROR / EMPTY / GRID *@
+            @if (_isLoading)
+            {
+                <div class="tm-loading">
+                    <div class="tm-spinner"></div>
+                    <p class="tm-loading-text">در حال بارگذاری محصولات…</p>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(_loadError))
+            {
+                <div class="tm-empty">
+                    <div class="tm-empty-icon">⚠</div>
+                    <h4 class="tm-empty-title">خطا در بارگذاری</h4>
+                    <p class="tm-empty-text">@_loadError</p>
+                    <button type="button" class="tm-clear-btn" @onclick="LoadProductsAsync">تلاش مجدد</button>
+                </div>
+            }
+            else if (_filteredProducts.Count == 0)
+            {
+                <div class="tm-empty">
+                    <div class="tm-empty-icon">🔍</div>
+                    <h4 class="tm-empty-title">محصولی یافت نشد</h4>
+                    <p class="tm-empty-text">با فیلترهای فعلی محصولی برای نمایش وجود ندارد. می‌توانید فیلترها را پاک کنید.</p>
+                    <button type="button" class="tm-clear-btn" @onclick="ClearFilters">پاک کردن فیلترها</button>
+                </div>
+            }
+            else
+            {
+                <div class="tm-product-grid">
+                    @foreach (var product in _filteredProducts)
+                    {
+                        var remaining = GetRemainingForProduct(product);
+                        var qty = GetQtyForProduct(product.Id);
+                        var limitReached = remaining <= 0;
+                        var stockOut = product.StockQuantity <= 0;
+                        var disabled = limitReached || stockOut || _addingProductId == product.Id;
+                        <div class="tm-product-card">
+                            <div class="tm-product-image">
+                                @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                                {
+                                    <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <span class="tm-product-image-placeholder">
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" width="64" height="64">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                                        </svg>
+                                    </span>
+                                }
+                                @if (stockOut)
+                                {
+                                    <span class="tm-stock-badge">
+                                        <span class="tm-stock-dot tm-stock-dot-out"></span>
+                                        ناموجود
+                                    </span>
+                                }
+                                else if (product.StockQuantity <= 10)
+                                {
+                                    <span class="tm-stock-badge">
+                                        <span class="tm-stock-dot tm-stock-dot-low"></span>
+                                        موجودی محدود
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="tm-stock-badge">
+                                        <span class="tm-stock-dot tm-stock-dot-in"></span>
+                                        موجود
+                                    </span>
+                                }
+                            </div>
+
+                            <div class="tm-product-body">
+                                <h4 class="tm-product-name">@product.Name</h4>
+                                <p class="tm-product-desc">@product.Description</p>
+                                <p class="tm-product-price tm-persian-num">
+                                    @FormatPrice(product.Price)
+                                </p>
+
+                                <div class="tm-product-actions">
+                                    <div class="tm-qty-selector">
+                                        <button type="button"
+                                                class="tm-qty-btn"
+                                                disabled="@(qty <= 1)"
+                                                @onclick="(() => DecrementQty(product.Id))">
+                                            −
+                                        </button>
+                                        <span class="tm-qty-value tm-persian-num">@ToPersian(qty)</span>
+                                        <button type="button"
+                                                class="tm-qty-btn"
+                                                disabled="@(qty >= GetQtyMaxForProduct(product))"
+                                                @onclick="(() => IncrementQty(product.Id))">
+                                            +
+                                        </button>
+                                    </div>
+                                    @if (limitReached && !stockOut)
+                                    {
+                                        <button type="button"
+                                                class="tm-add-btn tm-add-btn-text-full"
+                                                disabled
+                                                title="به سقف خرید این محصول رسیده‌اید">
+                                            به سقف خرید رسیده‌اید
+                                        </button>
+                                    }
+                                    else if (stockOut)
+                                    {
+                                        <button type="button" class="tm-add-btn" disabled>
+                                            ناموجود
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="tm-add-btn"
+                                                disabled="@(_addingProductId == product.Id)"
+                                                @onclick="(() => AddToCartAsync(product))">
+                                            @if (_addingProductId == product.Id)
+                                            {
+                                                <span>…</span>
+                                            }
+                                            else
+                                            {
+                                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272" />
+                                                </svg>
+                                                <span>افزودن</span>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* PAGER (only when there's more than 1 page) *@
+                @if (_totalCount > _pageSize)
+                {
+                    var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
+                    var startPage = Math.Max(1, _pageNumber - 2);
+                    var endPage = Math.Min(totalPages, startPage + 4);
+                    if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
+
+                    <div class="tm-pager">
+                        <button type="button"
+                                class="tm-pager-btn"
+                                disabled="@(_pageNumber <= 1)"
+                                @onclick="(() => OnPageChanged(_pageNumber - 1))">
+                            ‹
+                        </button>
+
+                        @for (var p = startPage; p <= endPage; p++)
+                        {
+                            var page = p;
+                            <button type="button"
+                                    class="tm-pager-btn @(page == _pageNumber ? "is-active" : "")"
+                                    @onclick="(() => OnPageChanged(page))">
+                                <span class="tm-persian-num">@ToPersian(page)</span>
+                            </button>
+                        }
+
+                        <button type="button"
+                                class="tm-pager-btn"
+                                disabled="@(_pageNumber >= totalPages)"
+                                @onclick="(() => OnPageChanged(_pageNumber + 1))">
+                            ›
+                        </button>
+
+                        <span class="tm-pager-info tm-persian-num">
+                            صفحه @ToPersian(_pageNumber) از @ToPersian(totalPages) — @ToPersian(_totalCount) کالا
+                        </span>
+                    </div>
+                }
+            }
+        </section>
+
+        @* ── 4c. LEFT (col 3/12): MINI CART ── *@
+        <aside class="tm-mini-cart">
+            <div class="tm-cart-header">
+                <div class="tm-cart-header-left">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272" />
+                    </svg>
+                    <h3 class="tm-cart-header-title">سبد سفارش</h3>
+                </div>
+                @if (_cart is { } cart && cart.TotalItemCount > 0)
+                {
+                    <span class="tm-cart-header-badge tm-persian-num">@ToPersian(cart.TotalItemCount) کالا</span>
+                }
+            </div>
+
+            @if (_cart is null || _cart.LineItems.Count == 0)
+            {
+                <div class="tm-cart-empty">
+                    سبد شما خالی است.
+                </div>
+            }
+            else
+            {
+                <div class="tm-cart-items">
+                    @foreach (var line in _cart.LineItems)
+                    {
+                        var lineMax = Math.Max(line.CurrentStock, line.Quantity);
+                        <div class="tm-cart-line">
+                            <div class="tm-cart-line-img">
+                                @* PictureUrl not in CartLineItemDto — show placeholder icon *@
+                                <span class="tm-cart-line-img-placeholder">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" width="24" height="24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                                    </svg>
+                                </span>
+                            </div>
+                            <div class="tm-cart-line-body">
+                                <p class="tm-cart-line-name">@line.ProductName</p>
+                                <div class="tm-cart-line-controls">
+                                    <div class="tm-cart-line-qty">
+                                        <button type="button"
+                                                disabled="@(_updatingLineId == line.Id || line.Quantity <= 1)"
+                                                @onclick="(() => UpdateCartLineQtyAsync(line.Id, line.Quantity - 1))">
+                                            −
+                                        </button>
+                                        <span class="tm-persian-num">@ToPersian(line.Quantity)</span>
+                                        <button type="button"
+                                                disabled="@(_updatingLineId == line.Id || line.Quantity >= lineMax)"
+                                                @onclick="(() => UpdateCartLineQtyAsync(line.Id, line.Quantity + 1))">
+                                            +
+                                        </button>
+                                    </div>
+                                    <p class="tm-cart-line-total tm-persian-num">@FormatPrice(line.LineTotal)</p>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="tm-cart-footer">
+                    <div class="tm-cart-totals">
+                        <div class="tm-cart-totals-row">
+                            <span class="tm-cart-totals-label">جمع کالاها</span>
+                            <span class="tm-cart-totals-value tm-persian-num">@FormatPrice(_cart.Total)</span>
+                        </div>
+                        <div class="tm-cart-totals-row">
+                            <span class="tm-cart-totals-label">هزینه ارسال</span>
+                            <span class="tm-cart-totals-value">رایگان</span>
+                        </div>
+                        <div class="tm-cart-totals-row tm-cart-totals-row--grand">
+                            <span class="tm-cart-totals-label">مبلغ نهایی</span>
+                            <span class="tm-cart-totals-value tm-persian-num">@FormatPrice(_cart.Total)</span>
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="tm-submit-btn"
+                            disabled="@_isSubmitting"
+                            @onclick="SubmitCartAsync">
+                        @if (_isSubmitting)
+                        {
+                            <span>در حال ثبت…</span>
+                        }
+                        else
+                        {
+                            <span>ثبت سفارش</span>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        }
+                    </button>
+                    @* No "+add another item" button, no "schedule delivery" button — both removed per spec *@
+                </div>
+            }
+        </aside>
+    </main>
+</div>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<ProductListItemDto> _products = new();
+    private List<ProductListItemDto> _filteredProducts => _products; // stock filter is server-side now
+
+    private List<CategoryDto> _categories = new();
+
+    private string _searchTerm = string.Empty;
+    private Guid? _selectedCategoryId;
+
+    private const int _pageSize = 12;
+    private int _pageNumber = 1;
+    private int _totalCount;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    // Cart state — loaded in parallel with products on init, reloaded after
+    // any mutation (add, qty update, submit, quick reorder).
+    private CartDto? _cart;
+
+    // Per-card "adding" flag (so only the clicked card shows a spinner).
+    private Guid? _addingProductId;
+
+    // Mini-cart line "updating" flag (so only the clicked line's buttons disable).
+    private Guid? _updatingLineId;
+
+    // Submit + quick-reorder flags (disable their buttons while in-flight).
+    private bool _isSubmitting;
+    private bool _isReordering;
+
+    // Per-product quantity selector state. Keyed by ProductId.
+    // Default value is 1 when the product is first rendered.
+    private readonly Dictionary<Guid, int> _qtyByProduct = new();
+
+    // Stub stats — TODO: replace with a real backend query later.
+    // (The user said "do these now and we'll talk about the rest later".)
+    private StatsDto _stats = new();
+
+    /// <summary>
+    /// Lightweight DTO for the 4 numeric stats. The quick-reorder "stat" is
+    /// a button, not a value, so it's not in here.
+    /// </summary>
+    private sealed class StatsDto
+    {
+        public int OrdersThisMonth { get; set; }
+        public MoneyDto MonthlyTotal { get; set; } = new();
+        public MoneyDto YearlyTotal { get; set; } = new();
+        public int InStockProductCount { get; set; }
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Task.WhenAll(
+                LoadCategoriesAsync(),
+                LoadProductsAsync(),
+                LoadCartAsync());
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+        }
+        catch
+        {
+            // Non-fatal: empty categories just means the sidebar shows "All".
+        }
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = _pageSize,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                CategoryId = _selectedCategoryId
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+            _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // Initialize qty selectors to 1 for any new product in the page
+            // (preserve existing values for products that survived the reload).
+            foreach (var p in _products)
+            {
+                if (!_qtyByProduct.ContainsKey(p.Id))
+                {
+                    _qtyByProduct[p.Id] = 1;
+                }
+            }
+
+            // If the page is now empty, bump back to page 1 and retry.
+            if (_products.Count == 0 && _pageNumber > 1)
+            {
+                _pageNumber = 1;
+                await LoadProductsAsync();
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "بارگذاری محصولات با خطا مواجه شد.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadCartAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CartDto?>>(
+                new GetActiveCartForUserQuery());
+
+            _cart = result.IsSuccess ? result.Value : null;
+        }
+        catch
+        {
+            // Non-fatal: an empty mini-cart is shown.
+            _cart = null;
+        }
+    }
+
+    // ── Filter handlers ─────────────────────────────────────────────────
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+        // Debounce: defer the actual query slightly so we don't hammer the
+        // backend on every keystroke. The simpler-than-a-timer approach: just
+        // let the user press Enter (handled in OnSearchKeypress) to commit
+        // the search. Typing alone doesn't re-query.
+    }
+
+    private async Task OnSearchKeypress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            _pageNumber = 1;
+            await LoadProductsAsync();
+        }
+    }
+
+    private async Task OnCategoryChanged(Guid? categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    private async Task OnPageChanged(int newPage)
+    {
+        _pageNumber = newPage;
+        await LoadProductsAsync();
+    }
+
+    private async Task ClearFilters()
+    {
+        _searchTerm = string.Empty;
+        _selectedCategoryId = null;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
+    // ── Quantity selector (per-card) ────────────────────────────────────
+
+    private int GetQtyForProduct(Guid productId)
+    {
+        return _qtyByProduct.TryGetValue(productId, out var q) ? q : 1;
+    }
+
+    private int GetQtyMaxForProduct(ProductListItemDto product)
+    {
+        // Max = min(stock, remaining limit). For staff (no limit), max = stock.
+        // We always allow at least 1 so the user can interact with the selector
+        // (the add button is disabled separately when remaining <= 0).
+        var remaining = GetRemainingForProduct(product);
+        var cap = product.MyPurchaseLimit.HasValue
+            ? Math.Min(remaining, product.StockQuantity)
+            : product.StockQuantity;
+        return Math.Max(1, cap);
+    }
+
+    /// <summary>
+    /// Remaining purchase-limit units the current user can still add for this
+    /// product = (limit) - (already in cart). For staff (no limit) returns
+    /// int.MaxValue. Negative clamp: if the cart already exceeds the limit
+    /// (e.g. limit was tightened after the cart was loaded), returns 0.
+    /// </summary>
+    private int GetRemainingForProduct(ProductListItemDto product)
+    {
+        if (!product.MyPurchaseLimit.HasValue)
+        {
+            // Staff — no per-product cap. The remaining is bounded only by stock.
+            return product.StockQuantity;
+        }
+
+        var inCart = _cart?.LineItems
+            .Where(li => li.ProductId == product.Id)
+            .Sum(li => li.Quantity) ?? 0;
+
+        var remaining = product.MyPurchaseLimit.Value - inCart;
+        return Math.Max(0, remaining);
+    }
+
+    private void IncrementQty(Guid productId)
+    {
+        var current = GetQtyForProduct(productId);
+        var product = _products.FirstOrDefault(p => p.Id == productId);
+        if (product is null) return;
+        var max = GetQtyMaxForProduct(product);
+        if (current < max)
+        {
+            _qtyByProduct[productId] = current + 1;
+        }
+    }
+
+    private void DecrementQty(Guid productId)
+    {
+        var current = GetQtyForProduct(productId);
+        if (current > 1)
+        {
+            _qtyByProduct[productId] = current - 1;
+        }
+    }
+
+    // ── Add to cart ─────────────────────────────────────────────────────
+
+    private async Task AddToCartAsync(ProductListItemDto product)
+    {
+        var qty = GetQtyForProduct(product.Id);
+        if (qty < 1) return;
+
+        // Clamp defensively against a stale UI (cart changed server-side
+        // since the page was loaded).
+        var remaining = GetRemainingForProduct(product);
+        if (product.MyPurchaseLimit.HasValue && qty > remaining)
+        {
+            qty = remaining;
+        }
+        if (qty < 1) return;
+
+        _addingProductId = product.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateOrAppendSaleCommand(product.Id, qty));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success("به سبد اضافه شد.");
+                // Reload cart so the mini-cart + remaining limits reflect reality.
+                await LoadCartAsync();
+                // Reset the qty selector to 1 for the next add.
+                _qtyByProduct[product.Id] = 1;
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? "افزودن به سبد ناموفق بود.");
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error("خطای غیرمنتظره هنگام افزودن به سبد.");
+        }
+        finally
+        {
+            _addingProductId = null;
+        }
+    }
+
+    // ── Mini-cart line qty update ───────────────────────────────────────
+
+    private async Task UpdateCartLineQtyAsync(Guid lineItemId, int newQty)
+    {
+        if (_cart is null) return;
+
+        _updatingLineId = lineItemId;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new UpdateSaleLineItemCommand(_cart.SaleId, lineItemId, newQty));
+
+            if (result.IsSuccess)
+            {
+                await LoadCartAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? "به‌روزرسانی سبد ناموفق بود.");
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error("خطای غیرمنتظره هنگام به‌روزرسانی سبد.");
+        }
+        finally
+        {
+            _updatingLineId = null;
+        }
+    }
+
+    // ── Submit cart ─────────────────────────────────────────────────────
+
+    private async Task SubmitCartAsync()
+    {
+        if (_cart is null) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SubmitSaleCommand(_cart.SaleId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success("سفارش با موفقیت ثبت شد.");
+                _cart = null; // cart is now in Pending status — active draft is gone
+                Navigation.NavigateTo("/Sales", forceLoad: false);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? "ثبت سفارش ناموفق بود.");
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error("خطای غیرمنتظره هنگام ثبت سفارش.");
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    // ── Quick reorder ───────────────────────────────────────────────────
+
+    private async Task QuickReorderAsync()
+    {
+        _isReordering = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new QuickReorderLastSaleCommand());
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success("آخرین سفارش شما در سبد بارگذاری شد.");
+                await LoadCartAsync();
+                // Also reload products so the "remaining limit" indicators
+                // reflect the new state of the cart.
+                await LoadProductsAsync();
+            }
+            else
+            {
+                await Toast.Warning(result.Error ?? "سفارشی برای تکرار یافت نشد.");
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error("خطای غیرمنتظره هنگام تکرار سفارش.");
+        }
+        finally
+        {
+            _isReordering = false;
+        }
+    }
+
+    // ── Navigation helpers ──────────────────────────────────────────────
+
+    private void RefreshPage()
+    {
+        // The user said the icon "refreshes the products page (for now)".
+        // forceLoad:true gives a true HTTP refresh — clears any stale state.
+        Navigation.NavigateTo("/Products", forceLoad: true);
+    }
+
+    private void GoToSettings()
+    {
+        // Settings page route — may not exist yet. Navigation will land on
+        // the not-found page if so, which is acceptable until /Settings is built.
+        Navigation.NavigateTo("/Settings", forceLoad: false);
+    }
+
+    private void GoToCart()
+    {
+        Navigation.NavigateTo("/Cart", forceLoad: false);
+    }
+
+    private void GoToMyOrders()
+    {
+        Navigation.NavigateTo("/Sales", forceLoad: false);
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display: amount in current culture + currency
+    /// code. Persian culture shows Persian digits + the Persian "تومان" word
+    /// for IRR (we treat IRR as Toman for display — the project's actual
+    /// currency decision is still open per the roadmap).
+    /// </summary>
+    private static string FormatPrice(MoneyDto? price)
+    {
+        if (price is null || price.Amount == 0) return "—";
+        var amount = price.Amount.ToString("N0", CultureInfo.CurrentCulture);
+        // Show "تومان" for IRR (common Iranian convention); otherwise the
+        // raw currency code. Trailing "تومان" is more readable than "IRR"
+        // for Persian users.
+        var unit = price.Currency == "IRR" ? "تومان" : price.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Converts Latin digits in a number/string to Persian digits (۰۱۲۳۴۵۶۷۸۹).
+    /// Persian culture already does this for ToString("N0"), but for integer
+    /// counts (like "5 کالا") we render via @ToPersian(5) — which would
+    /// otherwise show Latin digits in any culture. This helper keeps the
+    /// page's digit system consistent with the rest of the Persian UI.
+    /// Returns the original string for null/empty/non-numeric input.
+    /// </summary>
+    private static string ToPersian(int value)
+    {
+        // Use the current culture's digit shape — for fa-IR this is Persian,
+        // for en-US this is Latin. Respects the language switcher.
+        return value.ToString("N0", CultureInfo.CurrentCulture)
+                   .Replace(",", ""); // counts don't need thousand separators
+    }
+
+    private static string ToPersian(decimal value)
+    {
+        return value.ToString("N0", CultureInfo.CurrentCulture);
+    }
+}

@@ -94,9 +94,17 @@ public sealed class GetProductsPaginatedQueryHandler
         //    filter here (the repository applies its own search-term filter
         //    too; the in-memory filter is a defense-in-depth in case the
         //    implementation differs).
+        //
+        //    MY PURCHASE LIMIT:
+        //    The current user's per-product limit is resolved here via
+        //    Product.GetPurchaseLimitForGroup(currentUser.GroupName). For
+        //    staff (no GroupName) the limit is null — they have no cap.
+        //    For customers with no specific limit set on this product,
+        //    GetPurchaseLimitForGroup returns null too.
         // ------------------------------------------------------------------
         var searchTerm = query.SearchTerm?.Trim();
         var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
+        var groupName = currentUser.GroupName;
 
         var dtos = paginated.Items
             .Where(p => includeInactive || /* isActive check goes here when added to domain */ true)
@@ -106,6 +114,7 @@ public sealed class GetProductsPaginatedQueryHandler
             {
                 Id = p.Id,
                 Name = p.Name,
+                Description = p.Description ?? string.Empty,
                 PictureUrl = p.PictureUrl,
 
                 Price = new MoneyDto
@@ -118,7 +127,11 @@ public sealed class GetProductsPaginatedQueryHandler
 
                 CategoryId = p.CategoryId,
                 SubCategoryId = p.SubCategoryId,
-                SubSubCategoryId = p.SubSubCategoryId
+                SubSubCategoryId = p.SubSubCategoryId,
+
+                MyPurchaseLimit = !string.IsNullOrWhiteSpace(groupName)
+                    ? p.GetPurchaseLimitForGroup(groupName)?.Limit
+                    : null
             })
             .ToList();
 

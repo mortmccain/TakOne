@@ -194,6 +194,28 @@
     --rz-sidebar-hover-background-color: #8B6F1A; /* dark gold */
     --rz-sidebar-active-background-color: var(--tm-gold-tint); /* light gold */
     --rz-sidebar-active-text-color: var(--tm-green-dark);
+    /* Panel menu item variables — Radzen uses these to paint the background
+       of each sidebar menu item (Dashboard, Products, Sales, etc.). Without
+       overriding them, Radzen's standard theme applies its own dark/light
+       defaults to the .rz-navigation-item-wrapper element, making each item
+       appear as a colored bar instead of blending with the green sidebar.
+       Setting them to transparent (normal), dark gold (hover), and light
+       gold (active) ensures the CSS variable layer ALSO matches our 3-state
+       scheme — belt + suspenders alongside the explicit CSS rules below. */
+    --rz-panelmenu-item-background-color: transparent;
+    --rz-panelmenu-item-color: #E5E7EB;
+    --rz-panelmenu-item-hover-background-color: #8B6F1A;
+    --rz-panelmenu-item-hover-color: #FAF7F0;
+    --rz-panelmenu-item-active-background-color: var(--tm-gold-tint);
+    --rz-panelmenu-item-active-color: var(--tm-green-dark);
+    --rz-panelmenu-item-focus-background-color: #8B6F1A;
+    --rz-panelmenu-item-focus-color: #FAF7F0;
+    --rz-navigation-item-background-color: transparent;
+    --rz-navigation-item-color: #E5E7EB;
+    --rz-navigation-item-hover-background-color: #8B6F1A;
+    --rz-navigation-item-hover-color: #FAF7F0;
+    --rz-navigation-item-active-background-color: var(--tm-gold-tint);
+    --rz-navigation-item-active-color: var(--tm-green-dark);
     /* Header — gold bar with dark green text. Rounded bottom corners so
        it feels card-like rather than a flat slab. */
     --rz-header-background-color: var(--tm-gold);
@@ -352,71 +374,137 @@ body {
 }
 
 /* ===========================================================================
-   Sidebar panel menu items — 3-state color scheme
+   Sidebar panel menu items — 3-state color scheme (NUCLEAR OVERRIDE)
    ---------------------------------------------------------------------------
    Per user spec:
      - Normal  : green (transparent → blends with sidebar's dark green bg)
      - Hover   : dark gold background, cream text/icons
      - Active  : light gold background, dark green text/icons
-   Icons are gold in normal state (the brand accent against the green sidebar).
 
-   WHY !important: Radzen's base "standard" theme applies its own background
-   colors to .rz-panel-menu-item. Without !important, our overrides lose to
-   Radzen's selectors which have the same specificity but load later in the
-   cascade (Radzen.Blazor.css loads before our override, but Radzen's
-   component CSS has higher specificity in some cases). Using !important
-   here is intentional and safe — this is a theme override file whose
-   entire purpose is to win these cascading battles.
+   PROBLEM HISTORY:
+   The previous versions targeted specific selectors (.rz-panel-menu-item,
+   .rz-navigation-item-wrapper, .rz-navigation-item, .rz-navigation-item-content)
+   but the menu items STILL appeared as black bars. This means Radzen is
+   painting the background on an element or via a CSS mechanism we haven't
+   explicitly targeted — possibly a gradient via the `background:` shorthand,
+   a CSS variable we haven't overridden, or an element class we haven't listed.
+
+   NUCLEAR SOLUTION:
+   Use a WILDCARD descendant selector (.rz-panel-menu *) to nuke the
+   background on EVERY descendant element at once. This catches any element
+   Radzen might use — wrapper, anchor, content, icon, text, or anything else
+   — regardless of its class name. Then re-apply the hover/active colors on
+   the specific state selectors (which have higher specificity than the
+   wildcard, so they win at equal !important).
+
+   We use the `background:` SHORTHAND (not just `background-color:`) because
+   the shorthand resets ALL background properties (color, image, position,
+   size, repeat, origin, clip, attachment) in one declaration. If Radzen
+   applies a background via `background: <gradient>` or `background-image:`,
+   the shorthand nukes it; `background-color:` alone would NOT.
+
+   SPECIFICITY ANALYSIS:
+     - Wildcard normal:  .rz-panel-menu *                → (0, 1, 0) + !important
+     - Hover specific:   .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-wrapper
+                                                          → (0, 3, 1) + !important
+     - Active specific:  .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-wrapper
+                                                          → (0, 3, 1) + !important
+   When both rules have !important, HIGHER SPECIFICITY WINS. So the
+   hover/active rules (0, 3, 1) beat the wildcard (0, 1, 0). The wildcard
+   only applies when no hover/active rule matches — i.e. in the normal
+   resting state, exactly what we want.
    =========================================================================== */
 
-/* NORMAL state — transparent background (shows sidebar's green), gold icons,
-   light cream text. This is the resting state for unselected menu items. */
-.rz-panel-menu .rz-panel-menu-item {
+/* ── NORMAL STATE (resting) ──────────────────────────────────────────────
+   Nuke ALL backgrounds on EVERY descendant of .rz-panel-menu to transparent.
+   This is the catch-all that guarantees no black/dark bar can appear,
+   regardless of which element Radzen paints the background on. */
+.rz-panel-menu,
+.rz-panel-menu *,
+.rz-panel-menu .rz-panel-menu-item,
+.rz-panel-menu .rz-panel-menu-item *,
+.rz-panel-menu-item,
+.rz-panel-menu-item *,
+.rz-navigation-item-wrapper,
+.rz-navigation-item,
+.rz-navigation-item-content,
+.rz-navigation-item-wrapper *,
+.rz-navigation-item * {
+    background: transparent !important;
     background-color: transparent !important;
-    color: #E5E7EB !important;
+    background-image: none !important;
 }
 
+    /* Normal-state text colors: gold icons, cream text */
+    .rz-panel-menu .rz-navigation-item-icon,
     .rz-panel-menu .rz-panel-menu-item .rz-navigation-item-icon {
         color: var(--tm-gold) !important;
     }
 
-    .rz-panel-menu .rz-panel-menu-item .rz-navigation-item-text {
+    .rz-panel-menu .rz-navigation-item-text,
+    .rz-panel-menu .rz-panel-menu-item .rz-navigation-item-text,
+    .rz-panel-menu .rz-navigation-item-text-wrapper {
         color: #E5E7EB !important;
     }
 
-    /* HOVER state — dark gold background, cream icons/text for contrast.
-   The cursor is now over the item; the user needs to see it highlighted. */
-    .rz-panel-menu .rz-panel-menu-item:hover {
-        background-color: #8B6F1A !important; /* dark gold */
+    /* ── HOVER STATE ─────────────────────────────────────────────────────────
+   Re-apply dark gold background on hover. These selectors have higher
+   specificity than the wildcard above, so they win at equal !important. */
+    .rz-panel-menu .rz-panel-menu-item:hover,
+    .rz-panel-menu .rz-panel-menu-item:hover > .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item,
+    .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-content,
+    .rz-panel-menu .rz-navigation-item-wrapper:hover,
+    .rz-panel-menu .rz-navigation-item:hover {
+        background: #8B6F1A !important;
+        background-color: #8B6F1A !important;
+        background-image: none !important;
     }
 
-        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-icon {
+        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-icon,
+        .rz-panel-menu .rz-navigation-item:hover .rz-navigation-item-icon {
             color: #FAF7F0 !important; /* cream */
         }
 
-        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-text {
+        .rz-panel-menu .rz-panel-menu-item:hover .rz-navigation-item-text,
+        .rz-panel-menu .rz-navigation-item:hover .rz-navigation-item-text {
             color: #FAF7F0 !important; /* cream */
         }
 
-    /* ACTIVE/SELECTED state — light gold background (the "you are here" pill),
-   dark green text/icons for maximum contrast against the pale gold. */
-    .rz-panel-menu .rz-panel-menu-item.rz-state-active {
-        background-color: var(--tm-gold-tint) !important; /* light gold #FBF4D6 */
+    /* ── ACTIVE/SELECTED STATE ───────────────────────────────────────────────
+   Re-apply light gold background when the item is the current page. */
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active,
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active > .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item,
+    .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-content,
+    .rz-panel-menu .rz-state-active .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-state-active .rz-navigation-item {
+        background: var(--tm-gold-tint) !important;
+        background-color: var(--tm-gold-tint) !important;
+        background-image: none !important;
     }
 
-        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-icon {
+        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-icon,
+        .rz-panel-menu .rz-state-active .rz-navigation-item-icon {
             color: var(--tm-green-dark) !important;
         }
 
-        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-text {
+        .rz-panel-menu .rz-panel-menu-item.rz-state-active .rz-navigation-item-text,
+        .rz-panel-menu .rz-state-active .rz-navigation-item-text {
             color: var(--tm-green-dark) !important;
         }
 
-        /* Also handle the collapsed parent item ("Admin Section") — when it's
-   active/expanded, it should use the same active styling. */
-        .rz-panel-menu .rz-panel-menu-item.rz-state-active > .rz-navigation-item-wrapper {
-            background-color: var(--tm-gold-tint) !important;
-        }
+    /* ── FOCUSED STATE (keyboard navigation) ─────────────────────────────────
+   Same as hover — dark gold background for visual consistency. */
+    .rz-panel-menu .rz-panel-menu-item.rz-state-focus,
+    .rz-panel-menu .rz-panel-menu-item.rz-state-focus > .rz-navigation-item-wrapper,
+    .rz-panel-menu .rz-state-focus .rz-navigation-item-wrapper {
+        background: #8B6F1A !important;
+        background-color: #8B6F1A !important;
+        background-image: none !important;
+    }
 
 /* ===========================================================================
    Header — gold bar with rounded bottom corners + dark green text

@@ -159,8 +159,8 @@
                 margin-bottom: 0.25rem;
             }
 
-            /* Dropzone — a wrapping a visually-hidden InputFile.
-               Clicking anywhere on the label triggers the file picker. */
+            /* Dropzone — a label element wrapping a visually-hidden InputFile.
+                           Clicking anywhere on the label triggers the file picker. */
             .picture-dropzone {
                 display: block;
                 cursor: pointer;
@@ -172,16 +172,16 @@
                 transition: border-color 0.15s ease, background-color 0.15s ease;
             }
 
-            .picture-dropzone:hover {
-                border-color: var(--rz-primary);
-                background-color: var(--rz-primary-lighter, rgba(0, 100, 250, 0.04));
-            }
+                .picture-dropzone:hover {
+                    border-color: var(--rz-primary);
+                    background-color: var(--rz-primary-lighter, rgba(0, 100, 250, 0.04));
+                }
 
-            .picture-dropzone:focus-within {
-                border-color: var(--rz-primary);
-                box-shadow: 0 0 0 3px rgba(0, 100, 250, 0.15);
-                outline: none;
-            }
+                .picture-dropzone:focus-within {
+                    border-color: var(--rz-primary);
+                    box-shadow: 0 0 0 3px rgba(0, 100, 250, 0.15);
+                    outline: none;
+                }
 
             /* Visually-hidden but accessible — sr-only pattern */
             .picture-dropzone-input {
@@ -202,7 +202,7 @@
                 align-items: center;
                 gap: 0.75rem;
                 /* Let the label receive the click; otherwise the inner
-                   elements would steal it from the file input. */
+                               elements would steal it from the file input. */
                 pointer-events: none;
             }
 
@@ -264,18 +264,18 @@
                 gap: 0.25rem;
             }
 
-            .upload-info .file-name {
-                font-weight: 500;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                color: var(--rz-text-color);
-            }
+                .upload-info .file-name {
+                    font-weight: 500;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    color: var(--rz-text-color);
+                }
 
-            .upload-info .file-size {
-                color: var(--rz-text-secondary-color);
-                font-size: 0.85rem;
-            }
+                .upload-info .file-size {
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.85rem;
+                }
 
             /* Help panel on the right */
             .help-panel {
