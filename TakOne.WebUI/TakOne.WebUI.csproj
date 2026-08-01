@@ -77,5 +77,8 @@
   <ItemGroup>
     <Folder Include="wwwroot\uploads\products\" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="wwwroot\css\Products.css" />
+  </ItemGroup>
 
 </Project>

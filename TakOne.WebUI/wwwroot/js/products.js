@@ -12,24 +12,30 @@
    available on every page (cheap — the listener only fires on Ctrl+F).
    ========================================================================== */
 
-(function () {
+(
+    function ()
+    {
     'use strict';
 
     // The shop search input has id="tm-shop-search-input" (set in Products.razor).
     // We resolve it lazily inside the handler so we don't care about load order.
-    function focusShopSearch() {
+        function focusShopSearch()
+        {
         var el = document.getElementById('tm-shop-search-input');
-        if (el) {
+            if (el)
+            {
             el.focus();
             // Move caret to end so the user can keep typing from where they were
             var len = (el.value || '').length;
-            try {
+                try
+                {
                 el.setSelectionRange(len, len);
-            } catch (e) {
+                } catch (e)
+                {
                 // Some input types don't support setSelectionRange — ignore.
+                }
             }
         }
-    }
 
     // Global keydown listener for Ctrl+F (or Cmd+F on macOS).
     // preventDefault() stops the browser's native find bar from opening —
@@ -38,7 +44,10 @@
     // We DO NOT preventDefault on Cmd+F for non-shop pages, but the listener
     // is registered globally. The check is: only intercept when the shop
     // search input exists in the DOM (i.e. we're on the shop page).
-    document.addEventListener('keydown', function (e) {
+        document.addEventListener
+            (
+                'keydown', function (e)
+        {
         var isFindShortcut =
             (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F');
 
@@ -50,12 +59,17 @@
 
         e.preventDefault();
         focusShopSearch();
-    }, { passive: false });
+        },
+                { passive: false }
+            );
 
     // Public API — callable from Blazor via JSRuntime.InvokeVoidAsync.
     // Not currently used (Ctrl+F is enough), but kept for future use
     // (e.g. a "search" button elsewhere on the page that focuses the bar).
-    window.tmShopPage = {
+        window.tmShopPage =
+        {
         focusSearch: focusShopSearch
-    };
-})();
+        };
+    }
+)
+    ();
