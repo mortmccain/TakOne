@@ -134,10 +134,12 @@
     --rz-danger-lighter: #FEE2E2;
     --rz-danger-darker: #B91C1C;
     --rz-danger-contrast: #FFFFFF;
-    /* Base surface + text */
-    --rz-base-background-color: var(--tm-cream);
+    /* Base surface + text — light gold (tm-gold-tint) is the page background.
+       Previously tm-cream (#FAF7F0, warm off-white) which looked too white.
+       tm-gold-tint (#FBF4D6) gives the warm golden background the design calls for. */
+    --rz-base-background-color: var(--tm-gold-tint);
     --rz-base-text-color: var(--tm-text);
-    --rz-background-color: var(--tm-cream);
+    --rz-background-color: var(--tm-gold-tint);
     --rz-text-color: var(--tm-text);
     --rz-text-secondary-color: var(--tm-gray);
     --rz-text-tertiary-color: #9CA3AF;
@@ -243,7 +245,13 @@
    =========================================================================== */
 body {
     font-family: var(--rz-font-family);
-    background-color: var(--rz-base-background-color);
+    /* Use the `background` SHORTHAND (not `background-color`) so that any
+       gradient Radzen's standard theme sets via `background: <gradient>` or
+       `background-image:` is fully reset. `background-color` alone would NOT
+       override a gradient image — the blue gradient from Radzen's base theme
+       would bleed through, causing the "white with blue gradient" issue. */
+    background: var(--rz-base-background-color);
+    background-image: none;
     color: var(--rz-base-text-color);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

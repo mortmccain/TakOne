@@ -24,22 +24,21 @@
      /Products route — they don't leak into other pages.
    ========================================================================== */
 
-/* Brand color tokens (used by both .tm-* utility classes and direct rules) */
+/* The --tm-* brand tokens are defined on :root by tak-light.css when the
+   tak-light theme is active. They are NOT redefined here locally — previously
+   this block hardcoded all --tm-* values on .tm-shop-page, which meant the
+   page ALWAYS used tak-light colors even when a different theme (standard-dark,
+   material, etc.) was selected. By removing the local definitions, the page
+   now inherits from :root — so it picks up whatever theme is active.
+
+   When a non-tak-light theme is active, --tm-* are undefined. The var(--tm-*)
+   references throughout this file have Radzen fallbacks (e.g.
+   var(--tm-green, var(--rz-primary))) so the page uses the theme's primary/
+   secondary colors instead. */
 .tm-shop-page {
-    --tm-green: #0E4D3C;
-    --tm-green-dark: #0A3528;
-    --tm-green-light: #1A6B52;
-    --tm-green-mint: #E8F2EE;
-    --tm-gold: #C9A227;
-    --tm-gold-bright: #D4AF37;
-    --tm-gold-soft: #F4E4A1;
-    --tm-gold-tint: #FBF4D6;
-    --tm-cream: #FAF7F0;
-    --tm-gray: #6B7280;
-    --tm-text: #1F2937;
     font-family: 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    color: var(--tm-text);
-    background: var(--tm-cream);
+    color: var(--rz-text-color, var(--tm-text, #1F2937));
+    background: var(--rz-base-background-color, var(--tm-cream, #FAF7F0));
     min-height: 100vh;
 }
 
@@ -94,8 +93,8 @@
    1. TOP BAR — search bar + portal name + user/cart icons
    ========================================================================== */
 .tm-shop-header {
-    background: #fff;
-    border-bottom: 1px solid #e5e7eb;
+    background: var(--rz-component-background-color);
+    border-bottom: 1px solid var(--rz-border-color);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     position: sticky;
     top: 0;
@@ -124,7 +123,7 @@
     width: 44px;
     height: 44px;
     border-radius: 12px;
-    background: linear-gradient(135deg, var(--tm-green), var(--tm-green-dark));
+    background: linear-gradient(135deg, var(--tm-green, var(--rz-primary)), var(--tm-green-dark, var(--rz-primary-darker)));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -148,7 +147,7 @@
     }
 
 .tm-portal-icon-fallback {
-    color: var(--tm-gold-bright);
+    color: var(--tm-gold-bright, var(--rz-secondary-darker));
     font-size: 1.25rem;
     font-weight: 700;
 }
@@ -160,40 +159,40 @@
    Radzen's base CSS (Radzen.Blazor.css) sets global `svg { fill: ... }`
    rules that can override `stroke="currentColor"` on inline SVGs, leaving
    the path unpainted — the SVG renders as an empty box. Setting
-   `stroke: var(--tm-green)` directly on the SVG element bypasses any
+   `stroke: var(--tm-green, var(--rz-primary))` directly on the SVG element bypasses any
    inherited fill rule and guarantees the path is visible. We also set
    explicit width/height on the SVG itself (not just via CSS) so the SVG
    always has a non-zero rendered size even before CSS loads. */
 .tm-hamburger {
     width: 44px;
     height: 44px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--rz-border-color);
     background: transparent;
     border-radius: 12px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     transition: background 0.18s ease, border-color 0.18s ease;
     padding: 0;
 }
 
     .tm-hamburger:hover {
-        background: var(--tm-green-mint);
-        border-color: var(--tm-green);
+        background: var(--tm-green-mint, var(--rz-primary-lighter));
+        border-color: var(--tm-green, var(--rz-primary));
     }
 
     .tm-hamburger svg {
         width: 24px;
         height: 24px;
-        stroke: var(--tm-green);
+        stroke: var(--tm-green, var(--rz-primary));
         fill: none !important;
         display: block;
     }
 
         .tm-hamburger svg path {
-            stroke: var(--tm-green) !important;
+            stroke: var(--tm-green, var(--rz-primary)) !important;
             fill: none !important;
             stroke-width: 2;
         }
@@ -206,13 +205,13 @@
 .tm-portal-title {
     font-size: 1.05rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     line-height: 1.2;
 }
 
 .tm-portal-subtitle {
     font-size: 0.7rem;
-    color: var(--tm-gold);
+    color: var(--tm-gold, var(--rz-secondary));
     font-weight: 500;
 }
 
@@ -225,24 +224,24 @@
 
 .tm-search-input {
     width: 100%;
-    background: var(--tm-cream);
-    border: 1px solid #e5e7eb;
+    background: var(--tm-cream, var(--rz-base-background-color));
+    border: 1px solid var(--rz-border-color);
     border-radius: 9999px;
     padding: 12px 56px 12px 110px; /* right-icon padding + left-kbd padding (RTL) */
     font-family: inherit;
     font-size: 0.95rem;
-    color: var(--tm-text);
+    color: var(--tm-text, var(--rz-text-color));
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
     outline: none;
 }
 
     .tm-search-input:focus {
-        border-color: var(--tm-gold);
+        border-color: var(--tm-gold, var(--rz-secondary));
         box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
     }
 
     .tm-search-input::placeholder {
-        color: #9ca3af;
+        color: var(--rz-text-tertiary-color);
     }
 
 .tm-search-icon {
@@ -252,8 +251,8 @@
     transform: translateY(-50%);
     width: 20px;
     height: 20px;
-    color: var(--tm-green);
-    stroke: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
+    stroke: var(--tm-green, var(--rz-primary));
     pointer-events: none;
 }
 
@@ -269,9 +268,9 @@
 }
 
     .tm-search-kbd kbd {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        color: var(--tm-gray);
+        background: var(--rz-component-background-color);
+        border: 1px solid var(--rz-border-color);
+        color: var(--tm-gray, var(--rz-text-secondary-color));
         font-size: 0.7rem;
         padding: 2px 8px;
         border-radius: 4px;
@@ -295,25 +294,25 @@
     border-radius: 12px;
     cursor: pointer;
     transition: background 0.18s ease;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
     .tm-icon-button:hover {
-        background: var(--tm-cream);
+        background: var(--tm-cream, var(--rz-base-background-color));
     }
 
     .tm-icon-button svg {
         width: 24px;
         height: 24px;
-        stroke: var(--tm-green);
+        stroke: var(--tm-green, var(--rz-primary));
         fill: none !important;
     }
 
         .tm-icon-button svg path {
-            stroke: var(--tm-green) !important;
+            stroke: var(--tm-green, var(--rz-primary)) !important;
             fill: none !important;
         }
 
@@ -324,7 +323,7 @@
         min-width: 20px;
         height: 20px;
         padding: 0 4px;
-        background: var(--tm-gold);
+        background: var(--tm-gold, var(--rz-secondary));
         color: #fff;
         font-size: 0.7rem;
         font-weight: 700;
@@ -353,7 +352,7 @@
 }
 
     .tm-user-block:hover {
-        background: var(--tm-cream);
+        background: var(--tm-cream, var(--rz-base-background-color));
     }
 
 .tm-user-text {
@@ -366,7 +365,7 @@
 .tm-user-name {
     font-size: 0.85rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     margin: 0;
     max-width: 140px;
     overflow: hidden;
@@ -376,7 +375,7 @@
 
 .tm-user-role {
     font-size: 0.7rem;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     margin: 0;
 }
 
@@ -393,7 +392,7 @@
     border-radius: 50% !important;
     -webkit-border-radius: 50% !important;
     -moz-border-radius: 50% !important;
-    background: linear-gradient(135deg, var(--tm-green), var(--tm-green-dark)) !important;
+    background: linear-gradient(135deg, var(--tm-green, var(--rz-primary)), var(--tm-green-dark, var(--rz-primary-darker))) !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -403,7 +402,7 @@
 }
 
 .tm-user-avatar-initial {
-    color: var(--tm-gold-bright);
+    color: var(--tm-gold-bright, var(--rz-secondary-darker));
     font-size: 1.15rem;
     font-weight: 700;
     line-height: 1;
@@ -425,7 +424,7 @@
    ========================================================================== */
 .tm-gold-shimmer {
     height: 4px;
-    background: linear-gradient(110deg, var(--tm-gold) 0%, var(--tm-gold-soft) 45%, var(--tm-gold-bright) 55%, var(--tm-gold) 90%);
+    background: linear-gradient(110deg, var(--tm-gold, var(--rz-secondary)) 0%, var(--tm-gold-soft, var(--rz-secondary-lighter)) 45%, var(--tm-gold-bright, var(--rz-secondary-darker)) 55%, var(--tm-gold, var(--rz-secondary)) 90%);
     background-size: 200% 100%;
     animation: tm-shimmer 4s linear infinite;
 }
@@ -444,8 +443,8 @@
    3. STATS BAR — 5 stat cards under the golden line
    ========================================================================== */
 .tm-stats-bar {
-    background: #fff;
-    border-bottom: 1px solid #f3f4f6;
+    background: var(--rz-component-background-color);
+    border-bottom: 1px solid var(--rz-border-color-light);
 }
 
 .tm-stats-inner {
@@ -462,7 +461,7 @@
     align-items: center;
     gap: 12px;
     padding-inline-end: 16px;
-    border-inline-end: 1px solid #f3f4f6;
+    border-inline-end: 1px solid var(--rz-border-color-light);
 }
 
     .tm-stat-item:last-child {
@@ -480,13 +479,13 @@
 }
 
 .tm-stat-icon-gold {
-    background: var(--tm-gold-tint);
-    color: var(--tm-gold);
+    background: var(--tm-gold-tint, var(--rz-secondary-lighter));
+    color: var(--tm-gold, var(--rz-secondary));
 }
 
 .tm-stat-icon-green {
-    background: var(--tm-green-mint);
-    color: var(--tm-green);
+    background: var(--tm-green-mint, var(--rz-primary-lighter));
+    color: var(--tm-green, var(--rz-primary));
 }
 
 .tm-stat-icon svg {
@@ -507,7 +506,7 @@
 
 .tm-stat-label {
     font-size: 0.7rem;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     margin: 0;
     line-height: 1.3;
 }
@@ -515,7 +514,7 @@
 .tm-stat-value {
     font-size: 0.95rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     margin: 0;
     line-height: 1.3;
 }
@@ -549,7 +548,7 @@
 }
 
     .tm-stat-item--button:hover {
-        background: var(--tm-cream);
+        background: var(--tm-cream, var(--rz-base-background-color));
     }
 
     .tm-stat-item--button:disabled {
@@ -595,7 +594,7 @@
    5. CATEGORIES SIDEBAR (right column in RTL)
    ========================================================================== */
 .tm-categories-card {
-    background: #fff;
+    background: var(--rz-component-background-color);
     border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
     padding: 12px;
@@ -606,7 +605,7 @@
 .tm-categories-title {
     font-size: 0.85rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     padding: 0 8px 12px;
     margin: 0;
 }
@@ -627,7 +626,7 @@
     padding: 10px;
     border-radius: 12px;
     cursor: pointer;
-    color: var(--tm-text);
+    color: var(--tm-text, var(--rz-text-color));
     transition: background 0.18s ease, transform 0.18s ease, color 0.18s ease;
     background: transparent;
     border: none;
@@ -639,12 +638,12 @@
 }
 
     .tm-cat-item:hover {
-        background: var(--tm-green-mint);
+        background: var(--tm-green-mint, var(--rz-primary-lighter));
         transform: translateX(-4px); /* RTL: shift left (toward the start) */
     }
 
     .tm-cat-item.is-active {
-        background: var(--tm-green);
+        background: var(--tm-green, var(--rz-primary));
         color: #fff;
     }
 
@@ -657,7 +656,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--tm-green-light);
+    color: var(--tm-green-light, var(--rz-primary-400));
 }
 
 .tm-cat-item.is-active .tm-cat-icon-bg {
@@ -683,7 +682,7 @@
 /* Hero banner — green gradient box at the top of the products column */
 .tm-hero {
     position: relative;
-    background: linear-gradient(to left, var(--tm-green-dark), var(--tm-green), var(--tm-green));
+    background: linear-gradient(to left, var(--tm-green-dark, var(--rz-primary-darker)), var(--tm-green, var(--rz-primary)), var(--tm-green, var(--rz-primary)));
     border-radius: 24px;
     padding: 32px;
     margin-bottom: 24px;
@@ -720,8 +719,8 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: var(--tm-gold);
-    color: var(--tm-green-dark);
+    background: var(--tm-gold, var(--rz-secondary));
+    color: var(--tm-green-dark, var(--rz-primary-darker));
     padding: 4px 12px;
     border-radius: 9999px;
     font-size: 0.75rem;
@@ -732,7 +731,7 @@
     .tm-hero-badge .tm-pulse-dot {
         width: 6px;
         height: 6px;
-        background: var(--tm-green-dark);
+        background: var(--tm-green-dark, var(--rz-primary-darker));
         border-radius: 9999px;
         animation: tm-pulse 2s infinite;
     }
@@ -756,7 +755,7 @@
 }
 
 .tm-hero-title-gold {
-    color: var(--tm-gold-bright);
+    color: var(--tm-gold-bright, var(--rz-secondary-darker));
 }
 
 .tm-hero-buttons {
@@ -766,8 +765,8 @@
 }
 
 .tm-hero-btn-gold {
-    background: var(--tm-gold);
-    color: var(--tm-green-dark);
+    background: var(--tm-gold, var(--rz-secondary));
+    color: var(--tm-green-dark, var(--rz-primary-darker));
     border: none;
     padding: 10px 20px;
     border-radius: 12px;
@@ -783,7 +782,7 @@
 }
 
     .tm-hero-btn-gold:hover {
-        background: var(--tm-gold-bright);
+        background: var(--tm-gold-bright, var(--rz-secondary-darker));
         transform: translateY(-1px);
     }
 
@@ -823,14 +822,14 @@
 .tm-products-title {
     font-size: 1.25rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     margin: 0;
 }
 
 .tm-products-count {
     font-size: 0.75rem;
-    background: var(--tm-gold-tint);
-    color: var(--tm-gold);
+    background: var(--tm-gold-tint, var(--rz-secondary-lighter));
+    color: var(--tm-gold, var(--rz-secondary));
     padding: 2px 8px;
     border-radius: 9999px;
     font-weight: 500;
@@ -858,11 +857,11 @@
 
 /* Product card */
 .tm-product-card {
-    background: #fff;
+    background: var(--rz-component-background-color);
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
-    border: 1px solid #f9fafb;
+    border: 1px solid var(--rz-border-color-light);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
@@ -876,7 +875,7 @@
 .tm-product-image {
     position: relative;
     height: 176px;
-    background: linear-gradient(135deg, var(--tm-gold-soft), #fefce8);
+    background: linear-gradient(135deg, var(--tm-gold-soft, var(--rz-secondary-lighter)), #fefce8);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -895,7 +894,7 @@
 }
 
 .tm-product-image-placeholder {
-    color: var(--tm-gold);
+    color: var(--tm-gold, var(--rz-secondary));
     font-size: 3rem;
     opacity: 0.7;
 }
@@ -906,7 +905,7 @@
     inset-inline-start: 12px;
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(4px);
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     font-size: 0.65rem;
     font-weight: 500;
     padding: 2px 8px;
@@ -945,7 +944,7 @@
 .tm-product-name {
     font-size: 0.95rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     margin: 0;
     line-height: 1.4;
     display: -webkit-box;
@@ -957,7 +956,7 @@
 
 .tm-product-desc {
     font-size: 0.75rem;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     margin: 0;
     line-height: 1.4;
     display: -webkit-box;
@@ -970,14 +969,14 @@
 .tm-product-price {
     font-size: 1.05rem;
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     margin: 0;
 }
 
 .tm-product-price-unit {
     font-size: 0.75rem;
     font-weight: 400;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
 }
 
 .tm-product-actions {
@@ -991,7 +990,7 @@
 .tm-qty-selector {
     display: flex;
     align-items: center;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--rz-border-color);
     border-radius: 8px;
     overflow: hidden;
     flex-shrink: 0;
@@ -1000,9 +999,9 @@
 .tm-qty-btn {
     width: 32px;
     height: 36px;
-    background: #fff;
+    background: var(--rz-component-background-color);
     border: none;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     font-size: 1.1rem;
     font-weight: 700;
     cursor: pointer;
@@ -1014,11 +1013,11 @@
 }
 
     .tm-qty-btn:hover:not(:disabled) {
-        background: var(--tm-cream);
+        background: var(--tm-cream, var(--rz-base-background-color));
     }
 
     .tm-qty-btn:disabled {
-        color: #d1d5db;
+        color: var(--rz-text-disabled-color);
         cursor: not-allowed;
     }
 
@@ -1027,13 +1026,13 @@
     text-align: center;
     font-weight: 700;
     font-size: 0.85rem;
-    color: var(--tm-text);
+    color: var(--tm-text, var(--rz-text-color));
 }
 
 /* Add-to-cart button */
 .tm-add-btn {
     flex: 1;
-    background: var(--tm-green);
+    background: var(--tm-green, var(--rz-primary));
     color: #fff;
     border: none;
     padding: 8px 12px;
@@ -1051,12 +1050,12 @@
 }
 
     .tm-add-btn:hover:not(:disabled) {
-        background: var(--tm-green-light);
+        background: var(--tm-green-light, var(--rz-primary-400));
     }
 
     .tm-add-btn:disabled {
-        background: #d1d5db;
-        color: #6b7280;
+        background: var(--rz-text-disabled-color);
+        color: var(--rz-text-secondary-color);
         cursor: not-allowed;
     }
 
@@ -1085,8 +1084,8 @@
 .tm-spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid var(--tm-green-mint);
-    border-top-color: var(--tm-green);
+    border: 4px solid var(--tm-green-mint, var(--rz-primary-lighter));
+    border-top-color: var(--tm-green, var(--rz-primary));
     border-radius: 9999px;
     animation: tm-spin 0.8s linear infinite;
 }
@@ -1098,13 +1097,13 @@
 }
 
 .tm-loading-text {
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     font-size: 0.875rem;
 }
 
 /* Empty state */
 .tm-empty {
-    background: #fff;
+    background: var(--rz-component-background-color);
     border-radius: 16px;
     padding: 48px;
     text-align: center;
@@ -1113,19 +1112,19 @@
 
 .tm-empty-icon {
     font-size: 3rem;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     margin-bottom: 12px;
 }
 
 .tm-empty-title {
     font-size: 1.125rem;
     font-weight: 700;
-    color: var(--tm-text);
+    color: var(--tm-text, var(--rz-text-color));
     margin: 0 0 8px 0;
 }
 
 .tm-empty-text {
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     font-size: 0.875rem;
     max-width: 360px;
     margin: 0 auto 16px;
@@ -1133,8 +1132,8 @@
 
 .tm-clear-btn {
     background: transparent;
-    color: var(--tm-green);
-    border: 1px solid var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
+    border: 1px solid var(--tm-green, var(--rz-primary));
     padding: 8px 16px;
     border-radius: 8px;
     font-weight: 500;
@@ -1145,24 +1144,24 @@
 }
 
     .tm-clear-btn:hover {
-        background: var(--tm-green-mint);
+        background: var(--tm-green-mint, var(--rz-primary-lighter));
     }
 
 /* =============================================================================
    7. MINI CART (left column in RTL)
    ========================================================================== */
 .tm-mini-cart {
-    background: #fff;
+    background: var(--rz-component-background-color);
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
     position: sticky;
     top: 140px;
-    border: 1px solid #f9fafb;
+    border: 1px solid var(--rz-border-color-light);
 }
 
 .tm-cart-header {
-    background: linear-gradient(to left, var(--tm-green), var(--tm-green-dark));
+    background: linear-gradient(to left, var(--tm-green, var(--rz-primary)), var(--tm-green-dark, var(--rz-primary-darker)));
     color: #fff;
     padding: 16px;
     display: flex;
@@ -1179,8 +1178,8 @@
 .tm-cart-header svg {
     width: 20px;
     height: 20px;
-    color: var(--tm-gold-bright);
-    stroke: var(--tm-gold-bright);
+    color: var(--tm-gold-bright, var(--rz-secondary-darker));
+    stroke: var(--tm-gold-bright, var(--rz-secondary-darker));
 }
 
 .tm-cart-header-title {
@@ -1190,8 +1189,8 @@
 }
 
 .tm-cart-header-badge {
-    background: var(--tm-gold);
-    color: var(--tm-green-dark);
+    background: var(--tm-gold, var(--rz-secondary));
+    color: var(--tm-green-dark, var(--rz-primary-darker));
     font-size: 0.75rem;
     padding: 4px 10px;
     border-radius: 9999px;
@@ -1212,12 +1211,12 @@
     }
 
     .tm-cart-items::-webkit-scrollbar-track {
-        background: var(--tm-gold-soft);
+        background: var(--tm-gold-soft, var(--rz-secondary-lighter));
         border-radius: 10px;
     }
 
     .tm-cart-items::-webkit-scrollbar-thumb {
-        background: var(--tm-gold);
+        background: var(--tm-gold, var(--rz-secondary));
         border-radius: 10px;
     }
 
@@ -1225,7 +1224,7 @@
     display: flex;
     gap: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #f9fafb;
+    border-bottom: 1px solid var(--rz-border-color-light);
 }
 
     .tm-cart-line:last-child {
@@ -1237,7 +1236,7 @@
     width: 56px;
     height: 56px;
     border-radius: 8px;
-    background: linear-gradient(135deg, var(--tm-gold-soft), #fefce8);
+    background: linear-gradient(135deg, var(--tm-gold-soft, var(--rz-secondary-lighter)), #fefce8);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1252,7 +1251,7 @@
     }
 
 .tm-cart-line-img-placeholder {
-    color: var(--tm-gold);
+    color: var(--tm-gold, var(--rz-secondary));
     font-size: 1.5rem;
 }
 
@@ -1263,7 +1262,7 @@
 
 .tm-cart-line-name {
     font-weight: 600;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     font-size: 0.85rem;
     line-height: 1.4;
     margin: 0 0 4px 0;
@@ -1282,7 +1281,7 @@
 .tm-cart-line-qty {
     display: flex;
     align-items: center;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--rz-border-color);
     border-radius: 6px;
     overflow: hidden;
 }
@@ -1290,9 +1289,9 @@
     .tm-cart-line-qty button {
         width: 24px;
         height: 24px;
-        background: #fff;
+        background: var(--rz-component-background-color);
         border: none;
-        color: var(--tm-green);
+        color: var(--tm-green, var(--rz-primary));
         cursor: pointer;
         font-size: 0.85rem;
         font-weight: 700;
@@ -1303,11 +1302,11 @@
     }
 
         .tm-cart-line-qty button:hover {
-            background: var(--tm-cream);
+            background: var(--tm-cream, var(--rz-base-background-color));
         }
 
         .tm-cart-line-qty button:disabled {
-            color: #d1d5db;
+            color: var(--rz-text-disabled-color);
             cursor: not-allowed;
         }
 
@@ -1316,12 +1315,12 @@
         text-align: center;
         font-weight: 700;
         font-size: 0.75rem;
-        color: var(--tm-text);
+        color: var(--tm-text, var(--rz-text-color));
     }
 
 .tm-cart-line-total {
     font-weight: 700;
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     font-size: 0.85rem;
     white-space: nowrap;
 }
@@ -1329,14 +1328,14 @@
 .tm-cart-empty {
     padding: 32px 16px;
     text-align: center;
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     font-size: 0.875rem;
 }
 
 .tm-cart-footer {
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--rz-border-color-light);
     padding: 16px;
-    background: var(--tm-cream);
+    background: var(--tm-cream, var(--rz-base-background-color));
 }
 
 .tm-cart-totals {
@@ -1354,23 +1353,23 @@
 }
 
 .tm-cart-totals-label {
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
 }
 
 .tm-cart-totals-value {
-    color: var(--tm-green);
+    color: var(--tm-green, var(--rz-primary));
     font-weight: 600;
 }
 
 .tm-cart-totals-row--grand {
-    border-top: 1px dashed #e5e7eb;
+    border-top: 1px dashed var(--rz-border-color);
     padding-top: 8px;
     margin-top: 4px;
 }
 
     .tm-cart-totals-row--grand .tm-cart-totals-label {
         font-weight: 700;
-        color: var(--tm-green);
+        color: var(--tm-green, var(--rz-primary));
     }
 
     .tm-cart-totals-row--grand .tm-cart-totals-value {
@@ -1380,8 +1379,8 @@
 
 .tm-submit-btn {
     width: 100%;
-    background: linear-gradient(to left, var(--tm-gold), var(--tm-gold-bright));
-    color: var(--tm-green-dark);
+    background: linear-gradient(to left, var(--tm-gold, var(--rz-secondary)), var(--tm-gold-bright, var(--rz-secondary-darker)));
+    color: var(--tm-green-dark, var(--rz-primary-darker));
     border: none;
     padding: 12px;
     border-radius: 12px;
@@ -1402,8 +1401,8 @@
     }
 
     .tm-submit-btn:disabled {
-        background: #d1d5db;
-        color: #6b7280;
+        background: var(--rz-text-disabled-color);
+        color: var(--rz-text-secondary-color);
         cursor: not-allowed;
     }
 
@@ -1430,9 +1429,9 @@
     height: 36px;
     padding: 0 12px;
     background: transparent;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--rz-border-color);
     border-radius: 9999px;
-    color: var(--tm-text);
+    color: var(--tm-text, var(--rz-text-color));
     font-weight: 500;
     cursor: pointer;
     font-family: inherit;
@@ -1441,23 +1440,23 @@
 }
 
     .tm-pager-btn:hover:not(:disabled) {
-        border-color: var(--tm-gold);
-        background: var(--tm-cream);
+        border-color: var(--tm-gold, var(--rz-secondary));
+        background: var(--tm-cream, var(--rz-base-background-color));
     }
 
     .tm-pager-btn:disabled {
-        color: #d1d5db;
+        color: var(--rz-text-disabled-color);
         cursor: not-allowed;
     }
 
     .tm-pager-btn.is-active {
-        background: var(--tm-green);
+        background: var(--tm-green, var(--rz-primary));
         color: #fff;
-        border-color: var(--tm-green);
+        border-color: var(--tm-green, var(--rz-primary));
     }
 
 .tm-pager-info {
-    color: var(--tm-gray);
+    color: var(--tm-gray, var(--rz-text-secondary-color));
     font-size: 0.75rem;
     margin-inline-start: 8px;
 }
@@ -1492,7 +1491,7 @@
 }
 
 .tm-toast-success {
-    background: var(--tm-green);
+    background: var(--tm-green, var(--rz-primary));
     color: #fff;
 }
 
