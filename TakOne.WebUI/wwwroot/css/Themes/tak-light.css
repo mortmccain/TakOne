@@ -241,17 +241,43 @@
 }
 
 /* ===========================================================================
-   Body baseline
-   =========================================================================== */
+   Body baseline + layout-chain background nuke
+   ===========================================================================
+
+   Radzen's built-in "standard" (light) theme — which tak-light uses as its
+   base — applies a blue-ish gradient background on body (and possibly on
+   .rz-layout / .rz-body). A simple `background-color: ...` on body does NOT
+   override this, because `background-color` only sets the color layer; the
+   `background-image` (gradient) layer sits ON TOP and remains visible. The
+   user reported "white with blue gradient" — this is exactly that leak.
+
+   The fix has TWO parts:
+     1. Use the `background` SHORTHAND (not `background-color`) — the
+        shorthand resets ALL background sub-properties including
+        background-image, killing the gradient.
+     2. Apply the same solid background to EVERY element in the layout chain
+        (html → body → .rz-layout → .rz-body → .rz-content) with `!important`.
+        This catches the gradient regardless of which element Radzen puts it
+        on, and regardless of selector specificity Radzen uses. The Products
+        page wraps content in RadzenLayout > RadzenBody > RadzenContent, so
+        any of these could carry the gradient.
+
+   `!important` is justified here because:
+     - Radzen's standard.css uses !important on some of its own background rules
+     - We need to guarantee the solid light-gold background wins the cascade
+     - This rule is scoped to tak-light.css (only active when tak-light is
+       selected), so it doesn't affect other themes */
+html,
+body,
+.rz-layout,
+.rz-body,
+.rz-content {
+    background: var(--rz-base-background-color) !important;
+    background-image: none !important;
+}
+
 body {
     font-family: var(--rz-font-family);
-    /* Use the `background` SHORTHAND (not `background-color`) so that any
-       gradient Radzen's standard theme sets via `background: <gradient>` or
-       `background-image:` is fully reset. `background-color` alone would NOT
-       override a gradient image — the blue gradient from Radzen's base theme
-       would bleed through, causing the "white with blue gradient" issue. */
-    background: var(--rz-base-background-color);
-    background-image: none;
     color: var(--rz-base-text-color);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
