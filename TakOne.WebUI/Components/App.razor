@@ -23,7 +23,7 @@
 
     <link rel="stylesheet" href="_content/Radzen.Blazor/Radzen.Blazor.css" />
     <link rel="stylesheet" href="app.css" />
-    <link rel="stylesheet" href="css/Pages/Products.css?v=5" />
+    <link rel="stylesheet" href="css/Pages/Products.css?v=9" />
     <link rel="stylesheet" href="TakOne.WebUI.styles.css" />
     <link rel="icon" type="image/png" href="TakLogo.png" />
 
@@ -31,10 +31,10 @@
        Runs synchronously in <head>. With <RadzenTheme> above, the theme
        <link> is injected by Blazor's HeadOutlet AFTER hydration — so this
        script uses a MutationObserver to detect when the link appears, then
-       swaps its href to the saved theme (and layers the tak-light override
-       on top if needed). The ?v=11 cache-bust forces the browser to fetch
-       the latest theme.js (previous versions had different logic). *@
-    <script src="js/theme.js?v=11"></script>
+       swaps its href to the saved theme (and layers the tak-light or
+       tak-dark override on top if needed). The ?v=12 cache-bust forces the
+       browser to fetch the latest theme.js (now includes tak-dark registry). *@
+    <script src="js/theme.js?v=12"></script>
 
     @* SignalR client + our hub bridge. Loaded in <head> so it's ready
        before any page tries to call notificationHub.start(). *@

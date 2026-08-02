@@ -28,7 +28,7 @@
    handles Edit FullName, Assign/Remove Role, and Assign/Remove Group
    via the 5 commands that previously existed without a UI. The Activate
    / Deactivate / Reset Password actions stay on THIS list page (they
-   are short, single-click operations that don't need a detail view). 
+   are short, single-click operations that don't need a detail view).
 
    LAYOUT:
      1. Page header: title + (deferred) "Create user" button placeholder.
@@ -152,6 +152,88 @@
                 justify-content: flex-end;
                 align-items: center;
             }
+
+            /* Status column header — just the title text + a small down-arrow.
+                           Clicking the arrow opens a compact popover with colored filter
+                           options (All=gray, Active=green, Inactive=red). No filter row,
+                           no inline dropdown input — just an icon-triggered popup. */
+            .status-filter-wrap {
+                position: relative;
+                display: flex;
+                justify-content: center;
+            }
+
+            .status-filter-trigger {
+                background: none;
+                border: none;
+                padding: 0;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.2rem;
+                font: inherit;
+                font-weight: 600;
+                color: inherit;
+                line-height: 1;
+            }
+
+                .status-filter-trigger .rzi {
+                    font-size: 1.1rem;
+                    line-height: 1;
+                }
+
+                /* Highlight the arrow when a filter is active so the user can
+                           see at a glance that the list is filtered. */
+                .status-filter-trigger.is-active {
+                    color: var(--rz-primary);
+                }
+
+            /* Transparent full-screen click-catcher behind the popup.
+                           Clicking anywhere outside the popup closes it. */
+            .status-filter-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 999;
+            }
+
+            .status-filter-popup {
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                margin-top: 0.375rem;
+                z-index: 1000;
+                background: var(--rz-background-color);
+                border: 1px solid var(--rz-border-color);
+                border-radius: var(--rz-border-radius);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                padding: 0.25rem;
+                min-width: 130px;
+                display: flex;
+                flex-direction: column;
+                gap: 0.125rem;
+            }
+
+            .status-filter-option {
+                background: none;
+                border: none;
+                padding: 0.375rem 0.625rem;
+                cursor: pointer;
+                border-radius: var(--rz-border-radius);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.1s;
+                font: inherit;
+            }
+
+                .status-filter-option:hover {
+                    background: var(--rz-base-background-color);
+                }
+
+                .status-filter-option.is-selected {
+                    background: var(--rz-base-background-color);
+                }
     </style>
 </HeadContent>
 
@@ -170,28 +252,19 @@
                       Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
     </div>
 
-    @* ── Filter bar ── *@
+    @* ── Filter bar ──
+       Only the search field lives here. The status filter is a small
+       popover triggered by a down-arrow icon in the Status column's
+       header (see grid below). *@
     <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
         <RadzenStack Orientation="Orientation.Horizontal"
                      AlignItems="AlignItems.End"
-                     JustifyContent="JustifyContent.SpaceBetween"
-                     Wrap="FlexWrap.Wrap"
                      Gap="1rem">
             <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
                 <RadzenTextBox @bind-Value="_searchTerm"
                                @bind-Value:after="OnSearchChanged"
                                Placeholder="@Loc["SearchPlaceholder"]"
                                TValue="string" />
-            </RadzenFormField>
-
-            <RadzenFormField Text="@Loc["StatusLabel"]" Style="flex: 0 1 200px; min-width: 160px;">
-                <RadzenDropDown Value="_activityFilter"
-                                Data="_activityFilterOptions"
-                                TValue="ActivityFilter"
-                                TextProperty="Label"
-                                ValueProperty="Value"
-                                ValueChanged="@OnActivityFilterChanged"
-                                Style="width: 100%;" />
             </RadzenFormField>
         </RadzenStack>
     </RadzenCard>
@@ -265,13 +338,15 @@
             <RadzenDataGrid Data="@_users"
                             AllowSorting="false"
                             AllowPaging="false"
+                            AllowFiltering="false"
                             Style="width: 100%;"
                             RowRender="@OnRowRender">
                 <Columns>
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="WorkerId"
                                           Title="@Loc["ColWorkerId"]"
-                                          Width="160px">
+                                          Width="160px"
+                                          Filterable="false">
                         <Template Context="user">
                             <span class="worker-id-cell">@user.WorkerId</span>
                         </Template>
@@ -280,7 +355,8 @@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="FullName"
                                           Title="@Loc["ColFullName"]"
-                                          Width="*">
+                                          Width="*"
+                                          Filterable="false">
                         <Template Context="user">
                             <span class="user-name-cell">@user.FullName</span>
                         </Template>
@@ -289,7 +365,8 @@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="Gender"
                                           Title="@Loc["ColGender"]"
-                                          Width="120px">
+                                          Width="120px"
+                                          Filterable="false">
                         <Template Context="user">
                             @GetGenderLabel(user.Gender)
                         </Template>
@@ -298,7 +375,8 @@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="GroupName"
                                           Title="@Loc["ColGroup"]"
-                                          Width="180px">
+                                          Width="180px"
+                                          Filterable="false">
                         <Template Context="user">
                             @if (string.IsNullOrWhiteSpace(user.GroupName))
                             {
@@ -316,29 +394,67 @@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="IsActive"
                                           Title="@Loc["ColStatus"]"
-                                          Width="120px"
+                                          Width="140px"
                                           TextAlign="TextAlign.Center">
                         <Template Context="user">
-                            @if (user.IsActive)
-                            {
-                                <RadzenBadge Text="@Loc["StatusActiveBadge"]"
-                                             BadgeStyle="BadgeStyle.Success"
-                                             IsPill="true" />
-                            }
-                            else
-                            {
-                                <RadzenBadge Text="@Loc["StatusInactiveBadge"]"
-                                             BadgeStyle="BadgeStyle.Light"
-                                             IsPill="true" />
-                            }
+                            <RadzenBadge Text="@GetStatusLabel(user.IsActive)"
+                                         BadgeStyle="@GetStatusBadgeStyle(user.IsActive)"
+                                         IsPill="true" />
                         </Template>
+                        @* Status filter — a small down-arrow next to the
+                           “Status” title in the header. Clicking it opens a
+                           compact popover with three colored options:
+                           All (gray), Active (green), Inactive (red).
+                           No filter row, no inline dropdown input — just the
+                           title + arrow. The filter is still server-side —
+                           SelectStatusFilter pushes the value into
+                           GetUsersPaginatedQuery.IsActive and reloads from
+                           the backend. *@
+                        <HeaderTemplate>
+                            <div class="status-filter-wrap">
+                                <button type="button"
+                                        class="status-filter-trigger @(_activityFilter is not null ? "is-active" : "")"
+                                        @onclick="ToggleStatusFilter">
+                                    <span>@Loc["ColStatus"]</span>
+                                    <RadzenIcon Icon="@(_isStatusFilterOpen ? "expand_less" : "expand_more")" />
+                                </button>
+                                @if (_isStatusFilterOpen)
+                                {
+                                    <div class="status-filter-backdrop" @onclick="CloseStatusFilter"></div>
+                                    <div class="status-filter-popup">
+                                        <button type="button"
+                                                class="status-filter-option @(_activityFilter is null ? "is-selected" : "")"
+                                                @onclick="() => SelectStatusFilter(null)">
+                                            <RadzenBadge Text="@Loc["StatusAll"]"
+                                                         BadgeStyle="BadgeStyle.Base"
+                                                         IsPill="true" />
+                                        </button>
+                                        <button type="button"
+                                                class="status-filter-option @(_activityFilter == ActivityFilter.Active ? "is-selected" : "")"
+                                                @onclick="() => SelectStatusFilter(ActivityFilter.Active)">
+                                            <RadzenBadge Text="@Loc["StatusActive"]"
+                                                         BadgeStyle="BadgeStyle.Success"
+                                                         IsPill="true" />
+                                        </button>
+                                        <button type="button"
+                                                class="status-filter-option @(_activityFilter == ActivityFilter.Inactive ? "is-selected" : "")"
+                                                @onclick="() => SelectStatusFilter(ActivityFilter.Inactive)">
+                                            <RadzenBadge Text="@Loc["StatusInactive"]"
+                                                         BadgeStyle="BadgeStyle.Danger"
+                                                         IsPill="true" />
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </HeaderTemplate>
                     </RadzenDataGridColumn>
 
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Title="@Loc["ColActions"]"
                                           Width="220px"
                                           TextAlign="TextAlign.Center"
-                                          Sortable="false">
+                                          Sortable="false"
+                                          Filterable="false">
                         <Template Context="user">
                             <div class="row-actions">
                                 @* View details — navigates to the Phase 6.3
@@ -465,7 +581,10 @@
     private List<UserListItemDto> _users = new();
 
     private string _searchTerm = string.Empty;
-    private ActivityFilter _activityFilter = ActivityFilter.All;
+    // Nullable: null = "all statuses" (no filter). The status filter
+    // popover sets this to Active, Inactive, or null (All). The value
+    // is pushed to GetUsersPaginatedQuery.IsActive on the next load.
+    private ActivityFilter? _activityFilter;
 
     private const int _pageSize = 20;
     private int _pageNumber = 1;
@@ -498,17 +617,11 @@
     /// </summary>
     private bool _isAdmin;
 
-    private List<ActivityFilterOption> _activityFilterOptions = new();
-
-    private sealed class ActivityFilterOption
-    {
-        public ActivityFilter Value { get; init; }
-        public string Label { get; init; } = string.Empty;
-    }
-
+    // No "All" member — null on the nullable _activityFilter field serves
+    // as the "no filter" state. This keeps the enum to just the values that
+    // actually map to a backend WHERE clause (IsActive = true / false).
     private enum ActivityFilter
     {
-        All,
         Active,
         Inactive
     }
@@ -517,14 +630,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Populate the activity-filter dropdown options from localizer.
-        _activityFilterOptions = new List<ActivityFilterOption>
-        {
-            new() { Value = ActivityFilter.All,      Label = Loc["StatusAll"] },
-            new() { Value = ActivityFilter.Active,   Label = Loc["StatusActive"] },
-            new() { Value = ActivityFilter.Inactive, Label = Loc["StatusInactive"] }
-        };
-
         // Resolve the current user's Id + Admin role via the Blazor auth
         // state (NOT ICurrentUserService — see file-header comment).
         try
@@ -611,8 +716,23 @@
         await LoadUsersAsync();
     }
 
-    private async Task OnActivityFilterChanged(ActivityFilter filter)
+    // ── Status filter popover ───────────────────────────────────────────
+
+    private bool _isStatusFilterOpen;
+
+    private void ToggleStatusFilter()
     {
+        _isStatusFilterOpen = !_isStatusFilterOpen;
+    }
+
+    private void CloseStatusFilter()
+    {
+        _isStatusFilterOpen = false;
+    }
+
+    private async Task SelectStatusFilter(ActivityFilter? filter)
+    {
+        _isStatusFilterOpen = false;
         _activityFilter = filter;
         _pageNumber = 1;
         await LoadUsersAsync();
@@ -627,13 +747,13 @@
     private async Task ClearFiltersAsync()
     {
         _searchTerm = string.Empty;
-        _activityFilter = ActivityFilter.All;
+        _activityFilter = null;
         _pageNumber = 1;
         await LoadUsersAsync();
     }
 
     private bool HasActiveFilters()
-        => !string.IsNullOrWhiteSpace(_searchTerm) || _activityFilter != ActivityFilter.All;
+        => !string.IsNullOrWhiteSpace(_searchTerm) || _activityFilter.HasValue;
 
     // ── Activate / Deactivate ───────────────────────────────────────────
 
@@ -810,4 +930,15 @@
             Domain.Users.Gender.Female => Loc["GenderFemale"],
             _ => gender.ToString()
         };
+
+    // ── Status helpers ──────────────────────────────────────────────────
+    // Used by the cell Template to render the active/inactive badge.
+    // The filter popover uses inline BadgeStyle values (Base=All gray,
+    // Success=Active green, Danger=Inactive red) directly in the markup.
+
+    private string GetStatusLabel(bool isActive)
+        => isActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"];
+
+    private BadgeStyle GetStatusBadgeStyle(bool isActive)
+        => isActive ? BadgeStyle.Success : BadgeStyle.Light;
 }

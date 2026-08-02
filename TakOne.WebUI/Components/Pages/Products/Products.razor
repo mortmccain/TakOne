@@ -93,27 +93,25 @@
 
 <div class="tm-shop-page">
 
-    @* ── 1. HEADER + SHIMMER (wrapped so BOTH stick together on scroll) ── *@
-    @* The wrapper carries position:sticky; top:0 — the header and the gold
-       shimmer line below it both live inside it, so they scroll together
-       and stay pinned at the top of the viewport. Without this wrapper,
-       only the header was sticky (the shimmer scrolled away under it,
-       which looked broken). Theme-agnostic: no color rules here, just
-       positioning — works on tak-light, standard-dark, material, etc. *@
-    <div class="tm-shop-header-wrap">
-        <header class="tm-shop-header">
-            <div class="tm-shop-header-inner">
+    @* ── 1. HEADER: hamburger + portal name | search bar | cart + user avatar ── *@
+    @* The gold shimmer line sits INSIDE <header> so it sticks along with the
+       header (position:sticky is on .tm-shop-header). Previously the shimmer
+       was a sibling of the header and scrolled away under the sticky header.
+       Moving it inside the header element makes both stick together — no
+       wrapper div needed, no extra CSS, works on all themes. *@
+    <header class="tm-shop-header">
+        <div class="tm-shop-header-inner">
 
-                @* Right side (RTL): hamburger + portal name + refresh icon *@
-                <div class="tm-portal-block">
-                    @* Hamburger — toggles the ShopLayout's sidebar. Cast to
+            @* Right side (RTL): hamburger + portal name + refresh icon *@
+            <div class="tm-portal-block">
+                @* Hamburger — toggles the ShopLayout's sidebar. Cast to
                    the concrete layout type so we can call ToggleSidebar(). *@
-                    <button type="button"
-                            class="tm-hamburger"
-                            title="@Loc["MenuTitle"]"
-                            aria-label="@Loc["MenuAriaLabel"]"
-                            @onclick="ToggleSidebar">
-                        @* Inline style on <path> as a DEFENSIVE fallback — the CSS
+                <button type="button"
+                        class="tm-hamburger"
+                        title="@Loc["MenuTitle"]"
+                        aria-label="@Loc["MenuAriaLabel"]"
+                        @onclick="ToggleSidebar">
+                    @* Inline style on <path> as a DEFENSIVE fallback — the CSS
                        rule `.tm-hamburger svg path { stroke: var(--tm-green) !important; }`
                        is the primary fix, but if Radzen's CSS somehow overrides
                        even !important (e.g. via a runtime-injected style), this
@@ -122,89 +120,147 @@
                        because CSS variables don't work in inline SVG attributes
                        outside of style="" — and we want this to work even if
                        the .tm-shop-page variable scope somehow isn't applied. *@
-                        <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
-                        </svg>
-                    </button>
-                    <button type="button"
-                            class="tm-portal-icon"
-                            title="@Loc["RefreshProductsTitle"]"
-                            @onclick="RefreshPage">
-                        @* The user said they'll set the image later. Until then,
-                       show a fallback "ت" letter (first letter of تک ماکارون). *@
-                        <span class="tm-portal-icon-fallback">ت</span>
-                    </button>
-                    <div class="tm-portal-text">
-                        <span class="tm-portal-title">@Loc["PortalTitle"]</span>
-                        <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
-                    </div>
-                </div>
-
-                @* Center: search bar with Ctrl+F kbd badge *@
-                <div class="tm-search-block">
-                    <input type="text"
-                           id="tm-shop-search-input"
-                           class="tm-search-input"
-                           placeholder="@Loc["SearchPlaceholder"]"
-                           value="@_searchTerm"
-                           @oninput="OnSearchInput"
-                           @onkeypress="OnSearchKeypress" />
-                    <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                    <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
                     </svg>
-                    <div class="tm-search-kbd">
-                        <kbd>Ctrl</kbd>
-                        <kbd>F</kbd>
-                    </div>
+                </button>
+                <button type="button"
+                        class="tm-portal-icon"
+                        title="@Loc["RefreshProductsTitle"]"
+                        @onclick="RefreshPage">
+                    @* The user said they'll set the image later. Until then,
+                       show a fallback "ت" letter (first letter of تک ماکارون). *@
+                    <span class="tm-portal-icon-fallback">ت</span>
+                </button>
+                <div class="tm-portal-text">
+                    <span class="tm-portal-title">@Loc["PortalTitle"]</span>
+                    <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
                 </div>
 
-                @* Left side (RTL): cart icon + user avatar (circle with initial + role) *@
-                <div class="tm-actions-block">
+                @* EN | FA language toggle. Plain text — no background, no popup.
+                   Clicking either code immediately commits the culture cookie
+                   and force-reloads the page so App.razor re-evaluates
+                   <html lang/dir> from the new CurrentUICulture (fa-IR → RTL,
+                   en-US → LTR). The active language is rendered with the
+                   theme accent color so the user can see which one is current. *@
+                <div class="tm-lang-toggle" role="group" aria-label="@Loc["LanguageAriaLabel"]">
                     <button type="button"
-                            class="tm-icon-button"
-                            title="@Loc["CartTitle"]"
-                            @onclick="GoToCart">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                        </svg>
-                        @if (_cart is { } c && c.TotalItemCount > 0)
-                        {
-                            <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
-                        }
+                            class='tm-lang-btn @(_currentCulture == "en-US" ? "is-active" : "")'
+                            aria-pressed='@(_currentCulture == "en-US")'
+                            @onclick='(() => SetCultureAsync("en-US"))'>
+                        EN
                     </button>
+                    <span class="tm-lang-sep" aria-hidden="true">|</span>
+                    <button type="button"
+                            class='tm-lang-btn @(_currentCulture == "fa-IR" ? "is-active" : "")'
+                            aria-pressed='@(_currentCulture == "fa-IR")'
+                            @onclick='(() => SetCultureAsync("fa-IR"))'>
+                        FA
+                    </button>
+                </div>
+            </div>
 
-                    @* User avatar — circle with first initial of the user's actual
+            @* Center: search bar with Ctrl+F kbd badge *@
+            <div class="tm-search-block">
+                <input type="text"
+                       id="tm-shop-search-input"
+                       class="tm-search-input"
+                       placeholder="@Loc["SearchPlaceholder"]"
+                       value="@_searchTerm"
+                       @oninput="OnSearchInput"
+                       @onkeypress="OnSearchKeypress" />
+                <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+                <div class="tm-search-kbd">
+                    <kbd>Ctrl</kbd>
+                    <kbd>F</kbd>
+                </div>
+            </div>
+
+            @* Left side (RTL): cart icon + theme toggle (sun/moon) + user avatar *@
+            <div class="tm-actions-block">
+                <button type="button"
+                        class="tm-icon-button"
+                        title="@Loc["CartTitle"]"
+                        @onclick="GoToCart">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                    </svg>
+                    @if (_cart is { } c && c.TotalItemCount > 0)
+                    {
+                        <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
+                    }
+                </button>
+
+                @* Theme quick-toggle — switches between tak-light and tak-dark.
+                   The ICON itself changes with the theme: when the LIGHT theme
+                   is active, a MOON icon is shown (click → switch to dark);
+                   when the DARK theme is active, a SUN icon is shown (click →
+                   switch to light). This is the standard sun/moon toggle
+                   convention — the icon shows what you'll switch TO, not what
+                   you're currently on.
+
+                   Only tak-light ↔ tak-dark are toggled. If the user picked a
+                   different Radzen theme (e.g. material-dark) from the sidebar
+                   dropdown, this button still toggles to the most-recent Tak
+                   theme — but for the common case (user uses the sun/moon
+                   toggle exclusively), it's a clean light/dark flip.
+
+                   Styling: no background (transparent), inherits currentColor
+                   so the icon picks up the theme's text color. Hover gives a
+                   subtle accent-color tint via .tm-theme-toggle:hover in CSS. *@
+                <button type="button"
+                        class="tm-icon-button tm-theme-toggle"
+                        title='@(_currentTheme == "tak-dark" ? Loc["ThemeSwitchToLight"] : Loc["ThemeSwitchToDark"])'
+                        aria-label='@(_currentTheme == "tak-dark" ? Loc["ThemeSwitchToLight"] : Loc["ThemeSwitchToDark"])'
+                        @onclick="ToggleThemeAsync">
+                    @if (_currentTheme == "tak-dark")
+                    {
+                        @* Sun icon — shown when dark is active (click → light) *@
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="22" height="22" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                        </svg>
+                    }
+                    else
+                    {
+                        @* Moon icon — shown when light is active (click → dark) *@
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="22" height="22" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                        </svg>
+                    }
+                </button>
+
+                @* User avatar — circle with first initial of the user's actual
                    name (NOT their worker ID) + their access level. Clicking it
                    goes to /Settings (same as the previous gear icon).
                    Matches the HTML reference design at /upload/tak-makaron-pc-design.html. *@
-                    <button type="button"
-                            class="tm-user-block"
-                            title="@Loc["UserMenuTitle"]"
-                            @onclick="GoToSettings">
-                        <div class="tm-user-text">
-                            <p class="tm-user-name">@CurrentUser.FullName</p>
-                            <p class="tm-user-role">@GetRoleLabel()</p>
-                        </div>
-                        @* Inline style on the avatar div as a DEFENSIVE fallback.
+                <button type="button"
+                        class="tm-user-block"
+                        title="@Loc["UserMenuTitle"]"
+                        @onclick="GoToSettings">
+                    <div class="tm-user-text">
+                        <p class="tm-user-name">@CurrentUser.FullName</p>
+                        <p class="tm-user-role">@GetRoleLabel()</p>
+                    </div>
+                    @* Inline style on the avatar div as a DEFENSIVE fallback.
                        The CSS rule `.tm-user-avatar { border-radius: 50% !important; }`
                        is the primary fix, but if a Radzen rule somehow overrides
                        even !important, this inline style guarantees the avatar
                        stays circular. Hardcoded gradient (not var()) because
                        CSS variables in inline styles CAN work here (the element
                        is inside .tm-shop-page) but we want maximum robustness. *@
-                        <div class="tm-user-avatar"
-                             style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
-                            <span class="tm-user-avatar-initial">@GetUserInitial()</span>
-                            <span class="tm-user-status-dot" aria-hidden="true"></span>
-                        </div>
-                    </button>
-                </div>
+                    <div class="tm-user-avatar"
+                         style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
+                        <span class="tm-user-avatar-initial">@GetUserInitial()</span>
+                    </div>
+                </button>
             </div>
-        </header>
+        </div>
 
-        @* ── 2. GOLDEN SHIMMER LINE ── *@
+        @* ── 2. GOLDEN SHIMMER LINE — inside <header> so it sticks with it ── *@
         <div class="tm-gold-shimmer" aria-hidden="true"></div>
-    </div>@* end .tm-shop-header-wrap *@
+    </header>
 
     @* ── 3. STATS BAR ── *@
     <div class="tm-stats-bar">
@@ -660,6 +716,20 @@
     private string _searchTerm = string.Empty;
     private Guid? _selectedCategoryId;
 
+    // Currently-active UI culture. Used to highlight the active side of the
+    // EN | FA toggle. Initialized from CultureInfo.CurrentUICulture which the
+    // localization middleware has already set based on the takone_culture
+    // cookie (or the fa-IR default) before this component renders.
+    private string _currentCulture = CultureInfo.CurrentUICulture.Name;
+
+    // Currently-active theme. Initialized to "tak-light" (the project default)
+    // for the very first render; OnAfterRenderAsync then reads the actual
+    // saved theme from localStorage (via window.takTheme.get) and updates
+    // this field + StateHasChanged() so the sun/moon icon reflects reality.
+    // Used by the sun/moon toggle button: "tak-dark" → show sun (click →
+    // light), anything else → show moon (click → dark).
+    private string _currentTheme = "tak-light";
+
     private const int _pageSize = 12;
     private int _pageNumber = 1;
     private int _totalCount;
@@ -704,6 +774,33 @@
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // On the very first render, read the saved theme from localStorage
+        // (via window.takTheme.get — same API the layouts use) so the sun/moon
+        // icon reflects what theme.js has actually applied. Without this, the
+        // icon would always show "moon" (the _currentTheme default "tak-light")
+        // even if the user had previously picked tak-dark.
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("takTheme.get");
+            if (!string.IsNullOrEmpty(saved) && saved != _currentTheme)
+            {
+                _currentTheme = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // If JS interop fails (e.g. theme.js didn't load), leave
+            // _currentTheme at its "tak-light" default. The toggle button
+            // still works — it just may not reflect the actual active theme
+            // until the page is reloaded.
         }
     }
 
@@ -1101,6 +1198,54 @@
     private void GoToCart()
     {
         Navigation.NavigateTo("/Cart", forceLoad: false);
+    }
+
+    // ── Language toggle (EN | FA) ───────────────────────────────────────
+    // Single-click switch: clicking EN or FA immediately commits the culture
+    // cookie and force-reloads the page. No popup, no Save button. The
+    // cookie format/name matches what Program.cs's CookieRequestCultureProvider
+    // reads. force-reload so App.razor re-evaluates <html lang/dir> from the
+    // new CurrentUICulture and the whole page swaps RTL/LTR + localized strings.
+    // If the user clicks the already-active language, we no-op (avoids an
+    // unnecessary reload).
+    private async Task SetCultureAsync(string culture)
+    {
+        if (string.Equals(culture, _currentCulture, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var cookieValue = $"c={culture}|uic={culture}";
+        await JS.InvokeVoidAsync("eval",
+            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    // ── Theme toggle (sun/moon) ────────────────────────────────────────
+    // Flips between tak-light and tak-dark. If the current theme is neither
+    // (e.g. user picked "material-dark" from the sidebar dropdown), we
+    // default to flipping TO tak-light — this way the sun/moon button always
+    // lands on a known Tak theme and the icon's meaning stays predictable.
+    //
+    // No force-reload needed — theme.js's takTheme.set() swaps the CSS <link>
+    // href in-place and appends/removes the override <link> at runtime. The
+    // whole page re-paints with the new theme without a round-trip. We just
+    // update _currentTheme + StateHasChanged so the sun/moon icon flips too.
+    private async Task ToggleThemeAsync()
+    {
+        var newTheme = _currentTheme == "tak-dark" ? "tak-light" : "tak-dark";
+
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", newTheme);
+            _currentTheme = newTheme;
+        }
+        catch (JSException)
+        {
+            // Swallow — same defensive pattern as MainLayout/ShopLayout's
+            // OnThemeChanged. If theme.js didn't load, the toggle silently
+            // fails rather than crashing the Blazor circuit.
+        }
     }
 
     private void GoToMyOrders()

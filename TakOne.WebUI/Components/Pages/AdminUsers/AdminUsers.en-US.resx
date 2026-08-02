@@ -87,6 +87,13 @@
   <data name="StatusInactive" xml:space="preserve">
     <value>Inactive</value>
   </data>
+  <!-- StatusFilterPlaceholder — shown in the Status column's FilterTemplate
+       dropdown when no status is selected (i.e. "all statuses" mode).
+       Matches the ERP SalesList pattern where the dropdown's AllowClear
+       resets to null and the placeholder conveys "no filter active". -->
+  <data name="StatusFilterPlaceholder" xml:space="preserve">
+    <value>All statuses</value>
+  </data>
 
   <data name="LoadingText" xml:space="preserve">
     <value>Loading users…</value>

@@ -265,4 +265,18 @@
   <data name="RoleReadOnly" xml:space="preserve">
     <value>Manager</value>
   </data>
+  <!-- EN | FA language toggle — replaces the old globe+popup switcher.
+       The popup-based keys (LanguageTitle, LanguagePopupTitle,
+       LanguageCancel, LanguageSave) and the generic ThemeToggleTitle key
+       were removed when the popup was scrapped in favor of the inline
+       EN|FA text toggle and the state-aware ThemeSwitchToLight/Dark keys. -->
+  <data name="LanguageAriaLabel" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="ThemeSwitchToDark" xml:space="preserve">
+    <value>Switch to dark theme</value>
+  </data>
+  <data name="ThemeSwitchToLight" xml:space="preserve">
+    <value>Switch to light theme</value>
+  </data>
 </root>

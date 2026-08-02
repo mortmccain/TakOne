@@ -37,6 +37,11 @@
             base: 'standard',                                  // Radzen light theme
             override: '/css/themes/tak-light.css?v=10'          // Tak Light palette + utilities
             // ?v=10 cache-bust: bump when tak-light.css changes
+        },
+        'tak-dark': {
+            base: 'standard-dark',                             // Radzen dark theme
+            override: '/css/themes/tak-dark.css?v=1'            // Tak Dark palette + utilities
+        // ?v=1 cache-bust: bump when tak-dark.css changes
         }
     };
 
