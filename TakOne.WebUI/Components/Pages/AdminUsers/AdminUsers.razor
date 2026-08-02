@@ -2,104 +2,69 @@
 
    Staff-facing user-management page at route `/Admin/Users`. Reached from
    the sidebar's "Admin → Manage Users" link (already wired in
-   MainLayout.razor, role-gated to Admin/Manager). The page is also
+   MainLayout.razor, role-gated to Admin/Manager/Employee). The page is also
    independently gated by [Authorize(Roles=...)] as defense-in-depth.
 
    PURPOSE:
-     This page is the admin/manager's view of every user in the system
-     (staff and customers). It exists so they can:
-       1. See ALL users in a compact, paginated table (not a single
-          customer-by-customer drill-down).
-       2. Search by Worker ID or Full Name (server-side filter).
-       3. Filter by active/inactive status.
-       4. Activate or Deactivate a user (soft-delete / restore).
-       5. Reset a user's password (Admin only — managers cannot reset
-          passwords, per ResetUserPasswordCommand's [RequireRoles(Admin)]).
+     This page is the admin/manager/employee's view of every user in the
+     system (staff and customers). It exists so they can:
+       1. See ALL users in a compact, paginated table.
+       2. Filter by Worker ID, Full Name (text filter), Gender, Group,
+          and Status (dropdown filters with colored tags).
+       3. Activate or Deactivate a user (soft-delete / restore).
+       4. Reset a user's password (Admin only).
+       5. View a user's detail page (where group changes, role edits,
+          and other per-user actions live — see UserDetail.razor).
 
-   WHAT THIS PAGE DOES NOT DO (deferred to later phases):
-     - Group-name dropdown filter (would need a "list all groups" query,
-       which doesn't exist yet — currently GetCustomersByGroupQuery goes
-       the other direction).
-     - Group-name autocomplete on the CreateUser form (would need the same
-       "list all groups" query).
+   GROUP CHANGES:
+     The inline "Change group" editor that previously lived in this table
+     was removed — group changes now happen on the UserDetail page
+     (/Admin/Users/{Id}) where the full role-scope rules can be applied
+     with the CreateUser-style Existing/New group button UI. This page
+     is read-only with respect to groups: it shows the current group
+     badge and lets the viewer navigate to the detail page to change it.
 
-   Phase 6.3 (User Detail page at /Admin/Users/{Id}) is now wired up —
-   the "visibility" icon in the actions column navigates to it. That page
-   handles Edit FullName, Assign/Remove Role, and Assign/Remove Group
-   via the 5 commands that previously existed without a UI. The Activate
-   / Deactivate / Reset Password actions stay on THIS list page (they
-   are short, single-click operations that don't need a detail view).
-
-   LAYOUT:
-     1. Page header: title + (deferred) "Create user" button placeholder.
-     2. Filter bar: search box + activity-status dropdown.
-     3. Loading / error / empty / table states.
-     4. User table: RadzenDataGrid (no built-in pager) with columns for
-        Worker ID, Full Name, Gender, Group (manager+admin only — never
-        shown to employees, but employees can't reach this page anyway),
-        Status (active/inactive badge), and an actions column.
-     5. Manual pager (Prev / page numbers / Next + total count).
-
-   ROLE-RESOLUTION PATTERN (CRITICAL):
-     _isAdmin is computed via AuthStateProvider.GetAuthenticationStateAsync()
-     in OnInitializedAsync — NOT via ICurrentUserService.IsInRole. The
-     ICurrentUserService reads from IHttpContextAccessor.HttpContext,
-     which is NULL over the SignalR circuit in interactive Blazor Server
-     mode (HttpContext only exists during the initial prerender request).
-     AuthStateProvider reads from the Blazor circuit's persistent auth
-     state, which IS preserved across circuit interactions.
-
-     The same pattern is used in Sales.razor (Phase 4.2) and
-     SaleDetail.razor (Phase 4.3) — see those files for the longer
-     explanation. The Wolverine command handlers ALSO enforce
-     [RequireRoles] server-side as defense-in-depth, so even if the
-     client-side role check is wrong, the server still rejects the call.
-
-   DATA LOADING:
-     OnInitializedAsync: resolve the current user's Id + Admin role, then
-     load the first page of users via GetUsersPaginatedQuery. Filter
-     changes reset the page to 1 and re-query.
+   FILTERING (ERP pattern):
+     All filtering is client-side via Radzen's built-in filter row
+     (AllowFiltering=true, FilterMode=SimpleWithMenu). Each column has
+     its own filter input in a dedicated filter row beneath the header:
+       - Worker ID  → text filter (Radzen default)
+       - Full Name  → text filter (Radzen default)
+       - Gender     → dropdown with colored tags (Male=blue, Female=pink)
+       - Group      → dropdown of available groups (no colored tags)
+       - Status     → dropdown with colored tags (Active=green, Inactive=red)
+     The grid loads ALL users once (PageSize=500 in the backend query)
+     and Radzen handles filtering + paging client-side. Same approach
+     as the ERP project's SalesList page.
 
    ACTIVATE / DEACTIVATE FLOW:
      - A single toggle button per row. When the user is Active, the button
-       shows "Deactivate" (Danger outlined, block icon). When Inactive, it
-       shows "Activate" (Success outlined, check icon).
-     - Self-deactivation is blocked client-side (the button is hidden on
-       the current user's own row) AND server-side (the handler rejects it
-       with a friendly message). The client-side check is purely UX —
-       without it, the user would click, see an error toast, and have to
-       re-think; with it, the button just isn't there.
-     - On click: confirm via JS confirm() (a destructive action deserves
-       one click of friction), then dispatch the appropriate command,
-       toast on success, reload the grid.
+       shows "Deactivate" (Danger, block icon). When Inactive, it shows
+       "Activate" (Success, check_circle icon).
+     - Self-deactivation is blocked client-side (button hidden on the
+       current user's own row) AND server-side (handler rejects it).
+     - MANAGER SCOPE (Phase 6.3, updated 6.4): A Manager (non-Admin) can
+       activate/deactivate users in the Employee OR Customer role. The
+       activate/deactivate button is HIDDEN on rows for other managers,
+       admins, and read-onlys. A small "lock" icon with a tooltip replaces
+       the button on those rows so the manager understands why it's missing.
+       Admins see the button on every row except their own.
 
    RESET PASSWORD FLOW:
-     - Admin-only (button hidden from Managers). The button is also hidden
-       on the current user's own row — admins can technically reset their
-       own password via this command (the handler doesn't block it), but
-       it's a confusing UX so we don't offer it. Admins should use the
-       self-service password change flow (deferred) instead.
-     - On click: prompt via JS prompt() for the new password (same pattern
-       as AdminProducts.razor's restock flow). The handler defers password
-       complexity validation to ASP.NET Identity's configured rules —
-       client-side we just check it's non-empty and at least 8 chars to
-       catch obvious typos before the round-trip.
-     - On success: toast. On failure: toast with the handler's error
-       message (Identity's error descriptions are user-friendly enough).
+     - Admin-only (button hidden from Managers). Also hidden on the
+       current user's own row (confusing UX).
+     - On click: prompt via JS prompt() for new password.
 
    LOCALIZATION:
      All user-visible strings go through IStringLocalizer<AdminUsers>
-     (Loc). Keys are defined in AdminUsers.en-US.resx +
-     AdminUsers.fa-IR.resx. RTL is handled at the html dir level by
-     MainLayout based on the current culture.
+     (Loc). Keys in AdminUsers.en-US.resx + AdminUsers.fa-IR.resx.
 
    ANTIFORGERY:
      Not needed — no EditForm. All actions use Wolverine command dispatch
-     over the Blazor circuit. The circuit's anti-forgery token covers
-     this case. *@
+     over the Blazor circuit. *@
 
 @page "/Admin/Users"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
@@ -153,87 +118,20 @@
                 align-items: center;
             }
 
-            /* Status column header — just the title text + a small down-arrow.
-                           Clicking the arrow opens a compact popover with colored filter
-                           options (All=gray, Active=green, Inactive=red). No filter row,
-                           no inline dropdown input — just an icon-triggered popup. */
-            .status-filter-wrap {
-                position: relative;
-                display: flex;
-                justify-content: center;
-            }
-
-            .status-filter-trigger {
-                background: none;
-                border: none;
-                padding: 0;
-                cursor: pointer;
+            /* Restricted-action indicator — shown in place of the activate/
+                           deactivate button when the current user is a Manager and the
+                           row's user is NOT in the Employee or Customer role. Mirrors the
+                           size of the text buttons it replaces so the Actions column
+                           doesn't jump around when scrolling between rows. */
+            .row-action-locked {
                 display: inline-flex;
                 align-items: center;
-                gap: 0.2rem;
-                font: inherit;
-                font-weight: 600;
-                color: inherit;
-                line-height: 1;
-            }
-
-                .status-filter-trigger .rzi {
-                    font-size: 1.1rem;
-                    line-height: 1;
-                }
-
-                /* Highlight the arrow when a filter is active so the user can
-                           see at a glance that the list is filtered. */
-                .status-filter-trigger.is-active {
-                    color: var(--rz-primary);
-                }
-
-            /* Transparent full-screen click-catcher behind the popup.
-                           Clicking anywhere outside the popup closes it. */
-            .status-filter-backdrop {
-                position: fixed;
-                inset: 0;
-                z-index: 999;
-            }
-
-            .status-filter-popup {
-                position: absolute;
-                top: 100%;
-                left: 50%;
-                transform: translateX(-50%);
-                margin-top: 0.375rem;
-                z-index: 1000;
-                background: var(--rz-background-color);
-                border: 1px solid var(--rz-border-color);
-                border-radius: var(--rz-border-radius);
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-                padding: 0.25rem;
-                min-width: 130px;
-                display: flex;
-                flex-direction: column;
-                gap: 0.125rem;
-            }
-
-            .status-filter-option {
-                background: none;
-                border: none;
-                padding: 0.375rem 0.625rem;
-                cursor: pointer;
-                border-radius: var(--rz-border-radius);
-                display: flex;
-                align-items: center;
                 justify-content: center;
-                transition: background 0.1s;
-                font: inherit;
+                width: 32px;
+                height: 32px;
+                color: var(--rz-text-tertiary-color, #9ca3af);
+                cursor: help;
             }
-
-                .status-filter-option:hover {
-                    background: var(--rz-base-background-color);
-                }
-
-                .status-filter-option.is-selected {
-                    background: var(--rz-base-background-color);
-                }
     </style>
 </HeadContent>
 
@@ -249,25 +147,9 @@
                       Icon="person_add"
                       ButtonStyle="ButtonStyle.Primary"
                       Variant="Variant.Filled"
+                      Visible="@(_isAdmin || _isManagerOnly)"
                       Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
     </div>
-
-    @* ── Filter bar ──
-       Only the search field lives here. The status filter is a small
-       popover triggered by a down-arrow icon in the Status column's
-       header (see grid below). *@
-    <RadzenCard Variant="Variant.Filled" Style="padding: 1rem;">
-        <RadzenStack Orientation="Orientation.Horizontal"
-                     AlignItems="AlignItems.End"
-                     Gap="1rem">
-            <RadzenFormField Text="@Loc["SearchLabel"]" Style="flex: 1 1 240px; min-width: 200px;">
-                <RadzenTextBox @bind-Value="_searchTerm"
-                               @bind-Value:after="OnSearchChanged"
-                               Placeholder="@Loc["SearchPlaceholder"]"
-                               TValue="string" />
-            </RadzenFormField>
-        </RadzenStack>
-    </RadzenCard>
 
     @* ── Loading spinner ── *@
     @if (_isLoading)
@@ -300,83 +182,118 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state (no users at all) ── *@
-    else if (_users.Count == 0 && !HasActiveFilters())
-    {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                <RadzenIcon Icon="person_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
-                <RadzenText Text="@Loc["EmptyMessage"]"
-                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
-            </RadzenStack>
-        </RadzenCard>
-    }
-
-    @* ── Empty state (filters yielded nothing) ── *@
-    else if (_users.Count == 0)
-    {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                <RadzenIcon Icon="search_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                <RadzenText Text="@Loc["EmptyFilteredTitle"]" TextStyle="TextStyle.H6" />
-                <RadzenText Text="@Loc["EmptyFilteredMessage"]"
-                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
-                <RadzenButton Text="@Loc["ClearFiltersButton"]"
-                              Icon="filter_alt_off"
-                              ButtonStyle="ButtonStyle.Base"
-                              Variant="Variant.Outlined"
-                              Click="@ClearFiltersAsync" />
-            </RadzenStack>
-        </RadzenCard>
-    }
-
-    @* ── User table ── *@
+    @* ── User table ──
+       Radzen built-in filter row (AllowFiltering + FilterMode.SimpleWithMenu).
+       Worker ID and Full Name use Radzen's default text filter. Gender,
+       Group, and Status use custom FilterTemplate dropdowns with colored
+       badge tags. Paging is built-in (AllowPaging, PageSize=20). Data is
+       loaded all at once (PageSize=500 in the backend query) and filtered
+       client-side — same approach as the ERP SalesList page. *@
     else
     {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
-            <RadzenDataGrid Data="@_users"
-                            AllowSorting="false"
-                            AllowPaging="false"
-                            AllowFiltering="false"
+        <RadzenCard Variant="Variant.Filled" Class="admin-users-grid" Style="padding: 0.5rem;">
+            <RadzenDataGrid @ref="grid"
+                            Data="@_users"
+                            TItem="UserListItemDto"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.SimpleWithMenu"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="true"
+                            PageSize="20"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            EmptyText="@Loc["EmptyText"]"
                             Style="width: 100%;"
                             RowRender="@OnRowRender">
                 <Columns>
+
+                    @* ── Worker ID — text filter (Radzen default) ── *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="WorkerId"
                                           Title="@Loc["ColWorkerId"]"
-                                          Width="160px"
-                                          Filterable="false">
+                                          Width="160px">
                         <Template Context="user">
                             <span class="worker-id-cell">@user.WorkerId</span>
                         </Template>
                     </RadzenDataGridColumn>
 
+                    @* ── Full Name — text filter (Radzen default) ── *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="FullName"
                                           Title="@Loc["ColFullName"]"
-                                          Width="*"
-                                          Filterable="false">
+                                          Width="*">
                         <Template Context="user">
                             <span class="user-name-cell">@user.FullName</span>
                         </Template>
                     </RadzenDataGridColumn>
 
+                    @* ── Gender — dropdown filter with colored tags ──
+                       Male=blue badge, Female=pink badge. The dropdown's
+                       ValueTemplate shows the selected value as a colored
+                       badge; Template shows each option as a colored badge.
+                       AllowClear resets to null (All genders). The filter
+                       is client-side via column.FilterValue. *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="Gender"
                                           Title="@Loc["ColGender"]"
-                                          Width="120px"
-                                          Filterable="false">
+                                          Width="140px"
+                                          TextAlign="TextAlign.Center"
+                                          FilterOperator="FilterOperator.Equals">
                         <Template Context="user">
-                            @GetGenderLabel(user.Gender)
+                            <RadzenBadge Text="@GetGenderLabel(user.Gender)"
+                                         BadgeStyle="BadgeStyle.Light"
+                                         Style="@GetGenderBadgeStyle(user.Gender)"
+                                         IsPill="true" />
                         </Template>
+                        <FilterTemplate Context="column">
+                            <RadzenDropDown @bind-Value="@_selectedGenderFilter"
+                                            Data="@_genderFilterOptions"
+                                            TValue="string"
+                                            TextProperty="Label"
+                                            ValueProperty="Key"
+                                            AllowClear="true"
+                                            Placeholder="@Loc["GenderAll"]"
+                                            Change="@(args => OnGenderFilterChanged(_selectedGenderFilter, column))"
+                                            Style="width: 100%; min-width: 110px;">
+                                <ValueTemplate Context="selected">
+                                    @{
+                                        var selectedStr = selected?.ToString();
+                                    }
+                                    @if (!string.IsNullOrEmpty(selectedStr))
+                                    {
+                                        <RadzenBadge Text="@GetGenderLabel(selectedStr)"
+                                                     BadgeStyle="BadgeStyle.Light"
+                                                     Style="@GetGenderBadgeStyle(selectedStr)"
+                                                     IsPill="true" />
+                                    }
+                                    else
+                                    {
+                                        <span>@Loc["GenderAll"]</span>
+                                    }
+                                </ValueTemplate>
+                                <Template Context="option">
+                                    @{
+                                        var item = (GenderFilterOption)option;
+                                    }
+                                    <RadzenBadge Text="@item.Label"
+                                                 BadgeStyle="BadgeStyle.Light"
+                                                 Style="@GetGenderBadgeStyle(item.Key)"
+                                                 IsPill="true" />
+                                </Template>
+                            </RadzenDropDown>
+                        </FilterTemplate>
                     </RadzenDataGridColumn>
 
+                    @* ── Group — dropdown filter, no colored tags ──
+                       Plain dropdown listing all available groups (derived
+                       from the loaded users). AllowClear resets to null
+                       (All groups). Filter is client-side via
+                       column.FilterValue. *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="GroupName"
                                           Title="@Loc["ColGroup"]"
                                           Width="180px"
-                                          Filterable="false">
+                                          FilterOperator="FilterOperator.Equals">
                         <Template Context="user">
                             @if (string.IsNullOrWhiteSpace(user.GroupName))
                             {
@@ -389,66 +306,66 @@
                                              IsPill="true" />
                             }
                         </Template>
+                        <FilterTemplate Context="column">
+                            <RadzenDropDown @bind-Value="@_selectedGroupFilter"
+                                            Data="@_availableGroups"
+                                            TValue="string"
+                                            AllowClear="true"
+                                            Placeholder="@Loc["GroupAll"]"
+                                            Change="@(args => OnGroupFilterChanged(_selectedGroupFilter, column))"
+                                            Style="width: 100%; min-width: 130px;" />
+                        </FilterTemplate>
                     </RadzenDataGridColumn>
 
+                    @* ── Status — dropdown filter with colored tags ──
+                       Active=green badge, Inactive=red badge. The dropdown
+                       uses string keys ("Active"/"Inactive") which are
+                       mapped to booleans for the IsActive column filter.
+                       AllowClear resets to null (All statuses). *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="IsActive"
                                           Title="@Loc["ColStatus"]"
                                           Width="140px"
-                                          TextAlign="TextAlign.Center">
+                                          TextAlign="TextAlign.Center"
+                                          FilterOperator="FilterOperator.Equals">
                         <Template Context="user">
                             <RadzenBadge Text="@GetStatusLabel(user.IsActive)"
                                          BadgeStyle="@GetStatusBadgeStyle(user.IsActive)"
                                          IsPill="true" />
                         </Template>
-                        @* Status filter — a small down-arrow next to the
-                           “Status” title in the header. Clicking it opens a
-                           compact popover with three colored options:
-                           All (gray), Active (green), Inactive (red).
-                           No filter row, no inline dropdown input — just the
-                           title + arrow. The filter is still server-side —
-                           SelectStatusFilter pushes the value into
-                           GetUsersPaginatedQuery.IsActive and reloads from
-                           the backend. *@
-                        <HeaderTemplate>
-                            <div class="status-filter-wrap">
-                                <button type="button"
-                                        class="status-filter-trigger @(_activityFilter is not null ? "is-active" : "")"
-                                        @onclick="ToggleStatusFilter">
-                                    <span>@Loc["ColStatus"]</span>
-                                    <RadzenIcon Icon="@(_isStatusFilterOpen ? "expand_less" : "expand_more")" />
-                                </button>
-                                @if (_isStatusFilterOpen)
-                                {
-                                    <div class="status-filter-backdrop" @onclick="CloseStatusFilter"></div>
-                                    <div class="status-filter-popup">
-                                        <button type="button"
-                                                class="status-filter-option @(_activityFilter is null ? "is-selected" : "")"
-                                                @onclick="() => SelectStatusFilter(null)">
-                                            <RadzenBadge Text="@Loc["StatusAll"]"
-                                                         BadgeStyle="BadgeStyle.Base"
-                                                         IsPill="true" />
-                                        </button>
-                                        <button type="button"
-                                                class="status-filter-option @(_activityFilter == ActivityFilter.Active ? "is-selected" : "")"
-                                                @onclick="() => SelectStatusFilter(ActivityFilter.Active)">
-                                            <RadzenBadge Text="@Loc["StatusActive"]"
-                                                         BadgeStyle="BadgeStyle.Success"
-                                                         IsPill="true" />
-                                        </button>
-                                        <button type="button"
-                                                class="status-filter-option @(_activityFilter == ActivityFilter.Inactive ? "is-selected" : "")"
-                                                @onclick="() => SelectStatusFilter(ActivityFilter.Inactive)">
-                                            <RadzenBadge Text="@Loc["StatusInactive"]"
-                                                         BadgeStyle="BadgeStyle.Danger"
-                                                         IsPill="true" />
-                                        </button>
-                                    </div>
-                                }
-                            </div>
-                        </HeaderTemplate>
+                        <FilterTemplate Context="column">
+                            <RadzenDropDown @bind-Value="@_selectedStatusFilter"
+                                            Data="@_statusFilterOptions"
+                                            TValue="string"
+                                            AllowClear="true"
+                                            Placeholder="@Loc["StatusAll"]"
+                                            Change="@(args => OnStatusFilterChanged(_selectedStatusFilter, column))"
+                                            Style="width: 100%; min-width: 130px;">
+                                <ValueTemplate Context="selected">
+                                    @{
+                                        var selectedStr = selected?.ToString();
+                                    }
+                                    @if (!string.IsNullOrEmpty(selectedStr))
+                                    {
+                                        <RadzenBadge Text="@GetStatusLabel(selectedStr)"
+                                                     BadgeStyle="@GetStatusBadgeStyle(selectedStr)"
+                                                     IsPill="true" />
+                                    }
+                                    else
+                                    {
+                                        <span>@Loc["StatusAll"]</span>
+                                    }
+                                </ValueTemplate>
+                                <Template Context="statusOption">
+                                    <RadzenBadge Text="@GetStatusLabel(statusOption)"
+                                                 BadgeStyle="@GetStatusBadgeStyle(statusOption)"
+                                                 IsPill="true" />
+                                </Template>
+                            </RadzenDropDown>
+                        </FilterTemplate>
                     </RadzenDataGridColumn>
 
+                    @* ── Actions ── *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Title="@Loc["ColActions"]"
                                           Width="220px"
@@ -457,17 +374,9 @@
                                           Filterable="false">
                         <Template Context="user">
                             <div class="row-actions">
-                                @* View details — navigates to the Phase 6.3
-                                   user detail page at /Admin/Users/{Id}. This
-                                   is the primary per-row action (first button
-                                   in the actions column). Visible to all
-                                   Admin/Manager viewers (the page itself is
-                                   gated by [Authorize(Roles="Admin,Manager")]
-                                   defense-in-depth). The detail handler
-                                   (GetUserByIdQuery) additionally allows
-                                   Employee viewers to see any user — but this
-                                   list page is Admin/Manager-only, so we don't
-                                   need a per-row role check here. *@
+                                @* View details — navigates to user detail page.
+                                   All viewers (Admin/Manager/Employee) can navigate;
+                                   the detail page enforces its own per-action gates. *@
                                 <RadzenButton Icon="visibility"
                                               Variant="Variant.Text"
                                               ButtonStyle="ButtonStyle.Info"
@@ -479,38 +388,70 @@
                                    Hidden on the current user's own row —
                                    self-deactivation is rejected by the
                                    handler anyway, but the button adds
-                                   confusing UX so we just don't show it. *@
-                                @if (user.Id != _currentUserId)
+                                   confusing UX so we just don't show it.
+                                   When the user is Active → show Deactivate
+                                   (Danger, block icon). When Inactive → show
+                                   Activate (Success, check_circle icon).
+
+                                   MANAGER SCOPE (Phase 6.3, updated 6.4):
+                                   If the current user is a Manager (not
+                                   Admin), the button is only shown on rows
+                                   whose user is in the Employee OR Customer
+                                   role. On other rows (managers, admins,
+                                   read-onlys), a small "lock" icon with a
+                                   tooltip replaces the button so the manager
+                                   understands why it's missing. Admins see
+                                   the button on every row except their own.
+
+                                   EMPLOYEE VIEWERS (Phase 6.5):
+                                   Employees can't activate/deactivate anyone —
+                                   the button is hidden on every row AND no
+                                   lock icon is shown (the lock is a Manager-only
+                                   affordance; for Employees the entire
+                                   activate/deactivate feature is off-limits,
+                                   so showing locks everywhere would be noisy). *@
+                                @if (user.Id != _currentUserId && (_isAdmin || _isManagerOnly))
                                 {
-                                    @if (user.IsActive)
+                                    @if (CanActOn(user))
                                     {
-                                        <RadzenButton Icon="block"
-                                                      Variant="Variant.Text"
-                                                      ButtonStyle="ButtonStyle.Danger"
-                                                      title="@Loc["ActionDeactivate"]"
-                                                      aria-label="@Loc["ActionDeactivate"]"
-                                                      Disabled="@(_isBusyUserId == user.Id)"
-                                                      Click="@(() => HandleDeactivateAsync(user))" />
+                                        @if (user.IsActive)
+                                        {
+                                            <RadzenButton Icon="block"
+                                                          Variant="Variant.Text"
+                                                          ButtonStyle="ButtonStyle.Danger"
+                                                          title="@Loc["ActionDeactivate"]"
+                                                          aria-label="@Loc["ActionDeactivate"]"
+                                                          Disabled="@(_isBusyUserId == user.Id)"
+                                                          Click="@(() => HandleDeactivateAsync(user))" />
+                                        }
+                                        else
+                                        {
+                                            <RadzenButton Icon="check_circle"
+                                                          Variant="Variant.Text"
+                                                          ButtonStyle="ButtonStyle.Success"
+                                                          title="@Loc["ActionActivate"]"
+                                                          aria-label="@Loc["ActionActivate"]"
+                                                          Disabled="@(_isBusyUserId == user.Id)"
+                                                          Click="@(() => HandleActivateAsync(user))" />
+                                        }
                                     }
-                                    else
+                                    else if (_isManagerOnly)
                                     {
-                                        <RadzenButton Icon="check_circle"
-                                                      Variant="Variant.Text"
-                                                      ButtonStyle="ButtonStyle.Success"
-                                                      title="@Loc["ActionActivate"]"
-                                                      aria-label="@Loc["ActionActivate"]"
-                                                      Disabled="@(_isBusyUserId == user.Id)"
-                                                      Click="@(() => HandleActivateAsync(user))" />
+                                        @* Manager can't act on this row — show a lock icon
+                                           with a tooltip explaining why. aria-label gives
+                                           screen readers the same explanation. Only shown
+                                           for Managers (not Employees) since Employees
+                                           can't activate/deactivate anyone — locks would
+                                           be noisy. *@
+                                        <span class="row-action-locked"
+                                              title="@Loc["ActionLockedForManager"]"
+                                              aria-label="@Loc["ActionLockedForManager"]">
+                                            <RadzenIcon Icon="lock" Style="font-size: 1.1rem;" />
+                                        </span>
                                     }
                                 }
 
-                                @* Reset password — Admin only.
-                                   Hidden from Managers (button not rendered)
-                                   AND hidden on the current user's own row
-                                   (admin self-reset is technically allowed
-                                   by the handler but confusing UX). The
-                                   server-side [RequireRoles(Admin)] is the
-                                   real guard; this is UX-only. *@
+                                @* Reset password — Admin only. *@
                                 @if (_isAdmin && user.Id != _currentUserId)
                                 {
                                     <RadzenButton Icon="vpn_key"
@@ -526,51 +467,6 @@
                     </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>
-
-            @* ── Pager ──
-               Manual pager (Prev / page numbers / Next) — same approach as
-               the /Sales list page. Operates on PaginatedResult metadata
-               from the backend (true server-side paging). *@
-            @if (_totalCount > _pageSize)
-            {
-                <RadzenStack Orientation="Orientation.Horizontal"
-                             JustifyContent="JustifyContent.Center"
-                             AlignItems="AlignItems.Center"
-                             Gap="0.5rem"
-                             Wrap="FlexWrap.Wrap"
-                             Style="margin-top: 1rem; padding-bottom: 0.5rem;">
-                    <RadzenButton Icon="chevron_left"
-                                  Variant="Variant.Text"
-                                  Disabled="@(_pageNumber <= 1)"
-                                  Click="@(() => OnPageChanged(_pageNumber - 1))" />
-
-                    @{
-                        var totalPages = (int)Math.Ceiling((double)_totalCount / _pageSize);
-                        var startPage = Math.Max(1, _pageNumber - 2);
-                        var endPage = Math.Min(totalPages, startPage + 4);
-                        if (endPage - startPage < 4) startPage = Math.Max(1, endPage - 4);
-                    }
-
-                    @for (var p = startPage; p <= endPage; p++)
-                    {
-                        var page = p;
-                        <RadzenButton Text="@(page.ToString())"
-                                      Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
-                                      ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
-                                      Disabled="@(_isLoading)"
-                                      Click="@(() => OnPageChanged(page))" />
-                    }
-
-                    <RadzenButton Icon="chevron_right"
-                                  Variant="Variant.Text"
-                                  Disabled="@(_pageNumber >= Math.Ceiling((double)_totalCount / _pageSize))"
-                                  Click="@(() => OnPageChanged(_pageNumber + 1))" />
-
-                    <RadzenText Text="@string.Format(CultureInfo.CurrentCulture, Loc["PageInfoFormat"], _pageNumber, totalPages, _totalCount)"
-                                TextStyle="TextStyle.Caption"
-                                Style="color: var(--rz-text-secondary-color); margin-left: 0.5rem;" />
-                </RadzenStack>
-            }
         </RadzenCard>
     }
 </RadzenStack>
@@ -579,16 +475,36 @@
     // ── State ────────────────────────────────────────────────────────────
 
     private List<UserListItemDto> _users = new();
+    private List<string> _availableGroups = new();
 
-    private string _searchTerm = string.Empty;
-    // Nullable: null = "all statuses" (no filter). The status filter
-    // popover sets this to Active, Inactive, or null (All). The value
-    // is pushed to GetUsersPaginatedQuery.IsActive on the next load.
-    private ActivityFilter? _activityFilter;
+    private RadzenDataGrid<UserListItemDto> grid = default!;
 
-    private const int _pageSize = 20;
-    private int _pageNumber = 1;
-    private int _totalCount;
+    // Filter state — each nullable; null = "no filter" (AllowClear=true
+    // on the RadzenDropDown passes null when the user clears).
+    // Status and Gender use string keys that are mapped to the actual
+    // property type in the filter handler. Group uses the group name
+    // string directly.
+    private string? _selectedStatusFilter;
+    private string? _selectedGenderFilter;
+    private string? _selectedGroupFilter;
+
+    // Status filter options — string keys "Active"/"Inactive" (culture-
+    // neutral). The display text comes from GetStatusLabel(string) which
+    // maps to localized resx values.
+    private readonly List<string> _statusFilterOptions = new()
+    {
+        "Active", "Inactive"
+    };
+
+    // Gender filter options — Key is "Male"/"Female" (culture-neutral),
+    // Label is the localized display text.
+    private List<GenderFilterOption> _genderFilterOptions = new();
+
+    private sealed class GenderFilterOption
+    {
+        public string Key { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+    }
 
     private bool _isLoading = true;
     private string _loadError = string.Empty;
@@ -603,7 +519,6 @@
     /// <summary>
     /// The current user's Id — used to hide self-action buttons
     /// (self-deactivation, self-password-reset) on the user's own row.
-    /// Resolved once in OnInitializedAsync.
     /// </summary>
     private Guid _currentUserId;
 
@@ -612,26 +527,33 @@
     /// AuthenticationStateProvider in OnInitializedAsync — NOT via
     /// ICurrentUserService.IsInRole (which returns false for everyone in
     /// interactive Blazor Server mode because HttpContext is null over
-    /// the SignalR circuit). See the file-header comment for the full
-    /// explanation.
+    /// the SignalR circuit).
     /// </summary>
     private bool _isAdmin;
 
-    // No "All" member — null on the nullable _activityFilter field serves
-    // as the "no filter" state. This keeps the enum to just the values that
-    // actually map to a backend WHERE clause (IsActive = true / false).
-    private enum ActivityFilter
-    {
-        Active,
-        Inactive
-    }
+    /// <summary>
+    /// Whether the current user is in the Manager role (and NOT also in
+    /// the Admin role). Used to gate the activate/deactivate button:
+    /// a Manager can only act on users in the Employee OR Customer role —
+    /// other managers, admins, and read-onlys are off-limits. Admins (who
+    /// may also be in the Manager role) bypass this restriction, so we
+    /// explicitly check `!_isAdmin` here.
+    /// </summary>
+    private bool _isManagerOnly;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
-        // Resolve the current user's Id + Admin role via the Blazor auth
-        // state (NOT ICurrentUserService — see file-header comment).
+        // Populate the gender-filter dropdown options from localizer.
+        _genderFilterOptions = new List<GenderFilterOption>
+        {
+            new() { Key = "Male",   Label = Loc["GenderMale"] },
+            new() { Key = "Female", Label = Loc["GenderFemale"] }
+        };
+
+        // Resolve the current user's Id + Admin/Manager roles via the Blazor auth
+        // state (NOT ICurrentUserService — see field doc on _isAdmin).
         try
         {
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -639,8 +561,6 @@
 
             if (user?.Identity?.IsAuthenticated == true)
             {
-                // The UserId claim is set by our custom IClaimsPrincipalFactory
-                // in the Infrastructure layer — it's the Domain User's Guid Id.
                 var idClaim = user.FindFirst("UserId")?.Value
                               ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
                 if (Guid.TryParse(idClaim, out var parsedId))
@@ -649,6 +569,10 @@
                 }
 
                 _isAdmin = user.IsInRole(Roles.Admin);
+                // Manager-only means "in Manager role AND not also Admin".
+                // Admins who happen to also be in the Manager role are
+                // treated as Admins (no restriction).
+                _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
             }
         }
         catch
@@ -656,7 +580,9 @@
             // Non-fatal — _currentUserId stays Guid.Empty (no self-action
             // buttons hidden, which is safe but slightly worse UX) and
             // _isAdmin stays false (Reset Password button hidden — safer
-            // fallback if role resolution fails).
+            // fallback if role resolution fails). _isManagerOnly also
+            // stays false (no Manager restriction applied — admins always
+            // pass through, which is the safer fallback).
         }
 
         await LoadUsersAsync();
@@ -671,32 +597,29 @@
 
         try
         {
+            // Load all users — filtering and paging are client-side via
+            // Radzen's built-in filter row + pager (same approach as the
+            // ERP SalesList page). PageSize=500 ensures we get everything
+            // in one round-trip.
             var query = new GetUsersPaginatedQuery
             {
-                PageNumber = _pageNumber,
-                PageSize = _pageSize,
-                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
-                IsActive = _activityFilter switch
-                {
-                    ActivityFilter.Active => true,
-                    ActivityFilter.Inactive => false,
-                    _ => null
-                }
+                PageNumber = 1,
+                PageSize = 500
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(query);
 
             _users = result.Items.ToList();
-            _totalCount = result.TotalCount;
 
-            // If we paginated past the last page (e.g. after a deactivation
-            // reduced the total count), reset to page 1 and retry once.
-            if (_users.Count == 0 && _pageNumber > 1)
-            {
-                _pageNumber = 1;
-                await LoadUsersAsync();
-                return;
-            }
+            // Derive the available groups from the loaded users for the
+            // group filter dropdown. Only non-empty, distinct group names.
+            _availableGroups = _users
+                .Select(u => u.GroupName)
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(g => g!)
+                .Distinct()
+                .OrderBy(g => g)
+                .ToList();
         }
         catch (Exception)
         {
@@ -709,53 +632,102 @@
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────
+    // Each handler sets column.FilterValue and calls grid.Reload() to
+    // trigger Radzen's client-side filtering. The bound field is updated
+    // by @bind-Value before the Change event fires, so we pass the field
+    // (not the args parameter) to the handler.
 
-    private async Task OnSearchChanged()
+    private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
     {
-        _pageNumber = 1;
-        await LoadUsersAsync();
+        _selectedStatusFilter = value;
+
+        if (string.IsNullOrEmpty(value))
+        {
+            column.FilterValue = null;
+        }
+        else
+        {
+            // Map the string key to a boolean for the IsActive column.
+            column.FilterValue = value == "Active";
+            column.FilterOperator = FilterOperator.Equals;
+        }
+
+        await grid.Reload();
     }
 
-    // ── Status filter popover ───────────────────────────────────────────
-
-    private bool _isStatusFilterOpen;
-
-    private void ToggleStatusFilter()
+    private async Task OnGenderFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
     {
-        _isStatusFilterOpen = !_isStatusFilterOpen;
+        _selectedGenderFilter = value;
+
+        if (string.IsNullOrEmpty(value))
+        {
+            column.FilterValue = null;
+        }
+        else
+        {
+            // Map the string key to the Gender enum for the Gender column.
+            column.FilterValue = value == "Male"
+                ? Domain.Users.Gender.Male
+                : Domain.Users.Gender.Female;
+            column.FilterOperator = FilterOperator.Equals;
+        }
+
+        await grid.Reload();
     }
 
-    private void CloseStatusFilter()
+    private async Task OnGroupFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
     {
-        _isStatusFilterOpen = false;
-    }
+        _selectedGroupFilter = value;
 
-    private async Task SelectStatusFilter(ActivityFilter? filter)
-    {
-        _isStatusFilterOpen = false;
-        _activityFilter = filter;
-        _pageNumber = 1;
-        await LoadUsersAsync();
-    }
+        if (string.IsNullOrEmpty(value))
+        {
+            column.FilterValue = null;
+        }
+        else
+        {
+            column.FilterValue = value;
+            column.FilterOperator = FilterOperator.Equals;
+        }
 
-    private async Task OnPageChanged(int newPage)
-    {
-        _pageNumber = newPage;
-        await LoadUsersAsync();
+        await grid.Reload();
     }
-
-    private async Task ClearFiltersAsync()
-    {
-        _searchTerm = string.Empty;
-        _activityFilter = null;
-        _pageNumber = 1;
-        await LoadUsersAsync();
-    }
-
-    private bool HasActiveFilters()
-        => !string.IsNullOrWhiteSpace(_searchTerm) || _activityFilter.HasValue;
 
     // ── Activate / Deactivate ───────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true if the current user may activate/deactivate the given
+    /// row's user.
+    ///
+    /// Rules:
+    ///   - Admins  → may act on anyone (except themselves, which is checked
+    ///               separately in the markup).
+    ///   - Managers → may only act on users whose <c>Roles</c> collection
+    ///                contains <c>Roles.Employee</c> OR <c>Roles.Customer</c>.
+    ///                This excludes other managers, admins, and read-onlys.
+    ///   - Employees → cannot activate/deactivate anyone (the feature is
+    ///                Admin/Manager only). Returns false for all rows.
+    ///
+    /// The server-side handlers (ActivateUserCommandHandler /
+    /// DeactivateUserCommandHandler) enforce the same rule as
+    /// defense-in-depth against tampered requests.
+    /// </summary>
+    private bool CanActOn(UserListItemDto user)
+    {
+        // Admins can act on anyone (the markup already hides the button on
+        // the admin's own row — we don't re-check that here).
+        if (_isAdmin) return true;
+
+        // Managers (non-Admin) can act on Employees OR Customers.
+        if (_isManagerOnly)
+        {
+            return user.Roles.Contains(Roles.Employee)
+                || user.Roles.Contains(Roles.Customer);
+        }
+
+        // Employees (and anyone else) — cannot activate/deactivate anyone.
+        // The markup hides the button entirely for non-Admin/Manager viewers.
+        return false;
+    }
 
     private async Task HandleDeactivateAsync(UserListItemDto user)
     {
@@ -931,14 +903,61 @@
             _ => gender.ToString()
         };
 
+    // String overload — used by the gender filter dropdown's ValueTemplate
+    // and Template. Maps "Male"/"Female" keys to localized display text.
+    private string GetGenderLabel(string? key)
+        => key switch
+        {
+            "Male" => Loc["GenderMale"],
+            "Female" => Loc["GenderFemale"],
+            _ => Loc["GenderAll"]
+        };
+
+    // Returns inline CSS for the gender badge background color.
+    // Male=blue (#2196f3), Female=pink (#e91e63). Used by both the cell
+    // Template and the filter dropdown's ValueTemplate/Template so they
+    // always render the same color.
+    private string GetGenderBadgeStyle(Domain.Users.Gender gender)
+        => gender switch
+        {
+            Domain.Users.Gender.Male => "background: #2196f3; color: white;",
+            Domain.Users.Gender.Female => "background: #e91e63; color: white;",
+            _ => ""
+        };
+
+    // String overload — maps "Male"/"Female" keys to the same colors.
+    private string GetGenderBadgeStyle(string? key)
+        => key switch
+        {
+            "Male" => "background: #2196f3; color: white;",
+            "Female" => "background: #e91e63; color: white;",
+            _ => ""
+        };
+
     // ── Status helpers ──────────────────────────────────────────────────
-    // Used by the cell Template to render the active/inactive badge.
-    // The filter popover uses inline BadgeStyle values (Base=All gray,
-    // Success=Active green, Danger=Inactive red) directly in the markup.
+    // Used by both the cell Template (bool overload — user.IsActive) and
+    // the filter dropdown's ValueTemplate/Template (string overload —
+    // "Active"/"Inactive" keys).
 
     private string GetStatusLabel(bool isActive)
         => isActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"];
 
+    private string GetStatusLabel(string? status)
+        => status switch
+        {
+            "Active" => Loc["StatusActive"],
+            "Inactive" => Loc["StatusInactive"],
+            _ => Loc["StatusAll"]
+        };
+
     private BadgeStyle GetStatusBadgeStyle(bool isActive)
-        => isActive ? BadgeStyle.Success : BadgeStyle.Light;
+        => isActive ? BadgeStyle.Success : BadgeStyle.Danger;
+
+    private BadgeStyle GetStatusBadgeStyle(string? status)
+        => status switch
+        {
+            "Active" => BadgeStyle.Success,
+            "Inactive" => BadgeStyle.Danger,
+            _ => BadgeStyle.Base
+        };
 }

@@ -68,16 +68,6 @@
     <value>Create user</value>
   </data>
 
-  <data name="SearchLabel" xml:space="preserve">
-    <value>Search</value>
-  </data>
-  <data name="SearchPlaceholder" xml:space="preserve">
-    <value>Search by worker ID or name…</value>
-  </data>
-
-  <data name="StatusLabel" xml:space="preserve">
-    <value>Status</value>
-  </data>
   <data name="StatusAll" xml:space="preserve">
     <value>All</value>
   </data>
@@ -87,12 +77,21 @@
   <data name="StatusInactive" xml:space="preserve">
     <value>Inactive</value>
   </data>
-  <!-- StatusFilterPlaceholder — shown in the Status column's FilterTemplate
-       dropdown when no status is selected (i.e. "all statuses" mode).
-       Matches the ERP SalesList pattern where the dropdown's AllowClear
-       resets to null and the placeholder conveys "no filter active". -->
-  <data name="StatusFilterPlaceholder" xml:space="preserve">
-    <value>All statuses</value>
+
+  <!-- GenderAll / GroupAll — placeholders shown in the Gender and Group
+       filter dropdowns when no filter is selected (AllowClear resets to
+       null). Matches the Status dropdown's "All" placeholder pattern. -->
+  <data name="GenderAll" xml:space="preserve">
+    <value>All genders</value>
+  </data>
+  <data name="GroupAll" xml:space="preserve">
+    <value>All groups</value>
+  </data>
+
+  <!-- EmptyText — shown by RadzenDataGrid's EmptyText when the grid has
+       no rows (either no users at all, or filters yielded nothing). -->
+  <data name="EmptyText" xml:space="preserve">
+    <value>No users found.</value>
   </data>
 
   <data name="LoadingText" xml:space="preserve">
@@ -106,22 +105,6 @@
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>Retry</value>
-  </data>
-
-  <data name="EmptyTitle" xml:space="preserve">
-    <value>No users yet</value>
-  </data>
-  <data name="EmptyMessage" xml:space="preserve">
-    <value>There are no users in the system yet. New users are added through the create-user form (coming soon).</value>
-  </data>
-  <data name="EmptyFilteredTitle" xml:space="preserve">
-    <value>No users match your filters</value>
-  </data>
-  <data name="EmptyFilteredMessage" xml:space="preserve">
-    <value>Try adjusting your search or status filter to find what you're looking for.</value>
-  </data>
-  <data name="ClearFiltersButton" xml:space="preserve">
-    <value>Clear filters</value>
   </data>
 
   <data name="ColWorkerId" xml:space="preserve">
@@ -173,6 +156,13 @@
   <data name="ActionViewDetail" xml:space="preserve">
     <value>View details</value>
   </data>
+  <!-- ActionLockedForManager — tooltip on the lock icon shown in place of
+       the activate/deactivate button when a Manager (non-Admin) views a row
+       whose user is not in the Employee or Customer role. Tells the manager
+       why the action is unavailable, so they don't think the page is broken. -->
+  <data name="ActionLockedForManager" xml:space="preserve">
+    <value>As a Manager, you can only activate or deactivate Employee and Customer accounts. Other managers, administrators, and read-only users require Administrator access.</value>
+  </data>
 
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
@@ -210,7 +200,4 @@
     <value>We couldn't complete that action. Please try again.</value>
   </data>
 
-  <data name="PageInfoFormat" xml:space="preserve">
-    <value>Page {0} of {1} ({2} total)</value>
-  </data>
 </root>

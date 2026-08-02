@@ -91,7 +91,17 @@ public sealed class GetUsersPaginatedQueryHandler
         // ------------------------------------------------------------------
         // 4. Project to DTO. Strip GroupName if the caller can't see it.
         //    Gender is always visible — it's not security-sensitive.
+        //
+        //    ROLES (Phase 6.3): We also batch-load each user's ASP.NET
+        //    Identity role names via GetRolesByUserIdsAsync. The AdminUsers
+        //    page needs this to gate the activate/deactivate button: a
+        //    Manager (non-Admin) may only act on users in the Employee role.
+        //    Loading roles per-row would N+1 the database; the batched call
+        //    is one extra round-trip for the whole page.
         // ------------------------------------------------------------------
+        var userIds = paginated.Items.Select(u => u.Id).ToList();
+        var rolesByUser = await userRepository.GetRolesByUserIdsAsync(userIds, cancellationToken);
+
         var dtos = paginated.Items
             .Select
             (
@@ -102,7 +112,13 @@ public sealed class GetUsersPaginatedQueryHandler
                 FullName = u.FullName,
                 Gender = u.Gender,
                 GroupName = canSeeGroup ? u.GroupName : null,
-                IsActive = u.IsActive
+                IsActive = u.IsActive,
+                // Roles: empty list if the user has no roles (rare — only
+                // happens if role seeding is incomplete). The dictionary
+                // lookup is O(1); a missing key just means "no roles".
+                Roles = rolesByUser.TryGetValue(u.Id, out var roles)
+                    ? roles
+                    : new List<string>()
             }
             )
             .ToList();

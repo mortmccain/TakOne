@@ -83,13 +83,32 @@ public sealed class GetUserByIdQueryHandler
 
         // ------------------------------------------------------------------
         // 4. Determine whether the caller may see the user's GroupName.
-        //    Only Admin and Manager. (Employees see the user but not the
-        //    group; customers viewing their own profile never see their
-        //    own group.)
+        //    - Admin and Manager may see GroupName for ANY user.
+        //    - Employee may see GroupName ONLY for users in the Customer
+        //      role — that's the only target an Employee is allowed to
+        //      manage the group of (per the role-scope rules enforced
+        //      server-side by AssignUserToGroupCommandHandler). Hiding
+        //      GroupName for non-Customer targets from Employee viewers
+        //      is defense-in-depth: the Employee can't act on those
+        //      targets anyway, so they don't need to see the group.
+        //    - Customers viewing their own profile never see their own
+        //      group (customers don't manage groups — they just live in
+        //      one for purchase-limit purposes).
         // ------------------------------------------------------------------
         var canSeeGroup =
             currentUser.IsInRole(Roles.Admin) ||
             currentUser.IsInRole(Roles.Manager);
+
+        if (!canSeeGroup && currentUser.IsInRole(Roles.Employee))
+        {
+            // Employee viewer: only allowed to see the group of users whose
+            // roles contain Customer. (A Customer+Employee target is still
+            // treated as "another employee" by the AssignUserToGroup handler
+            // — but for visibility we use the simpler "has Customer role"
+            // check, which is permissive enough to let the Employee see the
+            // current group of any user they might be navigating to.)
+            canSeeGroup = roles.Contains(Roles.Customer);
+        }
 
         // ------------------------------------------------------------------
         // 5. Project to DTO. Email is left null for now — see class-level

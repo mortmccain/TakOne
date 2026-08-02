@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
@@ -31,6 +32,46 @@ public sealed class CreateStaffCommandHandler
             logger.LogWarning("CreateStaff: unauthenticated call rejected.");
 
             return Result<Guid>.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // 0a. Manager scope enforcement.
+        //
+        // A Manager (i.e. a caller who is in the Manager role but NOT in the
+        // Admin role) may ONLY create Employee staff accounts. Any other
+        // staff role (Manager, ReadOnly, Admin) is rejected. The UI on the
+        // Create User page restricts the role dropdown to just Employee
+        // when a Manager is signed in, so this server-side check is
+        // defense-in-depth against a tampered request.
+        //
+        // Note: we use IsInRole(Roles.Admin) here, which works in the
+        // Wolverine handler context (unlike Blazor interactive mode, the
+        // HttpContext is available here via ICurrentUserService).
+        // ------------------------------------------------------------------
+        var isCallerAdmin = currentUser.IsInRole(Roles.Admin);
+        var isCallerManager = currentUser.IsInRole(Roles.Manager);
+
+        if (isCallerManager && !isCallerAdmin && command.Role != Roles.Employee)
+        {
+            logger.LogWarning
+                ("CreateStaff: Manager {ActorId} attempted to create staff with role '{Role}' (only Employee allowed for Managers). Rejected.",
+                currentUser.UserId, command.Role);
+
+            return Result<Guid>.Failure
+                ("Managers may only create Employee staff accounts. Creating Manager, Read-only, or Admin accounts requires Administrator access.");
+        }
+
+        // Defense-in-depth: the [RequireRoles(Admin, Manager)] attribute on
+        // the command already rejects callers who are neither Admin nor
+        // Manager. If somehow a non-staff caller reaches here (e.g. role
+        // attribute was bypassed), reject explicitly.
+        if (!isCallerAdmin && !isCallerManager)
+        {
+            logger.LogWarning
+                ("CreateStaff: caller {ActorId} is neither Admin nor Manager. Rejected.",
+                currentUser.UserId);
+
+            return Result<Guid>.Failure("Only administrators and managers may create staff accounts.");
         }
 
         // ------------------------------------------------------------------

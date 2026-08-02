@@ -7,16 +7,21 @@ namespace TakOne.Application.Users.Commands.CreateStaff;
 /// Creates a new STAFF user (Employee, Manager, ReadOnly, or Admin).
 ///
 /// AUTHORIZATION:
-///   Admin only. Managers cannot create staff — only admins can. This is
-///   stricter than CreateCustomer (which managers can do) because staff
-///   accounts have privileged access.
+///   Admin OR Manager. Both roles can create staff, but with different
+///   scopes:
+///     - Admin    → may assign ANY staff role (Employee, Manager, ReadOnly, Admin)
+///     - Manager  → may assign ONLY the Employee role. Attempting to assign
+///                  Manager, ReadOnly, or Admin is rejected by the handler
+///                  (defense-in-depth — the UI also restricts the dropdown
+///                  to just Employee when a Manager is signed in).
 ///
 /// ROLE PARAMETER:
 ///   The caller specifies which staff role to assign (one of
 ///   <see cref="Roles.Employee"/>, <see cref="Roles.Manager"/>,
 ///   <see cref="Roles.ReadOnly"/>, <see cref="Roles.Admin"/>).
 ///   The handler validates that the role is a known staff role before
-///   delegating to <see cref="Common.Interfaces.IUserAccountService"/>.
+///   delegating to <see cref="Common.Interfaces.IUserAccountService"/>,
+///   AND enforces the Manager→Employee-only rule.
 ///
 /// TWO-PHASE CREATION:
 ///   Same as <see cref="CreateCustomerCommand"/> — Domain User first,
@@ -34,7 +39,7 @@ namespace TakOne.Application.Users.Commands.CreateStaff;
 ///   doesn't care, but at the command boundary we require an explicit
 ///   value so the create-user form always submits one.
 /// </summary>
-[RequireRoles(Roles.Admin)]
+[RequireRoles(Roles.Admin, Roles.Manager)]
 public sealed record CreateStaffCommand
     (
     string WorkerId,

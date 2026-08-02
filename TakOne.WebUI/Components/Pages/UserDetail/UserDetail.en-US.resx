@@ -200,16 +200,57 @@
   <data name="ActionAssignGroup" xml:space="preserve">
     <value>Assign to group</value>
   </data>
+  <data name="ActionChangeGroup" xml:space="preserve">
+    <value>Change group</value>
+  </data>
+  <data name="ActionSaveGroupChange" xml:space="preserve">
+    <value>Save group</value>
+  </data>
+  <data name="ActionCancelGroupChange" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
   <data name="ActionRemoveGroup" xml:space="preserve">
     <value>Remove from group</value>
+  </data>
+  <data name="ActionActivate" xml:space="preserve">
+    <value>Activate</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+  <data name="ActionResetPassword" xml:space="preserve">
+    <value>Reset password</value>
   </data>
 
   <!-- JS prompts -->
   <data name="Prompt_NewFullName" xml:space="preserve">
     <value>Enter the new full name (1-200 characters):</value>
   </data>
-  <data name="Prompt_NewGroupName" xml:space="preserve">
-    <value>Enter the customer group name (1-100 characters):</value>
+
+  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group-name field) -->
+  <data name="GroupModeExisting" xml:space="preserve">
+    <value>Existing group</value>
+  </data>
+  <data name="GroupModeExistingHint" xml:space="preserve">
+    <value>Pick from groups that already exist</value>
+  </data>
+  <data name="GroupModeNew" xml:space="preserve">
+    <value>New group</value>
+  </data>
+  <data name="GroupModeNewHint" xml:space="preserve">
+    <value>Type a brand-new group name</value>
+  </data>
+  <data name="NoExistingGroups" xml:space="preserve">
+    <value>No existing groups yet.</value>
+  </data>
+  <data name="ExistingGroupHint" xml:space="preserve">
+    <value>Click a group to select it.</value>
+  </data>
+  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
+    <value>e.g. VIP customers</value>
+  </data>
+  <data name="NewGroupHint" xml:space="preserve">
+    <value>New groups are created implicitly — set their purchase limits later on the product page.</value>
   </data>
 
   <!-- Edit Full Name modal -->
@@ -252,6 +293,10 @@
     <value>Remove {1} from group "{0}"? This will reset their purchase limits.</value>
     <comment>{0} = group name; {1} = user's full name</comment>
   </data>
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
+    <comment>{0} = user's full name; {1} = user's worker ID</comment>
+  </data>
 
   <!-- Validation errors -->
   <data name="FullNameLengthError" xml:space="preserve">
@@ -262,6 +307,38 @@
   </data>
   <data name="CannotRemoveOwnAdminRole" xml:space="preserve">
     <value>You cannot remove your own Administrator role. Assign Administrator to another user first.</value>
+  </data>
+  <data name="ResetPasswordRequiredError" xml:space="preserve">
+    <value>Password cannot be empty.</value>
+  </data>
+  <data name="ResetPasswordLengthError" xml:space="preserve">
+    <value>Password must be at least 8 characters.</value>
+  </data>
+
+  <!-- Reset Password modal (Phase 6.6) -->
+  <data name="ResetPasswordModalTitle" xml:space="preserve">
+    <value>Reset password</value>
+  </data>
+  <data name="ResetPasswordModalBody" xml:space="preserve">
+    <value>Enter a new password for this user. They will need to use it on their next login.</value>
+  </data>
+  <data name="ResetPasswordModalLabel" xml:space="preserve">
+    <value>New password</value>
+  </data>
+  <data name="ResetPasswordModalPlaceholder" xml:space="preserve">
+    <value>At least 8 characters</value>
+  </data>
+  <data name="ResetPasswordModalHint" xml:space="preserve">
+    <value>Identity's password complexity rules apply.</value>
+  </data>
+  <data name="ResetPasswordModalSubmit" xml:space="preserve">
+    <value>Reset password</value>
+  </data>
+  <data name="PasswordShow" xml:space="preserve">
+    <value>Show password</value>
+  </data>
+  <data name="PasswordHide" xml:space="preserve">
+    <value>Hide password</value>
   </data>
 
   <!-- Action result toasts -->
@@ -278,7 +355,15 @@
     <value>Manager scope</value>
   </data>
   <data name="ManagerScopeBody" xml:space="preserve">
-    <value>As a Manager, you can edit the user's name and assign or remove their customer group. Role management is Administrator-only.</value>
+    <value>As a Manager, you can edit the user's name, activate or deactivate Employee and Customer accounts, and assign or remove their customer group. Role management and password resets are Administrator-only.</value>
+  </data>
+
+  <!-- Employee scope alert (Phase 6.6) -->
+  <data name="EmployeeScopeTitle" xml:space="preserve">
+    <value>Employee scope</value>
+  </data>
+  <data name="EmployeeScopeBody" xml:space="preserve">
+    <value>As an Employee, you can change the customer group of Customer accounts. Activation, deactivation, role management, and password resets require Administrator or Manager access.</value>
   </data>
 
   <!-- Scope badges (viewer's own scope, shown in the action panel header) -->
@@ -287,6 +372,9 @@
   </data>
   <data name="ScopeManager" xml:space="preserve">
     <value>Manager</value>
+  </data>
+  <data name="ScopeEmployee" xml:space="preserve">
+    <value>Employee</value>
   </data>
   <data name="ScopeViewer" xml:space="preserve">
     <value>Viewer</value>
@@ -306,9 +394,18 @@
     <value>Remove role — removes a role from this user. You cannot remove your own Administrator role.</value>
   </data>
   <data name="HelpPanel_AssignGroup" xml:space="preserve">
-    <value>Assign to group — sets or changes the customer's group, which controls their purchase limits.</value>
+    <value>Change group / Assign to group — sets or changes the customer's group, which controls their purchase limits. The button label changes based on whether the user already has a group.</value>
   </data>
   <data name="HelpPanel_RemoveGroup" xml:space="preserve">
     <value>Remove from group — clears the customer's group assignment. Requires confirmation.</value>
+  </data>
+  <data name="HelpPanel_Activate" xml:space="preserve">
+    <value>Activate — restores a deactivated user's login access (Admin/Manager, not self).</value>
+  </data>
+  <data name="HelpPanel_Deactivate" xml:space="preserve">
+    <value>Deactivate — blocks a user's login access. Their sales and history are kept (Admin/Manager, not self).</value>
+  </data>
+  <data name="HelpPanel_ResetPassword" xml:space="preserve">
+    <value>Reset password — sets a new password for the user (Admin only, not self).</value>
   </data>
 </root>

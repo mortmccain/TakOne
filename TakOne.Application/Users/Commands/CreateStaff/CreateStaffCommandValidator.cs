@@ -42,10 +42,14 @@ public sealed class CreateStaffCommandValidator : AbstractValidator<CreateStaffC
             .WithMessage($"Full name cannot exceed {MaxFullNameLength} characters.");
 
         RuleFor(x => x.Email)
-            .NotEmpty().WithMessage("Email is required.")
+            // Email is OPTIONAL — staff don't have company emails, and login
+            // uses WorkerId (UserName), not email. Same pattern as
+            // CreateCustomerCommandValidator — see that file for rationale.
             .MaximumLength(MaxEmailLength)
             .WithMessage($"Email cannot exceed {MaxEmailLength} characters.")
-            .EmailAddress().WithMessage("Email must be a valid email address.");
+            .EmailAddress()
+            .When(x => !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Email must be a valid email address.");
 
         RuleFor(x => x.InitialPassword)
             .NotEmpty().WithMessage("Initial password is required.")

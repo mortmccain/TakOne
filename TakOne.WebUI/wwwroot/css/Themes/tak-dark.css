@@ -196,6 +196,29 @@
     --rz-datagrid-odd-row-background-color: #111B16;
     --rz-datagrid-hover-row-background-color: var(--tm-green-mint);
     --rz-datagrid-selected-row-background-color: var(--tm-green-mint);
+    /* Radzen DataGrid ACTUAL row/header/footer background variables
+       (Phase 6.3). The four --rz-datagrid-* variables above are NOT used
+       by Radzen 11.1.8's standard-dark.css — the actual variables are
+       the --rz-grid-* ones below. Without these overrides, the grid
+       falls back to --rz-base-800 / --rz-base-900 (gray-purple #242527
+       / #19191a from standard-dark.css), which gives the admin-users
+       table a "kinda purple" look on Tak Dark.
+
+       Color mapping per user spec (matches the Create User page form):
+         - Even row (table bg)        = #0E1A14 (tm-cream — very dark green = page bg)
+         - Odd row  (stripe bg)       = #15201A (lighter dark green = form card bg)
+         - Header + footer + filter   = #1A2820 (tm-green-mint — between the two)
+         - Hover                      = tm-green-mint (slightly lighter than stripe) */
+    --rz-grid-background-color: var(--tm-cream); /* #0E1A14 — very dark green */
+    --rz-grid-stripe-background-color: #15201A; /* lighter dark green = form bg */
+    --rz-grid-stripe-odd-background-color: var(--tm-cream); /* #0E1A14 — very dark green */
+    --rz-grid-header-background-color: var(--tm-green-mint); /* #1A2820 */
+    --rz-grid-header-sorted-background-color: var(--tm-green-mint);
+    --rz-grid-foot-background-color: var(--tm-green-mint); /* pager footer */
+    --rz-grid-filter-background-color: var(--tm-green-mint); /* filter row */
+    --rz-grid-hover-background-color: var(--tm-green-mint); /* hover (slightly lighter than stripe) */
+    --rz-grid-selected-background-color: var(--tm-green-mint);
+    --rz-grid-detail-template-background-color: var(--tm-green-mint);
     /* Chart series — Tak dark palette */
     --rz-series-1: var(--tm-green);
     --rz-series-2: var(--tm-gold);
@@ -505,7 +528,7 @@ body {
     }
 
     .tm-kpi-card.tm-kpi-total {
-        border-top-color: #9C27B0 !important;
+        border-top-color: var(--tm-green-light) !important;
     }
 
 /* DataGrid headers — dark green tint */

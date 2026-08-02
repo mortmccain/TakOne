@@ -1,20 +1,21 @@
-﻿@* UserDetail.razor — Phase 6.3
+﻿@* UserDetail.razor — Phase 6.3 (Phase 6.6 — group UI rework + activate/deactivate + reset password)
 
    Staff-facing user detail page at route `/Admin/Users/{Id:guid}`. Reached
    from the /Admin/Users list page (Phase 6.1) by clicking the "View
    details" (visibility) icon in the actions column. Page-level gate is
-   [Authorize(Roles = "Admin,Manager")] — same as the list page — and the
-   backend GetUserByIdQueryHandler additionally allows Employee to view
-   (but not edit) any user. Customers/ReadOnly can only view their own
-   profile via this same route (the handler enforces that defense-in-depth
-   by returning a generic "not found" for other users).
+   [Authorize(Roles = "Admin,Manager,Employee")] — same as the list page —
+   and the backend GetUserByIdQueryHandler additionally allows Employee
+   to view any user (but strips GroupName for non-Customer targets).
+   Customers/ReadOnly can only view their own profile via this same route
+   (the handler enforces that defense-in-depth by returning a generic
+   "not found" for other users).
 
    BACKEND CONTRACT:
      - Load: GetUserByIdQuery { UserId } → Result<UserDto>
        - Returns the UserDto (Id, WorkerId, FullName, Gender, GroupName?,
          IsActive, Email? [currently always null — TODO in handler], Roles list).
-       - GroupName is only populated for Admin/Manager viewers; Employee
-         viewers get null (handler defense-in-depth).
+       - GroupName is populated for Admin/Manager viewers (any target) AND
+         for Employee viewers when the target is a Customer. Otherwise null.
        - Returns Result.Failure("User '...' was not found.") for both
          genuinely-missing users AND viewers-not-allowed-to-see (the
          canonical "never leak existence" pattern, same as GetSaleByIdQuery).
@@ -28,10 +29,21 @@
        - [RequireRoles(Admin)]. Handler rejects self-removal of own Admin
          role (defense-in-depth). Validator: same as Assign.
      - Assign to group: AssignUserToGroupCommand(UserId, GroupName) → Result
-       - [RequireRoles(Manager, Admin)]. Validator: GroupName non-empty,
-         ≤ 100 chars.
+       - [RequireRoles(Employee, Manager, Admin)]. Handler enforces caller-
+         scope rules: Admin → any target; Manager → Employee/Customer
+         (not self, not other managers/admins); Employee → Customer only
+         (not self, not other employees/managers/admins). Validator:
+         GroupName non-empty, ≤ 100 chars.
      - Remove from group: RemoveUserFromGroupCommand(UserId) → Result
        - [RequireRoles(Manager, Admin)]. Validator: UserId non-empty.
+     - Activate: ActivateUserCommand(UserId) → Result
+       - [RequireRoles(Manager, Admin)]. Handler: Manager scope is
+         Employee/Customer (not self, not other managers/admins/read-onlys).
+         Self-activation is rejected.
+     - Deactivate: DeactivateUserCommand(UserId) → Result
+       - [RequireRoles(Manager, Admin)]. Same scope as Activate.
+     - Reset password: ResetUserPasswordCommand(UserId, NewPassword) → Result
+       - [RequireRoles(Admin)]. Identity complexity rules apply.
 
    LAYOUT (responsive — mirrors SaleDetail.razor's 12-col grid):
      Desktop / tablet (≥992px): two columns
@@ -40,20 +52,40 @@
      Mobile (<992px): single column, action panel collapses to top
 
    ROLE-RESOLUTION PATTERN:
-     _isAdmin, _isManager, _currentUserId are computed in OnInitializedAsync
-     via AuthStateProvider.GetAuthenticationStateAsync() — NOT via
-     ICurrentUserService.IsInRole (which returns false for everyone in
-     interactive Blazor Server mode because HttpContext is null over the
-     SignalR circuit). Same pattern as AdminUsers.razor (Phase 6.1) and
-     SaleDetail.razor (Phase 4.3). See those files' header comments for
-     the full rationale. The Wolverine command handlers ALSO enforce
-     [RequireRoles] server-side as defense-in-depth.
+     _isAdmin, _isManager, _isEmployee, _currentUserId are computed in
+     OnInitializedAsync via AuthStateProvider.GetAuthenticationStateAsync()
+     — NOT via ICurrentUserService.IsInRole (which returns false for
+     everyone in interactive Blazor Server mode because HttpContext is
+     null over the SignalR circuit). Same pattern as AdminUsers.razor
+     (Phase 6.1) and SaleDetail.razor (Phase 4.3). See those files'
+     header comments for the full rationale. The Wolverine command
+     handlers ALSO enforce [RequireRoles] server-side as defense-in-depth.
+
+   ROLE-SCOPE RULES (Phase 6.6 — applied per-action via CanActivate,
+     CanChangeGroup, CanResetPassword):
+
+     ACTIVATE / DEACTIVATE (ActivateUserCommand / DeactivateUserCommand):
+       - Admin    → anyone except self (handler rejects self).
+       - Manager  → Employee or Customer targets, NOT self, NOT other
+                    managers/admins/read-onlys.
+       - Employee → cannot activate/deactivate anyone (command is
+                    [RequireRoles(Manager, Admin)]).
+
+     CHANGE GROUP (AssignUserToGroupCommand):
+       - Admin    → anyone (including self, though admins don't have groups).
+       - Manager  → Employee or Customer targets, NOT self, NOT other
+                    managers/admins/read-onlys.
+       - Employee → Customer targets only, NOT self, NOT other
+                    employees/managers/admins/read-onlys.
+
+     RESET PASSWORD (ResetUserPasswordCommand):
+       - Admin only. Hidden from Managers and Employees.
 
    UX PATTERNS:
-     - Edit FullName: opens a JS prompt() pre-filled with the current
-       FullName. Same pattern as SaleDetail.razor's Cancel reason flow.
-       Client-side validates 1-200 chars (matches validator) before
-       dispatching; the validator also enforces this server-side.
+     - Edit FullName: opens an in-page modal dialog (NOT a browser JS prompt
+       — the modal gives us proper labels, validation messaging, and
+       Save/Cancel buttons). The modal markup lives at the bottom of this
+       file.
      - Assign role: RadzenDropDown (TValue=string, primitive key — matches
        AdminUsers.razor's activity-filter pattern, NOT the complex-object
        binding pattern that bit us in CreateUser.razor Phase 6.2). Dropdown
@@ -64,10 +96,25 @@
        current user's own Admin role (handler rejects this as
        defense-in-depth, but hiding the button is better UX — same pattern
        as AdminUsers.razor hiding self-Deactivate).
-     - Assign to group: JS prompt() pre-filled with the current GroupName
-       (or empty). Client-side validates 1-100 chars (matches validator).
+     - Change group / Assign to group (Phase 6.6 rework): the green button
+       is labeled "Change group" when the user has a group, or "Assign to
+       group" when they don't. Clicking it opens an inline panel with the
+       SAME UI as CreateUser.razor's group-name field — two toggle cards
+       (Existing / New), a 2-column grid of existing-group buttons in
+       Existing mode, and a textbox in New mode. Save dispatches
+       AssignUserToGroupCommand. Only shown when CanChangeGroup returns
+       true for the current viewer + target.
      - Remove from group: direct button click (with a JS confirm() because
-       it's destructive — removes the user's purchase-limit group).
+       it's destructive — removes the user's purchase-limit group). Only
+       shown when the user has a group AND the viewer can change the group
+       (CanChangeGroup).
+     - Activate / Deactivate: a button in the action panel (right column).
+       Shows "Deactivate" when the user is active, "Activate" when inactive.
+       Hidden when _isViewingSelf (handler also rejects self-activation).
+       Hidden entirely when CanActivate returns false.
+     - Reset password: a button in the action panel (Admin only, not self).
+       Opens an in-page modal (same style as the Edit FullName modal) with
+       a password input + show/hide toggle + Save/Cancel.
      - All actions are wrapped in ExecuteActionAsync (mirrors SaleDetail)
        which: sets _isBusy, clears _actionError, dispatches, toasts on
        success/failure, reloads the user on success.
@@ -78,18 +125,22 @@
      token is established at circuit start. (Same as SaleDetail.razor.) *@
 
 @page "/Admin/Users/{Id:guid}"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Application.Users.Queries.GetAllGroupNames
 @using TakOne.Application.Users.Commands.UpdateUserFullName
 @using TakOne.Application.Users.Commands.AssignUserRole
 @using TakOne.Application.Users.Commands.RemoveUserRole
 @using TakOne.Application.Users.Commands.AssignUserToGroup
 @using TakOne.Application.Users.Commands.RemoveUserFromGroup
+@using TakOne.Application.Users.Commands.ActivateUser
+@using TakOne.Application.Users.Commands.DeactivateUser
+@using TakOne.Application.Users.Commands.ResetUserPassword
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
@@ -105,8 +156,8 @@
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                           Left = profile + roles + group cards (wider); right = sticky action panel.
-                           Mirrors SaleDetail.razor's .detail-grid structure. */
+                                       Left = profile + roles + group cards (wider); right = sticky action panel.
+                                       Mirrors SaleDetail.razor's .detail-grid structure. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -120,7 +171,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so help + role-scope
-                                   context is visible before the user scrolls to the cards. */
+                                               context is visible before the user scrolls to the cards. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -170,7 +221,7 @@
             }
 
             /* Scope badge (large) in the action panel header — same shape
-                           as SaleDetail.razor's .status-badge-large. */
+                                       as SaleDetail.razor's .status-badge-large. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -184,9 +235,9 @@
             }
 
             /* Per-scope background colors (semantic):
-                           - Admin   → primary  (highest privilege — visually distinct)
-                           - Manager → info     (mid privilege)
-                           - Viewer  → base     (read-only) */
+                                       - Admin   → primary  (highest privilege — visually distinct)
+                                       - Manager → info     (mid privilege)
+                                       - Viewer  → base     (read-only) */
             .scope-bg-admin {
                 background: rgba(63, 81, 181, 0.18);
                 color: #1a237e;
@@ -287,6 +338,47 @@
                     min-width: 160px;
                 }
 
+            /* ── Group change panel (Phase 6.6) ──
+                           Mirrors CreateUser.razor's group-name UI: two toggle cards
+                           (Existing / New) + a 2-column grid of existing-group buttons
+                           (Existing mode) OR a textbox (New mode). The toggle cards
+                           use the same .toggle-option / .is-selected pattern as
+                           CreateUser.razor's .usertype-option, so the visual style
+                           is identical. */
+            .toggle-option {
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+            }
+
+                .toggle-option.is-selected {
+                    background-color: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.08));
+                    border-color: var(--rz-primary) !important;
+                }
+
+            .toggle-row {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+                .toggle-row .toggle-option {
+                    flex: 1 1 200px;
+                    min-width: 200px;
+                }
+
+            .group-list {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
+            }
+
+            .group-change-actions {
+                display: flex;
+                gap: 0.5rem;
+                justify-content: flex-end;
+                margin-top: 0.75rem;
+                flex-wrap: wrap;
+            }
+
             /* Help panel bullets. */
             .help-list {
                 margin: 0;
@@ -301,12 +393,12 @@
                 }
 
             /* ── Edit Full Name modal ──
-                           Inline modal overlay + dialog. Renders above all other
-                           content via position:fixed + z-index. Backdrop is a
-                           semi-transparent dark layer that dims the underlying page
-                           (matches Radzen Dialog's visual weight). The dialog itself
-                           is a Radzen-styled card with max-width to keep it compact
-                           on desktop and full-width (minus margins) on mobile. */
+                                       Inline modal overlay + dialog. Renders above all other
+                                       content via position:fixed + z-index. Backdrop is a
+                                       semi-transparent dark layer that dims the underlying page
+                                       (matches Radzen Dialog's visual weight). The dialog itself
+                                       is a Radzen-styled card with max-width to keep it compact
+                                       on desktop and full-width (minus margins) on mobile. */
             .modal-overlay {
                 position: fixed;
                 inset: 0;
@@ -436,7 +528,7 @@
             }
 
             /* On small screens, modal footer buttons stretch full-width
-                           and stack vertically for easier thumb-tapping. */
+                                       and stack vertically for easier thumb-tapping. */
             @@media (max-width: 576px) {
                 .modal-footer {
                     flex-direction: column-reverse;
@@ -446,6 +538,19 @@
                         width: 100%;
                     }
             }
+
+            /* Password row inside the Reset Password modal — textbox on
+                           the left (flex-grow), show/hide toggle button on the right. */
+            .modal-password-row {
+                display: flex;
+                gap: 0.5rem;
+                align-items: stretch;
+            }
+
+                .modal-password-row .modal-password-field {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                }
     </style>
 </HeadContent>
 
@@ -531,9 +636,12 @@
                    button that opens an in-page modal dialog (NOT a browser
                    JS prompt — the modal gives us proper labels, validation
                    messaging, and Save/Cancel buttons). The modal markup
-                   lives at the bottom of this file. Group is shown only
-                   when _canManageGroup (Admin/Manager) — the handler
-                   already strips GroupName from Employee viewers. *@
+                   lives at the bottom of this file. Group is shown when
+                   the handler returned a non-null GroupName (Admin/Manager
+                   viewers see it for any user; Employee viewers see it
+                   only for Customer targets — see GetUserByIdQueryHandler
+                   step 4). The dedicated Group card below provides the
+                   change-group UI when CanChangeGroup is true. *@
                 <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem; margin-bottom: 1rem;">
                     <RadzenText Text="@Loc["ProfileCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
 
@@ -582,11 +690,18 @@
                             <div class="profile-value profile-value-mono">@_user.Email</div>
                         }
 
-                        @* Group row — only shown to Admin/Manager. The
-                           handler strips GroupName for Employee viewers, so
-                           showing an empty value would be misleading. We
-                           hide the whole row when the viewer lacks permission. *@
-                        @if (_canManageGroup)
+                        @* Group row — shown when the viewer can change this
+                           user's group (CanChangeGroup) OR when the handler
+                           returned a non-null GroupName (which happens for
+                           Admin/Manager viewers regardless of whether the
+                           user has a group). When GroupName is null AND
+                           CanChangeGroup is false, the target is either
+                           a non-Customer (Employee viewer) or the viewer's
+                           own profile (Customer viewer) — in both cases,
+                           hiding the row is correct. The dedicated Group
+                           card below provides the change-group UI when
+                           CanChangeGroup returns true. *@
+                        @if (CanChangeGroup() || !string.IsNullOrWhiteSpace(_user.GroupName))
                         {
                             <div class="profile-label">@Loc["ColGroup"]</div>
                             <div class="profile-value">
@@ -747,14 +862,32 @@
                 </RadzenCard>
 
                 @* ── Group card ──
-                   Admin/Manager viewers can assign the user to a customer
-                   group (sets User.GroupName via AssignUserToGroupCommand)
-                   or remove them from their current group. Staff users have
-                   null GroupName by domain design (User.CreateStaff doesn't
-                   set one); customers may or may not have one. Removing a
-                   user from their group affects their purchase limits, so
-                   we use a JS confirm() before dispatching. *@
-                @if (_canManageGroup)
+                   Visibility: shown when the viewer can change this user's
+                   group (CanChangeGroup). The card shows the user's current
+                   group, a green "Change group" or "Assign to group" button
+                   (label depends on whether a group is currently set), and
+                   — when the button is clicked — an inline panel with the
+                   SAME UI as CreateUser.razor's group-name field (two
+                   toggle cards Existing/New + grid of existing-group buttons
+                   OR a textbox for a new name + Save/Cancel).
+
+                   The "Remove from group" button is shown only when the
+                   user already has a group AND the viewer can change it.
+                   Removal dispatches RemoveUserFromGroupCommand (which is
+                   [RequireRoles(Manager, Admin)] — Employees can't remove
+                   a group, only change it; the handler rejects Employee
+                   callers as defense-in-depth). For Employee viewers, the
+                   Remove button is hidden.
+
+                   ROLE SCOPE (per user spec, Phase 6.6):
+                     - Admin    → CanChangeGroup = true for everyone (incl. self).
+                     - Manager  → CanChangeGroup = true for Employee/Customer
+                                  targets (not self, not other managers/admins).
+                     - Employee → CanChangeGroup = true for Customer targets only
+                                  (not self, not other employees/managers/admins).
+                   The server-side AssignUserToGroupCommandHandler enforces
+                   the same rule as defense-in-depth against tampered requests. *@
+                @if (CanChangeGroup())
                 {
                     <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
                         <RadzenText Text="@Loc["GroupCardTitle"]" TextStyle="TextStyle.H6" Style="margin-bottom: 1rem; font-weight: 600;" />
@@ -773,29 +906,151 @@
                             </div>
                         </div>
 
-                        <div class="inline-form">
-                            <RadzenButton Text="@Loc["ActionAssignGroup"]"
-                                          Icon="group_add"
-                                          ButtonStyle="ButtonStyle.Primary"
-                                          Variant="Variant.Filled"
-                                          Size="ButtonSize.Small"
-                                          Disabled="@_isBusy"
-                                          Click="@HandleAssignGroupAsync" />
+                        @if (!_isChangeGroupPanelOpen)
+                        {
+                            @* Default state — show the green "Change group" / "Assign to group"
+                               button. Label depends on whether a group is currently set.
+                               The button is green (Success) per the user's spec. *@
+                            <div class="inline-form">
+                                <RadzenButton Text="@(string.IsNullOrWhiteSpace(_user.GroupName) ? Loc["ActionAssignGroup"] : Loc["ActionChangeGroup"])"
+                                              Icon="@(string.IsNullOrWhiteSpace(_user.GroupName) ? "group_add" : "group_edit")"
+                                              IconStyle="font-size: 1rem; line-height: 1;"
+                                              ButtonStyle="ButtonStyle.Success"
+                                              Variant="Variant.Filled"
+                                              Size="ButtonSize.Small"
+                                              Disabled="@_isBusy"
+                                              Click="@OpenChangeGroupPanel" />
 
-                            @if (!string.IsNullOrWhiteSpace(_user.GroupName))
+                                @* Remove-from-group button — shown only when the user has a
+                                   group AND the viewer is allowed to remove (Admin/Manager).
+                                   Employees can't remove groups (command is Manager/Admin only). *@
+                                @if (!string.IsNullOrWhiteSpace(_user.GroupName) && (_isAdmin || _isManager))
+                                {
+                                    <RadzenButton Text="@Loc["ActionRemoveGroup"]"
+                                                  Icon="group_remove"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  Variant="Variant.Outlined"
+                                                  Size="ButtonSize.Small"
+                                                  Disabled="@_isBusy"
+                                                  Click="@HandleRemoveGroupAsync" />
+                                }
+                            </div>
+                            <RadzenText Text="@Loc["GroupHelpText"]"
+                                        TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                        }
+                        else
+                        {
+                            @* Expanded state — show the CreateUser-style group picker.
+                               Two toggle cards (Existing / New), then the corresponding
+                               panel (grid of existing groups OR a textbox for a new name),
+                               then Save / Cancel buttons. Mirrors CreateUser.razor's
+                               group-name field exactly. *@
+                            <div class="toggle-row" Style="margin-top: 0.75rem;">
+                                <RadzenCard Variant="@(_groupMode == GroupMode.Existing ? Variant.Filled : Variant.Outlined)"
+                                            Class="@GetToggleClass(_groupMode == GroupMode.Existing)"
+                                            Style="@GetToggleBorderStyle(_groupMode == GroupMode.Existing)"
+                                            @onclick="@(() => OnGroupModeChanged(GroupMode.Existing))">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenIcon Icon="folder_open" Style="@GetToggleIconStyle(_groupMode == GroupMode.Existing)" />
+                                        <div>
+                                            <RadzenText Text="@Loc["GroupModeExisting"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_groupMode == GroupMode.Existing)" />
+                                            <RadzenText Text="@Loc["GroupModeExistingHint"]"
+                                                        TextStyle="TextStyle.Caption"
+                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                        </div>
+                                    </RadzenStack>
+                                </RadzenCard>
+
+                                <RadzenCard Variant="@(_groupMode == GroupMode.New ? Variant.Filled : Variant.Outlined)"
+                                            Class="@GetToggleClass(_groupMode == GroupMode.New)"
+                                            Style="@GetToggleBorderStyle(_groupMode == GroupMode.New)"
+                                            @onclick="@(() => OnGroupModeChanged(GroupMode.New))">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenIcon Icon="create_new_folder" Style="@GetToggleIconStyle(_groupMode == GroupMode.New)" />
+                                        <div>
+                                            <RadzenText Text="@Loc["GroupModeNew"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_groupMode == GroupMode.New)" />
+                                            <RadzenText Text="@Loc["GroupModeNewHint"]"
+                                                        TextStyle="TextStyle.Caption"
+                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                        </div>
+                                    </RadzenStack>
+                                </RadzenCard>
+                            </div>
+
+                            @if (_groupMode == GroupMode.Existing)
                             {
-                                <RadzenButton Text="@Loc["ActionRemoveGroup"]"
-                                              Icon="group_remove"
-                                              ButtonStyle="ButtonStyle.Danger"
+                                <div Style="margin-top: 0.75rem;">
+                                    @if (!_availableGroups.Any())
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Body2"
+                                                    Style="color: var(--rz-text-secondary-color);">
+                                            @Loc["NoExistingGroups"]
+                                        </RadzenText>
+                                    }
+                                    else
+                                    {
+                                        <div class="group-list">
+                                            @foreach (var group in _availableGroups)
+                                            {
+                                                var groupName = group;  // closure capture for the lambda
+                                                var isSelected = _pendingGroupName == groupName;
+                                                <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                            Class="@GetToggleClass(isSelected)"
+                                                            Style="@GetToggleBorderStyle(isSelected)"
+                                                            @onclick="@(() => SelectExistingGroup(groupName))">
+                                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                                                                 JustifyContent="JustifyContent.Center" Gap="0.5rem">
+                                                        <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
+                                                                    Style="@GetToggleIconStyle(isSelected)" />
+                                                        <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
+                                                                    Style="@GetToggleTextStyle(isSelected)" />
+                                                    </RadzenStack>
+                                                </RadzenCard>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <RadzenText TextStyle="TextStyle.Caption"
+                                            Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                    @Loc["ExistingGroupHint"]
+                                </RadzenText>
+                            }
+                            else
+                            {
+                                <div Style="margin-top: 0.75rem;">
+                                    <RadzenFormField Style="width: 100%;">
+                                        <RadzenTextBox @bind-Value="_pendingGroupName"
+                                                       Placeholder="@Loc["FieldNewGroupNamePlaceholder"]"
+                                                       TValue="string"
+                                                       autocomplete="off"
+                                                       Disabled="@_isBusy"
+                                                       Style="width: 100%;" />
+                                    </RadzenFormField>
+                                    <RadzenText TextStyle="TextStyle.Caption"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                        @Loc["NewGroupHint"]
+                                    </RadzenText>
+                                </div>
+                            }
+
+                            <div class="group-change-actions">
+                                <RadzenButton Text="@Loc["ActionCancelGroupChange"]"
+                                              Icon="close"
+                                              ButtonStyle="ButtonStyle.Light"
                                               Variant="Variant.Outlined"
                                               Size="ButtonSize.Small"
                                               Disabled="@_isBusy"
-                                              Click="@HandleRemoveGroupAsync" />
-                            }
-                        </div>
-                        <RadzenText Text="@Loc["GroupHelpText"]"
-                                    TextStyle="TextStyle.Caption"
-                                    Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;" />
+                                              Click="@CancelChangeGroup" />
+                                <RadzenButton Text="@Loc["ActionSaveGroupChange"]"
+                                              Icon="check"
+                                              ButtonStyle="ButtonStyle.Success"
+                                              Variant="Variant.Filled"
+                                              Size="ButtonSize.Small"
+                                              Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_pendingGroupName))"
+                                              Click="@ConfirmChangeGroupAsync" />
+                            </div>
+                        }
                     </RadzenCard>
                 }
             </div>
@@ -812,9 +1067,19 @@
                             </span>
                         </div>
 
-                        @* Manager-scope informational alert — explains
-                           what Managers can vs cannot do on this page. *@
-                        @if (!_isAdmin)
+                        @* Scope informational alert — explains what the
+                           current viewer can vs cannot do on this page.
+                           Different copy per role (Admin doesn't see it;
+                           Manager and Employee each see their own scope). *@
+                        @if (_isEmployee && !_isAdmin && !_isManager)
+                        {
+                            <RadzenAlert Title="@Loc["EmployeeScopeTitle"]"
+                                         Text="@Loc["EmployeeScopeBody"]"
+                                         AlertStyle="AlertStyle.Info"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true" />
+                        }
+                        else if (!_isAdmin)
                         {
                             <RadzenAlert Title="@Loc["ManagerScopeTitle"]"
                                          Text="@Loc["ManagerScopeBody"]"
@@ -833,7 +1098,13 @@
                                          ShowIcon="true" />
                         }
 
-                        @* Quick action buttons — disabled while an action is in flight. *@
+                        @* ── Quick action buttons ──
+                           Each is shown only when the current viewer is
+                           allowed to perform that action on this user.
+                           All are disabled while any action is in flight
+                           (the _isBusy flag is shared). *@
+
+                        @* Edit FullName — Admin or Manager. *@
                         @if (_canEditFullName)
                         {
                             <RadzenButton Text="@Loc["ActionEditFullName"]"
@@ -845,6 +1116,47 @@
                                           Style="width: 100%;" />
                         }
 
+                        @* Activate / Deactivate — Admin or Manager (not self).
+                           Label depends on the user's current IsActive state.
+                           Hidden when CanActivate returns false (covers
+                           _isViewingSelf + role-scope rules in one check). *@
+                        @if (CanActivate())
+                        {
+                            @if (_user.IsActive)
+                            {
+                                <RadzenButton Text="@Loc["ActionDeactivate"]"
+                                              Icon="block"
+                                              ButtonStyle="ButtonStyle.Danger"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@_isBusy"
+                                              Click="@HandleDeactivateAsync"
+                                              Style="width: 100%;" />
+                            }
+                            else
+                            {
+                                <RadzenButton Text="@Loc["ActionActivate"]"
+                                              Icon="check_circle"
+                                              ButtonStyle="ButtonStyle.Success"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@_isBusy"
+                                              Click="@HandleActivateAsync"
+                                              Style="width: 100%;" />
+                            }
+                        }
+
+                        @* Reset password — Admin only (not self — confusing UX
+                           even though the handler allows self-reset). *@
+                        @if (_isAdmin && !_isViewingSelf)
+                        {
+                            <RadzenButton Text="@Loc["ActionResetPassword"]"
+                                          Icon="vpn_key"
+                                          ButtonStyle="ButtonStyle.Warning"
+                                          Variant="Variant.Outlined"
+                                          Disabled="@_isBusy"
+                                          Click="@HandleResetPasswordAsync"
+                                          Style="width: 100%;" />
+                        }
+
                         @* Help panel — explains what each action does. *@
                         <RadzenText Text="@Loc["HelpPanelTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600;" />
                         <ul class="help-list">
@@ -853,6 +1165,9 @@
                             <li>@Loc["HelpPanel_RemoveRole"]</li>
                             <li>@Loc["HelpPanel_AssignGroup"]</li>
                             <li>@Loc["HelpPanel_RemoveGroup"]</li>
+                            <li>@Loc["HelpPanel_Activate"]</li>
+                            <li>@Loc["HelpPanel_Deactivate"]</li>
+                            <li>@Loc["HelpPanel_ResetPassword"]</li>
                         </ul>
                     </RadzenStack>
                 </RadzenCard>
@@ -938,6 +1253,91 @@
             </div>
         </div>
     }
+
+    @* ── Reset Password modal ──
+       Inline modal dialog for resetting the user's password. Same visual
+       structure as the Edit FullName modal above (overlay + dialog +
+       header/body/footer). Adds a show/hide password toggle (mirrors
+       CreateUser.razor's password field pattern) and inline validation
+       messaging.
+
+       Admin-only (the button that opens this modal is gated by
+       `_isAdmin && !_isViewingSelf`). The handler enforces
+       [RequireRoles(Admin)] server-side as defense-in-depth, and Identity's
+       password-complexity rules are the final authority on what's accepted. *@
+    @if (_isResetPasswordModalOpen)
+    {
+        <div class="modal-overlay" @onclick="CloseResetPasswordModal" role="presentation">
+            <div class="modal-dialog"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="reset-password-modal-title"
+                 @onclick:stopPropagation="true"
+                 @onkeydown="HandleResetPasswordModalKeydownAsync">
+                <div class="modal-header">
+                    <h2 id="reset-password-modal-title" class="modal-title">@Loc["ResetPasswordModalTitle"]</h2>
+                    <button type="button"
+                            class="modal-close-btn"
+                            title="@Loc["ModalCancel"]"
+                            aria-label="@Loc["ModalCancel"]"
+                            disabled="@_isBusy"
+                            @onclick="CloseResetPasswordModal">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <p class="modal-body-text">@Loc["ResetPasswordModalBody"]</p>
+
+                    <label class="modal-label" for="reset-password-input">@Loc["ResetPasswordModalLabel"]</label>
+                    <div class="modal-password-row">
+                        <RadzenTextBox Value="_resetPasswordInput"
+                                       ValueChanged="@OnResetPasswordChanged"
+                                       id="reset-password-input"
+                                       Type="@(_showResetPassword ? "text" : "password")"
+                                       Placeholder="@Loc["ResetPasswordModalPlaceholder"]"
+                                       Class="modal-password-field"
+                                       Style="width: 100%;"
+                                       Disabled="@_isBusy"
+                                       autocomplete="new-password"
+                                       autofocus />
+                        <RadzenButton Icon="@(_showResetPassword ? "visibility_off" : "visibility")"
+                                      title="@(_showResetPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                      aria-label="@(_showResetPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Outlined"
+                                      Disabled="@_isBusy"
+                                      Click="@ToggleResetPasswordVisibility" />
+                    </div>
+                    <RadzenText TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                        @Loc["ResetPasswordModalHint"]
+                    </RadzenText>
+                    <div class="modal-validation" role="status" aria-live="polite">
+                        @if (!string.IsNullOrEmpty(_resetPasswordError))
+                        {
+                            <span class="modal-validation-error">@_resetPasswordError</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <RadzenButton Text="@Loc["ModalCancel"]"
+                                  Icon="close"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Outlined"
+                                  Disabled="@_isBusy"
+                                  Click="@CloseResetPasswordModal" />
+                    <RadzenButton Text="@Loc["ResetPasswordModalSubmit"]"
+                                  Icon="vpn_key"
+                                  ButtonStyle="ButtonStyle.Warning"
+                                  Variant="Variant.Filled"
+                                  Disabled="@_isBusy"
+                                  Click="@ConfirmResetPasswordAsync" />
+                </div>
+            </div>
+        </div>
+    }
 </RadzenStack>
 
 @code {
@@ -968,10 +1368,22 @@
 
     /// <summary>
     /// True if the current user is in the Manager role. Combined with
-    /// _isAdmin to gate FullName editing and group management UI (both
-    /// commands have [RequireRoles(Manager, Admin)]).
+    /// _isAdmin to gate FullName editing and the group-remove button
+    /// (both commands have [RequireRoles(Manager, Admin)]).
     /// </summary>
     private bool _isManager;
+
+    /// <summary>
+    /// True if the current user is in the Employee role (and NOT also in
+    /// the Admin or Manager roles). Used to gate the change-group button's
+    /// Employee scope (Customer targets only) and to show the Employee-
+    /// scope informational alert in the action panel. Admins and Managers
+    /// who happen to also be in the Employee role are treated as
+    /// Admin/Manager respectively (broader scope), so we explicitly check
+    /// `!_isAdmin && !_isManager` here. Same pattern as AdminUsers.razor's
+    /// _isEmployeeOnly field (Phase 6.5).
+    /// </summary>
+    private bool _isEmployee;
 
     /// <summary>
     /// The current user's Domain User Id (from the "UserId" claim set by
@@ -983,8 +1395,8 @@
 
     /// <summary>
     /// True while any action (Edit FullName / Assign Role / Remove Role /
-    /// Assign Group / Remove Group) is in flight. Disables ALL action
-    /// buttons to prevent double-clicks.
+    /// Change Group / Remove Group / Activate / Deactivate / Reset Password)
+    /// is in flight. Disables ALL action buttons to prevent double-clicks.
     /// </summary>
     private bool _isBusy;
 
@@ -1061,6 +1473,80 @@
     /// </summary>
     private string _editNameError = string.Empty;
 
+    // ── Reset Password modal state ────────────────────────────────────
+
+    /// <summary>
+    /// True when the Reset Password modal is open. Toggled by
+    /// HandleResetPasswordAsync (open) and CloseResetPasswordModal/
+    /// ConfirmResetPasswordAsync (close). Mirrors the Edit FullName modal's
+    /// state pattern.
+    /// </summary>
+    private bool _isResetPasswordModalOpen;
+
+    /// <summary>
+    /// The new password currently typed into the modal's RadzenTextBox.
+    /// Updated via the ValueChanged callback (NOT @bind-Value — see
+    /// OnResetPasswordChanged remark). Cleared when the modal closes.
+    /// </summary>
+    private string _resetPasswordInput = string.Empty;
+
+    /// <summary>
+    /// Inline validation message shown below the modal's password box.
+    /// Populated by ValidateResetPasswordInput when Submit is clicked.
+    /// Empty string = no error.
+    /// </summary>
+    private string _resetPasswordError = string.Empty;
+
+    /// <summary>
+    /// Toggles the password box between masked (default) and plaintext.
+    /// Mirrors CreateUser.razor's _showPassword pattern. Purely a UX
+    /// affordance — no validation implications.
+    /// </summary>
+    private bool _showResetPassword;
+
+    // ── Change group panel state (Phase 6.6) ─────────────────────────
+
+    /// <summary>
+    /// True when the inline Change Group panel is expanded (the user
+    /// clicked the green "Change group" / "Assign to group" button).
+    /// When true, the Group card shows the Existing/New toggle + the
+    /// corresponding picker + Save/Cancel buttons. When false, the card
+    /// shows just the current group + the green button.
+    /// </summary>
+    private bool _isChangeGroupPanelOpen;
+
+    /// <summary>
+    /// Group name UI mode — mirrors CreateUser.razor's GroupMode enum.
+    /// Existing = pick from the list of available groups (loaded via
+    /// GetAllGroupNamesQuery). New = type a new group name in a text box.
+    /// See the _pendingGroupName field remark for the selection flow.
+    /// </summary>
+    private GroupMode _groupMode = GroupMode.Existing;
+
+    /// <summary>
+    /// The pending group name selection/entry. In Existing mode, this is
+    /// set by clicking one of the group buttons (SelectExistingGroup).
+    /// In New mode, this is bound to the textbox via @bind-Value. Reset
+    /// when the panel opens, when the mode changes, or when the panel
+    /// closes (saved or cancelled).
+    /// </summary>
+    private string _pendingGroupName = string.Empty;
+
+    /// <summary>
+    /// The list of existing customer group names, loaded once on page
+    /// init from GetAllGroupNamesQuery. Rendered as a 2-column grid of
+    /// selectable cards when the change-group panel is open in Existing
+    /// mode. Mirrors CreateUser.razor's _availableGroups field.
+    /// </summary>
+    private List<string> _availableGroups = new();
+
+    /// <summary>
+    /// Group name UI mode (mirrors CreateUser.razor's GroupMode enum).
+    /// Existing = pick from the list of available groups. New = type a
+    /// new group name in a text box. See _groupMode field.
+    /// </summary>
+    private enum GroupMode { Existing, New }
+
     // ── Derived permission flags ───────────────────────────────────────
 
     /// <summary>
@@ -1076,18 +1562,13 @@
     private bool _canManageRoles => _isAdmin;
 
     /// <summary>
-    /// True if the current user can manage group assignment (matches
-    /// AssignUserToGroupCommand + RemoveUserFromGroupCommand's
-    /// [RequireRoles(Manager, Admin)]).
-    /// </summary>
-    private bool _canManageGroup => _isAdmin || _isManager;
-
-    /// <summary>
     /// True if the viewer is looking at their OWN user detail page
     /// (_currentUserId == _user.Id). Used to gate self-role-management
     /// UI (admins cannot assign/remove roles on themselves from this
-    /// page — they need another admin to do it). The backend handler
-    /// ALSO rejects self-Admin-removal as defense-in-depth.
+    /// page — they need another admin to do it) and self-activate/
+    /// deactivate (handler rejects self-activation too). The backend
+    /// handlers ALSO reject self-Admin-removal and self-activation as
+    /// defense-in-depth.
     ///
     /// WHY THIS EXISTS:
     ///   Admins CAN change the roles of OTHER admins (including removing
@@ -1099,6 +1580,102 @@
     ///   _isViewingSelf is true, replaced with an info alert.
     /// </summary>
     private bool _isViewingSelf => _user is not null && _currentUserId == _user.Id;
+
+    /// <summary>
+    /// Returns true if the current viewer may activate/deactivate the user
+    /// currently loaded on this page. Mirrors the server-side scope rules
+    /// enforced by ActivateUserCommandHandler / DeactivateUserCommandHandler.
+    ///
+    /// Rules (per user spec, Phase 6.6):
+    ///   - Admin    → anyone EXCEPT self (handler also rejects self).
+    ///   - Manager  → target must be Employee or Customer, AND must NOT be
+    ///                self, Manager, or Admin.
+    ///   - Employee → cannot activate/deactivate anyone (the command is
+    ///                [RequireRoles(Manager, Admin)] — Employees are
+    ///                rejected by the auth middleware before the handler
+    ///                even runs).
+    ///
+    /// Returns false for _isViewingSelf regardless of role (the handler
+    /// rejects self-activation with "You cannot activate yourself. You
+    /// are already active.").
+    /// </summary>
+    private bool CanActivate()
+    {
+        if (_user is null) return false;
+        if (_isViewingSelf) return false;
+
+        // Admins can activate/deactivate anyone except self (already checked).
+        if (_isAdmin) return true;
+
+        // Managers can activate/deactivate Employee or Customer targets,
+        // but NOT other managers, admins, or read-onlys.
+        if (_isManager && !_isAdmin)
+        {
+            var targetIsManager = _user.Roles.Contains(Roles.Manager);
+            var targetIsAdmin = _user.Roles.Contains(Roles.Admin);
+            var targetIsEmployeeOrCustomer = _user.Roles.Contains(Roles.Employee)
+                                          || _user.Roles.Contains(Roles.Customer);
+            return !targetIsManager && !targetIsAdmin && targetIsEmployeeOrCustomer;
+        }
+
+        // Employees (and anyone else) — cannot activate/deactivate anyone.
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if the current viewer may change the group of the user
+    /// currently loaded on this page. Mirrors the server-side scope rules
+    /// enforced by AssignUserToGroupCommandHandler.
+    ///
+    /// Rules (per user spec, Phase 6.6):
+    ///   - Admin    → anyone (including self, though admins don't have groups
+    ///                — but the handler permits it).
+    ///   - Manager  → target must be Employee or Customer, AND must NOT be
+    ///                self, Manager, or Admin.
+    ///   - Employee → target must be Customer, AND must NOT be self,
+    ///                Employee, Manager, or Admin.
+    ///
+    /// Multi-role interpretation (matches the handler):
+    ///   - A Manager+Employee target is treated as "another manager" and
+    ///     is off-limits to Manager callers.
+    ///   - A Customer+Employee target is treated as "another employee" and
+    ///     is off-limits to Employee callers.
+    /// </summary>
+    private bool CanChangeGroup()
+    {
+        if (_user is null) return false;
+
+        // Admins can change anyone's group.
+        if (_isAdmin) return true;
+
+        // Self-check: Managers and Employees cannot change their own group.
+        if (_isViewingSelf) return false;
+
+        if (_isManager && !_isAdmin)
+        {
+            // Manager scope: target must be Employee or Customer, AND must
+            // NOT be Manager or Admin.
+            var targetIsManager = _user.Roles.Contains(Roles.Manager);
+            var targetIsAdmin = _user.Roles.Contains(Roles.Admin);
+            var targetIsEmployeeOrCustomer = _user.Roles.Contains(Roles.Employee)
+                                          || _user.Roles.Contains(Roles.Customer);
+            return !targetIsManager && !targetIsAdmin && targetIsEmployeeOrCustomer;
+        }
+
+        if (_isEmployee && !_isAdmin && !_isManager)
+        {
+            // Employee scope: target must be Customer, AND must NOT be
+            // Employee, Manager, or Admin.
+            var targetIsEmployee = _user.Roles.Contains(Roles.Employee);
+            var targetIsManager = _user.Roles.Contains(Roles.Manager);
+            var targetIsAdmin = _user.Roles.Contains(Roles.Admin);
+            var targetIsCustomer = _user.Roles.Contains(Roles.Customer);
+            return !targetIsEmployee && !targetIsManager && !targetIsAdmin && targetIsCustomer;
+        }
+
+        // Anyone else — deny.
+        return false;
+    }
 
     // ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -1133,19 +1710,50 @@
 
                 _isAdmin = user.IsInRole(Roles.Admin);
                 _isManager = user.IsInRole(Roles.Manager);
+                // Employee-only means "in Employee role AND not also Admin
+                // or Manager". Admins and Managers who happen to also be
+                // in the Employee role are treated as Admin/Manager
+                // respectively (broader scope). This field gates the
+                // change-group button's Employee scope (customers only)
+                // and the Employee-scope informational alert.
+                _isEmployee = !_isAdmin && !_isManager && user.IsInRole(Roles.Employee);
             }
         }
         catch
         {
             // Non-fatal — _currentUserId stays Guid.Empty (no self-action
             // buttons hidden, which is safe but slightly worse UX) and
-            // _isAdmin/_isManager stay false (all action UI hidden — safer
-            // fallback if role resolution fails). The handler still enforces
-            // [RequireRoles] server-side.
+            // _isAdmin/_isManager/_isEmployee stay false (all action UI
+            // hidden — safer fallback if role resolution fails). The
+            // handler still enforces [RequireRoles] server-side.
         }
 
         try
         {
+            // Load existing customer group names in parallel with the user
+            // (so the change-group panel doesn't have to wait when opened).
+            // Non-fatal on failure — _availableGroups stays empty, which
+            // just means the Existing mode shows "No existing groups" and
+            // the user has to use the New mode.
+            try
+            {
+                var groupsResult = await MessageBus.InvokeAsync<Result<List<string>>>(
+                    new GetAllGroupNamesQuery());
+
+                if (groupsResult.IsSuccess && groupsResult.Value is not null)
+                {
+                    _availableGroups = groupsResult.Value
+                        .Where(g => !string.IsNullOrWhiteSpace(g))
+                        .OrderBy(g => g)
+                        .ToList();
+                }
+            }
+            catch
+            {
+                // Non-fatal — see comment above.
+                _availableGroups = new List<string>();
+            }
+
             await LoadUserAsync();
         }
         finally
@@ -1460,23 +2068,86 @@
     }
 
     /// <summary>
-    /// Assign the user to a customer group via JS prompt() pre-filled with
-    /// the current GroupName (or empty). Client-side validates 1-100 chars
-    /// (matches AssignUserToGroupCommandValidator.MaxGroupNameLength=100).
+    /// Opens the inline Change Group panel. Pre-selects Existing mode and
+    /// clears any pending group name. Called when the user clicks the green
+    /// "Change group" / "Assign to group" button on the Group card.
     /// </summary>
-    private async Task HandleAssignGroupAsync()
+    private Task OpenChangeGroupPanel()
     {
-        if (_user is null || _isBusy || !_canManageGroup) return;
+        if (_user is null || _isBusy || !CanChangeGroup()) return Task.CompletedTask;
 
-        var input = await JS.InvokeAsync<string?>(
-            "prompt",
-            Loc["Prompt_NewGroupName"],
-            _user.GroupName ?? string.Empty);
+        // If no existing groups exist, default to New mode so the user isn't
+        // stuck staring at "No existing groups" with no recourse (same UX as
+        // CreateUser.razor's OnInitializedAsync fallback).
+        _groupMode = _availableGroups.Count == 0 ? GroupMode.New : GroupMode.Existing;
+        _pendingGroupName = string.Empty;
+        _isChangeGroupPanelOpen = true;
+        return Task.CompletedTask;
+    }
 
-        // Silent abort on Cancel / empty input.
-        if (string.IsNullOrWhiteSpace(input)) return;
+    /// <summary>
+    /// Closes the inline Change Group panel without saving. Clears the
+    /// pending group name and resets the mode to Existing (the default).
+    /// </summary>
+    private Task CancelChangeGroup()
+    {
+        if (_isBusy) return Task.CompletedTask;
 
-        var groupName = input.Trim();
+        _isChangeGroupPanelOpen = false;
+        _pendingGroupName = string.Empty;
+        _groupMode = GroupMode.Existing;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Switches between Existing and New group-name modes. Clears the
+    /// pending group name so the user must explicitly pick or type one in
+    /// the new mode. Mirrors CreateUser.razor's OnGroupModeChanged.
+    /// </summary>
+    private Task OnGroupModeChanged(GroupMode newMode)
+    {
+        if (_isBusy) return Task.CompletedTask;
+        if (_groupMode == newMode) return Task.CompletedTask;
+
+        _groupMode = newMode;
+        _pendingGroupName = string.Empty;  // force fresh selection/entry
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets the pending group name to the given existing-group name. Called
+    /// when the user clicks one of the group buttons in Existing mode. Only
+    /// one group can be selected at a time — clicking a different button
+    /// overwrites the pending selection. Mirrors CreateUser.razor's
+    /// SelectExistingGroup.
+    /// </summary>
+    private Task SelectExistingGroup(string groupName)
+    {
+        if (_isBusy) return Task.CompletedTask;
+        _pendingGroupName = groupName;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Save handler for the inline Change Group panel. Validates the pending
+    /// group name; if valid, dispatches AssignUserToGroupCommand via
+    /// ExecuteActionAsync (which toasts success/failure and reloads the
+    /// user). On success, the panel closes. On validation failure, the panel
+    /// stays open and the inline error is shown via toast.
+    /// </summary>
+    private async Task ConfirmChangeGroupAsync()
+    {
+        if (_user is null || _isBusy || !CanChangeGroup()) return;
+
+        // Defense-in-depth: the Save button is disabled when the pending
+        // name is empty, but this check guards against a race.
+        if (string.IsNullOrWhiteSpace(_pendingGroupName))
+        {
+            await Toast.Warning(Loc["GroupNameLengthError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        var groupName = _pendingGroupName.Trim();
 
         if (groupName.Length > 100)
         {
@@ -1484,20 +2155,33 @@
             return;
         }
 
+        // Close the panel IMMEDIATELY so the user sees acknowledgment —
+        // the actual save happens via ExecuteActionAsync, which sets
+        // _isBusy (disabling action buttons).
+        _isChangeGroupPanelOpen = false;
+
         await ExecuteActionAsync(
-            Loc["ActionAssignGroup"],
+            Loc["ActionChangeGroup"],
             () => MessageBus.InvokeAsync<Result>(
                 new AssignUserToGroupCommand(_user.Id, groupName)));
+
+        // Clear pending state after the action completes (success or
+        // failure — either way, the panel is closed).
+        _pendingGroupName = string.Empty;
+        _groupMode = GroupMode.Existing;
     }
 
     /// <summary>
     /// Remove the user from their current group. Uses JS confirm() because
     /// removing a customer from their group affects their purchase limits.
+    /// Only callable by Admin/Manager (the button is hidden from Employees
+    /// — RemoveUserFromGroupCommand is [RequireRoles(Manager, Admin)]).
     /// </summary>
     private async Task HandleRemoveGroupAsync()
     {
-        if (_user is null || _isBusy || !_canManageGroup) return;
+        if (_user is null || _isBusy) return;
         if (string.IsNullOrWhiteSpace(_user.GroupName)) return;
+        if (!(_isAdmin || _isManager)) return;  // defense-in-depth
 
         var confirmMessage = string.Format(
             CultureInfo.CurrentCulture,
@@ -1514,10 +2198,177 @@
                 new RemoveUserFromGroupCommand(_user.Id)));
     }
 
+    // ── Activate / Deactivate handlers (Phase 6.6) ───────────────────
+
     /// <summary>
-    /// Common wrapper for all 5 actions: sets _isBusy, clears the previous
-    /// _actionError, dispatches the command, handles success (toast + reload
-    /// the user to refresh roles/group/FullName) and failure (inline
+    /// Activate the user. No confirmation dialog — activation is a
+    /// non-destructive restore. The handler rejects self-activation as
+    /// defense-in-depth (the button is also hidden on self-view via
+    /// CanActivate). Mirrors AdminUsers.razor's HandleActivateAsync.
+    /// </summary>
+    private async Task HandleActivateAsync()
+    {
+        if (_user is null || _isBusy || !CanActivate()) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionActivate"],
+            () => MessageBus.InvokeAsync<Result>(
+                new ActivateUserCommand(_user.Id)));
+    }
+
+    /// <summary>
+    /// Deactivate the user. Uses JS confirm() — deactivation is reversible
+    /// (re-activate) but worth one click of friction. The handler rejects
+    /// self-deactivation as defense-in-depth (the button is also hidden on
+    /// self-view via CanActivate). Mirrors AdminUsers.razor's
+    /// HandleDeactivateAsync.
+    /// </summary>
+    private async Task HandleDeactivateAsync()
+    {
+        if (_user is null || _isBusy || !CanActivate()) return;
+
+        var confirmMessage = string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["ConfirmDeactivate"],
+            _user.FullName,
+            _user.WorkerId);
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionDeactivate"],
+            () => MessageBus.InvokeAsync<Result>(
+                new DeactivateUserCommand(_user.Id)));
+    }
+
+    // ── Reset Password modal handlers (Phase 6.6) ────────────────────
+
+    /// <summary>
+    /// Opens the Reset Password modal. Clears any previous input + error.
+    /// Called from the "Reset password" button in the action panel (Admin
+    /// only, not self).
+    /// </summary>
+    private void HandleResetPasswordAsync()
+    {
+        if (_user is null || _isBusy || !_isAdmin || _isViewingSelf) return;
+
+        _resetPasswordInput = string.Empty;
+        _resetPasswordError = string.Empty;
+        _showResetPassword = false;
+        _isResetPasswordModalOpen = true;
+    }
+
+    /// <summary>
+    /// Closes the Reset Password modal without saving. Called by the Cancel
+    /// button, the X close button, overlay click, or Escape key. Silent —
+    /// no toast (the user explicitly chose not to save).
+    /// </summary>
+    private void CloseResetPasswordModal()
+    {
+        // Don't allow closing while a save is in flight.
+        if (_isBusy) return;
+
+        _isResetPasswordModalOpen = false;
+        _resetPasswordInput = string.Empty;
+        _resetPasswordError = string.Empty;
+        _showResetPassword = false;
+    }
+
+    /// <summary>
+    /// Keydown handler for the Reset Password modal. Closes the modal on
+    /// Escape (matches the Edit FullName modal's behavior).
+    /// </summary>
+    private Task HandleResetPasswordModalKeydownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e?.Key == "Escape" && !_isBusy)
+        {
+            CloseResetPasswordModal();
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Bound to the password box's ValueChanged callback so we can toggle
+    /// the input type between Text and Password without losing the value
+    /// (using @bind-Value with a type change can drop the current input).
+    /// Same pattern as CreateUser.razor's OnPasswordChanged.
+    /// </summary>
+    private Task OnResetPasswordChanged(string value)
+    {
+        _resetPasswordInput = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles the password visibility between masked and plaintext.
+    /// Purely a UX affordance — no validation implications. Mirrors
+    /// CreateUser.razor's TogglePasswordVisibility.
+    /// </summary>
+    private Task ToggleResetPasswordVisibility()
+    {
+        _showResetPassword = !_showResetPassword;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Validates _resetPasswordInput. Returns true if valid (and populates
+    /// _resetPasswordError for inline display if invalid). Minimal client-
+    /// side check — Identity's complexity rules are the real authority and
+    /// will reject anything too weak server-side.
+    /// </summary>
+    private bool ValidateResetPasswordInput()
+    {
+        if (string.IsNullOrWhiteSpace(_resetPasswordInput))
+        {
+            _resetPasswordError = Loc["ResetPasswordRequiredError"];
+            return false;
+        }
+
+        if (_resetPasswordInput.Length < 8)
+        {
+            _resetPasswordError = Loc["ResetPasswordLengthError"];
+            return false;
+        }
+
+        _resetPasswordError = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Submit handler for the Reset Password modal. Validates the input; if
+    /// valid, dispatches ResetUserPasswordCommand via ExecuteActionAsync.
+    /// On success, the modal closes. On validation failure, the modal stays
+    /// open and the inline error is shown.
+    /// </summary>
+    private async Task ConfirmResetPasswordAsync()
+    {
+        if (_user is null || _isBusy || !_isAdmin || _isViewingSelf) return;
+
+        if (!ValidateResetPasswordInput()) return;
+
+        var newPassword = _resetPasswordInput;
+
+        // Close the modal IMMEDIATELY so the user sees acknowledgment.
+        _isResetPasswordModalOpen = false;
+
+        await ExecuteActionAsync(
+            Loc["ActionResetPassword"],
+            () => MessageBus.InvokeAsync<Result>(
+                new ResetUserPasswordCommand(_user.Id, newPassword)));
+
+        // Clear the input after the action completes (success or failure).
+        _resetPasswordInput = string.Empty;
+        _resetPasswordError = string.Empty;
+        _showResetPassword = false;
+    }
+
+    /// <summary>
+    /// Common wrapper for all actions (Edit FullName / Assign Role /
+    /// Remove Role / Change Group / Remove Group / Activate / Deactivate /
+    /// Reset Password): sets _isBusy, clears the previous _actionError,
+    /// dispatches the command, handles success (toast + reload the user to
+    /// refresh roles/group/FullName/IsActive) and failure (inline
     /// _actionError banner + error toast). Mirrors SaleDetail.razor's
     /// ExecuteActionAsync pattern exactly.
     /// </summary>
@@ -1612,13 +2463,17 @@
 
     /// <summary>
     /// Returns the localized label for the current viewer's scope (shown
-    /// in the action panel header).
+    /// in the action panel header). Includes Employee as a distinct scope
+    /// (Phase 6.6) so Employees see their own badge rather than the
+    /// generic "Viewer" label.
     /// </summary>
     private string GetScopeLabel() => _isAdmin
         ? Loc["ScopeAdmin"]
         : _isManager
             ? Loc["ScopeManager"]
-            : Loc["ScopeViewer"];
+            : _isEmployee
+                ? Loc["ScopeEmployee"]
+                : Loc["ScopeViewer"];
 
     /// <summary>
     /// Returns a Material icon name for the current viewer's scope.
@@ -1627,12 +2482,44 @@
 
     /// <summary>
     /// Returns a CSS class for the scope badge. Admin = primary (highest
-    /// privilege — visually distinct). Manager = info. Anything else =
-    /// base (read-only viewer).
+    /// privilege — visually distinct). Manager = info. Employee = a softer
+    /// info shade. Anything else = base (read-only viewer).
     /// </summary>
     private string GetScopeBadgeCssClass() => _isAdmin
         ? "scope-bg-admin"
         : _isManager
             ? "scope-bg-manager"
-            : "scope-bg-viewer";
+            : _isEmployee
+                ? "scope-bg-viewer"  // Employee uses the same muted gray as read-only viewers
+                : "scope-bg-viewer";
+
+    // ── Toggle helpers (Phase 6.6 — mirror CreateUser.razor) ─────────
+    // Each takes a `bool selected` parameter so the SAME helpers can be
+    // reused for both the Group Mode toggle (Existing / New) AND the
+    // Existing-group buttons list. Same pattern as CreateUser.razor's
+    // GetToggleClass / GetToggleBorderStyle / GetToggleIconStyle /
+    // GetToggleTextStyle helpers.
+
+    private static string GetToggleClass(bool selected)
+    {
+        return selected ? "toggle-option is-selected" : "toggle-option";
+    }
+
+    private static string GetToggleBorderStyle(bool selected)
+    {
+        var borderColor = selected ? "var(--rz-primary)" : "var(--rz-border-color)";
+        return $"padding: 0.75rem; cursor: pointer; border: 2px solid {borderColor};";
+    }
+
+    private static string GetToggleIconStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-secondary-color)";
+        return $"color: {color};";
+    }
+
+    private static string GetToggleTextStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-color)";
+        return $"font-weight: 600; margin: 0; color: {color};";
+    }
 }

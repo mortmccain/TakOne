@@ -21,4 +21,16 @@ public sealed class UserListItemDto
 
     public string? GroupName { get; init; }
     public bool IsActive { get; init; }
+
+    /// <summary>
+    /// The ASP.NET Identity role names this user belongs to (e.g.
+    /// "Employee", "Manager", "Customer"). Loaded in batch by the
+    /// GetUsersPaginated query handler via IUserRepository.GetRolesByUserIdsAsync.
+    ///
+    /// Used by the AdminUsers page to gate the activate/deactivate button:
+    /// a Manager (non-Admin) may only activate/deactivate users whose
+    /// Roles collection contains <c>Roles.Employee</c> — they cannot
+    /// act on other managers, admins, read-onlys, or customers.
+    /// </summary>
+    public List<string> Roles { get; init; } = new();
 }

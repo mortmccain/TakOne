@@ -71,10 +71,10 @@
   </data>
 
   <data name="ManagerScopeTitle" xml:space="preserve">
-    <value>فقط ایجاد مشتری</value>
+    <value>ایجاد محدود کارکنان</value>
   </data>
   <data name="ManagerScopeMessage" xml:space="preserve">
-    <value>به عنوان مدیر، می‌توانید حساب کاربری مشتری ایجاد کنید. ایجاد حساب کارکنان (کارمند، مدیر، فقط‌خواندنی، مدیر سیستم) نیازمند دسترسی مدیر سیستم است.</value>
+    <value>به عنوان مدیر، می‌توانید حساب مشتری و حساب کارمند ایجاد کنید. ایجاد حساب‌های مدیر، فقط‌خواندنی یا مدیر سیستم نیازمند دسترسی مدیر سیستم است.</value>
   </data>
 
   <data name="UserTypeLabel" xml:space="preserve">
@@ -92,15 +92,21 @@
   <data name="UserTypeStaffHint" xml:space="preserve">
     <value>کارمند، مدیر، فقط‌خواندنی یا مدیر سیستم</value>
   </data>
+  <!-- UserTypeStaffHintManager — زیر گزینه کارکنان از تغییر نوع کاربر،
+       وقتی مدیر (غیر مدیر سیستم) وارد شده باشد نمایش داده می‌شود. به او
+       می‌گوید فقط می‌تواند حساب کارمند ایجاد کند. -->
+  <data name="UserTypeStaffHintManager" xml:space="preserve">
+    <value>فقط کارمند (ایجاد مدیر / فقط‌خواندنی / مدیر سیستم نیازمند دسترسی مدیر سیستم است)</value>
+  </data>
 
   <data name="FieldWorkerId" xml:space="preserve">
-    <value>شناسه کارگری</value>
+    <value>کد پرسنلی</value>
   </data>
   <data name="FieldWorkerIdPlaceholder" xml:space="preserve">
     <value>مثلاً EMP-12345</value>
   </data>
   <data name="WorkerIdHint" xml:space="preserve">
-    <value>شناسه کارگری، شناسه ورود به سیستم است و باید در میان همه کاربران یکتا باشد.</value>
+    <value>کد پرسنلی، شناسه ورود به سیستم است و باید در میان همه کاربران یکتا باشد.</value>
   </data>
 
   <data name="FieldFullName" xml:space="preserve">
@@ -110,12 +116,9 @@
     <value>مثلاً ژانه اسمیت</value>
   </data>
 
-  <data name="FieldEmail" xml:space="preserve">
-    <value>ایمیل</value>
-  </data>
-  <data name="FieldEmailPlaceholder" xml:space="preserve">
-    <value>مثلاً jane.smith@example.com</value>
-  </data>
+  <!-- فیلد ایمیل از فرم حذف شد. کلید‌های FieldEmail / FieldEmailPlaceholder نیز
+       حذف شدند. دستور هنوز پارامتر Email را برای سازگاری آینده می‌پذیرد، اما
+       فرم رشته خالی ارسال می‌کند. -->
 
   <data name="FieldPassword" xml:space="preserve">
     <value>گذرواژه اولیه</value>
@@ -142,15 +145,39 @@
   <data name="GenderFemale" xml:space="preserve">
     <value>زن</value>
   </data>
+  <!-- GenderHint — زیر گروه رادیو نمایش داده می‌شود. تأکید می‌کند که انتخاب
+       الزامی است (هیچ پیش‌فرضی انتخاب نشده است). -->
+  <data name="GenderHint" xml:space="preserve">
+    <value>لطفاً یکی را انتخاب کنید. این مقدار بعداً قابل تغییر نیست.</value>
+  </data>
 
   <data name="FieldGroupName" xml:space="preserve">
     <value>نام گروه</value>
   </data>
-  <data name="FieldGroupNamePlaceholder" xml:space="preserve">
-    <value>مثلاً مشتریان منطقه شمال</value>
+  <!-- برچسب‌ها و راهنماهای حالت گروه (جایگزین طراحی قدیمی فقط‌کشویی). -->
+  <data name="GroupModeExisting" xml:space="preserve">
+    <value>گروه موجود</value>
   </data>
-  <data name="GroupNameHint" xml:space="preserve">
-    <value>برای مشتری الزامی است. برای اعمال محدودیت خرید هر محصول استفاده می‌شود. مشتری هرگز این مقدار را نمی‌بیند.</value>
+  <data name="GroupModeExistingHint" xml:space="preserve">
+    <value>از گروه‌های قبلاً ساخته‌شده انتخاب کنید</value>
+  </data>
+  <data name="GroupModeNew" xml:space="preserve">
+    <value>گروه جدید</value>
+  </data>
+  <data name="GroupModeNewHint" xml:space="preserve">
+    <value>نام یک گروه جدید را وارد کنید</value>
+  </data>
+  <data name="NoExistingGroups" xml:space="preserve">
+    <value>هنوز گروهی وجود ندارد. به «گروه جدید» بروید تا یکی بسازید.</value>
+  </data>
+  <data name="ExistingGroupHint" xml:space="preserve">
+    <value>برای مشتری الزامی است. یک گروه را از فهرست انتخاب کنید. مشتری هرگز این مقدار را نمی‌بیند.</value>
+  </data>
+  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
+    <value>مثلاً مشتریان ویژه</value>
+  </data>
+  <data name="NewGroupHint" xml:space="preserve">
+    <value>نام گروه جدید را وارد کنید. محدودیت‌های خرید هر محصول بعداً در بخش محصول تنظیم می‌شود. مشتری هرگز این مقدار را نمی‌بیند.</value>
   </data>
 
   <data name="FieldStaffRole" xml:space="preserve">
@@ -160,7 +187,13 @@
     <value>— انتخاب یک نقش —</value>
   </data>
   <data name="StaffRoleHint" xml:space="preserve">
-    <value>نقش تعیین می‌کند این کارمند چه کاری می‌تواند انجام دهد. نقش مشتری هرگز هنگام ایجاد کارکنان اختصاص داده نمی‌شود.</value>
+    <value>نقش تعیین می‌کند این کارمند چه کاری می‌تواند انجام دهد. نقش مشتری هنگام ایجاد کارکنان اختصاص داده نمی‌شود.</value>
+  </data>
+  <!-- StaffRoleHintManager — زیر کشوی نقش کارکنان وقتی مدیر وارد شده باشد
+       نمایش داده می‌شود. کشو فقط شامل کارمند است (به‌طور پیش‌فرض انتخاب شده)،
+       بنابراین این راهنما توضیح می‌دهد چرا و برای نقش‌های دیگر چه نیاز است. -->
+  <data name="StaffRoleHintManager" xml:space="preserve">
+    <value>مدیران تنها می‌توانند حساب کارمند ایجاد کنند. ایجاد حساب‌های مدیر، فقط‌خواندنی یا مدیر سیستم نیازمند دسترسی مدیر سیستم است.</value>
   </data>
 
   <data name="RoleEmployee" xml:space="preserve">
@@ -199,8 +232,17 @@
   <data name="Error_GenericCreate" xml:space="preserve">
     <value>ایجاد کاربر ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
+  <!-- Error_ManagerCannotCreateStaff — برای سازگاری با گذشته نگه داشته شد.
+       پس از فاز ۶.۳، مدیران می‌توانند کارکنان ایجاد کنند (فقط کارمند)،
+       بنابراین این خطا دیگر از مسیر استاندارد فعال نمی‌شود. -->
   <data name="Error_ManagerCannotCreateStaff" xml:space="preserve">
     <value>فقط مدیران سیستم می‌توانند حساب کارکنان ایجاد کنند. لطفاً با یک مدیر سیستم تماس بگیرید.</value>
+  </data>
+  <!-- Error_ManagerCanOnlyCreateEmployee — وقتی مدیر سعی کند کارکنانی با
+       نقشی غیر از کارمند ایجاد کند. کشو گزینه‌ها را محدود می‌کند، اما این
+       برای درخواست‌های دستکاری‌شده است. -->
+  <data name="Error_ManagerCanOnlyCreateEmployee" xml:space="preserve">
+    <value>مدیران تنها می‌توانند حساب کارمند ایجاد کنند. ایجاد حساب‌های مدیر، فقط‌خواندنی یا مدیر سیستم نیازمند دسترسی مدیر سیستم است.</value>
   </data>
   <data name="Error_StaffRoleRequired" xml:space="preserve">
     <value>لطفاً یک نقش کارکنان انتخاب کنید.</value>
@@ -208,27 +250,31 @@
   <data name="Error_GroupNameRequired" xml:space="preserve">
     <value>نام گروه برای مشتری الزامی است.</value>
   </data>
+  <!-- Error_GenderRequired — هنگامی که کاربر بدون انتخاب جنسیت سعی در ثبت می‌کند
+       نمایش داده می‌شود. گروه رادیو پیش‌فرضی ندارد، بنابراین این تنها راه مسدود کردن
+       ثبت سمت کلاینت به‌جز [Required] روی مدل است. -->
+  <data name="Error_GenderRequired" xml:space="preserve">
+    <value>لطفاً جنسیت را انتخاب کنید.</value>
+  </data>
 
   <data name="HelpTitle" xml:space="preserve">
     <value>راهنمای ایجاد کاربر</value>
   </data>
   <data name="HelpWorkerIdUnique" xml:space="preserve">
-    <value>شناسه کارگری باید در میان همه کاربران یکتا باشد — این شناسه ورود به سیستم است.</value>
+    <value>کد پرسنلی باید در میان همه کاربران یکتا باشد — این شناسه ورود به سیستم است.</value>
   </data>
-  <data name="HelpEmail" xml:space="preserve">
-    <value>ایمیل باید یک آدرس معتبر باشد. ایمیل‌های تکراری توسط Identity رد می‌شوند.</value>
-  </data>
+  <!-- HelpEmail حذف شد — فیلد ایمیل دیگر در فرم وجود ندارد. -->
   <data name="HelpPassword" xml:space="preserve">
     <value>گذرواژه اولیه باید حداقل ۸ نویسه باشد. قوانین پیچیدگی Identity اعمال می‌شود (حرف بزرگ، حرف کوچک، عدد، نماد).</value>
   </data>
   <data name="HelpGender" xml:space="preserve">
-    <value>جنسیت الزامی است (مرد یا زن). پیش‌فرض مرد است.</value>
+    <value>جنسیت الزامی است (مرد یا زن). هیچ پیش‌فرضی انتخاب نشده — باید یکی را صریحاً انتخاب کنید.</value>
   </data>
   <data name="HelpGroupName" xml:space="preserve">
-    <value>مشتری باید عضو یک گروه باشد. نام گروه تعیین می‌کند کدام محدودیت خرید برای هر محصول اعمال شود.</value>
+    <value>مشتری باید عضو یک گروه باشد. یک گروه موجود را از فهرست انتخاب کنید یا به «گروه جدید» بروید تا نام جدیدی وارد کنید. محدودیت‌های هر محصول در بخش محصول تنظیم می‌شود.</value>
   </data>
   <data name="HelpStaffRole" xml:space="preserve">
-    <value>نقش کارکنان برای حساب‌های کارکنان الزامی است. مدیران سیستم می‌توانند همه نقش‌ها را اختصاص دهند؛ مدیران نمی‌توانند کارکنان ایجاد کنند.</value>
+    <value>نقش کارکنان برای حساب‌های کارکنان الزامی است. مدیران سیستم می‌توانند همه نقش‌ها را اختصاص دهند (کارمند، مدیر، فقط‌خواندنی، مدیر سیستم). مدیران تنها می‌توانند حساب کارمند ایجاد کنند.</value>
   </data>
   <data name="HelpInitialPassword" xml:space="preserve">
     <value>گذرواژه اولیه را از طریق کانالی جداگانه به کاربر اطلاع دهید. آن‌ها از این گذرواژه برای اولین ورود استفاده خواهند کرد.</value>

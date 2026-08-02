@@ -36,10 +36,18 @@ public sealed class CreateCustomerCommandValidator : AbstractValidator<CreateCus
             .WithMessage($"Group name cannot exceed {MaxGroupNameLength} characters.");
 
         RuleFor(x => x.Email)
-            .NotEmpty().WithMessage("Email is required.")
+            // Email is OPTIONAL — employees don't have company emails, and
+            // login uses WorkerId (UserName), not email. We still enforce
+            // max length and valid format WHEN a non-empty value is provided
+            // (for forward compatibility — e.g. if a future admin UI re-adds
+            // an optional email field for password-reset flow). Empty/null
+            // emails are passed straight through to Identity, which has
+            // RequireUniqueEmail=false in appsettings.json.
             .MaximumLength(MaxEmailLength)
             .WithMessage($"Email cannot exceed {MaxEmailLength} characters.")
-            .EmailAddress().WithMessage("Email must be a valid email address.");
+            .EmailAddress()
+            .When(x => !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Email must be a valid email address.");
 
         RuleFor(x => x.InitialPassword)
             .NotEmpty().WithMessage("Initial password is required.")

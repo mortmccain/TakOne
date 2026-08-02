@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -48,7 +49,50 @@ public sealed class DeactivateUserCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 2. Load the user.
+        // 2. Manager scope enforcement (Phase 6.3, updated 6.4).
+        //
+        // A Manager (in Manager role but NOT Admin) may only deactivate
+        // users in the Employee OR Customer role — they cannot deactivate
+        // other managers, admins, or read-onlys. The AdminUsers UI hides
+        // the deactivate button on rows the manager can't touch, so this
+        // server-side check is defense-in-depth against a tampered request.
+        //
+        // We look up the target user's roles via the batch-friendly
+        // GetRolesByUserIdsAsync (single-row variant — passing one Id).
+        // ------------------------------------------------------------------
+        var isCallerAdmin = currentUser.IsInRole(Roles.Admin);
+        var isCallerManager = currentUser.IsInRole(Roles.Manager);
+
+        if (isCallerManager && !isCallerAdmin)
+        {
+            var targetRoles = await userRepository.GetRolesByUserIdsAsync(
+                new[] { command.UserId }, cancellationToken);
+
+            targetRoles.TryGetValue(command.UserId, out var roles);
+            var rolesList = roles ?? new List<string>();
+
+            var canAct = rolesList.Contains(Roles.Employee)
+                      || rolesList.Contains(Roles.Customer);
+
+            // Also block if the target is themselves (already covered above)
+            // OR if the target is not (only) an Employee/Customer. Note: a
+            // user CAN be in multiple roles — if Employee or Customer is one
+            // of them, we allow the action; the rule is "managers may act on
+            // employees or customers", and a user who has Employee plus other
+            // roles still counts.
+            if (!canAct)
+            {
+                logger.LogWarning
+                    ("DeactivateUser: Manager {ActorId} attempted to deactivate user {TargetId} who is neither Employee nor Customer. Rejected.",
+                    currentUser.UserId, command.UserId);
+
+                return Result.Failure
+                    ("Managers may only deactivate Employee or Customer accounts. Deactivating other managers, administrators, or read-only users requires Administrator access.");
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 3. Load the user.
         // ------------------------------------------------------------------
         var user = await userRepository.GetByIdAsync(command.UserId, cancellationToken);
 
@@ -62,7 +106,7 @@ public sealed class DeactivateUserCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Delegate to the aggregate. Deactivate is idempotent.
+        // 4. Delegate to the aggregate. Deactivate is idempotent.
         // ------------------------------------------------------------------
         user.Deactivate();
 

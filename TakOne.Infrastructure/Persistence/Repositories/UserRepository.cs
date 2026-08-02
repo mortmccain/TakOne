@@ -211,6 +211,58 @@ public sealed class UserRepository : IUserRepository
     }
 
     /// <inheritdoc />
+    /// <summary>
+    /// Batched role lookup: returns a dictionary mapping each user Id (from
+    /// the input sequence) to its list of ASP.NET Identity role names. Users
+    /// with no roles are simply absent from the dictionary — callers should
+    /// treat a missing key as "no roles".
+    ///
+    /// SQL TRANSLATION:
+    ///   SELECT ur.UserId, r.Name
+    ///   FROM AspNetUserRoles ur
+    ///   INNER JOIN AspNetRoles r ON ur.RoleId = r.Id
+    ///   WHERE ur.UserId IN ({userIds})
+    ///
+    /// The grouping into Dictionary&lt;Guid, List&lt;string&gt;&gt; happens
+    /// client-side (EF Core translates the join to SQL, then LINQ-to-Objects
+    /// does the GroupBy). For the expected list-page size (≤500 users per
+    /// page), this is a single round-trip with a small result set.
+    /// </summary>
+    public async Task<Dictionary<Guid, List<string>>> GetRolesByUserIdsAsync(
+        IEnumerable<Guid> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        // Materialize once so we don't enumerate the source twice (and so
+        // EF Core can parameterize the IN clause).
+        var idList = userIds?.ToList() ?? new List<Guid>();
+        if (idList.Count == 0)
+        {
+            return new Dictionary<Guid, List<string>>();
+        }
+
+        // Join UserRoles → Roles to get (UserId, RoleName) pairs for the
+        // requested user Ids. AspNetUserRoles references the ApplicationUser
+        // Id, which is the same Guid as the Domain User Id (shared PK —
+        // see UserConfiguration class-level docs).
+        var pairs = await (
+            from ur in _db.UserRoles
+            join r in _db.Roles on ur.RoleId equals r.Id
+            where idList.Contains(ur.UserId)
+            select new { ur.UserId, RoleName = r.Name }
+        ).ToListAsync(cancellationToken);
+
+        // Group client-side by UserId. A user with multiple roles produces
+        // multiple rows in `pairs`; GroupBy collects them into a List<string>.
+        // A user with zero roles produces zero rows and is simply absent
+        // from the dictionary (caller treats missing key as "no roles").
+        return pairs
+            .GroupBy(p => p.UserId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(p => p.RoleName ?? string.Empty).ToList());
+    }
+
+    /// <inheritdoc />
     public async Task<List<string>> GetDistinctGroupNamesAsync(CancellationToken cancellationToken = default)
     {
         // SELECT DISTINCT GroupName FROM DomainUsers

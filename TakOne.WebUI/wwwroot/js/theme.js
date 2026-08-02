@@ -40,8 +40,11 @@
         },
         'tak-dark': {
             base: 'standard-dark',                             // Radzen dark theme
-            override: '/css/themes/tak-dark.css?v=1'            // Tak Dark palette + utilities
-        // ?v=1 cache-bust: bump when tak-dark.css changes
+            override: '/css/themes/tak-dark.css?v=2'            // Tak Dark palette + utilities
+            // ?v=2 cache-bust: Phase 6.3 — added explicit --rz-grid-* background-color
+            // overrides (the purple-tinted --rz-base-800/900 from standard-dark.css
+            // was leaking through to the admin-users data grid). Also replaced
+            // the literal purple #9C27B0 on .tm-kpi-card.tm-kpi-total with green.
         }
     };
 

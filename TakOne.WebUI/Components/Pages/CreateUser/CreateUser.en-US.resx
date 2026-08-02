@@ -69,10 +69,10 @@
   </data>
 
   <data name="ManagerScopeTitle" xml:space="preserve">
-    <value>Customer creation only</value>
+    <value>Limited staff creation</value>
   </data>
   <data name="ManagerScopeMessage" xml:space="preserve">
-    <value>As a Manager, you can create customer accounts. Creating staff accounts (Employee, Manager, ReadOnly, Admin) requires Administrator access.</value>
+    <value>As a Manager, you can create customer accounts and Employee staff accounts. Creating Manager, Read-only, or Admin staff accounts requires Administrator access.</value>
   </data>
 
   <data name="UserTypeLabel" xml:space="preserve">
@@ -88,7 +88,13 @@
     <value>Staff</value>
   </data>
   <data name="UserTypeStaffHint" xml:space="preserve">
-    <value>Employee, Manager, ReadOnly, or Admin</value>
+    <value>Employee, Manager, Read-only, or Admin</value>
+  </data>
+  <!-- UserTypeStaffHintManager — shown under the Staff option of the user-type
+       toggle when a Manager (non-Admin) is signed in. Tells them they can
+       only create Employee staff accounts. -->
+  <data name="UserTypeStaffHintManager" xml:space="preserve">
+    <value>Employee only (Manager / Read-only / Admin require Administrator access)</value>
   </data>
 
   <data name="FieldWorkerId" xml:space="preserve">
@@ -108,12 +114,9 @@
     <value>e.g. Jane Smith</value>
   </data>
 
-  <data name="FieldEmail" xml:space="preserve">
-    <value>Email</value>
-  </data>
-  <data name="FieldEmailPlaceholder" xml:space="preserve">
-    <value>e.g. jane.smith@example.com</value>
-  </data>
+  <!-- Email field was REMOVED from the form. The FieldEmail / FieldEmailPlaceholder
+       keys were also removed. The command still accepts an Email parameter for
+       forward compatibility, but the form passes empty string. -->
 
   <data name="FieldPassword" xml:space="preserve">
     <value>Initial password</value>
@@ -140,15 +143,39 @@
   <data name="GenderFemale" xml:space="preserve">
     <value>Female</value>
   </data>
+  <!-- GenderHint — shown under the radio group. Emphasizes that a selection
+       is required (no default is pre-selected). -->
+  <data name="GenderHint" xml:space="preserve">
+    <value>Please select one. This cannot be changed later.</value>
+  </data>
 
   <data name="FieldGroupName" xml:space="preserve">
     <value>Group name</value>
   </data>
-  <data name="FieldGroupNamePlaceholder" xml:space="preserve">
-    <value>e.g. North Region Customers</value>
+  <!-- Group-mode toggle labels + hints (replaces the old dropdown-only design). -->
+  <data name="GroupModeExisting" xml:space="preserve">
+    <value>Existing group</value>
   </data>
-  <data name="GroupNameHint" xml:space="preserve">
-    <value>Required for customers. Used to apply per-product purchase limits. Customers never see this value.</value>
+  <data name="GroupModeExistingHint" xml:space="preserve">
+    <value>Pick from groups already created</value>
+  </data>
+  <data name="GroupModeNew" xml:space="preserve">
+    <value>New group</value>
+  </data>
+  <data name="GroupModeNewHint" xml:space="preserve">
+    <value>Type a name for a new group</value>
+  </data>
+  <data name="NoExistingGroups" xml:space="preserve">
+    <value>No existing groups yet. Switch to “New group” to create one.</value>
+  </data>
+  <data name="ExistingGroupHint" xml:space="preserve">
+    <value>Required for customers. Pick one group from the list. Customers never see this value.</value>
+  </data>
+  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
+    <value>e.g. VIP Customers</value>
+  </data>
+  <data name="NewGroupHint" xml:space="preserve">
+    <value>Type a name for the new group. Per-product purchase limits are set later on the product side. Customers never see this value.</value>
   </data>
 
   <data name="FieldStaffRole" xml:space="preserve">
@@ -159,6 +186,12 @@
   </data>
   <data name="StaffRoleHint" xml:space="preserve">
     <value>The role determines what this staff member can do. Customer role is never assigned at staff creation.</value>
+  </data>
+  <!-- StaffRoleHintManager — shown under the staff-role dropdown when a
+       Manager is signed in. The dropdown only contains Employee (pre-selected),
+       so this hint explains why and what would be needed for other roles. -->
+  <data name="StaffRoleHintManager" xml:space="preserve">
+    <value>Managers may only create Employee accounts. Creating Manager, Read-only, or Admin accounts requires Administrator access.</value>
   </data>
 
   <data name="RoleEmployee" xml:space="preserve">
@@ -197,14 +230,30 @@
   <data name="Error_GenericCreate" xml:space="preserve">
     <value>We couldn't create the user. Please try again.</value>
   </data>
+  <!-- Error_ManagerCannotCreateStaff — kept for backward-compatibility in
+       case any code path still references it. After Phase 6.3, Managers CAN
+       create staff (Employee only), so this error is no longer triggered
+       from the standard flow. Error_ManagerCanOnlyCreateEmployee replaces it. -->
   <data name="Error_ManagerCannotCreateStaff" xml:space="preserve">
     <value>Only administrators can create staff accounts. Please contact an administrator.</value>
+  </data>
+  <!-- Error_ManagerCanOnlyCreateEmployee — shown when a Manager tries to
+       submit a Staff creation with a role other than Employee. The dropdown
+       already restricts the choice, but this catches tampered requests. -->
+  <data name="Error_ManagerCanOnlyCreateEmployee" xml:space="preserve">
+    <value>Managers may only create Employee staff accounts. Creating Manager, Read-only, or Admin accounts requires Administrator access.</value>
   </data>
   <data name="Error_StaffRoleRequired" xml:space="preserve">
     <value>Please select a staff role.</value>
   </data>
   <data name="Error_GroupNameRequired" xml:space="preserve">
     <value>Group name is required for customers.</value>
+  </data>
+  <!-- Error_GenderRequired — shown when the user tries to submit without picking
+       a gender. The radio group has no default, so this is the only way to block
+       submission client-side besides the [Required] attribute on the model. -->
+  <data name="Error_GenderRequired" xml:space="preserve">
+    <value>Please select a gender.</value>
   </data>
 
   <data name="HelpTitle" xml:space="preserve">
@@ -213,20 +262,18 @@
   <data name="HelpWorkerIdUnique" xml:space="preserve">
     <value>Worker IDs must be unique across all users — they're the login identifier.</value>
   </data>
-  <data name="HelpEmail" xml:space="preserve">
-    <value>Email must be a valid email address. Duplicate emails are rejected by Identity.</value>
-  </data>
+  <!-- HelpEmail was removed — the email field no longer exists on the form. -->
   <data name="HelpPassword" xml:space="preserve">
     <value>Initial password must be at least 8 characters. Identity's complexity rules apply (uppercase, lowercase, digit, symbol).</value>
   </data>
   <data name="HelpGender" xml:space="preserve">
-    <value>Gender is required (Male or Female). Defaults to Male.</value>
+    <value>Gender is required (Male or Female). No default is pre-selected — you must pick one explicitly.</value>
   </data>
   <data name="HelpGroupName" xml:space="preserve">
-    <value>Customers must belong to a group. Group name determines which per-product purchase limits apply.</value>
+    <value>Customers must belong to a group. Pick an existing group from the list, or switch to “New group” to type a new name. Per-product limits are set on the product side.</value>
   </data>
   <data name="HelpStaffRole" xml:space="preserve">
-    <value>Staff role is required for staff accounts. Admins can assign all roles; Managers cannot create staff at all.</value>
+    <value>Staff role is required for staff accounts. Admins can assign all roles (Employee, Manager, Read-only, Admin). Managers may only create Employee staff accounts.</value>
   </data>
   <data name="HelpInitialPassword" xml:space="preserve">
     <value>Communicate the initial password to the user out-of-band. They will use it to log in for the first time.</value>

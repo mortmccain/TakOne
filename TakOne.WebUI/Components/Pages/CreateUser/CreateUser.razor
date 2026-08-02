@@ -6,7 +6,8 @@
    defense-in-depth. The page-level gate is the first cut; the command
    handlers enforce stricter rules server-side:
      - CreateCustomerCommand: [RequireRoles(Manager, Admin)]
-     - CreateStaffCommand:    [RequireRoles(Admin)]  ← Managers CANNOT create staff
+     - CreateStaffCommand:    [RequireRoles(Admin, Manager)]  ← Managers
+                                CAN create staff, but only Employee role
 
    PURPOSE:
      Lets admins/managers create new user accounts (staff or customer)
@@ -21,30 +22,50 @@
        - Customer requires GroupName; Staff forbids it.
        - Customer always gets the "Customer" role; Staff requires an
          explicit Role selection (Employee / Manager / ReadOnly / Admin).
-       - Customer creation: Manager or Admin. Staff creation: Admin only.
+       - Customer creation: Manager or Admin. Staff creation: Admin or
+         Manager (but Managers can only assign the Employee role).
      A single unified form with a User Type toggle avoids ~80% code
      duplication and lets an admin flip between types without navigating
-     back. When a Manager is signed in, the Staff option is HIDDEN and
-     Customer is pre-selected + locked — this matches the server-side
-     [RequireRoles(Admin)] on CreateStaffCommand (defense-in-depth).
+     back. When a Manager is signed in, the Staff option is VISIBLE (they
+     can create Employee staff), but the Staff Role dropdown is restricted
+     to just Employee — this matches the server-side [RequireRoles(Admin,
+     Manager)] on CreateStaffCommand + the Manager→Employee-only check in
+     the handler (defense-in-depth).
 
    FORM FIELDS:
-     1. User Type         (Customer / Staff toggle — Staff hidden from
-                           Managers; selecting Staff clears GroupName,
-                           selecting Customer clears StaffRole)
+     1. User Type         (Customer / Staff toggle — visible to both
+                           Admins and Managers; selecting Staff clears
+                           GroupName, selecting Customer clears StaffRole.
+                           Selected option gets a primary-color tinted
+                           background + solid border; unselected is outlined.)
      2. Worker ID         (required, 1-100 chars — login identifier,
-                           must be globally unique)
+                           must be globally unique. AKA "Personnel Code"
+                           in Persian — کد پرسنلی.)
      3. Full Name         (required, 1-200 chars)
-     4. Email             (required, valid email, max 256 chars)
-     5. Initial Password  (required, 8-100 chars — show/hide toggle;
+     4. Initial Password  (required, 8-100 chars — show/hide toggle;
                            Identity's configured complexity rules are
-                           the real authority)
-     6. Gender            (Male / Female radio — 2-value enum per roadmap
-                           Section 12.5; defaults to Male)
-     7. Group Name        (required when Customer, max 100 chars;
-                           HIDDEN when Staff)
-     8. Staff Role        (Employee / Manager / ReadOnly / Admin
+                           the real authority. No default value.)
+     5. Gender            (Male / Female card toggle — 2-value enum per
+                           roadmap Section 12.5; NO DEFAULT — user must
+                           pick explicitly to avoid creating users with
+                           the wrong gender.)
+     6. Group Name        (required when Customer, max 100 chars;
+                           HIDDEN when Staff. Two-option toggle: pick
+                           from existing groups (loaded from
+                           GetAllGroupNamesQuery) OR type a new name.
+                           New groups are created implicitly — only the
+                           name is captured here; per-product limits
+                           are set later on the product side.)
+     7. Staff Role        (Employee / Manager / ReadOnly / Admin
                            dropdown — HIDDEN when Customer)
+
+   EMAIL FIELD — REMOVED:
+     Email was removed because employees don't have company emails and
+     login uses WorkerId (UserName) — not email. The CreateCustomer /
+     CreateStaff commands still accept an Email parameter for forward
+     compatibility, but we pass empty string. Identity's
+     RequireUniqueEmail=false (in appsettings.json) so empty emails
+     don't collide. The validators were updated to make email optional.
 
    VALIDATION:
      - FluentValidation runs server-side via Wolverine's pipeline
@@ -100,6 +121,7 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Users.Commands.CreateCustomer
 @using TakOne.Application.Users.Commands.CreateStaff
+@using TakOne.Application.Users.Queries.GetAllGroupNames
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
@@ -143,6 +165,19 @@
                 margin-bottom: 1rem;
             }
 
+            /* Toggle option base — shared between user-type toggle, group-mode
+                           toggle, and group-list buttons. Selected state is denoted by the
+                           .is-selected class (primary-tinted bg + solid primary border). */
+            .usertype-option {
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+            }
+
+                .usertype-option.is-selected {
+                    background-color: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.08));
+                    border-color: var(--rz-primary) !important;
+                }
+
+            /* User-type + group-mode toggle — 2 cards side by side, wraps on narrow screens */
             .usertype-toggle {
                 display: flex;
                 gap: 0.5rem;
@@ -154,18 +189,57 @@
                     min-width: 200px;
                 }
 
-            .gender-row {
-                display: flex;
-                gap: 1.5rem;
-                align-items: center;
+            /* Group-list (existing groups) — 2-column grid of selectable cards.
+                           Each group name gets its own card; clicking selects it (single-
+                           select). Two cards per row keeps the list compact when there are
+                           many groups; long names wrap within their card. */
+            .group-list {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 0.5rem;
             }
 
-            .gender-option {
-                display: inline-flex;
-                align-items: center;
-                gap: 0.4rem;
-                cursor: pointer;
-                user-select: none;
+            /* Gender toggle — same visual pattern as the Customer/Staff toggle
+                           above (two RadzenCard buttons side-by-side, one selected at a
+                           time). Uses the same .usertype-option class so the selected
+                           state (primary-tinted bg + solid primary border) is identical.
+                           The .gender-toggle container is a flex row that wraps on narrow
+                           screens, matching .usertype-toggle's behavior. */
+            .gender-toggle {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+                .gender-toggle .usertype-option {
+                    flex: 1 1 200px;
+                    min-width: 200px;
+                }
+
+                /* Gender-invalid state — applied to .gender-toggle when the user
+                           has tried to submit without picking a gender. The red border
+                           + danger-tinted background draws the eye to the toggle so the
+                           user understands what's missing. The EditForm's [Required]
+                           attribute on _model.Gender fires via DataAnnotationsValidator
+                           → OnInvalidSubmit → _submitAttempted = true, which is what
+                           toggles this class. The toggle cards themselves don't render
+                           a validation error natively — this CSS gives us a visible
+                           cue that matches the rest of the form's error style. */
+                .gender-toggle.gender-invalid {
+                    border: 2px solid var(--rz-danger, #f87171);
+                    border-radius: var(--rz-border-radius-sm, 6px);
+                    padding: 0.5rem 0.75rem;
+                    background-color: rgba(248, 113, 113, 0.08);
+                    outline: none;
+                }
+
+            /* Inline error text under the toggle (only rendered when gender
+                           is invalid). Color matches the border above. */
+            .gender-error-text {
+                color: var(--rz-danger, #f87171);
+                font-size: 0.8125rem;
+                margin-top: 0.25rem;
+                display: block;
             }
 
             .password-row {
@@ -208,12 +282,16 @@
 </HeadContent>
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
-    @* ── Breadcrumb + back button ── *@
+    @* ── Breadcrumb + back button ──
+       ButtonStyle.Secondary + Variant.Outlined (NOT ButtonStyle.Light) —
+       the Light variant renders as flat gray text on light themes,
+       which is invisible. Secondary gives a visible outlined button
+       that works on both light and dark themes. *@
     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
         <RadzenButton Text="@Loc["BackToManageUsers"]"
                       Icon="arrow_back"
-                      ButtonStyle="ButtonStyle.Light"
-                      Variant="Variant.Text"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
                       Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
     </RadzenStack>
 
@@ -223,12 +301,13 @@
         <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
     </RadzenStack>
 
-    @* ── Manager trying to create staff — locked-out notice ──
-       When a Manager is signed in, the User Type toggle is locked to
-       Customer (Staff is hidden). We render this small informational
-       banner above the form so the manager understands why. Admins
-       don't see it. *@
-    @if (!_isAdmin)
+    @* ── Manager scope notice ──
+       When a Manager (non-Admin) is signed in, they CAN create customer
+       accounts AND staff accounts — but staff is restricted to the
+       Employee role only (Manager/ReadOnly/Admin require Administrator
+       access). We render this small informational banner above the form
+       so the manager understands their scope. Admins don't see it. *@
+    @if (_isManagerOnly)
     {
         <RadzenAlert Title="@Loc["ManagerScopeTitle"]"
                      Text="@Loc["ManagerScopeMessage"]"
@@ -241,7 +320,18 @@
     <div class="create-grid">
         @* LEFT — form fields *@
         <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
-            <EditForm Model="@_model" OnValidSubmit="@HandleSubmitAsync" FormName="createUser">
+            @* OnValidSubmit fires only when DataAnnotations validation passes.
+               OnInvalidSubmit fires when validation fails (e.g. user submits
+               without picking a gender — the [Required] on _model.Gender
+               fires and prevents OnValidSubmit). We bind OnInvalidSubmit too
+               so we can set _submitAttempted = true, which makes the gender
+               toggle show its red-border + inline error state. Without
+               this handler, the form would silently do nothing on submit
+               when gender is missing — which was the bug the user reported. *@
+            <EditForm Model="@_model"
+                      OnValidSubmit="@HandleSubmitAsync"
+                      OnInvalidSubmit="@HandleInvalidSubmit"
+                      FormName="createUser">
                 <DataAnnotationsValidator />
 
                 @* Server-side error banner (e.g. "A user with worker ID 'X' already exists.") *@
@@ -257,23 +347,24 @@
 
                 <div class="form-section">
                     @* ── User Type toggle ──
-                       Admin: can pick Customer OR Staff.
-                       Manager: locked to Customer (Staff option hidden —
-                                server-side [RequireRoles(Admin)] is the
-                                real guard; hiding the option is UX-only). *@
+                       Both Admin AND Manager can pick Customer OR Staff.
+                       (Phase 6.3: Managers used to be locked to Customer;
+                       they can now create staff — but only with the
+                       Employee role. See the Staff Role dropdown below
+                       for the role restriction.) *@
                     <div>
                         <RadzenText Text="@Loc["UserTypeLabel"]"
                                     TextStyle="TextStyle.Caption"
                                     Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
                         <div class="usertype-toggle">
                             <RadzenCard Variant="@(_model.UserType == UserType.Customer ? Variant.Filled : Variant.Outlined)"
-                                        Class="usertype-option"
-                                        Style="@($"padding: 0.75rem; cursor: pointer; border: 2px solid {GetToggleBorder(UserType.Customer)};")"
+                                        Class="@GetToggleClass(_model.UserType == UserType.Customer)"
+                                        Style="@GetToggleBorderStyle(_model.UserType == UserType.Customer)"
                                         @onclick="@(() => OnUserTypeChanged(UserType.Customer))">
                                 <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                    <RadzenIcon Icon="shopping_bag" Style="color: var(--rz-primary);" />
+                                    <RadzenIcon Icon="shopping_bag" Style="@GetToggleIconStyle(_model.UserType == UserType.Customer)" />
                                     <div>
-                                        <RadzenText Text="@Loc["UserTypeCustomer"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
+                                        <RadzenText Text="@Loc["UserTypeCustomer"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.UserType == UserType.Customer)" />
                                         <RadzenText Text="@Loc["UserTypeCustomerHint"]"
                                                     TextStyle="TextStyle.Caption"
                                                     Style="color: var(--rz-text-secondary-color); margin: 0;" />
@@ -281,23 +372,20 @@
                                 </RadzenStack>
                             </RadzenCard>
 
-                            @if (_isAdmin)
-                            {
-                                <RadzenCard Variant="@(_model.UserType == UserType.Staff ? Variant.Filled : Variant.Outlined)"
-                                            Class="usertype-option"
-                                            Style="@($"padding: 0.75rem; cursor: pointer; border: 2px solid {GetToggleBorder(UserType.Staff)};")"
-                                            @onclick="@(() => OnUserTypeChanged(UserType.Staff))">
-                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                        <RadzenIcon Icon="badge" Style="color: var(--rz-primary);" />
-                                        <div>
-                                            <RadzenText Text="@Loc["UserTypeStaff"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
-                                            <RadzenText Text="@Loc["UserTypeStaffHint"]"
-                                                        TextStyle="TextStyle.Caption"
-                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
-                                        </div>
-                                    </RadzenStack>
-                                </RadzenCard>
-                            }
+                            <RadzenCard Variant="@(_model.UserType == UserType.Staff ? Variant.Filled : Variant.Outlined)"
+                                        Class="@GetToggleClass(_model.UserType == UserType.Staff)"
+                                        Style="@GetToggleBorderStyle(_model.UserType == UserType.Staff)"
+                                        @onclick="@(() => OnUserTypeChanged(UserType.Staff))">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenIcon Icon="badge" Style="@GetToggleIconStyle(_model.UserType == UserType.Staff)" />
+                                    <div>
+                                        <RadzenText Text="@Loc["UserTypeStaff"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.UserType == UserType.Staff)" />
+                                        <RadzenText Text="@(_isManagerOnly ? Loc["UserTypeStaffHintManager"] : Loc["UserTypeStaffHint"])"
+                                                    TextStyle="TextStyle.Caption"
+                                                    Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                    </div>
+                                </RadzenStack>
+                            </RadzenCard>
                         </div>
                     </div>
 
@@ -325,16 +413,6 @@
                         </RadzenFormField>
                     </div>
 
-                    @* ── Email ── *@
-                    <div>
-                        <RadzenFormField Text="@Loc["FieldEmail"]" Style="width: 100%;">
-                            <RadzenTextBox @bind-Value="_model.Email"
-                                           Placeholder="@Loc["FieldEmailPlaceholder"]"
-                                           TValue="string"
-                                           Style="width: 100%;" />
-                        </RadzenFormField>
-                    </div>
-
                     @* ── Initial Password (with show/hide toggle) ── *@
                     <div>
                         <div class="password-row">
@@ -344,6 +422,7 @@
                                                Type="@(_showPassword ? "text" : "password")"
                                                Placeholder="@Loc["FieldPasswordPlaceholder"]"
                                                TValue="string"
+                                               autocomplete="new-password"
                                                Style="width: 100%;" />
                             </RadzenFormField>
                             <RadzenButton Icon="@(_showPassword ? "visibility_off" : "visibility")"
@@ -361,54 +440,196 @@
 
                     @* ── Gender ──
                        2-value enum per roadmap Section 12.5 (Male / Female).
-                       Radio buttons (not dropdown) since there are only 2
-                       options and radio is faster to scan. Defaults to Male
-                       (the Domain factory default). *@
+                       Rendered as a 2-card toggle — same visual pattern as
+                       the Customer/Staff toggle above. Both cards sit on
+                       one line (flex row); the selected card gets the
+                       primary-tinted background + solid primary border via
+                       the .is-selected class. Only one can be selected at
+                       a time because _model.Gender is a single nullable
+                       enum — clicking the other card overwrites the value.
+
+                       NO DEFAULT — the model's Gender is nullable (Gender?),
+                       so neither card is pre-selected. The user MUST pick
+                       one explicitly. This prevents creating users with the
+                       wrong gender by accident. Submission is blocked client-
+                       side via [Required] on the model (DataAnnotationsValidator
+                       → OnInvalidSubmit → _submitAttempted = true) and server-
+                       side via a manual null-check in HandleSubmitAsync.
+
+                       VISIBLE ERROR STATE:
+                       When the user clicks "Create user" without picking a
+                       gender, the .gender-toggle container gets the
+                       .gender-invalid CSS class (red border + danger-tinted
+                       background around both cards) AND a localized inline
+                       error message is shown below. The error clears as
+                       soon as the user picks a gender (because
+                       _model.Gender is no longer null, so the conditional
+                       class falls away on re-render). *@
                     <div>
                         <RadzenText Text="@Loc["FieldGender"]"
                                     TextStyle="TextStyle.Caption"
                                     Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
-                        <InputRadioGroup @bind-Value="_model.Gender" TValue="Domain.Users.Gender">
-                            <div class="gender-row">
-                                <label class="gender-option">
-                                    <InputRadio Value="@(Domain.Users.Gender.Male)" />
-                                    <span>@Loc["GenderMale"]</span>
-                                </label>
-                                <label class="gender-option">
-                                    <InputRadio Value="@(Domain.Users.Gender.Female)" />
-                                    <span>@Loc["GenderFemale"]</span>
-                                </label>
-                            </div>
-                        </InputRadioGroup>
+                        <div class="gender-toggle @(_submitAttempted && _model.Gender is null ? "gender-invalid" : "")">
+                            <RadzenCard Variant="@(_model.Gender == Domain.Users.Gender.Male ? Variant.Filled : Variant.Outlined)"
+                                        Class="@GetToggleClass(_model.Gender == Domain.Users.Gender.Male)"
+                                        Style="@GetToggleBorderStyle(_model.Gender == Domain.Users.Gender.Male)"
+                                        @onclick="@(() => OnGenderChanged(Domain.Users.Gender.Male))">
+                                <RadzenText Text="@Loc["GenderMale"]"
+                                            TextStyle="TextStyle.Subtitle1"
+                                            Style="@($"{GetToggleTextStyle(_model.Gender == Domain.Users.Gender.Male)} text-align: center;")" />
+                            </RadzenCard>
+                            <RadzenCard Variant="@(_model.Gender == Domain.Users.Gender.Female ? Variant.Filled : Variant.Outlined)"
+                                        Class="@GetToggleClass(_model.Gender == Domain.Users.Gender.Female)"
+                                        Style="@GetToggleBorderStyle(_model.Gender == Domain.Users.Gender.Female)"
+                                        @onclick="@(() => OnGenderChanged(Domain.Users.Gender.Female))">
+                                <RadzenText Text="@Loc["GenderFemale"]"
+                                            TextStyle="TextStyle.Subtitle1"
+                                            Style="@($"{GetToggleTextStyle(_model.Gender == Domain.Users.Gender.Female)} text-align: center;")" />
+                            </RadzenCard>
+                        </div>
+                        @if (_submitAttempted && _model.Gender is null)
+                        {
+                            <span class="gender-error-text">@Loc["Error_GenderRequired"]</span>
+                        }
+                        else
+                        {
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                @Loc["GenderHint"]
+                            </RadzenText>
+                        }
                     </div>
 
                     @* ── Group Name (Customer only) ──
                        Required for Customer (enforced server-side by the
                        validator and Domain invariant). Hidden for Staff —
-                       staff users have null GroupName by design. *@
+                       staff users have null GroupName by design.
+
+                       UX: Two-option toggle (Existing / New) — same visual
+                       style as the Customer/Staff toggle above.
+                         - Existing mode: shows all available groups (loaded
+                           from GetAllGroupNamesQuery) as selectable cards
+                           in a 2-column grid. Single-select — clicking one
+                           selects it; clicking another switches selection.
+                         - New mode: shows a text box for typing a new group
+                           name. New groups are created implicitly — only the
+                           name is captured here. Per-product purchase limits
+                           for the new group are set later on the product
+                           side (CreateProduct / ProductDetail pages).
+                       Switching modes clears the GroupName so the user
+                       must explicitly pick or type one in the new mode. *@
                     @if (_model.UserType == UserType.Customer)
                     {
                         <div>
-                            <RadzenFormField Text="@Loc["FieldGroupName"]" Style="width: 100%;">
-                                <RadzenTextBox @bind-Value="_model.GroupName"
-                                               Placeholder="@Loc["FieldGroupNamePlaceholder"]"
-                                               TValue="string"
-                                               Style="width: 100%;" />
-                            </RadzenFormField>
-                            <RadzenText TextStyle="TextStyle.Caption"
-                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
-                                @Loc["GroupNameHint"]
-                            </RadzenText>
+                            <RadzenText Text="@Loc["FieldGroupName"]"
+                                        TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
+                            <div class="usertype-toggle">
+                                <RadzenCard Variant="@(_model.GroupMode == GroupMode.Existing ? Variant.Filled : Variant.Outlined)"
+                                            Class="@GetToggleClass(_model.GroupMode == GroupMode.Existing)"
+                                            Style="@GetToggleBorderStyle(_model.GroupMode == GroupMode.Existing)"
+                                            @onclick="@(() => OnGroupModeChanged(GroupMode.Existing))">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenIcon Icon="folder_open" Style="@GetToggleIconStyle(_model.GroupMode == GroupMode.Existing)" />
+                                        <div>
+                                            <RadzenText Text="@Loc["GroupModeExisting"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.GroupMode == GroupMode.Existing)" />
+                                            <RadzenText Text="@Loc["GroupModeExistingHint"]"
+                                                        TextStyle="TextStyle.Caption"
+                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                        </div>
+                                    </RadzenStack>
+                                </RadzenCard>
+
+                                <RadzenCard Variant="@(_model.GroupMode == GroupMode.New ? Variant.Filled : Variant.Outlined)"
+                                            Class="@GetToggleClass(_model.GroupMode == GroupMode.New)"
+                                            Style="@GetToggleBorderStyle(_model.GroupMode == GroupMode.New)"
+                                            @onclick="@(() => OnGroupModeChanged(GroupMode.New))">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenIcon Icon="create_new_folder" Style="@GetToggleIconStyle(_model.GroupMode == GroupMode.New)" />
+                                        <div>
+                                            <RadzenText Text="@Loc["GroupModeNew"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.GroupMode == GroupMode.New)" />
+                                            <RadzenText Text="@Loc["GroupModeNewHint"]"
+                                                        TextStyle="TextStyle.Caption"
+                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                        </div>
+                                    </RadzenStack>
+                                </RadzenCard>
+                            </div>
+
+                            @* Existing mode — 2-column grid of group buttons *@
+                            @if (_model.GroupMode == GroupMode.Existing)
+                            {
+                                <div style="margin-top: 0.75rem;">
+                                    @if (!_availableGroups.Any())
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Body2"
+                                                    Style="color: var(--rz-text-secondary-color);">
+                                            @Loc["NoExistingGroups"]
+                                        </RadzenText>
+                                    }
+                                    else
+                                    {
+                                        <div class="group-list">
+                                            @foreach (var group in _availableGroups)
+                                            {
+                                                var groupName = group;  // closure capture for the lambda
+                                                var isSelected = _model.GroupName == groupName;
+                                                <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                            Class="@GetToggleClass(isSelected)"
+                                                            Style="@GetToggleBorderStyle(isSelected)"
+                                                            @onclick="@(() => SelectExistingGroup(groupName))">
+                                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                                                                 JustifyContent="JustifyContent.Center" Gap="0.5rem">
+                                                        <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
+                                                                    Style="@GetToggleIconStyle(isSelected)" />
+                                                        <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
+                                                                    Style="@GetToggleTextStyle(isSelected)" />
+                                                    </RadzenStack>
+                                                </RadzenCard>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <RadzenText TextStyle="TextStyle.Caption"
+                                            Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                    @Loc["ExistingGroupHint"]
+                                </RadzenText>
+                            }
+
+                            @* New mode — text input *@
+                            @if (_model.GroupMode == GroupMode.New)
+                            {
+                                <div style="margin-top: 0.75rem;">
+                                    <RadzenFormField Style="width: 100%;">
+                                        <RadzenTextBox @bind-Value="_model.GroupName"
+                                                       Placeholder="@Loc["FieldNewGroupNamePlaceholder"]"
+                                                       TValue="string"
+                                                       autocomplete="off"
+                                                       Style="width: 100%;" />
+                                    </RadzenFormField>
+                                    <RadzenText TextStyle="TextStyle.Caption"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                        @Loc["NewGroupHint"]
+                                    </RadzenText>
+                                </div>
+                            }
                         </div>
                     }
 
-                    @* ── Staff Role (Staff only, Admin only) ──
+                    @* ── Staff Role (Staff only) ──
                        Admin selects which staff role to assign at creation
                        (Employee / Manager / ReadOnly / Admin). The Customer
                        role is NOT in this list — staff accounts are never
                        customers at creation time. (A manager or employee
                        who wants to buy on their own behalf gets the Customer
                        role added later via AssignUserRoleCommand.)
+
+                       MANAGER SCOPE (Phase 6.3):
+                       Managers see the same dropdown but it only contains
+                       "Employee" — Manager, ReadOnly, and Admin are excluded.
+                       The Manager's _staffRoleOptions is built conditionally
+                       in OnInitializedAsync. The CreateStaffCommandHandler
+                       enforces the same rule server-side as defense-in-depth.
 
                        BINDING PATTERN:
                        We bind the dropdown to the PRIMITIVE role string
@@ -419,7 +640,7 @@
                        RadzenDropDown's ValueProperty/TextProperty handle the
                        complex-to-primitive mapping; the binding itself
                        operates on the primitive key only. *@
-                    @if (_model.UserType == UserType.Staff && _isAdmin)
+                    @if (_model.UserType == UserType.Staff)
                     {
                         <div>
                             <RadzenFormField Text="@Loc["FieldStaffRole"]" Style="width: 100%;">
@@ -433,16 +654,18 @@
                             </RadzenFormField>
                             <RadzenText TextStyle="TextStyle.Caption"
                                         Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
-                                @Loc["StaffRoleHint"]
+                                @(_isManagerOnly ? Loc["StaffRoleHintManager"] : Loc["StaffRoleHint"])
                             </RadzenText>
                         </div>
                     }
 
-                    @* ── Form actions ── *@
+                    @* ── Form actions ──
+                       Cancel uses ButtonStyle.Secondary + Outlined (NOT Light)
+                       — Light renders as flat gray on light themes, invisible. *@
                     <div class="form-actions">
                         <RadzenButton Text="@Loc["CancelButton"]"
                                       Icon="close"
-                                      ButtonStyle="ButtonStyle.Light"
+                                      ButtonStyle="ButtonStyle.Secondary"
                                       Variant="Variant.Outlined"
                                       Disabled="@_isSubmitting"
                                       Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
@@ -465,7 +688,6 @@
             </RadzenStack>
             <ul>
                 <li>@Loc["HelpWorkerIdUnique"]</li>
-                <li>@Loc["HelpEmail"]</li>
                 <li>@Loc["HelpPassword"]</li>
                 <li>@Loc["HelpGender"]</li>
                 <li>@Loc["HelpGroupName"]</li>
@@ -491,7 +713,7 @@
     {
         // Validation attributes mirror the union of CreateStaffCommandValidator
         // and CreateCustomerCommandValidator rules. Fields used by BOTH
-        // validators (WorkerId, FullName, Email, InitialPassword, Gender) get
+        // validators (WorkerId, FullName, InitialPassword, Gender) get
         // the shared rules. Fields used by only one (GroupName = customer-only,
         // StaffRole = staff-only) are validated conditionally in HandleSubmitAsync
         // (the existing manual checks at lines ~600-610 already do this and
@@ -516,25 +738,40 @@
         [StringLength(200, ErrorMessage = "Full name cannot exceed 200 characters.")]
         public string FullName { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Email is required.")]
-        [StringLength(256, ErrorMessage = "Email cannot exceed 256 characters.")]
-        [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
+        // Email field was REMOVED from the form. The commands still accept
+        // an Email parameter (for forward compatibility), but we pass empty
+        // string at submit time. The validators were updated to make email
+        // optional. See file-header "EMAIL FIELD — REMOVED" for rationale.
         public string Email { get; set; } = string.Empty;
 
+        // InitialPassword — no default value. The user MUST type something.
+        // The placeholder is shown when empty, but the field itself starts blank.
         [Required(ErrorMessage = "Initial password is required.")]
         [StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be between 8 and 100 characters.")]
         public string InitialPassword { get; set; } = string.Empty;
 
-        // Gender enum — default Male. EnumDataType validates that the value
-        // is a defined member (mirrors FluentValidation's IsInEnum).
-        [EnumDataType(typeof(Domain.Users.Gender), ErrorMessage = "Gender must be a valid value (Male or Female).")]
-        public Domain.Users.Gender Gender { get; set; } = Domain.Users.Gender.Male;
+        // Gender — NULLABLE so the toggle has no default selection. The
+        // user MUST pick Male or Female explicitly. This prevents creating
+        // users with the wrong gender by accident. Submission is blocked
+        // client-side via [Required] and server-side via a null-check in
+        // HandleSubmitAsync (Error_GenderRequired).
+        [Required(ErrorMessage = "Gender is required.")]
+        public Domain.Users.Gender? Gender { get; set; } = null;
 
         // Customer-only — validated conditionally in HandleSubmitAsync
         // (Error_GroupNameRequired). No [Required] here because that would
         // fire even when UserType is Staff.
         [StringLength(100, ErrorMessage = "Group name cannot exceed 100 characters.")]
         public string GroupName { get; set; } = string.Empty;
+
+        // Customer-only — tracks which mode the group-name UI is in.
+        // Existing = pick from list of available groups (loaded once on
+        // page init from GetAllGroupNamesQuery). New = type a new name
+        // in a text box. Switching modes clears GroupName so the user
+        // must explicitly pick or type one in the new mode. Defaults to
+        // Existing — if no groups exist yet, OnInitializedAsync flips
+        // this to New so the user isn't stuck looking at an empty list.
+        public GroupMode GroupMode { get; set; } = GroupMode.Existing;
 
         /// <summary>
         /// The selected staff role's string value (e.g. "Employee",
@@ -557,6 +794,17 @@
     {
         Customer,
         Staff
+    }
+
+    /// <summary>
+    /// Group name UI mode (Customer-only). Existing = pick from the list
+    /// of available groups (loaded via GetAllGroupNamesQuery). New = type
+    /// a new group name in a text box. See CreateUserFormModel.GroupMode.
+    /// </summary>
+    private enum GroupMode
+    {
+        Existing,
+        New
     }
 
     /// <summary>
@@ -584,17 +832,46 @@
     // ── State ────────────────────────────────────────────────────────────
 
     private bool _isAdmin;
+    /// <summary>
+    /// Whether the current user is in the Manager role AND NOT also in the
+    /// Admin role. Used to:
+    ///   - Show the manager-scope alert above the form.
+    ///   - Restrict the staff-role dropdown to just Employee.
+    ///   - Show the manager-specific staff-role hint under the dropdown.
+    ///   - Pre-select Employee as the default StaffRole when a Manager
+    ///     picks the Staff user-type (so they don't have to pick from a
+    ///     one-item list — the value is already correct).
+    /// Admins (who may also be in the Manager role) are treated as Admins
+    /// (no restriction), so we explicitly check `!_isAdmin` here.
+    /// </summary>
+    private bool _isManagerOnly;
     private bool _isSubmitting;
     private string _submitError = string.Empty;
     private bool _showPassword;
 
+    /// <summary>
+    /// Tracks whether the user has clicked the "Create user" submit button
+    /// at least once. Used to gate the gender toggle's visible error
+    /// state (red border + inline error message). The error clears as soon
+    /// as the user picks a gender, because the markup re-renders on
+    /// _model.Gender change and the conditional class falls away.
+    /// </summary>
+    private bool _submitAttempted;
+
     private List<StaffRoleOption> _staffRoleOptions = new();
+
+    // Existing customer group names — loaded once from GetAllGroupNamesQuery
+    // and rendered as a 2-column grid of selectable cards when the user picks
+    // the "Existing" group-mode option. The user can switch to the "New" mode
+    // to type a new group name that isn't in this list. New groups are created
+    // implicitly when the first customer is assigned to them.
+    private List<string> _availableGroups = new();
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
-        // Resolve the current user's Admin role via the Blazor auth state
+        // Resolve the current user's Admin/Manager roles via the Blazor auth state
         // (NOT ICurrentUserService.IsInRole — see file-header comment).
         try
         {
@@ -603,41 +880,96 @@
             if (user?.Identity?.IsAuthenticated == true)
             {
                 _isAdmin = user.IsInRole(Roles.Admin);
+                // Manager-only means "in Manager role AND not also Admin".
+                // Admins who happen to also be in the Manager role are
+                // treated as Admins (no restriction).
+                _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
             }
         }
         catch
         {
-            // Non-fatal — _isAdmin stays false. Managers can still create
-            // customers; only the Staff toggle is hidden.
+            // Non-fatal — _isAdmin stays false (Manager flow takes over as
+            // the safer fallback), _isManagerOnly stays false too (no
+            // manager-scope alert shown, full role list shown). This is
+            // slightly worse UX but not a security issue — the server-side
+            // [RequireRoles(Admin, Manager)] on CreateStaffCommand is the
+            // real guard, and the handler enforces Manager→Employee-only.
             _isAdmin = false;
+            _isManagerOnly = false;
         }
 
         // Populate the staff-role dropdown options. The Value strings
-        // match the Roles constants exactly (verified at compile time via
-        // nameof where possible, but RadzenDropDown's ValueProperty uses
-        // reflection, so we just pass the string).
-        _staffRoleOptions = new List<StaffRoleOption>
+        // match the Roles constants exactly.
+        //
+        // MANAGER SCOPE (Phase 6.3): Managers see ONLY the Employee option.
+        // Manager, ReadOnly, and Admin are excluded — the
+        // CreateStaffCommandHandler rejects any non-Employee role from a
+        // Manager as defense-in-depth. We also pre-select Employee as the
+        // default StaffRole so the manager doesn't have to "pick" from a
+        // one-item list — the value is already correct when they toggle
+        // to Staff.
+        if (_isManagerOnly)
         {
-            new() { Value = Roles.Employee, Label = Loc["RoleEmployee"] },
-            new() { Value = Roles.Manager,  Label = Loc["RoleManager"] },
-            new() { Value = Roles.ReadOnly, Label = Loc["RoleReadOnly"] },
-            new() { Value = Roles.Admin,    Label = Loc["RoleAdmin"] }
-        };
-
-        // If a Manager is signed in, lock the User Type to Customer.
-        // (Admins see both options and can pick either.)
-        if (!_isAdmin)
-        {
-            _model.UserType = UserType.Customer;
+            _staffRoleOptions = new List<StaffRoleOption>
+            {
+                new() { Value = Roles.Employee, Label = Loc["RoleEmployee"] }
+            };
+            _model.StaffRole = Roles.Employee;  // pre-select
         }
+        else
+        {
+            _staffRoleOptions = new List<StaffRoleOption>
+            {
+                new() { Value = Roles.Employee, Label = Loc["RoleEmployee"] },
+                new() { Value = Roles.Manager,  Label = Loc["RoleManager"] },
+                new() { Value = Roles.ReadOnly, Label = Loc["RoleReadOnly"] },
+                new() { Value = Roles.Admin,    Label = Loc["RoleAdmin"] }
+            };
+        }
+
+        // Load existing group names. These are rendered as a 2-column grid of
+        // selectable cards when the user picks the "Existing" group-mode option.
+        // Failure is non-fatal — the list will be empty and the user is guided
+        // to switch to "New" mode to type a new name.
+        try
+        {
+            var groupsResult = await MessageBus.InvokeAsync<Result<List<string>>>(new GetAllGroupNamesQuery());
+            if (groupsResult.IsSuccess && groupsResult.Value is not null)
+            {
+                _availableGroups = groupsResult.Value
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .OrderBy(g => g)
+                    .ToList();
+            }
+        }
+        catch
+        {
+            // Non-fatal — leave _availableGroups as empty list.
+            _availableGroups = new List<string>();
+        }
+
+        // If no existing groups exist, default to "New" mode so the user isn't
+        // stuck looking at an empty list. (User can still switch back to Existing
+        // manually — they'll just see the "no existing groups" message.)
+        if (_availableGroups.Count == 0)
+        {
+            _model.GroupMode = GroupMode.New;
+        }
+
+        // Note: Managers used to be locked to Customer here (Phase 6.2).
+        // Phase 6.3 lifted that restriction — managers can now create both
+        // customers AND staff (Employee only). The User Type toggle is
+        // visible to both Admins and Managers; the Staff Role dropdown
+        // restricts Managers to just Employee. No UserType lock here.
     }
 
     // ── Handlers ────────────────────────────────────────────────────────
 
     /// <summary>
     /// Toggles between Customer and Staff user types. Clears the
-    /// type-specific fields (GroupName for Staff, StaffRole for Customer)
-    /// so the form doesn't carry stale values across the toggle.
+    /// type-specific fields (GroupName + GroupMode for Staff, StaffRole
+    /// for Customer) so the form doesn't carry stale values across the
+    /// toggle.
     /// </summary>
     private Task OnUserTypeChanged(UserType newType)
     {
@@ -648,6 +980,17 @@
         if (newType == UserType.Staff)
         {
             _model.GroupName = string.Empty;
+            _model.GroupMode = GroupMode.Existing;  // reset to default
+
+            // Manager scope (Phase 6.3): when a Manager switches to Staff,
+            // force StaffRole to Employee (they can't pick anything else
+            // anyway — the dropdown only shows Employee — but this also
+            // covers the case where they previously had a stale StaffRole
+            // from a different state).
+            if (_isManagerOnly)
+            {
+                _model.StaffRole = Roles.Employee;
+            }
         }
         else
         {
@@ -656,6 +999,57 @@
 
         // Clear any stale submit error from a previous attempt.
         _submitError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles between Existing (pick from list) and New (type a name)
+    /// group-name modes. Clears the GroupName so the user must explicitly
+    /// pick or type one in the new mode — prevents stale values from
+    /// carrying across the toggle.
+    /// </summary>
+    private Task OnGroupModeChanged(GroupMode newMode)
+    {
+        if (_model.GroupMode == newMode) return Task.CompletedTask;
+
+        _model.GroupMode = newMode;
+        _model.GroupName = string.Empty;  // force fresh selection/entry
+
+        // Clear any stale submit error from a previous attempt.
+        _submitError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets the GroupName to the given existing-group name. Called when
+    /// the user clicks one of the group buttons in Existing mode. Only
+    /// one group can be selected at a time — clicking a different button
+    /// overwrites GroupName with the new selection.
+    /// </summary>
+    private Task SelectExistingGroup(string groupName)
+    {
+        _model.GroupName = groupName;
+        _submitError = string.Empty;  // clear stale error after a fresh pick
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets _model.Gender to the given value. Called when the user clicks
+    /// one of the gender toggle cards. Only one gender can be selected at
+    /// a time — clicking the other card overwrites the previous selection
+    /// (the nullable enum enforces single-selection naturally, matching
+    /// the radio-button semantics of the old InputRadioGroup but with the
+    /// visual style of the Customer/Staff toggle cards above).
+    ///
+    /// Also clears any stale submit error from a previous attempt, so the
+    /// red-border + inline error state disappears as soon as the user
+    /// picks a gender (the markup's `_submitAttempted && _model.Gender
+    /// is null` check also falls away on re-render).
+    /// </summary>
+    private Task OnGenderChanged(Domain.Users.Gender gender)
+    {
+        _model.Gender = gender;
+        _submitError = string.Empty;  // clear stale error after a fresh pick
         return Task.CompletedTask;
     }
 
@@ -681,36 +1075,90 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Returns the CSS color for the user-type toggle border. Both options
-    /// use the primary color as their border; the actual visual cue for
-    /// which type is selected comes from the RadzenCard's Variant
-    /// (Variant.Filled for selected, Variant.Outlined for unselected).
-    /// This helper exists for future customization (e.g. dim the
-    /// unselected border) but currently returns the same value for both
-    /// types to keep the visual hierarchy driven by the Variant alone.
-    /// </summary>
-    private static string GetToggleBorder(UserType type)
-        => "var(--rz-primary)";
+    // Toggle helper methods — each takes a `bool selected` parameter so the
+    // SAME helpers can be reused for:
+    //   - The User Type toggle (Customer / Staff) — pass `(_model.UserType == X)`
+    //   - The Group Mode toggle (Existing / New)  — pass `(_model.GroupMode == X)`
+    //   - The Existing-group buttons list          — pass `(_model.GroupName == group)`
+    //
+    // WHY HELPERS (not inline ternaries):
+    //   The original markup used `@{ var selected = ... }` + nested ternaries
+    //   inside `@(...)` expressions, which confused the Razor parser (it
+    //   started treating subsequent markup as code). Helper methods keep the
+    //   markup clean and the parser happy.
+
+    private string GetToggleClass(bool selected)
+    {
+        return selected ? "usertype-option is-selected" : "usertype-option";
+    }
+
+    private string GetToggleBorderStyle(bool selected)
+    {
+        var borderColor = selected ? "var(--rz-primary)" : "var(--rz-border-color)";
+        return $"padding: 0.75rem; cursor: pointer; border: 2px solid {borderColor};";
+    }
+
+    private string GetToggleIconStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-secondary-color)";
+        return $"color: {color};";
+    }
+
+    private string GetToggleTextStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-color)";
+        return $"font-weight: 600; margin: 0; color: {color};";
+    }
 
     // ── Submit ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Called by EditForm when DataAnnotations validation FAILS (e.g. user
+    /// submitted without picking a gender — the [Required] on _model.Gender
+    /// fires and prevents OnValidSubmit). We use this to set _submitAttempted
+    /// so the gender toggle can show its red-border + inline error
+    /// state. Without this handler, the form would silently do nothing on
+    /// submit when gender is missing — which is exactly the bug the user
+    /// reported in Phase 6.3 ("not choosing a gender and trying to create
+    /// a customer or staff should show an error message and redden the
+    /// radio buttons with an outline so users don't forget to set the
+    /// gender").
+    ///
+    /// Note: we don't try to read EditContext here — _model is the source
+    /// of truth, and the markup's `_submitAttempted && _model.Gender is null`
+    /// check is enough to render the red border. Other [Required] failures
+    /// (e.g. empty WorkerId) are surfaced by RadzenFormField's built-in
+    /// validation message display.
+    /// </summary>
+    private Task HandleInvalidSubmit(EditContext editContext)
+    {
+        _submitAttempted = true;
+        return Task.CompletedTask;
+    }
+
     private async Task HandleSubmitAsync()
     {
+        // Mark that a submit was attempted — used by the gender toggle
+        // to show its red-border error state. We set this BEFORE any other
+        // checks so the gender error is visible even if other fields also
+        // fail validation.
+        _submitAttempted = true;
+
         _submitError = string.Empty;
 
-        // Defense-in-depth: if a Manager somehow ended up with UserType=Staff
-        // (e.g. they were an Admin, picked Staff, then had their role
-        // revoked — extremely unlikely), block the submit client-side.
-        // The server-side [RequireRoles(Admin)] on CreateStaffCommand is
-        // the real guard; this just gives a friendlier error.
-        if (_model.UserType == UserType.Staff && !_isAdmin)
+        // Defense-in-depth: Manager trying to create staff with a non-Employee
+        // role. The dropdown only shows Employee when a Manager is signed in,
+        // so this should never trigger in normal use — but if the request was
+        // tampered with, the CreateStaffCommandHandler will reject it
+        // server-side anyway. We surface a friendly message here too.
+        if (_model.UserType == UserType.Staff && _isManagerOnly && _model.StaffRole != Roles.Employee)
         {
-            _submitError = Loc["Error_ManagerCannotCreateStaff"];
+            _submitError = Loc["Error_ManagerCanOnlyCreateEmployee"];
             return;
         }
 
-        // Staff requires a role selection.
+        // Staff requires a role selection. (Managers have Employee pre-selected,
+        // so this only fires for Admins who left the dropdown on the placeholder.)
         if (_model.UserType == UserType.Staff && _model.StaffRole is null)
         {
             _submitError = Loc["Error_StaffRoleRequired"];
@@ -721,6 +1169,13 @@
         if (_model.UserType == UserType.Customer && string.IsNullOrWhiteSpace(_model.GroupName))
         {
             _submitError = Loc["Error_GroupNameRequired"];
+            return;
+        }
+
+        // Gender must be explicitly picked — the toggle has no default.
+        if (_model.Gender is null)
+        {
+            _submitError = Loc["Error_GenderRequired"];
             return;
         }
 
@@ -736,9 +1191,9 @@
                     WorkerId: _model.WorkerId.Trim(),
                     FullName: _model.FullName.Trim(),
                     GroupName: _model.GroupName.Trim(),
-                    Email: _model.Email.Trim(),
+                    Email: string.Empty,
                     InitialPassword: _model.InitialPassword,
-                    Gender: _model.Gender);
+                    Gender: _model.Gender.Value);
 
                 result = await MessageBus.InvokeAsync<Result<Guid>>(command);
             }
@@ -747,10 +1202,10 @@
                 var command = new CreateStaffCommand(
                     WorkerId: _model.WorkerId.Trim(),
                     FullName: _model.FullName.Trim(),
-                    Email: _model.Email.Trim(),
+                    Email: string.Empty,
                     InitialPassword: _model.InitialPassword,
                     Role: _model.StaffRole!,
-                    Gender: _model.Gender);
+                    Gender: _model.Gender.Value);
 
                 result = await MessageBus.InvokeAsync<Result<Guid>>(command);
             }

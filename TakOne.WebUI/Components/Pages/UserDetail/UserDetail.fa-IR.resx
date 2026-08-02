@@ -201,16 +201,57 @@
   <data name="ActionAssignGroup" xml:space="preserve">
     <value>افزودن به گروه</value>
   </data>
+  <data name="ActionChangeGroup" xml:space="preserve">
+    <value>تغییر گروه</value>
+  </data>
+  <data name="ActionSaveGroupChange" xml:space="preserve">
+    <value>ذخیره گروه</value>
+  </data>
+  <data name="ActionCancelGroupChange" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
   <data name="ActionRemoveGroup" xml:space="preserve">
     <value>حذف از گروه</value>
+  </data>
+  <data name="ActionActivate" xml:space="preserve">
+    <value>فعال‌سازی</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی</value>
+  </data>
+  <data name="ActionResetPassword" xml:space="preserve">
+    <value>بازنشانی گذرواژه</value>
   </data>
 
   <!-- JS prompts -->
   <data name="Prompt_NewFullName" xml:space="preserve">
     <value>نام کامل جدید را وارد کنید (۱ تا ۲۰۰ نویسه):</value>
   </data>
-  <data name="Prompt_NewGroupName" xml:space="preserve">
-    <value>نام گروه مشتری را وارد کنید (۱ تا ۱۰۰ نویسه):</value>
+
+  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group-name field) -->
+  <data name="GroupModeExisting" xml:space="preserve">
+    <value>گروه موجود</value>
+  </data>
+  <data name="GroupModeExistingHint" xml:space="preserve">
+    <value>انتخاب از بین گروه‌های از پیش موجود</value>
+  </data>
+  <data name="GroupModeNew" xml:space="preserve">
+    <value>گروه جدید</value>
+  </data>
+  <data name="GroupModeNewHint" xml:space="preserve">
+    <value>وارد کردن نام گروهی جدید</value>
+  </data>
+  <data name="NoExistingGroups" xml:space="preserve">
+    <value>هنوز گروهی وجود ندارد.</value>
+  </data>
+  <data name="ExistingGroupHint" xml:space="preserve">
+    <value>برای انتخاب، روی یک گروه کلیک کنید.</value>
+  </data>
+  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
+    <value>مثلاً مشتریان ویژه</value>
+  </data>
+  <data name="NewGroupHint" xml:space="preserve">
+    <value>گروه‌های جدید به‌طور ضمنی ایجاد می‌شوند — سقف خرید آن‌ها را بعداً در صفحه محصول تنظیم کنید.</value>
   </data>
 
   <!-- Edit Full Name modal -->
@@ -253,6 +294,10 @@
     <value>«{1}» از گروه «{0}» حذف شود؟ این کار سقف خرید او را بازنشانی می‌کند.</value>
     <comment>{0} = نام گروه؛ {1} = نام کامل کاربر</comment>
   </data>
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
+    <comment>{0} = نام کامل کاربر؛ {1} = شناسه کارگری کاربر</comment>
+  </data>
 
   <!-- Validation errors -->
   <data name="FullNameLengthError" xml:space="preserve">
@@ -263,6 +308,38 @@
   </data>
   <data name="CannotRemoveOwnAdminRole" xml:space="preserve">
     <value>شما نمی‌توانید نقش «مدیر سیستم» خودتان را حذف کنید. ابتدا این نقش را به کاربر دیگری بسپارید.</value>
+  </data>
+  <data name="ResetPasswordRequiredError" xml:space="preserve">
+    <value>گذرواژه نمی‌تواند خالی باشد.</value>
+  </data>
+  <data name="ResetPasswordLengthError" xml:space="preserve">
+    <value>گذرواژه باید حداقل ۸ نویسه باشد.</value>
+  </data>
+
+  <!-- Reset Password modal (Phase 6.6) -->
+  <data name="ResetPasswordModalTitle" xml:space="preserve">
+    <value>بازنشانی گذرواژه</value>
+  </data>
+  <data name="ResetPasswordModalBody" xml:space="preserve">
+    <value>گذرواژه جدیدی برای این کاربر وارد کنید. او در ورود بعدی باید از این گذرواژه استفاده کند.</value>
+  </data>
+  <data name="ResetPasswordModalLabel" xml:space="preserve">
+    <value>گذرواژه جدید</value>
+  </data>
+  <data name="ResetPasswordModalPlaceholder" xml:space="preserve">
+    <value>حداقل ۸ نویسه</value>
+  </data>
+  <data name="ResetPasswordModalHint" xml:space="preserve">
+    <value>قواعد پیچیدگی گذرواژه Identity اعمال می‌شود.</value>
+  </data>
+  <data name="ResetPasswordModalSubmit" xml:space="preserve">
+    <value>بازنشانی گذرواژه</value>
+  </data>
+  <data name="PasswordShow" xml:space="preserve">
+    <value>نمایش گذرواژه</value>
+  </data>
+  <data name="PasswordHide" xml:space="preserve">
+    <value>پنهان کردن گذرواژه</value>
   </data>
 
   <!-- Action result toasts -->
@@ -279,7 +356,15 @@
     <value>دامنه دسترسی مدیر</value>
   </data>
   <data name="ManagerScopeBody" xml:space="preserve">
-    <value>به‌عنوان مدیر، می‌توانید نام کاربر را ویرایش کرده و گروه مشتری او را افزوده یا حذف کنید. مدیریت نقش‌ها فقط در اختیار مدیران سیستم است.</value>
+    <value>به‌عنوان مدیر، می‌توانید نام کاربر را ویرایش کنید، حساب‌های کارمند و مشتری را فعال یا غیرفعال کنید و گروه مشتری او را افزوده یا حذف کنید. مدیریت نقش‌ها و بازنشانی گذرواژه فقط در اختیار مدیران سیستم است.</value>
+  </data>
+
+  <!-- Employee scope alert (Phase 6.6) -->
+  <data name="EmployeeScopeTitle" xml:space="preserve">
+    <value>دامنه دسترسی کارمند</value>
+  </data>
+  <data name="EmployeeScopeBody" xml:space="preserve">
+    <value>به‌عنوان کارمند، تنها می‌توانید گروه مشتری حساب‌های مشتری را تغییر دهید. فعال‌سازی، غیرفعال‌سازی، مدیریت نقش‌ها و بازنشانی گذرواژه نیازمند دسترسی مدیر یا مدیر سیستم است.</value>
   </data>
 
   <!-- Scope badges (viewer's own scope, shown in the action panel header) -->
@@ -288,6 +373,9 @@
   </data>
   <data name="ScopeManager" xml:space="preserve">
     <value>مدیر</value>
+  </data>
+  <data name="ScopeEmployee" xml:space="preserve">
+    <value>کارمند</value>
   </data>
   <data name="ScopeViewer" xml:space="preserve">
     <value>بیننده</value>
@@ -307,9 +395,18 @@
     <value>حذف نقش — یک نقش از این کاربر حذف می‌شود. نمی‌توانید نقش «مدیر سیستم» خودتان را حذف کنید.</value>
   </data>
   <data name="HelpPanel_AssignGroup" xml:space="preserve">
-    <value>افزودن به گروه — گروه مشتری را تعیین یا تغییر می‌دهد که سقف خرید او را کنترل می‌کند.</value>
+    <value>تغییر گروه / افزودن به گروه — گروه مشتری را تعیین یا تغییر می‌دهد که سقف خرید او را کنترل می‌کند. برچسب دکمه بسته به اینکه کاربر گروهی دارد یا خیر، تغییر می‌کند.</value>
   </data>
   <data name="HelpPanel_RemoveGroup" xml:space="preserve">
     <value>حذف از گروه — انتساب گروه مشتری را پاک می‌کند. نیاز به تأیید دارد.</value>
+  </data>
+  <data name="HelpPanel_Activate" xml:space="preserve">
+    <value>فعال‌سازی — دسترسی ورود یک کاربر غیرفعال‌شده را بازمی‌گرداند (مدیر/مدیر سیستم، نه خود).</value>
+  </data>
+  <data name="HelpPanel_Deactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی — دسترسی ورود کاربر را مسدود می‌کند. فروش‌ها و تاریخچه او نگه‌داری می‌شود (مدیر/مدیر سیستم، نه خود).</value>
+  </data>
+  <data name="HelpPanel_ResetPassword" xml:space="preserve">
+    <value>بازنشانی گذرواژه — گذرواژه جدیدی برای کاربر تعیین می‌کند (فقط مدیر سیستم، نه خود).</value>
   </data>
 </root>

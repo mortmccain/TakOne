@@ -70,16 +70,6 @@
     <value>ایجاد کاربر</value>
   </data>
 
-  <data name="SearchLabel" xml:space="preserve">
-    <value>جستجو</value>
-  </data>
-  <data name="SearchPlaceholder" xml:space="preserve">
-    <value>جستجو بر اساس شناسه کاربری یا نام…</value>
-  </data>
-
-  <data name="StatusLabel" xml:space="preserve">
-    <value>وضعیت</value>
-  </data>
   <data name="StatusAll" xml:space="preserve">
     <value>همه</value>
   </data>
@@ -89,12 +79,19 @@
   <data name="StatusInactive" xml:space="preserve">
     <value>غیرفعال</value>
   </data>
-  <!-- StatusFilterPlaceholder — shown in the Status column's FilterTemplate
-       dropdown when no status is selected (i.e. "all statuses" mode).
-       Matches the ERP SalesList pattern where the dropdown's AllowClear
-       resets to null and the placeholder conveys "no filter active". -->
-  <data name="StatusFilterPlaceholder" xml:space="preserve">
-    <value>همه وضعیت‌ها</value>
+  <!-- GenderAll / GroupAll — placeholders shown in the Gender and Group
+       filter dropdowns when no filter is selected (AllowClear resets to
+       null). Matches the Status dropdown's "All" placeholder pattern. -->
+  <data name="GenderAll" xml:space="preserve">
+    <value>همه جنسیت‌ها</value>
+  </data>
+  <data name="GroupAll" xml:space="preserve">
+    <value>همه گروه‌ها</value>
+  </data>
+  <!-- EmptyText — shown by RadzenDataGrid's EmptyText when the grid has
+       no rows (either no users at all, or filters yielded nothing). -->
+  <data name="EmptyText" xml:space="preserve">
+    <value>کاربری یافت نشد.</value>
   </data>
 
   <data name="LoadingText" xml:space="preserve">
@@ -108,22 +105,6 @@
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>تلاش مجدد</value>
-  </data>
-
-  <data name="EmptyTitle" xml:space="preserve">
-    <value>هنوز کاربری ثبت نشده</value>
-  </data>
-  <data name="EmptyMessage" xml:space="preserve">
-    <value>هنوز کاربری در سیستم وجود ندارد. کاربران جدید از طریق فرم ایجاد کاربر (به‌زودی) افزوده می‌شوند.</value>
-  </data>
-  <data name="EmptyFilteredTitle" xml:space="preserve">
-    <value>هیچ کاربری با فیلترهای انتخاب‌شده مطابقت ندارد</value>
-  </data>
-  <data name="EmptyFilteredMessage" xml:space="preserve">
-    <value>برای یافتن کاربر مورد نظر، جستجو یا فیلتر وضعیت را تغییر دهید.</value>
-  </data>
-  <data name="ClearFiltersButton" xml:space="preserve">
-    <value>پاک کردن فیلترها</value>
   </data>
 
   <data name="ColWorkerId" xml:space="preserve">
@@ -175,6 +156,13 @@
   <data name="ActionViewDetail" xml:space="preserve">
     <value>مشاهده جزئیات</value>
   </data>
+  <!-- ActionLockedForManager — راهنمای ابزار روی آیکن قفل که به جای دکمه
+       فعال/غیرفعال‌سازی به مدیر (غیر مدیر سیستم) برای ردیف‌هایی نمایش داده
+       می‌شود که کاربر آن ردیف در نقش کارمند یا مشتری نیست. به مدیر دلیل در
+       دسترس نبودن عملیات را توضیح می‌دهد تا تصور نکند صفحه خراب است. -->
+  <data name="ActionLockedForManager" xml:space="preserve">
+    <value>به عنوان مدیر، تنها می‌توانید حساب‌های کارمند و مشتری را فعال یا غیرفعال کنید. عمل روی سایر مدیران، مدیران سیستم و کاربران فقط‌خواندنی نیازمند دسترسی مدیر سیستم است.</value>
+  </data>
 
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
@@ -212,7 +200,4 @@
     <value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
 
-  <data name="PageInfoFormat" xml:space="preserve">
-    <value>صفحه {0} از {1} ({2} مورد)</value>
-  </data>
 </root>

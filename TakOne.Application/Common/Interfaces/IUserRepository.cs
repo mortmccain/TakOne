@@ -71,5 +71,22 @@ public interface IUserRepository
     /// </summary>
     Task<int> GetActiveCustomerCountAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns a dictionary mapping user Id → list of ASP.NET Identity role
+    /// names for the given user Ids. Used by GetUsersPaginatedQueryHandler to
+    /// populate <c>UserListItemDto.Roles</c> in a single batched query (rather
+    /// than N+1 queries per user).
+    ///
+    /// Users with no roles (rare — only happens if role seeding is incomplete)
+    /// simply don't appear as a key in the returned dictionary. Callers
+    /// should treat a missing key as "no roles".
+    ///
+    /// Same Domain/Identity boundary note as <see cref="GetActiveCustomerCountAsync"/>:
+    /// roles live in AspNetUserRoles + AspNetRoles, not on the Domain User.
+    /// </summary>
+    Task<Dictionary<Guid, List<string>>> GetRolesByUserIdsAsync(
+        IEnumerable<Guid> userIds,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 }
