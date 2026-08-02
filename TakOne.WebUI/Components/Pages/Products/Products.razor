@@ -93,20 +93,27 @@
 
 <div class="tm-shop-page">
 
-    @* ── 1. HEADER: hamburger + portal name | search bar | cart + user avatar ── *@
-    <header class="tm-shop-header">
-        <div class="tm-shop-header-inner">
+    @* ── 1. HEADER + SHIMMER (wrapped so BOTH stick together on scroll) ── *@
+    @* The wrapper carries position:sticky; top:0 — the header and the gold
+       shimmer line below it both live inside it, so they scroll together
+       and stay pinned at the top of the viewport. Without this wrapper,
+       only the header was sticky (the shimmer scrolled away under it,
+       which looked broken). Theme-agnostic: no color rules here, just
+       positioning — works on tak-light, standard-dark, material, etc. *@
+    <div class="tm-shop-header-wrap">
+        <header class="tm-shop-header">
+            <div class="tm-shop-header-inner">
 
-            @* Right side (RTL): hamburger + portal name + refresh icon *@
-            <div class="tm-portal-block">
-                @* Hamburger — toggles the ShopLayout's sidebar. Cast to
+                @* Right side (RTL): hamburger + portal name + refresh icon *@
+                <div class="tm-portal-block">
+                    @* Hamburger — toggles the ShopLayout's sidebar. Cast to
                    the concrete layout type so we can call ToggleSidebar(). *@
-                <button type="button"
-                        class="tm-hamburger"
-                        title="@Loc["MenuTitle"]"
-                        aria-label="@Loc["MenuAriaLabel"]"
-                        @onclick="ToggleSidebar">
-                    @* Inline style on <path> as a DEFENSIVE fallback — the CSS
+                    <button type="button"
+                            class="tm-hamburger"
+                            title="@Loc["MenuTitle"]"
+                            aria-label="@Loc["MenuAriaLabel"]"
+                            @onclick="ToggleSidebar">
+                        @* Inline style on <path> as a DEFENSIVE fallback — the CSS
                        rule `.tm-hamburger svg path { stroke: var(--tm-green) !important; }`
                        is the primary fix, but if Radzen's CSS somehow overrides
                        even !important (e.g. via a runtime-injected style), this
@@ -115,88 +122,89 @@
                        because CSS variables don't work in inline SVG attributes
                        outside of style="" — and we want this to work even if
                        the .tm-shop-page variable scope somehow isn't applied. *@
-                    <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
-                    </svg>
-                </button>
-                <button type="button"
-                        class="tm-portal-icon"
-                        title="@Loc["RefreshProductsTitle"]"
-                        @onclick="RefreshPage">
-                    @* The user said they'll set the image later. Until then,
+                        <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
+                        </svg>
+                    </button>
+                    <button type="button"
+                            class="tm-portal-icon"
+                            title="@Loc["RefreshProductsTitle"]"
+                            @onclick="RefreshPage">
+                        @* The user said they'll set the image later. Until then,
                        show a fallback "ت" letter (first letter of تک ماکارون). *@
-                    <span class="tm-portal-icon-fallback">ت</span>
-                </button>
-                <div class="tm-portal-text">
-                    <span class="tm-portal-title">@Loc["PortalTitle"]</span>
-                    <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
+                        <span class="tm-portal-icon-fallback">ت</span>
+                    </button>
+                    <div class="tm-portal-text">
+                        <span class="tm-portal-title">@Loc["PortalTitle"]</span>
+                        <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
+                    </div>
                 </div>
-            </div>
 
-            @* Center: search bar with Ctrl+F kbd badge *@
-            <div class="tm-search-block">
-                <input type="text"
-                       id="tm-shop-search-input"
-                       class="tm-search-input"
-                       placeholder="@Loc["SearchPlaceholder"]"
-                       value="@_searchTerm"
-                       @oninput="OnSearchInput"
-                       @onkeypress="OnSearchKeypress" />
-                <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
-                </svg>
-                <div class="tm-search-kbd">
-                    <kbd>Ctrl</kbd>
-                    <kbd>F</kbd>
-                </div>
-            </div>
-
-            @* Left side (RTL): cart icon + user avatar (circle with initial + role) *@
-            <div class="tm-actions-block">
-                <button type="button"
-                        class="tm-icon-button"
-                        title="@Loc["CartTitle"]"
-                        @onclick="GoToCart">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                @* Center: search bar with Ctrl+F kbd badge *@
+                <div class="tm-search-block">
+                    <input type="text"
+                           id="tm-shop-search-input"
+                           class="tm-search-input"
+                           placeholder="@Loc["SearchPlaceholder"]"
+                           value="@_searchTerm"
+                           @oninput="OnSearchInput"
+                           @onkeypress="OnSearchKeypress" />
+                    <svg class="tm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="20" height="20" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
                     </svg>
-                    @if (_cart is { } c && c.TotalItemCount > 0)
-                    {
-                        <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
-                    }
-                </button>
+                    <div class="tm-search-kbd">
+                        <kbd>Ctrl</kbd>
+                        <kbd>F</kbd>
+                    </div>
+                </div>
 
-                @* User avatar — circle with first initial of the user's actual
+                @* Left side (RTL): cart icon + user avatar (circle with initial + role) *@
+                <div class="tm-actions-block">
+                    <button type="button"
+                            class="tm-icon-button"
+                            title="@Loc["CartTitle"]"
+                            @onclick="GoToCart">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                        </svg>
+                        @if (_cart is { } c && c.TotalItemCount > 0)
+                        {
+                            <span class="tm-badge">@ToPersian(c.TotalItemCount)</span>
+                        }
+                    </button>
+
+                    @* User avatar — circle with first initial of the user's actual
                    name (NOT their worker ID) + their access level. Clicking it
                    goes to /Settings (same as the previous gear icon).
                    Matches the HTML reference design at /upload/tak-makaron-pc-design.html. *@
-                <button type="button"
-                        class="tm-user-block"
-                        title="@Loc["UserMenuTitle"]"
-                        @onclick="GoToSettings">
-                    <div class="tm-user-text">
-                        <p class="tm-user-name">@CurrentUser.FullName</p>
-                        <p class="tm-user-role">@GetRoleLabel()</p>
-                    </div>
-                    @* Inline style on the avatar div as a DEFENSIVE fallback.
+                    <button type="button"
+                            class="tm-user-block"
+                            title="@Loc["UserMenuTitle"]"
+                            @onclick="GoToSettings">
+                        <div class="tm-user-text">
+                            <p class="tm-user-name">@CurrentUser.FullName</p>
+                            <p class="tm-user-role">@GetRoleLabel()</p>
+                        </div>
+                        @* Inline style on the avatar div as a DEFENSIVE fallback.
                        The CSS rule `.tm-user-avatar { border-radius: 50% !important; }`
                        is the primary fix, but if a Radzen rule somehow overrides
                        even !important, this inline style guarantees the avatar
                        stays circular. Hardcoded gradient (not var()) because
                        CSS variables in inline styles CAN work here (the element
                        is inside .tm-shop-page) but we want maximum robustness. *@
-                    <div class="tm-user-avatar"
-                         style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
-                        <span class="tm-user-avatar-initial">@GetUserInitial()</span>
-                        <span class="tm-user-status-dot" aria-hidden="true"></span>
-                    </div>
-                </button>
+                        <div class="tm-user-avatar"
+                             style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
+                            <span class="tm-user-avatar-initial">@GetUserInitial()</span>
+                            <span class="tm-user-status-dot" aria-hidden="true"></span>
+                        </div>
+                    </button>
+                </div>
             </div>
-        </div>
-    </header>
+        </header>
 
-    @* ── 2. GOLDEN SHIMMER LINE ── *@
-    <div class="tm-gold-shimmer" aria-hidden="true"></div>
+        @* ── 2. GOLDEN SHIMMER LINE ── *@
+        <div class="tm-gold-shimmer" aria-hidden="true"></div>
+    </div>@* end .tm-shop-header-wrap *@
 
     @* ── 3. STATS BAR ── *@
     <div class="tm-stats-bar">

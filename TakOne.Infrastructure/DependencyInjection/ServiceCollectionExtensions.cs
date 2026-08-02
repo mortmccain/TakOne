@@ -399,6 +399,25 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserAccountService, UserAccountService>();
 
         // ------------------------------------------------------------------
+        // 5c. Claims transformation — keeps FullName claim current.
+        //
+        //     FullNameClaimsTransformation runs on every authenticated
+        //     request and enriches the ClaimsPrincipal with the current
+        //     FullName from the Domain Users table (with a 30s per-user
+        //     cache). This fixes the "stale cookie" bug where the admin's
+        //     name sometimes showed as "ADMIN-0001" (the username fallback
+        //     baked into the cookie at login time when the DomainUser
+        //     lookup failed transiently).
+        //
+        //     AddMemoryCache provides the IMemoryCache that
+        //     FullNameClaimsTransformation uses to avoid hitting the DB on
+        //     every single request. See the class XML doc for details.
+        // ------------------------------------------------------------------
+        services.AddMemoryCache();
+        services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation,
+                            FullNameClaimsTransformation>();
+
+        // ------------------------------------------------------------------
         // 5b. File storage (Phase 7 item C).
         //
         //    IFileStorage → LocalFileStorage — Scoped. Writes uploads to a

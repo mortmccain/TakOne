@@ -283,6 +283,29 @@
                 domainUser is not null ? "FOUND" : "NULL",
                 domainUser?.FullName);
 
+            // ─── DEFENSIVE: warn if DomainUser is missing ───────────────
+            // If domainUser is null, the FullName claim below will fall back
+            // to appUser.UserName (e.g. "ADMIN-0001"). This is almost always
+            // a bug — the DomainUser row should exist (the seeder creates
+            // both DomainUser and ApplicationUser with the same Guid).
+            //
+            // NOTE: FullNameClaimsTransformation (registered in Infrastructure
+            // DI) will fix the stale claim on the NEXT request by re-reading
+            // from the DB. But we still log here so the underlying issue is
+            // visible in the logs for diagnosis.
+            if (domainUser is null)
+            {
+                LoginLogger.LogError(
+                    "DIAG Login: DomainUser NOT FOUND for UserId={UserId} " +
+                    "(WorkerId='{WorkerId}'). The FullName claim will fall back " +
+                    "to the UserName for this login. FullNameClaimsTransformation " +
+                    "will correct it on subsequent requests, but the missing " +
+                    "DomainUser row indicates a data integrity issue — check " +
+                    "the DefaultAdminSeeder and the Users table.",
+                    appUser.Id,
+                    model.WorkerId);
+            }
+
             // --------------------------------------------------------------
             // 1b. Validate credentials via SignInManager.
             //
