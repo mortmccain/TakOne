@@ -35,7 +35,12 @@ public sealed class DeactivateCategoryCommandHandler
         // 1. Load the Category. We need the full hierarchy because
         //    Deactivate cascades to SubCategories and SubSubCategories —
         //    EF Core must have them tracked for the cascade to persist.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
 
         if (category is null)

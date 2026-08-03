@@ -338,6 +338,18 @@
                     min-width: 160px;
                 }
 
+            /* Constrain the Radzen button icon container so wider Material
+               glyphs can't overflow the button's left padding or overlap the
+               button text. Lets the icon shrink to its natural glyph width
+               and keeps it vertically centered. */
+            .change-group-btn .rz-button-icon {
+                width: auto;
+                min-width: 0;
+                overflow: hidden;
+                font-size: 1rem;
+                line-height: 1;
+            }
+
             /* ── Group change panel (Phase 6.6) ──
                            Mirrors CreateUser.razor's group-name UI: two toggle cards
                            (Existing / New) + a 2-column grid of existing-group buttons
@@ -913,8 +925,8 @@
                                The button is green (Success) per the user's spec. *@
                             <div class="inline-form">
                                 <RadzenButton Text="@(string.IsNullOrWhiteSpace(_user.GroupName) ? Loc["ActionAssignGroup"] : Loc["ActionChangeGroup"])"
-                                              Icon="@(string.IsNullOrWhiteSpace(_user.GroupName) ? "group_add" : "group_edit")"
-                                              IconStyle="font-size: 1rem; line-height: 1;"
+                                              Icon="@(string.IsNullOrWhiteSpace(_user.GroupName) ? "groups" : "swap_horiz")"
+                                              class="change-group-btn"
                                               ButtonStyle="ButtonStyle.Success"
                                               Variant="Variant.Filled"
                                               Size="ButtonSize.Small"

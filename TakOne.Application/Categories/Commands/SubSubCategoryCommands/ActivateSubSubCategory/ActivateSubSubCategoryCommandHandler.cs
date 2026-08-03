@@ -35,7 +35,12 @@ public sealed class ActivateSubSubCategoryCommandHandler
         // 1. Load the parent Category WITH full hierarchy. The aggregate
         //    needs to walk Category → SubCategory → SubSubCategory to look
         //    up the target.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
 
         if (category is null)

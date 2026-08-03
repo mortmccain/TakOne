@@ -32,13 +32,38 @@ public sealed class CreateSubSubCategoryCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 1. Load the parent Category WITH its full hierarchy. The aggregate
-        //    needs to (a) look up the target SubCategory, (b) check that
-        //    the SubCategory is active, and (c) validate the new name
-        //    against the SubCategory's existing SubSubCategories. All three
-        //    require the children to be loaded into memory.
+        // 1. Load the parent Category WITH its full hierarchy — AsNoTracking.
+        //    The aggregate needs to (a) look up the target SubCategory,
+        //    (b) check that the SubCategory is active, and (c) validate the
+        //    new name against the SubCategory's existing SubSubCategories.
+        //    All three require the children to be loaded into memory, but
+        //    we do NOT want EF Core to track them.
+        //
+        //    THE BUG (previous fix that didn't work):
+        //      unitOfWork.ClearChangeTracker();
+        //      var category = await categoryRepository.GetByIdWithHierarchyAsync(...);
+        //
+        //    ClearChangeTracker detaches everything, but the subsequent
+        //    TRACKED GetByIdWithHierarchyAsync call re-attaches the parent
+        //    Category + all its existing SubCategories / SubSubCategories.
+        //    When we then call category.AddSubSubCategory(...), EF Core's
+        //    DetectChanges (which runs automatically inside SaveChanges)
+        //    sees the _subSubCategories collection change and may mark the
+        //    parent SubCategory (or a sibling) as Modified. SaveChanges
+        //    then issues a spurious UPDATE whose WHERE clause matches 0
+        //    rows → DbUpdateConcurrencyException: "expected 1, affected 0".
+        //
+        //    THE FIX:
+        //    Load AsNoTracking so the parent + children are NEVER in the
+        //    tracker. After AddSubSubCategory returns the new SubSubCategory,
+        //    we explicitly tell the tracker "track ONLY this new entity"
+        //    via unitOfWork.AddEntity(subSub). SaveChanges then generates
+        //    exactly ONE INSERT and ZERO UPDATEs.
+        //
+        //    See CreateSubCategoryCommandHandler for the full rationale.
         // ------------------------------------------------------------------
-        var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
+        var category = await categoryRepository.GetByIdWithHierarchyNoTrackingAsync
+            (command.CategoryId, cancellationToken);
 
         if (category is null)
         {
@@ -58,6 +83,8 @@ public sealed class CreateSubSubCategoryCommandHandler
         //        (case-insensitive)
         //      - constructs the SubSubCategory with the parent SubCategory's Id
         //      - appends it to the SubCategory's SubSubCategories collection
+        //        (in memory only — the parent is untracked, so this has no
+        //        DB effect)
         //    DomainException is caught and converted to Result.Failure so
         //    the API can surface a friendly error message.
         // ------------------------------------------------------------------
@@ -74,6 +101,14 @@ public sealed class CreateSubSubCategoryCommandHandler
 
             return Result<Guid>.Failure(ex.Message);
         }
+
+        // ------------------------------------------------------------------
+        // 3. Explicitly track ONLY the new SubSubCategory. The parent
+        //    Category, the parent SubCategory, and all existing siblings
+        //    stay untracked (AsNoTracking), so SaveChanges cannot generate
+        //    any UPDATE for them.
+        // ------------------------------------------------------------------
+        unitOfWork.AddEntity(subSubCategory);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

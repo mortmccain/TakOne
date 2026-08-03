@@ -68,4 +68,33 @@ public sealed class UnitOfWork : IUnitOfWork
     {
         return await _db.SaveChangesAsync(cancellationToken);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Implements <c>ChangeTracker.Clear()</c> — detaches every tracked entity
+    /// in one call. This is the standard remedy for the Blazor Server scoped-
+    /// DbContext stale-tracking issue described on
+    /// <see cref="IUnitOfWork.ClearChangeTracker"/>.
+    /// </remarks>
+    public void ClearChangeTracker()
+    {
+        _db.ChangeTracker.Clear();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Delegates to <c>DbContext.Add(object)</c>, which starts tracking the
+    /// entity in the <c>Added</c> state. The entity type must be registered
+    /// on the DbContext (via DbSet or <c>ApplyConfigurationsFromAssembly</c>)
+    /// — otherwise EF Core throws at runtime.
+    ///
+    /// Why not <c>AddAsync</c>? <c>AddAsync</c> is only needed when the
+    /// entity's key generation strategy is DB-side (e.g. SQL Server IDENTITY).
+    /// Our entities use client-side <c>Guid.NewGuid()</c> keys, so the
+    /// synchronous <c>Add</c> is correct and slightly cheaper.
+    /// </remarks>
+    public void AddEntity(object entity)
+    {
+        _db.Add(entity);
+    }
 }

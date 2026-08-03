@@ -72,15 +72,59 @@ public sealed class CategoryRepository : ICategoryRepository
     }
 
     /// <inheritdoc />
+    public async Task<Category?> GetByIdWithHierarchyNoTrackingAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        // Same shape as GetByIdWithHierarchyAsync, but AsNoTracking — the
+        // returned Category (and its SubCategories / SubSubCategories) is
+        // NOT attached to the change tracker.
+        //
+        // Use this from command handlers that need to read the aggregate's
+        // state for validation (e.g. checking name uniqueness against existing
+        // children) but only want to persist a SINGLE new child entity. By
+        // keeping the parent untracked, SaveChanges generates exactly one
+        // INSERT and zero UPDATEs — sidestepping the Blazor Server scoped-
+        // DbContext stale-tracking bug that causes DbUpdateConcurrencyException.
+        //
+        // See ICategoryRepository.GetByIdWithHierarchyNoTrackingAsync xmldoc
+        // for the full rationale.
+        return await _db.Categories
+            .AsNoTracking()
+            .Include(c => c.SubCategories)
+                .ThenInclude(s => s.SubSubCategories)
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<List<Category>> GetAllActiveAsync(CancellationToken cancellationToken = default)
     {
-        // Shop view: list only active Categories for browsing. We deliberately
-        // DO NOT include SubCategories here — the shop UI fetches them lazily
-        // via GetByIdWithHierarchyAsync when a user expands a Category. This
-        // keeps the initial list query cheap.
+        // Returns all active Categories WITH their full SubCategory →
+        // SubSubCategory hierarchy eagerly loaded in a single round-trip.
+        //
+        // WHY WE INCLUDE THE HIERARCHY HERE (not lazy):
+        //   The Application layer's GetActiveCategoriesQueryHandler projects
+        //   c.SubCategories and sc.SubSubCategories straight into the DTOs.
+        //   If we don't Include them here, EF Core returns empty navigation
+        //   collections (SubCategory is a separate entity, NOT an owned
+        //   type — EF Core never auto-loads it), and the admin Categories
+        //   page silently shows "0 sub-categories" under every category.
+        //   Refreshing doesn't help because the data was never queried.
+        //
+        //   The previous "load lazily when expanded" comment was wishful
+        //   thinking — no caller actually does that. Both the shop sidebar
+        //   (Products.razor) and the admin tree (AdminCategories.razor)
+        //   iterate the returned DTOs immediately, so they need the full
+        //   tree up-front.
+        //
+        // PERFORMANCE:
+        //   The Categories table is small (typically a few dozen rows total
+        //   across all three levels), so the extra JOINs are negligible.
+        //   AsSplitQuery is intentionally NOT used — one round-trip beats
+        //   three for a tree this small.
         //
         // Order by Name for stable UI rendering.
         return await _db.Categories
+            .Include(c => c.SubCategories)
+                .ThenInclude(s => s.SubSubCategories)
             .Where(c => c.IsActive)
             .OrderBy(c => c.Name)
             .ToListAsync(cancellationToken);

@@ -36,7 +36,12 @@ public sealed class DeactivateSubSubCategoryCommandHandler
         //    walks Category → SubCategory → SubSubCategory to look up the
         //    target. No cascade here (SubSubCategory is a leaf in the
         //    hierarchy), so we only need the tree loaded for the lookup.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
         if (category is null)
         {

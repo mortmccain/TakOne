@@ -120,4 +120,66 @@
   <data name="CreateSuccess" xml:space="preserve">
     <value>"{0}" has been added.</value>
   </data>
+
+  <!-- ── Phase 3.3 v2 — Idea A tree (inline add forms at 3 levels) ── -->
+
+  <data name="AddSubCategoryButton" xml:space="preserve">
+    <value>Add sub-category</value>
+  </data>
+  <data name="AddSubSubCategoryButton" xml:space="preserve">
+    <value>Add sub-sub-category</value>
+  </data>
+
+  <data name="FieldSubCategoryName" xml:space="preserve">
+    <value>Sub-category name</value>
+  </data>
+  <data name="FieldSubCategoryNamePlaceholder" xml:space="preserve">
+    <value>e.g. Phones</value>
+  </data>
+  <data name="FieldSubSubCategoryName" xml:space="preserve">
+    <value>Sub-sub-category name</value>
+  </data>
+  <data name="FieldSubSubCategoryNamePlaceholder" xml:space="preserve">
+    <value>e.g. iPhone</value>
+  </data>
+
+  <data name="SaveButton" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+
+  <data name="Expand" xml:space="preserve">
+    <value>Expand</value>
+  </data>
+  <data name="Collapse" xml:space="preserve">
+    <value>Collapse</value>
+  </data>
+
+  <data name="SubCategoryCreatedTitle" xml:space="preserve">
+    <value>Sub-category created</value>
+  </data>
+  <data name="SubCategoryCreated" xml:space="preserve">
+    <value>"{0}" has been added under {1}.</value>
+  </data>
+  <data name="SubSubCategoryCreatedTitle" xml:space="preserve">
+    <value>Sub-sub-category created</value>
+  </data>
+  <data name="SubSubCategoryCreated" xml:space="preserve">
+    <value>"{0}" has been added under {1}.</value>
+  </data>
+
+  <data name="Error_SubNameRequired" xml:space="preserve">
+    <value>Please enter a sub-category name.</value>
+  </data>
+  <data name="Error_SubSubNameRequired" xml:space="preserve">
+    <value>Please enter a sub-sub-category name.</value>
+  </data>
+  <data name="Error_CreateSub" xml:space="preserve">
+    <value>We couldn't create the sub-category. Please try again.</value>
+  </data>
+  <data name="Error_CreateSubSub" xml:space="preserve">
+    <value>We couldn't create the sub-sub-category. Please try again.</value>
+  </data>
 </root>

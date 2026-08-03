@@ -36,7 +36,12 @@ public sealed class RenameSubCategoryCommandHandler
         //    needs to (a) look up the target SubCategory, and (b) validate
         //    name uniqueness against siblings — both require the children
         //    to be loaded.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
         if (category is null)
         {

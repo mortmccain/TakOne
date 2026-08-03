@@ -34,7 +34,12 @@ public sealed class RenameCategoryCommandHandler
         // ------------------------------------------------------------------
         // 1. Load the Category. We don't need its hierarchy (no SubCategory
         //    mutations here), so the lightweight GetByIdAsync is enough.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdAsync(command.CategoryId, cancellationToken);
 
         if (category is null)

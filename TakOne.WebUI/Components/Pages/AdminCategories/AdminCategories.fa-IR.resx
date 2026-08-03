@@ -120,4 +120,66 @@
   <data name="CreateSuccess" xml:space="preserve">
     <value>«{0}» افزوده شد.</value>
   </data>
+
+  <!-- ── فاز ۳.۳ نسخه ۲ — درخت ایده A (فرم‌های افزودن درون‌خطی در ۳ سطح) ── -->
+
+  <data name="AddSubCategoryButton" xml:space="preserve">
+    <value>افزودن زیردسته</value>
+  </data>
+  <data name="AddSubSubCategoryButton" xml:space="preserve">
+    <value>افزودن زیرِ زیردسته</value>
+  </data>
+
+  <data name="FieldSubCategoryName" xml:space="preserve">
+    <value>نام زیردسته</value>
+  </data>
+  <data name="FieldSubCategoryNamePlaceholder" xml:space="preserve">
+    <value>مثلاً گوشی‌ها</value>
+  </data>
+  <data name="FieldSubSubCategoryName" xml:space="preserve">
+    <value>نام زیرِ زیردسته</value>
+  </data>
+  <data name="FieldSubSubCategoryNamePlaceholder" xml:space="preserve">
+    <value>مثلاً آیفون</value>
+  </data>
+
+  <data name="SaveButton" xml:space="preserve">
+    <value>ذخیره</value>
+  </data>
+  <data name="CancelButton" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+
+  <data name="Expand" xml:space="preserve">
+    <value>باز کردن</value>
+  </data>
+  <data name="Collapse" xml:space="preserve">
+    <value>جمع کردن</value>
+  </data>
+
+  <data name="SubCategoryCreatedTitle" xml:space="preserve">
+    <value>زیردسته ایجاد شد</value>
+  </data>
+  <data name="SubCategoryCreated" xml:space="preserve">
+    <value>«{0}» زیر «{1}» افزوده شد.</value>
+  </data>
+  <data name="SubSubCategoryCreatedTitle" xml:space="preserve">
+    <value>زیرِ زیردسته ایجاد شد</value>
+  </data>
+  <data name="SubSubCategoryCreated" xml:space="preserve">
+    <value>«{0}» زیر «{1}» افزوده شد.</value>
+  </data>
+
+  <data name="Error_SubNameRequired" xml:space="preserve">
+    <value>لطفاً نام زیردسته را وارد کنید.</value>
+  </data>
+  <data name="Error_SubSubNameRequired" xml:space="preserve">
+    <value>لطفاً نام زیرِ زیردسته را وارد کنید.</value>
+  </data>
+  <data name="Error_CreateSub" xml:space="preserve">
+    <value>ایجاد زیردسته ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_CreateSubSub" xml:space="preserve">
+    <value>ایجاد زیرِ زیردسته ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
 </root>

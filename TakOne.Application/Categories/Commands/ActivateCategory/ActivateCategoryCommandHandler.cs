@@ -34,7 +34,12 @@ public sealed class ActivateCategoryCommandHandler
         // ------------------------------------------------------------------
         // 1. Load the Category. No hierarchy needed — Activate only touches
         //    the root.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdAsync(command.CategoryId, cancellationToken);
 
         if (category is null)

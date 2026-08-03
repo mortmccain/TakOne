@@ -35,7 +35,12 @@ public sealed class RenameSubSubCategoryCommandHandler
         // 1. Load the parent Category WITH full hierarchy. RenameSubSubCategory
         //    needs to look up the target SubCategory AND the target
         //    SubSubCategory by Id — both require the children to be loaded.
+        //
+        //    ClearChangeTracker FIRST: prevents the Blazor Server scoped-
+        //    DbContext stale-tracking bug (see CreateSubCategoryCommandHandler
+        //    for the full rationale).
         // ------------------------------------------------------------------
+        unitOfWork.ClearChangeTracker();
         var category = await categoryRepository.GetByIdWithHierarchyAsync(command.CategoryId, cancellationToken);
 
         if (category is null)
