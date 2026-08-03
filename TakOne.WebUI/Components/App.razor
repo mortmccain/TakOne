@@ -47,6 +47,19 @@
         keep the browser's native find-in-page behavior. *@
     <script src="js/products.js?v=3"></script>
 
+    @* Admin Categories page — measures node positions in the horizontal
+        category tree and returns SVG bezier path data for the connector
+        lines between parent and child nodes. Used by AdminCategories.razor.
+        Re-measures on resize and on language/dir change.
+
+        v6 cache-bust: made bindRedraw idempotent — it now disconnects
+        all previous observers before creating new ones, preventing
+        MutationObserver leaks when the user switches between Tree and
+        List views. Without this cache-bust the browser would keep
+        serving the old v5 JS which leaks a MutationObserver on
+        document.documentElement every time the user switches views. *@
+    <script src="js/adminCategoriesTree.js?v=6"></script>
+
     <HeadOutlet @rendermode="@RenderModeForPage" />
 </head>
 <body>

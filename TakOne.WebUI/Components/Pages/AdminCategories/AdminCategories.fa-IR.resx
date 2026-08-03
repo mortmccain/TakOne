@@ -182,4 +182,119 @@
   <data name="Error_CreateSubSub" xml:space="preserve">
     <value>ایجاد زیرِ زیردسته ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
+
+  <!-- ── Phase 3.3 v4 — horizontal node-tree (rename + edit icon) ── -->
+
+  <data name="EditButton" xml:space="preserve">
+    <value>تغییر نام این گره</value>
+  </data>
+  <data name="AddChildButton" xml:space="preserve">
+    <value>افزودن گره فرزند</value>
+  </data>
+  <data name="FieldNewName" xml:space="preserve">
+    <value>نام جدید</value>
+  </data>
+  <data name="FieldNewNamePlaceholder" xml:space="preserve">
+    <value>نام جدید را وارد کنید</value>
+  </data>
+
+  <data name="CategoryRenamedTitle" xml:space="preserve">
+    <value>دسته تغییر نام یافت</value>
+  </data>
+  <data name="CategoryRenamed" xml:space="preserve">
+    <value>نام دسته به «{0}» تغییر یافت.</value>
+  </data>
+  <data name="SubCategoryRenamedTitle" xml:space="preserve">
+    <value>زیردسته تغییر نام یافت</value>
+  </data>
+  <data name="SubCategoryRenamed" xml:space="preserve">
+    <value>نام زیردسته به «{0}» تغییر یافت.</value>
+  </data>
+  <data name="SubSubCategoryRenamedTitle" xml:space="preserve">
+    <value>زیرِ زیردسته تغییر نام یافت</value>
+  </data>
+  <data name="SubSubCategoryRenamed" xml:space="preserve">
+    <value>نام زیرِ زیردسته به «{0}» تغییر یافت.</value>
+  </data>
+
+  <data name="Error_RenameFailed" xml:space="preserve">
+    <value>تغییر نام ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_NewNameRequired" xml:space="preserve">
+    <value>لطفاً نام جدید را وارد کنید.</value>
+  </data>
+
+  <!-- ── فاز ۳.۳ نسخه ۵ — دکمه‌های + در پایان هر ستون، فعال/غیرفعال ── -->
+
+  <data name="AddCategoryButton" xml:space="preserve">
+    <value>افزودن دسته‌بندی جدید</value>
+  </data>
+  <data name="AddFirstCategoryButton" xml:space="preserve">
+    <value>افزودن اولین دسته‌بندی</value>
+  </data>
+
+  <data name="ActivateButton" xml:space="preserve">
+    <value>فعال‌سازی این گره</value>
+  </data>
+  <data name="DeactivateButton" xml:space="preserve">
+    <value>غیرفعال‌سازی این گره</value>
+  </data>
+
+  <data name="CategoryActivatedTitle" xml:space="preserve">
+    <value>دسته فعال شد</value>
+  </data>
+  <data name="CategoryActivated" xml:space="preserve">
+    <value>«{0}» فعال شد.</value>
+  </data>
+  <data name="CategoryDeactivatedTitle" xml:space="preserve">
+    <value>دسته غیرفعال شد</value>
+  </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>«{0}» غیرفعال شد. زیردسته‌های آن نیز غیرفعال شدند.</value>
+  </data>
+
+  <data name="SubCategoryActivatedTitle" xml:space="preserve">
+    <value>زیردسته فعال شد</value>
+  </data>
+  <data name="SubCategoryActivated" xml:space="preserve">
+    <value>«{0}» فعال شد.</value>
+  </data>
+  <data name="SubCategoryDeactivatedTitle" xml:space="preserve">
+    <value>زیردسته غیرفعال شد</value>
+  </data>
+  <data name="SubCategoryDeactivated" xml:space="preserve">
+    <value>«{0}» غیرفعال شد. زیرِ زیردسته‌های آن نیز غیرفعال شدند.</value>
+  </data>
+
+  <data name="SubSubCategoryActivatedTitle" xml:space="preserve">
+    <value>زیرِ زیردسته فعال شد</value>
+  </data>
+  <data name="SubSubCategoryActivated" xml:space="preserve">
+    <value>«{0}» فعال شد.</value>
+  </data>
+  <data name="SubSubCategoryDeactivatedTitle" xml:space="preserve">
+    <value>زیرِ زیردسته غیرفعال شد</value>
+  </data>
+  <data name="SubSubCategoryDeactivated" xml:space="preserve">
+    <value>«{0}» غیرفعال شد.</value>
+  </data>
+
+  <data name="Error_ToggleFailed" xml:space="preserve">
+    <value>تغییر وضعیت فعال/غیرفعال ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <!-- ── فاز ۳.۳ نسخه ۶ — تعویض نما (درخت ↔ فهرست) ──
+       ViewModeLabel  — aria-label گروه .view-switcher (فقط برای صفحه‌خوان)
+       ViewModeTree   — برچسب دکمه + راهنمای نمای درختی (گره‌ها + اتصالات)
+       ViewModeList   — برچسب دکمه + راهنمای نمای فهرستی (پیش‌فرض) -->
+
+  <data name="ViewModeLabel" xml:space="preserve">
+    <value>نوع نمایش</value>
+  </data>
+  <data name="ViewModeTree" xml:space="preserve">
+    <value>درختی</value>
+  </data>
+  <data name="ViewModeList" xml:space="preserve">
+    <value>فهرستی</value>
+  </data>
 </root>

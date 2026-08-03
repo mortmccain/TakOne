@@ -46,10 +46,32 @@ public interface ICategoryRepository
 
     /// <summary>
     /// Returns all active Categories with their full SubCategory →
-    /// SubSubCategory hierarchy eagerly loaded. Used by both the shop
-    /// sidebar (Products page) and the admin Categories tree page.
+    /// SubSubCategory hierarchy eagerly loaded. Used by the shop
+    /// sidebar (Products page), the product-create / product-edit
+    /// category pickers, and other customer-facing surfaces where
+    /// deactivated categories must NOT appear.
     /// </summary>
     Task<List<Category>> GetAllActiveAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns ALL Categories (active AND inactive) with their full
+    /// SubCategory → SubSubCategory hierarchy eagerly loaded in a
+    /// single round-trip.
+    ///
+    /// USED BY:
+    ///   - The admin Categories management page (AdminCategories.razor).
+    ///     The admin needs to SEE deactivated categories so they can be
+    ///     reactivated — they must not vanish from the page just because
+    ///     they were deactivated. The UI renders inactive nodes with a
+    ///     red outline and an "activate" toggle, so the admin always has
+    ///     a path back to reactivation.
+    ///
+    /// NOT USED BY:
+    ///   - The shop sidebar / product-create pickers — those still use
+    ///     <see cref="GetAllActiveAsync"/> so customers never see
+    ///     deactivated categories in navigation.
+    /// </summary>
+    Task<List<Category>> GetAllAsync(CancellationToken cancellationToken = default);
 
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> NameExistsAsync(string name, Guid? excludeId = null, CancellationToken cancellationToken = default);
@@ -73,6 +95,4 @@ public interface ICategoryRepository
         CancellationToken cancellationToken = default);
 
     Task AddAsync(Category category, CancellationToken cancellationToken = default);
-
-
 }

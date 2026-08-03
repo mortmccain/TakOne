@@ -131,6 +131,45 @@ public sealed class CategoryRepository : ICategoryRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Category>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        // Returns ALL Categories (active AND inactive) with the full
+        // SubCategory → SubSubCategory hierarchy eagerly loaded.
+        //
+        // WHY NO IsActive FILTER (unlike GetAllActiveAsync):
+        //   This is the ADMIN view. When an admin deactivates a Category,
+        //   the UI must STILL render that Category (with a red outline +
+        //   an "activate" toggle button) so the admin can see it and
+        //   reactivate it. If we filtered here, the deactivated category
+        //   would simply vanish from the page — and so would all its
+        //   children (because the .Include only fires for categories that
+        //   pass the .Where filter). That was the v5 bug: deactivating a
+        //   Category made it AND its entire subtree disappear, even though
+        //   the markup already had the red-outline styling ready.
+        //
+        //   The deactivated Category's children may be active OR inactive
+        //   (DeactivateCategoryCommand cascades, but the admin can also
+        //   deactivate a single SubCategory in isolation). Either way we
+        //   load them — the UI decides how to render based on each
+        //   entity's own IsActive flag.
+        //
+        // ORDER:
+        //   Active first, then inactive, each group sorted by Name. This
+        //   keeps the "live" tree at the top of the admin view (where the
+        //   admin's attention usually is) while still surfacing every
+        //   deactivated node below for easy review / reactivation.
+        //   The Application-layer handler does NOT re-sort — it relies on
+        //   this ordering, so any change here propagates directly to the
+        //   rendered tree.
+        return await _db.Categories
+            .Include(c => c.SubCategories)
+                .ThenInclude(s => s.SubSubCategories)
+            .OrderBy(c => c.IsActive ? 0 : 1)
+                .ThenBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _db.Categories.AnyAsync(c => c.Id == id, cancellationToken);

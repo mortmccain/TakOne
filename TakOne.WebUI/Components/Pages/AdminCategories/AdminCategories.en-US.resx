@@ -182,4 +182,119 @@
   <data name="Error_CreateSubSub" xml:space="preserve">
     <value>We couldn't create the sub-sub-category. Please try again.</value>
   </data>
+
+  <!-- ── Phase 3.3 v4 — horizontal node-tree (rename + edit icon) ── -->
+
+  <data name="EditButton" xml:space="preserve">
+    <value>Rename this node</value>
+  </data>
+  <data name="AddChildButton" xml:space="preserve">
+    <value>Add a child node</value>
+  </data>
+  <data name="FieldNewName" xml:space="preserve">
+    <value>New name</value>
+  </data>
+  <data name="FieldNewNamePlaceholder" xml:space="preserve">
+    <value>Enter a new name</value>
+  </data>
+
+  <data name="CategoryRenamedTitle" xml:space="preserve">
+    <value>Category renamed</value>
+  </data>
+  <data name="CategoryRenamed" xml:space="preserve">
+    <value>Category renamed to "{0}".</value>
+  </data>
+  <data name="SubCategoryRenamedTitle" xml:space="preserve">
+    <value>Sub-category renamed</value>
+  </data>
+  <data name="SubCategoryRenamed" xml:space="preserve">
+    <value>Sub-category renamed to "{0}".</value>
+  </data>
+  <data name="SubSubCategoryRenamedTitle" xml:space="preserve">
+    <value>Sub-sub-category renamed</value>
+  </data>
+  <data name="SubSubCategoryRenamed" xml:space="preserve">
+    <value>Sub-sub-category renamed to "{0}".</value>
+  </data>
+
+  <data name="Error_RenameFailed" xml:space="preserve">
+    <value>We couldn't rename the node. Please try again.</value>
+  </data>
+  <data name="Error_NewNameRequired" xml:space="preserve">
+    <value>Please enter a new name.</value>
+  </data>
+
+  <!-- ── Phase 3.3 v5 — end-of-group + buttons, activate/deactivate toggle ── -->
+
+  <data name="AddCategoryButton" xml:space="preserve">
+    <value>Add a new category</value>
+  </data>
+  <data name="AddFirstCategoryButton" xml:space="preserve">
+    <value>Add the first category</value>
+  </data>
+
+  <data name="ActivateButton" xml:space="preserve">
+    <value>Activate this node</value>
+  </data>
+  <data name="DeactivateButton" xml:space="preserve">
+    <value>Deactivate this node</value>
+  </data>
+
+  <data name="CategoryActivatedTitle" xml:space="preserve">
+    <value>Category activated</value>
+  </data>
+  <data name="CategoryActivated" xml:space="preserve">
+    <value>"{0}" has been activated.</value>
+  </data>
+  <data name="CategoryDeactivatedTitle" xml:space="preserve">
+    <value>Category deactivated</value>
+  </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>"{0}" has been deactivated. Its sub-categories were also deactivated.</value>
+  </data>
+
+  <data name="SubCategoryActivatedTitle" xml:space="preserve">
+    <value>Sub-category activated</value>
+  </data>
+  <data name="SubCategoryActivated" xml:space="preserve">
+    <value>"{0}" has been activated.</value>
+  </data>
+  <data name="SubCategoryDeactivatedTitle" xml:space="preserve">
+    <value>Sub-category deactivated</value>
+  </data>
+  <data name="SubCategoryDeactivated" xml:space="preserve">
+    <value>"{0}" has been deactivated. Its sub-sub-categories were also deactivated.</value>
+  </data>
+
+  <data name="SubSubCategoryActivatedTitle" xml:space="preserve">
+    <value>Sub-sub-category activated</value>
+  </data>
+  <data name="SubSubCategoryActivated" xml:space="preserve">
+    <value>"{0}" has been activated.</value>
+  </data>
+  <data name="SubSubCategoryDeactivatedTitle" xml:space="preserve">
+    <value>Sub-sub-category deactivated</value>
+  </data>
+  <data name="SubSubCategoryDeactivated" xml:space="preserve">
+    <value>"{0}" has been deactivated.</value>
+  </data>
+
+  <data name="Error_ToggleFailed" xml:space="preserve">
+    <value>We couldn't change the active state. Please try again.</value>
+  </data>
+
+  <!-- ── Phase 3.3 v6 — view switcher (Tree ↔ List) ──
+       ViewModeLabel  — aria-label for the .view-switcher group (screen-reader only)
+       ViewModeTree   — button label + tooltip for the tree/node-diagram view
+       ViewModeList   — button label + tooltip for the file-explorer list view (default) -->
+
+  <data name="ViewModeLabel" xml:space="preserve">
+    <value>View mode</value>
+  </data>
+  <data name="ViewModeTree" xml:space="preserve">
+    <value>Tree</value>
+  </data>
+  <data name="ViewModeList" xml:space="preserve">
+    <value>List</value>
+  </data>
 </root>

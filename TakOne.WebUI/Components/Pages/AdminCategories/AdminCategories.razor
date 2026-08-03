@@ -1,4 +1,4 @@
-﻿@* AdminCategories.razor — Phase 3.3 v3 (file-explorer tree)
+﻿@* AdminCategories.razor — Phase 3.3 v5 (horizontal node-tree, end-of-group + buttons)
 
    Staff-facing category management page at route `/Admin/Categories`.
    Reached from the sidebar's "Admin → Manage Categories" link (already
@@ -6,46 +6,54 @@
    [Authorize(Roles=...)] — Employees cannot create categories (the
    CreateCategoryCommand requires Manager or Admin role).
 
-   v3 — File-explorer tree (replaces v2 "Idea A" indented cards):
-     Renders the category hierarchy as a VS Code / file-explorer style
-     tree with proper connector lines (vertical line down the inline-start
-     side of each branch + horizontal elbow linking it to each child node).
-     One node per row, expand/collapse chevrons, depth signaled by icon
-     color + nesting rather than border colors.
+   v5 — End-of-group + buttons (replaces v4 per-node + buttons):
+     Each node no longer carries its own "+" button. Instead, ONE "+"
+     button appears at the END of each children group:
+       - At the bottom of the root-level list of categories → adds a
+         new top-level Category.
+       - At the bottom of each Category's sub-cat list (visible only
+         when that Category is expanded) → adds a new SubCategory
+         under THAT specific Category.
+       - At the bottom of each SubCategory's sub-sub list (visible
+         only when that SubCategory is expanded) → adds a new
+         SubSubCategory under THAT specific SubCategory.
+     This matches the user's mental model: "all categories in one
+     column, all sub-cats in another, all sub-subs in another — and
+     under the LAST node of each column there's a + sign".
 
-     Behavior:
-       - Top-level Categories are ALWAYS visible (they're the tree roots).
-       - SubCategories are COLLAPSED by default (empty _expandedCategories
-         set). User clicks the chevron to expand.
-       - SubSubCategories are also collapsed by default (empty _expandedSubs
-         set). User expands a Sub to see them.
-       - Each Category / Sub row has an inline "+ Add child" button on the
-         inline-end side. Clicking it replaces the button with an inline
-         textbox + Save/Cancel (no visual jump — the form sits in the same
-         spot the button was).
-       - Duplicate-name errors from the backend are surfaced via
-         Toast.Error and the inline form stays open so the user can rename
-         and retry.
+     Each node carries TWO action icons (on the node itself, not below):
+       - Pencil (edit / rename) — always visible.
+       - Activate/Deactivate toggle — shows "deactivate" (e.g. block
+         icon) when the node is active, "activate" (e.g. check_circle)
+         when the node is inactive. Clicking dispatches the right
+         Activate/Deactivate command for the node's level.
+
+     Deactivated nodes get a RED outline (instead of v4's opacity
+     reduction) so they're immediately visible at a glance.
+
+     All input placeholders have been removed (the user found the
+     "مثلاً گوشی‌ها" / "نام جدید را وارد کنید" hints more distracting
+     than helpful — the field label above the form is enough context).
 
    RTL (Persian) SUPPORT:
-     All indentation + connector lines use CSS logical properties
-     (padding-inline-start, inset-inline-start, margin-inline-start)
-     which auto-flip when the page is rendered with dir="rtl". The
-     collapse chevron is mirrored via a [dir="rtl"] selector so it
-     points left-when-collapsed in Persian (instead of right). No
-     per-locale code or duplicated stylesheets.
+     The tree auto-mirrors in RTL because `flex-direction: row` follows
+     the inline direction — in LTR items go left-to-right (parent on
+     left, children on right), in RTL items go right-to-left (parent on
+     right, children on left). NO [dir="rtl"] override is needed or
+     wanted; adding `flex-direction: row-reverse` under [dir="rtl"]
+     would DOUBLE-reverse the axis and put the parent on the wrong
+     side. The SVG connector lines are drawn by JS
+     (adminCategoriesTree.js) which detects `direction: rtl` on the
+     canvas and mirrors the start/end coordinates — connectors go from
+     parent.left → child.right in RTL. No per-locale markup duplication.
+
+     The tree starts at the inline-start edge of the canvas (left in
+     LTR, right in RTL) — no extra padding pushes it toward the middle.
 
    Hierarchy:
      Category  → has many SubCategories
      SubCategory → has many SubSubCategories
-     SubSubCategory → leaf (no further children)
-
-   STYLE CONSISTENCY:
-     Matches CreateUser.razor — same outer RadzenCard (Variant.Filled,
-     padding 1.25rem), same primary-color icons, same button palette:
-       - Add buttons    → ButtonStyle.Success + Variant.Outlined (green = add)
-       - Save buttons   → ButtonStyle.Primary  + Variant.Filled
-       - Cancel buttons → ButtonStyle.Secondary + Variant.Outlined
+     SubSubCategory → leaf (no further children — no [+] button under it)
 *@
 
 @page "/Admin/Categories"
@@ -55,14 +63,24 @@
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.Extensions.Localization
+@using Microsoft.JSInterop
 @using Radzen
 @using Wolverine
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Categories.Commands.CreateCategory
+@using TakOne.Application.Categories.Commands.ActivateCategory
+@using TakOne.Application.Categories.Commands.DeactivateCategory
 @using TakOne.Application.Categories.Commands.SubcategoryCommands.CreateSubCategory
+@using TakOne.Application.Categories.Commands.ActivateSubCategory
+@using TakOne.Application.Categories.Commands.DeactivateSubCategory
+@using TakOne.Application.Categories.Commands.RenameSubCategory
 @using TakOne.Application.Categories.Commands.SubSubCategoryCommands.CreateSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.ActivateSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.DeactivateSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.RenameSubSubCategory
+@using TakOne.Application.Categories.Commands.RenameCategory
 @using TakOne.Application.Categories.DTOs
-@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.Application.Categories.Queries.GetAllCategories
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
@@ -70,6 +88,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminCategories> Loc
 @inject ToastService Toast
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -83,201 +102,650 @@
                 flex-wrap: wrap;
             }
 
-            /* ── File-explorer tree (v3) ──────────────────────────────────
-                           Structure:
-                             .tree-root
-                               └─ .tree-node[data-depth="0"]   (Category — always visible)
-                                   ├─ .tree-node-row            (chevron + icon + name + meta + add-btn)
-                                   └─ .tree-children             (only rendered when expanded)
-                                        ├─ .tree-node[data-depth="1"]   (SubCategory)
-                                        │    ├─ .tree-node-row
-                                        │    └─ .tree-children
-                                        │         ├─ .tree-node[data-depth="2"]  (SubSubCategory leaf)
-                                        │         └─ inline add form OR + Add button
-                                        └─ inline add form OR + Add button
+            /* ── Horizontal node-tree (v5) ────────────────────────────────
 
-                           Connector lines are drawn with ::before pseudo-elements:
-                             - .tree-children::before draws a vertical line down the
-                               inline-start side, linking the parent to all its children.
-                             - .tree-node[data-depth]:not([data-depth="0"])::before
-                               draws a horizontal elbow from the vertical line to each
-                               child node.
+                           Layout:
+                             .tree-canvas    — relative-positioned container that
+                                               holds the SVG overlay + the nodes layer.
+                                               Overflow:auto so wide trees scroll.
+                                               Padding reduced to inline-start:0 so
+                                               the tree starts at the very edge.
+                             .nodes-layer    — the recursive tree. Each .tree-node
+                                               is a flex row: [node-content] [children]
+                                               Children stack vertically, centered
+                                               around the parent's Y.
 
-                           All positioning uses CSS LOGICAL properties
-                           (padding-inline-start, inset-inline-start) so the tree
-                           auto-flips in RTL (Persian) layout — the vertical line
-                           moves to the right side, elbows point left, indentation
-                           pushes children to the left. No [dir="rtl"] overrides
-                           needed for the lines. */
+                           RTL (Persian):
+                             LTR layout  : parent on LEFT,  children expand to the RIGHT.
+                             RTL layout  : parent on RIGHT, children expand to the LEFT.
+                                           Sub-subs expand further LEFT of subs.
 
-            .tree-root {
-                margin-top: 0.5rem;
+                             We EXPLICITLY force `flex-direction: row-reverse` under
+                             [dir="rtl"] for .tree-node. This is required because the
+                             flexbox `row` direction's auto-reverse behavior depends
+                             on the computed `direction` of the flex container, and
+                             some ancestor CSS (Radzen card/stack) interferes with
+                             the inherited direction in ways that prevent the
+                             spec-compliant auto-reverse. The explicit override is
+                             direction-deterministic and works regardless of what
+                             ancestor CSS does.
+
+                             We also explicitly set `align-items: flex-end` on
+                             .nodes-layer under [dir="rtl"] so the root categories
+                             align to the RIGHT edge of the canvas (mirroring LTR's
+                             `align-items: flex-start` which puts them on the LEFT). */
+
+            .tree-canvas {
+                position: relative;
+                overflow: auto;
+                /* inline-start padding = 0 so the root node starts at the
+                               very edge of the canvas (left in LTR, right in RTL).
+                               Keep some block padding so nodes don't touch the top
+                               or bottom of the card. */
+                padding-block: 1.5rem 2rem;
+                padding-inline: 0.25rem 1rem;
+                min-height: 200px;
+            }
+
+            .connectors-svg {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 0;
+                overflow: visible;
+            }
+
+                .connectors-svg .connector-line {
+                    fill: none;
+                    /* v6.2: connectors use the sub-cat icon color
+                       (lighter green = --rz-success) so the lines visually
+                       belong to the sub-cat level they connect, creating a
+                       coherent green thread through the tree. Same color is
+                       used for the list view's trunk + elbow lines. */
+                    stroke: var(--rz-success, #16a34a);
+                    stroke-width: 1.6;
+                    stroke-linecap: round;
+                }
+
+            .nodes-layer {
+                position: relative;
+                z-index: 1;
+                display: inline-flex; /* shrink-to-fit so canvas can scroll */
+                flex-direction: column;
+                gap: 1rem;
+                /* Pull the layer to the inline-start edge so the root
+                               node touches the edge (no extra indentation). */
+                align-items: flex-start;
             }
 
             .tree-node {
-                position: relative;
-            }
-
-                /* Elbow connector — horizontal line from the vertical
-                               parent line to this node. Only rendered for non-root
-                               nodes (depth > 0). Root nodes (depth 0) have no parent
-                               line to connect to. */
-                .tree-node[data-depth]:not([data-depth="0"])::before {
-                    content: '';
-                    position: absolute;
-                    inset-inline-start: -0.625rem;
-                    top: 0.875rem;
-                    width: 0.625rem;
-                    height: 1px;
-                    background: var(--rz-border-color, rgba(0, 0, 0, 0.10));
-                    pointer-events: none;
-                }
-
-            .tree-node-row {
                 display: flex;
+                flex-direction: row;
                 align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 0.625rem;
-                border-radius: var(--rz-border-radius, 6px);
-                transition: background-color 0.12s ease;
-                flex-wrap: wrap;
+                gap: 3rem; /* space between parent and its children */
             }
 
-                .tree-node-row:hover {
-                    background-color: var(--rz-hover-background-color, rgba(0, 0, 0, 0.04));
-                }
+            /* RTL NOTE — DO NOT add a [dir="rtl"] .tree-node
+                               { flex-direction: row-reverse } override here.
 
-            .node-icon {
-                font-size: 1.125rem;
+                               `flex-direction: row` makes the main axis follow the
+                               inline direction. In LTR that is left-to-right (parent
+                               on left, children on right). In RTL the browser
+                               ALREADY reverses the inline direction to right-to-left
+                               (parent on right, children on left) — that is exactly
+                               what we want for a Persian tree.
+
+                               Adding `row-reverse` under [dir="rtl"] DOUBLE-reverses
+                               the axis: row-reverse + RTL = left-to-right physical
+                               layout, which puts the parent on the LEFT of its
+                               children. That was the v6 bug — "categories go to the
+                               left side of the sub cats when expanded (on right to
+                               left)". The fix is simply to NOT override. */
+
+            /* ── Node content (oval + actions) ──
+                           v5: actions live INSIDE the oval (right edge), not below.
+                           This keeps each node compact and lets the + button sit
+                           cleanly at the end of the children list. */
+
+            .node-content {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.375rem;
                 flex-shrink: 0;
             }
 
-            .node-name {
-                font-weight: 600;
-                font-size: 0.9375rem;
-                color: var(--rz-text-primary-color);
-            }
-
-                .node-name.is-inactive {
-                    color: var(--rz-text-secondary-color);
-                    font-weight: 500;
-                }
-
-            .node-meta {
-                color: var(--rz-text-secondary-color);
-                font-size: 0.8125rem;
-                margin-inline-start: 0.25rem;
-            }
-
-            .node-actions {
-                display: flex;
-                align-items: center;
-                gap: 0.25rem;
-                margin-inline-start: auto;
-            }
-
-            /* Chevron — clickable, rotates when collapsed.
-                           LTR: expanded = down (0deg), collapsed = right (-90deg)
-                           RTL: expanded = down (0deg), collapsed = left  (+90deg)
-                           The [dir="rtl"] selector handles the mirror. */
-            .chevron-btn {
-                cursor: pointer;
-                color: var(--rz-text-secondary-color);
-                padding: 0.125rem;
-                border-radius: var(--rz-border-radius-sm, 4px);
+            .node-oval {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                flex-shrink: 0;
+                gap: 0.4rem;
+                padding: 0.5rem 0.75rem;
+                min-width: 120px;
+                max-width: 280px;
+                border-radius: 999px; /* fully rounded = oval/pill */
+                border: 1.5px solid var(--rz-border-color, rgba(0, 0, 0, 0.18));
+                background-color: var(--rz-base-background-color, #fff);
+                color: var(--rz-text-primary-color);
+                font-weight: 600;
+                font-size: 0.9375rem;
+                transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                position: relative;
+            }
+
+                .node-oval:hover {
+                    border-color: var(--rz-primary, #4338ca);
+                    box-shadow: 0 0 0 3px var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+                }
+
+                /* Deactivated nodes get a RED outline (replaces v4's
+                               opacity reduction). Red is universally read as
+                               "disabled / problematic" so the user can spot
+                               deactivated nodes at a glance. */
+                .node-oval.is-inactive {
+                    border-color: var(--rz-danger, #dc2626);
+                    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+                }
+
+                .node-oval .node-icon {
+                    font-size: 1rem;
+                    flex-shrink: 0;
+                }
+
+            /* ── Expand/collapse chevron ──
+                               v5 originally had NO expand control on the nodes —
+                               sub-cats were rendered only when isExpanded was true,
+                               but nothing toggled isExpanded, so users saw "just
+                               categories, nothing else". The chevron is the
+                               conventional file-explorer control: click to
+                               toggle the children container.
+
+                               Placement: inline-start edge of the oval (before the
+                               folder icon). Rotates based on expand state AND
+                               direction (RTL flips the collapsed arrow). */
+            .chevron-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.25rem;
+                height: 1.25rem;
                 border: none;
                 background: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                padding: 0;
+                border-radius: 4px;
+                transition: background-color 0.15s ease;
+                flex-shrink: 0;
             }
 
                 .chevron-btn:hover {
-                    background-color: var(--rz-hover-background-color, rgba(0, 0, 0, 0.06));
-                    color: var(--rz-text-primary-color);
+                    background-color: var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+                    color: var(--rz-primary, #4338ca);
                 }
 
-                .chevron-btn.is-collapsed .chevron-icon {
+                .chevron-btn .material-icons,
+                .chevron-btn .rzi {
+                    font-size: 1.125rem;
+                    /* Collapsed LTR: rotate -90deg → arrow points
+                                       right (▶). Expanded: rotate 0 → arrow points
+                                       down (▼). RTL flips the collapsed direction
+                                       via the [dir="rtl"] rule below.
+                                       Transition is on the icon (not the button)
+                                       because the transform is applied here. */
                     transform: rotate(-90deg);
+                    transition: transform 0.15s ease;
                 }
 
-            [dir="rtl"] .chevron-btn.is-collapsed .chevron-icon {
+                .chevron-btn.is-expanded .material-icons,
+                .chevron-btn.is-expanded .rzi {
+                    transform: rotate(0deg);
+                }
+
+            /* RTL: collapsed chevron points LEFT instead of
+                                   right. Expanded state is the same (down) in both
+                                   directions, so we don't override is-expanded. */
+            [dir="rtl"] .chevron-btn:not(.is-expanded) .material-icons,
+            [dir="rtl"] .chevron-btn:not(.is-expanded) .rzi {
                 transform: rotate(90deg);
             }
 
-            .chevron-icon {
-                transition: transform 0.15s ease;
-                font-size: 1.125rem;
+            .node-oval .node-label {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 180px;
             }
 
-            /* Spacer that occupies the chevron's slot on leaf nodes
-                           (no children to expand) so leaf icons align with their
-                           siblings' icons. */
-            .chevron-spacer {
-                width: 1.375rem;
+            /* In-node action icons (right edge of the oval). They
+                               appear inside the pill so they're always visible and
+                               don't take up vertical space below the node. */
+            .node-oval .node-actions {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.125rem;
+                /* Inline-start margin pushes actions to the right
+                                   edge of the oval in LTR; in RTL it flips via
+                                   logical property. */
+                margin-inline-start: 0.25rem;
+                padding-inline-start: 0.25rem;
+                border-inline-start: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.12));
+            }
+
+            /* Inline rename form — replaces the oval's content with a
+                           textbox. Keeps the oval shape so the tree layout doesn't
+                           shift during editing. */
+            .node-oval.is-editing {
+                padding: 0.25rem 0.5rem;
+                border-color: var(--rz-primary, #4338ca);
+                box-shadow: 0 0 0 3px var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+            }
+
+                .node-oval.is-editing .rename-input {
+                    border: none;
+                    outline: none;
+                    background: transparent;
+                    font: inherit;
+                    font-weight: 600;
+                    color: inherit;
+                    min-width: 120px;
+                    max-width: 220px;
+                    text-align: center;
+                }
+
+            .action-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.5rem;
+                height: 1.5rem;
+                border-radius: 999px;
+                border: none;
+                background-color: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                transition: all 0.15s ease;
+                padding: 0;
+            }
+
+                .action-btn:hover {
+                    color: var(--rz-primary, #4338ca);
+                    background-color: var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+                }
+
+                /* Activate/Deactivate icon — red tint when it will
+                               DEACTIVATE (active node), green tint when it will
+                               ACTIVATE (inactive node). Gives the user a visual
+                               hint of what clicking will do. */
+                .action-btn.action-toggle-will-deactivate:hover {
+                    color: var(--rz-danger, #dc2626);
+                    background-color: rgba(220, 38, 38, 0.12);
+                }
+
+                .action-btn.action-toggle-will-activate:hover {
+                    color: var(--rz-success, #16a34a);
+                    background-color: rgba(22, 163, 74, 0.12);
+                }
+
+                .action-btn .material-icons,
+                .action-btn .rzi {
+                    font-size: 0.9375rem;
+                }
+
+            /* ── End-of-group + button ──
+                           Appears at the END of each children list (and at the end
+                           of the root-level list). Clicking opens an inline add form
+                           in the same spot.
+
+                           v6.1: The + button now has a small text label BELOW it
+                           explaining what clicking it will add ("Add a new category",
+                           "Add sub-category", "Add sub-sub-category"). The label is
+                           muted and tiny so it doesn't compete with the node names
+                           for attention, but it's visible enough that a new admin
+                           doesn't have to guess what the + does at each level. */
+
+            .group-add-row {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                /* Match the .tree-node gap so the + sits in the same
+                               column as the nodes above it. */
+                width: 100%;
+                padding-block: 0.25rem;
+            }
+
+            .group-add-btn {
+                display: inline-flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.2rem;
+                border: none;
+                background-color: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                transition: color 0.15s ease;
+                padding: 0;
+                /* No fixed width/height — the icon circle + label below
+                               define the size. This lets the label wrap naturally
+                               if the locale's translation is long. */
+            }
+
+                .group-add-btn .add-icon-circle {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 2rem;
+                    height: 2rem;
+                    border-radius: 999px;
+                    border: 1.5px dashed var(--rz-border-color, rgba(0, 0, 0, 0.22));
+                    background-color: transparent;
+                    transition: border-color 0.15s ease, background-color 0.15s ease, border-style 0.15s ease;
+                }
+
+                .group-add-btn:hover {
+                    color: var(--rz-success, #16a34a);
+                }
+
+                    .group-add-btn:hover .add-icon-circle {
+                        border-color: var(--rz-success, #16a34a);
+                        background-color: rgba(22, 163, 74, 0.08);
+                        border-style: solid;
+                    }
+
+                .group-add-btn .add-icon-circle .material-icons,
+                .group-add-btn .add-icon-circle .rzi {
+                    font-size: 1.125rem;
+                }
+
+                .group-add-btn .add-label {
+                    font-size: 0.6875rem;
+                    font-weight: 500;
+                    color: var(--rz-text-secondary-color);
+                    line-height: 1.2;
+                    max-width: 120px;
+                    text-align: center;
+                    /* Prevent the label from making the column wider
+                                   than the + icon above it — wrap to a second line
+                                   instead. */
+                    word-break: break-word;
+                }
+
+            /* Inline add form (replaces the + button when clicked). */
+            .inline-add-form,
+            .inline-rename-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.25rem;
+                flex-wrap: nowrap;
+            }
+
+                .inline-add-form .name-input {
+                    border: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.18));
+                    border-radius: 999px;
+                    padding: 0.3rem 0.85rem;
+                    font-size: 0.875rem;
+                    min-width: 160px;
+                    max-width: 220px;
+                    outline: none;
+                    background-color: var(--rz-base-background-color, #fff);
+                    color: var(--rz-text-primary-color);
+                }
+
+                    .inline-add-form .name-input:focus {
+                        border-color: var(--rz-primary, #4338ca);
+                        box-shadow: 0 0 0 2px var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+                    }
+
+            /* ── Children container ── */
+
+            .tree-children {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                justify-content: center; /* vertically center around parent */
+                align-items: flex-start;
+            }
+
+            /* ── Top-level create form ──
+                           v5: hidden by default. The + button at the bottom of the
+                           categories list opens this form inline. The standalone
+                           "create new category" card above the tree is removed —
+                           adding is now done via the + button, consistent with
+                           sub-cat and sub-sub-cat creation. */
+
+            .create-form {
+                display: flex;
+                gap: 0.5rem;
+                align-items: center;
+                flex-wrap: nowrap;
+            }
+            /* ════════════════════════════════════════════════════════════════
+               LIST VIEW (v6 — alternative to the horizontal node-tree)
+               ────────────────────────────────────────────────────────────────
+               The tree view (above) lays nodes out horizontally with SVG
+               bezier connectors. Some users prefer the classic file-explorer
+               "indented list with elbow connectors" layout — categories as
+               top-level rows, sub-cats indented under their parent with a
+               vertical line + horizontal elbow showing the parent-child
+               relationship, sub-subs indented one more level.
+
+               This CSS is COMPLETELY INDEPENDENT from the tree CSS — it uses
+               different class names (.list-view, .list-row, .list-children,
+               .list-node-label) so it can coexist without affecting the tree.
+
+               Indentation + elbow connectors are drawn with pure CSS using
+               logical properties (so the same rules work in both LTR and
+               RTL — the vertical line appears on the inline-start edge,
+               which is LEFT in English and RIGHT in Persian).
+
+               The + buttons, edit/activate actions, and expand/collapse
+               chevrons REUSE the same .action-btn / .chevron-btn / .group-add-btn
+               classes from the tree view, so they look consistent across
+               both views. */
+
+            .list-view {
+                /* Same canvas treatment as .tree-canvas so the two views
+                   feel like the same "card". */
+                padding-block: 1rem 1.5rem;
+                padding-inline: 1rem;
+                min-height: 200px;
+            }
+
+                .list-view .list-root {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+                }
+
+            /* A single row in the list view. Contains:
+               [chevron?] [icon] [label] [actions]
+               Children render BELOW (indented) inside .list-children. */
+            .list-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding-block: 0.25rem;
+                padding-inline: 0.5rem;
+                border-radius: 6px;
+                transition: background-color 0.12s ease;
+            }
+
+                .list-row:hover {
+                    background-color: var(--rz-hover-background-color, rgba(0, 0, 0, 0.04));
+                }
+
+            /* The row's label — a softer, less prominent shape than the
+               tree's .node-oval. List view is denser so we don't want
+               every row enclosed in a heavy bordered pill. Instead the
+               label sits inline with just the icon + actions. */
+            .list-node-label {
+                font-weight: 600;
+                font-size: 0.9375rem;
+                color: var(--rz-text-primary-color);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 280px;
+            }
+
+            /* Inactive rows get a red text color + red icon (instead of
+               the tree's red border, since there's no pill border here). */
+            .list-row.is-inactive .list-node-label {
+                color: var(--rz-danger, #dc2626);
+            }
+
+            .list-row.is-inactive .node-icon {
+                color: var(--rz-danger, #dc2626) !important;
+            }
+
+            /* The inline rename textbox replaces the label. */
+            .list-row .rename-input {
+                border: 1px solid var(--rz-primary, #4338ca);
+                border-radius: 4px;
+                padding: 0.15rem 0.5rem;
+                font: inherit;
+                font-weight: 600;
+                color: var(--rz-text-primary-color);
+                background-color: var(--rz-base-background-color, #fff);
+                min-width: 160px;
+                max-width: 240px;
+                outline: none;
+            }
+
+                .list-row .rename-input:focus {
+                    box-shadow: 0 0 0 2px var(--rz-primary-lighter, rgba(67, 56, 202, 0.12));
+                }
+
+            /* Row action icons — reuse .action-btn from the tree CSS.
+               The actions sit on the inline-end edge of the row. */
+            .list-row .row-actions {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.125rem;
+                margin-inline-start: auto; /* push to inline-end edge */
+            }
+
+            /* ── Children container with elbow connectors ──
+               This is the key visual difference from the tree view.
+               Each .list-children is indented on the inline-start side
+               AND has a vertical line on that side, drawn via
+               border-inline-start. A horizontal elbow is drawn on each
+               child row via ::before pseudo-element. */
+            .list-children {
+                /* Indent children relative to their parent. Use logical
+                   property so RTL automatically flips to the right side. */
+                margin-inline-start: 1.25rem;
+                /* The vertical "trunk" line — runs down the inline-start
+                   edge of the children container, visually connecting all
+                   siblings to their parent. */
+                /* v6.2: trunk line uses the sub-cat icon color (lighter
+                   green = --rz-success), matching the tree view's SVG
+                   connector lines and the sub-cat circle icons. */
+                border-inline-start: 1.5px solid var(--rz-success, #16a34a);
+                /* Small gap so the line doesn't touch the parent row. */
+                margin-block-start: 0.15rem;
+                padding-inline-start: 0.5rem;
+                display: flex;
+                flex-direction: column;
+                gap: 0.15rem;
+            }
+
+            /* Horizontal elbow connector on each child row.
+               The ::before pseudo-element is positioned on the inline-start
+               edge (where the vertical trunk line lives) and extends
+               horizontally toward the row content, creating the classic
+               file-explorer "elbow" shape.
+
+               Width is 0.5rem (matches .list-children padding-inline-start)
+               so the elbow reaches from the trunk line to where the row
+               content begins. */
+            .list-children > .list-row::before,
+            .list-children > .list-add-row::before {
+                content: '';
+                position: relative;
+                display: block;
+                width: 0.5rem;
+                height: 1.5px;
+                /* v6.2: elbow color matches the trunk line + tree
+                   connectors (sub-cat lighter green). */
+                background-color: var(--rz-success, #16a34a);
+                /* Pull it back so it visually connects to the parent's
+                   vertical trunk line (which lives in the parent
+                   .list-children's border-inline-start). */
+                margin-inline-start: -1rem;
+                margin-inline-end: -0.25rem;
                 flex-shrink: 0;
             }
 
-            /* Children container — indented + vertical line.
-                           padding-inline-start creates the indent; the ::before
-                           pseudo-element draws the vertical connector line down
-                           the inline-start edge, linking the parent to every
-                           child node's elbow. */
-            .tree-children {
-                position: relative;
-                padding-inline-start: 1.25rem;
-            }
-
-                .tree-children::before {
-                    content: '';
-                    position: absolute;
-                    inset-inline-start: 0.625rem;
-                    top: 0;
-                    bottom: 0.5rem;
-                    width: 1px;
-                    background: var(--rz-border-color, rgba(0, 0, 0, 0.10));
-                    pointer-events: none;
-                }
-
-            /* Inline add form — appears in place of the "+ Add child"
-                           button (no visual jump). Uses the same RadzenFormField +
-                           RadzenTextBox pattern as CreateUser.razor. */
-            .inline-add-form {
+            /* End-of-group + button in list view — reuse .group-add-btn
+               but make it sit nicely inside the indented list. The row
+               wrapper has padding so the + button aligns with the
+               sibling rows above it. */
+            .list-add-row {
                 display: flex;
-                gap: 0.5rem;
-                align-items: flex-end;
-                flex-wrap: wrap;
-                padding: 0.5rem 0.625rem;
-                margin-top: 0.25rem;
+                align-items: center;
+                padding-block: 0.15rem;
+                padding-inline: 0.5rem;
             }
 
-                .inline-add-form .name-field {
-                    flex: 1 1 200px;
+                .list-add-row .inline-add-form .name-input {
                     min-width: 180px;
                 }
 
-            /* "+ Add child" button — sits at the bottom of the children
-                           container, indented to match the children. Subtle styling
-                           (text + icon, no heavy border) so it doesn't compete
-                           visually with the actual nodes. */
-            .add-child-btn {
-                margin-top: 0.25rem;
+            /* ── View switcher ──
+               A small segmented toggle in the page header. Two buttons
+               (Tree / List) — the active one is filled, the inactive one
+               is outlined. */
+            .view-switcher {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+                padding: 0.2rem;
+                border-radius: 8px;
+                border: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.15));
+                background-color: var(--rz-base-background-color, #fff);
             }
 
-            /* Top-level create form — matches CreateUser.razor's outer
-                           RadzenCard pattern. */
-            .create-form {
-                display: flex;
-                gap: 0.75rem;
-                align-items: flex-end;
-                flex-wrap: wrap;
-            }
-
-                .create-form .name-field {
-                    flex: 1 1 280px;
-                    min-width: 220px;
+                .view-switcher .vs-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.3rem;
+                    padding: 0.3rem 0.75rem;
+                    border: none;
+                    border-radius: 6px;
+                    background-color: transparent;
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.8125rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
                 }
+
+                    .view-switcher .vs-btn:hover {
+                        color: var(--rz-primary, #4338ca);
+                        background-color: var(--rz-primary-lighter, rgba(67, 56, 202, 0.08));
+                    }
+
+                    .view-switcher .vs-btn.is-active {
+                        color: #fff;
+                        background-color: var(--rz-primary, #4338ca);
+                    }
+
+                    .view-switcher .vs-btn .material-icons,
+                    .view-switcher .vs-btn .rzi {
+                        font-size: 1rem;
+                    }
+
+            /* ── RTL: list view auto-mirrors ──
+               Because we use logical properties (margin-inline-start,
+               border-inline-start, padding-inline-start) throughout the
+               list view CSS, RTL automatically mirrors the indentation
+               and elbow connectors — vertical trunk line appears on the
+               RIGHT in Persian, children indent to the RIGHT, elbows
+               point LEFT. No [dir="rtl"] overrides needed. */
     </style>
 </HeadContent>
 
@@ -288,47 +756,35 @@
             <RadzenIcon Icon="category" Style="font-size: 1.75rem; color: var(--rz-primary);" />
             <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
         </RadzenStack>
+
+        @* ── View switcher (Tree ↔ List) ──
+           v6: Two ways to view the same category data. Tree view is
+           the horizontal node-tree with SVG bezier connectors. List
+           view is the classic file-explorer layout with vertical
+           indentation + elbow connectors — this is the DEFAULT view
+           (v6.1). Both share the same state (expand/collapse, rename,
+           activate, add) so switching mid-task works seamlessly — e.g.
+           you can expand a category in tree view, switch to list view,
+           and it will still be expanded. *@
+        <div class="view-switcher" role="group" aria-label="@Loc["ViewModeLabel"]">
+            <button type="button"
+                    class="vs-btn @(_viewMode == ViewMode.Tree ? "is-active" : "")"
+                    title="@Loc["ViewModeTree"]"
+                    aria-pressed="@(_viewMode == ViewMode.Tree)"
+                    @onclick="@(() => SetViewMode(ViewMode.Tree))">
+                <RadzenIcon Icon="account_tree" />
+                <span>@Loc["ViewModeTree"]</span>
+            </button>
+            <button type="button"
+                    class="vs-btn @(_viewMode == ViewMode.List ? "is-active" : "")"
+                    title="@Loc["ViewModeList"]"
+                    aria-pressed="@(_viewMode == ViewMode.List)"
+                    @onclick="@(() => SetViewMode(ViewMode.List))">
+                <RadzenIcon Icon="list" />
+                <span>@Loc["ViewModeList"]</span>
+            </button>
+        </div>
     </div>
-
-    @* ── Top-level create form ──
-       Same pattern as v1/v2: a RadzenCard with an EditForm for creating
-       a new top-level Category. Persists immediately on submit. *@
-    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
-        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.75rem;">
-            <RadzenIcon Icon="add_circle_outline" Style="color: var(--rz-primary);" />
-            <RadzenText Text="@Loc["CreateFormTitle"]" TextStyle="TextStyle.Subtitle1" Style="font-weight: 600; margin: 0;" />
-        </RadzenStack>
-
-        <EditForm Model="@_newCategoryModel" OnValidSubmit="@HandleCreateCategoryAsync" FormName="createCategory">
-            <DataAnnotationsValidator />
-
-            @if (!string.IsNullOrEmpty(_createError))
-            {
-                <RadzenAlert Title="@Loc["ErrorTitle"]"
-                             Text="@_createError"
-                             AlertStyle="AlertStyle.Danger"
-                             Variant="Variant.Filled"
-                             ShowIcon="true"
-                             Style="margin-bottom: 1rem;" />
-            }
-
-            <div class="create-form">
-                <RadzenFormField Text="@Loc["FieldName"]" Class="name-field">
-                    <RadzenTextBox @bind-Value="_newCategoryModel.Name"
-                                   Placeholder="@Loc["FieldNamePlaceholder"]"
-                                   TValue="string"
-                                   Style="width: 100%;" />
-                </RadzenFormField>
-
-                <RadzenButton Text="@Loc["CreateButton"]"
-                              Icon="add"
-                              ButtonType="ButtonType.Submit"
-                              ButtonStyle="ButtonStyle.Primary"
-                              Variant="Variant.Filled"
-                              Disabled="@_isCreating" />
-            </div>
-        </EditForm>
-    </RadzenCard>
 
     @* ── Loading state ── *@
     @if (_isLoading)
@@ -361,7 +817,10 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state ── *@
+    @* ── Empty state ──
+       v5: When there are no categories at all, show a friendly empty
+       state with a single + button to create the first category. No
+       separate "create form" card — the + button does it inline. *@
     else if (_categories.Count == 0)
     {
         <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
@@ -370,279 +829,918 @@
                 <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
                 <RadzenText Text="@Loc["EmptyMessage"]"
                             Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
+                @if (_addingTopLevel)
+                {
+                    <div class="inline-add-form" style="margin-top: 0.5rem;">
+                        <input class="name-input"
+                               value="@_newCategoryName"
+                               @oninput="@(e => _newCategoryName = e.Value?.ToString() ?? "")"
+                               @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateCategoryAsync(); })"
+                               @ref="_topLevelInputRef" />
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["SaveButton"]"
+                                disabled="@_isCreating"
+                                @onclick="@HandleCreateCategoryAsync">
+                            <RadzenIcon Icon="check" />
+                        </button>
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["CancelButton"]"
+                                disabled="@_isCreating"
+                                @onclick="@CancelAddTopLevel">
+                            <RadzenIcon Icon="close" />
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <RadzenButton Text="@Loc["AddFirstCategoryButton"]"
+                                  Icon="add"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Click="@StartAddTopLevel" />
+                }
             </RadzenStack>
         </RadzenCard>
     }
 
-    @* ── Category tree (v3 file-explorer) ── *@
-    else
+    @* ── Horizontal node-tree ── *@
+    else if (_viewMode == ViewMode.Tree)
     {
-        <div class="tree-root">
-            @foreach (var category in _categories)
-            {
-                var categoryExpanded = _expandedCategories.Contains(category.Id);
-                var addingSubHere = _addingSubTo == category.Id;
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <div class="tree-canvas" @ref="_canvasRef">
+                @* SVG overlay — connector paths are populated by JS
+                   interop after every render. The <path> elements are
+                   keyed by "{parentId}->{childId}" so Blazor diffs them
+                   efficiently instead of recreating the whole SVG on
+                   every state change. *@
+                <svg class="connectors-svg" aria-hidden="true">
+                    @foreach (var c in _connectors)
+                    {
+                        <path class="connector-line" d="@c.Path" data-from="@c.ParentId" data-to="@c.ChildId" />
+                    }
+                </svg>
 
-                @* ── Category node (depth 0 — tree root) ── *@
-                <div class="tree-node" data-depth="0" @key(category.Id)>
-                    <div class="tree-node-row">
-                        @* Collapse chevron — only if category has children *@
-                        @if (category.SubCategories.Count > 0)
-                        {
-                            <button type="button"
-                                    class="chevron-btn @(categoryExpanded ? "" : "is-collapsed")"
-                                    role="button"
-                                    tabindex="0"
-                                    aria-label="@(categoryExpanded ? Loc["Collapse"] : Loc["Expand"])"
-                                    aria-expanded="@categoryExpanded"
-                                    @onclick="@(() => ToggleExpandCategory(category.Id))"
-                                    @onkeypress="@(e => { if (e.Key == "Enter" || e.Key == " ") ToggleExpandCategory(category.Id); })">
-                                <RadzenIcon Icon="expand_more" Class="chevron-icon" />
-                            </button>
-                        }
-                        else
-                        {
-                            <span class="chevron-spacer" aria-hidden="true"></span>
-                        }
-                        <RadzenIcon Icon="folder" Class="node-icon" Style="color: var(--rz-primary);" />
-                        <span class="node-name @(category.IsActive ? "" : "is-inactive")">@category.Name</span>
-                        @if (!category.IsActive)
-                        {
-                            <RadzenBadge Text="@Loc["InactiveBadge"]"
-                                         IsPill="true"
-                                         BadgeStyle="BadgeStyle.Warning" />
-                        }
-                        <span class="node-meta">
-                            @string.Format(CultureInfo.CurrentCulture,
-                                Loc["SubcategoryCount"],
-                                category.SubCategories.Count)
-                        </span>
-                        <span class="node-actions">
-                            <RadzenButton Text="@Loc["AddSubCategoryButton"]"
-                                          Icon="add"
-                                          ButtonStyle="ButtonStyle.Success"
-                                          Variant="Variant.Outlined"
-                                          Size="ButtonSize.Small"
-                                          Disabled="@_isCreating"
-                                          Click="@(() => StartAddSub(category.Id))" />
-                        </span>
-                    </div>
-                </div>
+                <div class="nodes-layer">
+                    @foreach (var category in _categories)
+                    {
+                        @RenderCategoryNode(category)
+                    }
 
-                @* ── Children container (sub-cats + add-sub form) ──
-                   Rendered OUTSIDE the .tree-node so the .tree-children
-                   indent + vertical line apply to the children, not the
-                   parent. Only rendered when the category is expanded. *@
-                @if (categoryExpanded)
-                {
-                    <div class="tree-children">
-                        @* Sub-category nodes (depth 1) *@
-                        @foreach (var sub in category.SubCategories)
-                        {
-                            var subExpanded = _expandedSubs.Contains(sub.Id);
-                            var addingSubSubHere = _addingSubSubTo == sub.Id;
-
-                            <div class="tree-node" data-depth="1" @key(sub.Id)>
-                                <div class="tree-node-row">
-                                    @if (sub.SubSubCategories.Count > 0)
-                                    {
-                                        <button type="button"
-                                                class="chevron-btn @(subExpanded ? "" : "is-collapsed")"
-                                                role="button"
-                                                tabindex="0"
-                                                aria-label="@(subExpanded ? Loc["Collapse"] : Loc["Expand"])"
-                                                aria-expanded="@subExpanded"
-                                                @onclick="@(() => ToggleExpandSub(sub.Id))"
-                                                @onkeypress="@(e => { if (e.Key == "Enter" || e.Key == " ") ToggleExpandSub(sub.Id); })">
-                                            <RadzenIcon Icon="expand_more" Class="chevron-icon" />
-                                        </button>
-                                    }
-                                    else
-                                    {
-                                        <span class="chevron-spacer" aria-hidden="true"></span>
-                                    }
-                                    <RadzenIcon Icon="folder" Class="node-icon" Style="color: var(--rz-success);" />
-                                    <span class="node-name @(sub.IsActive ? "" : "is-inactive")">@sub.Name</span>
-                                    @if (!sub.IsActive)
-                                    {
-                                        <RadzenBadge Text="@Loc["InactiveBadge"]"
-                                                     IsPill="true"
-                                                     BadgeStyle="BadgeStyle.Warning" />
-                                    }
-                                    <span class="node-meta">
-                                        @string.Format(CultureInfo.CurrentCulture,
-                                            Loc["SubsubcategoryCount"],
-                                            sub.SubSubCategories.Count)
-                                    </span>
-                                    <span class="node-actions">
-                                        <RadzenButton Text="@Loc["AddSubSubCategoryButton"]"
-                                                      Icon="add"
-                                                      ButtonStyle="ButtonStyle.Success"
-                                                      Variant="Variant.Outlined"
-                                                      Size="ButtonSize.Small"
-                                                      Disabled="@_isCreating"
-                                                      Click="@(() => StartAddSubSub(sub.Id))" />
-                                    </span>
-                                </div>
-                            </div>
-
-                            @* Sub-sub-children container — only when sub is expanded *@
-                            @if (subExpanded)
-                            {
-                                <div class="tree-children">
-                                    @* Sub-sub-category nodes (depth 2 — leaf) *@
-                                    @foreach (var ssub in sub.SubSubCategories)
-                                    {
-                                        <div class="tree-node" data-depth="2" @key(ssub.Id)>
-                                            <div class="tree-node-row">
-                                                <span class="chevron-spacer" aria-hidden="true"></span>
-                                                <RadzenIcon Icon="circle"
-                                                            Class="node-icon"
-                                                            Style="color: var(--rz-warning); font-size: 0.625rem;" />
-                                                <span class="node-name @(ssub.IsActive ? "" : "is-inactive")">@ssub.Name</span>
-                                                @if (!ssub.IsActive)
-                                                {
-                                                    <RadzenBadge Text="@Loc["InactiveBadge"]"
-                                                                 IsPill="true"
-                                                                 BadgeStyle="BadgeStyle.Warning" />
-                                                }
-                                            </div>
-                                        </div>
-                                    }
-
-                                    @* Inline "add sub-sub-category" form OR the
-                                       "+ Add" button — same slot, no visual jump. *@
-                                    @if (addingSubSubHere)
-                                    {
-                                        <div class="inline-add-form">
-                                            <RadzenFormField Text="@Loc["FieldSubSubCategoryName"]" Class="name-field">
-                                                <RadzenTextBox @bind-Value="_newSubSubName"
-                                                               Placeholder="@Loc["FieldSubSubCategoryNamePlaceholder"]"
-                                                               TValue="string"
-                                                               Style="width: 100%;"
-                                                               @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubSubAsync(category.Id, sub.Id); })" />
-                                            </RadzenFormField>
-                                            <RadzenButton Text="@Loc["SaveButton"]"
-                                                          Icon="check"
-                                                          ButtonStyle="ButtonStyle.Primary"
-                                                          Variant="Variant.Filled"
-                                                          Size="ButtonSize.Small"
-                                                          Disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
-                                                          Click="@(() => HandleCreateSubSubAsync(category.Id, sub.Id))" />
-                                            <RadzenButton Text="@Loc["CancelButton"]"
-                                                          Icon="close"
-                                                          ButtonStyle="ButtonStyle.Secondary"
-                                                          Variant="Variant.Outlined"
-                                                          Size="ButtonSize.Small"
-                                                          Disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
-                                                          Click="@CancelAddSubSub" />
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <RadzenButton Text="@Loc["AddSubSubCategoryButton"]"
-                                                      Icon="add"
-                                                      ButtonStyle="ButtonStyle.Success"
-                                                      Variant="Variant.Outlined"
-                                                      Size="ButtonSize.Small"
-                                                      Class="add-child-btn"
-                                                      Disabled="@_isCreating"
-                                                      Click="@(() => StartAddSubSub(sub.Id))" />
-                                    }
-                                </div>
-                            }
-                        }
-
-                        @* Inline "add sub-category" form OR the "+ Add"
-                           button — same slot, no visual jump. *@
-                        @if (addingSubHere)
+                    @* End-of-group + button for the root level (adds a
+                       new top-level Category). Replaced by an inline
+                       add form when active. *@
+                    <div class="group-add-row">
+                        @if (_addingTopLevel)
                         {
                             <div class="inline-add-form">
-                                <RadzenFormField Text="@Loc["FieldSubCategoryName"]" Class="name-field">
-                                    <RadzenTextBox @bind-Value="_newSubName"
-                                                   Placeholder="@Loc["FieldSubCategoryNamePlaceholder"]"
-                                                   TValue="string"
-                                                   Style="width: 100%;"
-                                                   @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubAsync(category.Id); })" />
-                                </RadzenFormField>
-                                <RadzenButton Text="@Loc["SaveButton"]"
-                                              Icon="check"
-                                              ButtonStyle="ButtonStyle.Primary"
-                                              Variant="Variant.Filled"
-                                              Size="ButtonSize.Small"
-                                              Disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
-                                              Click="@(() => HandleCreateSubAsync(category.Id))" />
-                                <RadzenButton Text="@Loc["CancelButton"]"
-                                              Icon="close"
-                                              ButtonStyle="ButtonStyle.Secondary"
-                                              Variant="Variant.Outlined"
-                                              Size="ButtonSize.Small"
-                                              Disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
-                                              Click="@CancelAddSub" />
+                                <input class="name-input"
+                                       value="@_newCategoryName"
+                                       @oninput="@(e => _newCategoryName = e.Value?.ToString() ?? "")"
+                                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateCategoryAsync(); })"
+                                       @ref="_topLevelInputRef" />
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["SaveButton"]"
+                                        disabled="@_isCreating"
+                                        @onclick="@HandleCreateCategoryAsync">
+                                    <RadzenIcon Icon="check" />
+                                </button>
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["CancelButton"]"
+                                        disabled="@_isCreating"
+                                        @onclick="@CancelAddTopLevel">
+                                    <RadzenIcon Icon="close" />
+                                </button>
                             </div>
                         }
                         else
                         {
-                            <RadzenButton Text="@Loc["AddSubCategoryButton"]"
-                                          Icon="add"
-                                          ButtonStyle="ButtonStyle.Success"
-                                          Variant="Variant.Outlined"
-                                          Size="ButtonSize.Small"
-                                          Class="add-child-btn"
-                                          Disabled="@_isCreating"
-                                          Click="@(() => StartAddSub(category.Id))" />
+                            <button type="button"
+                                    class="group-add-btn"
+                                    title="@Loc["AddCategoryButton"]"
+                                    aria-label="@Loc["AddCategoryButton"]"
+                                    disabled="@_isCreating"
+                                    @onclick="@StartAddTopLevel">
+                                <span class="add-icon-circle">
+                                    <RadzenIcon Icon="add" />
+                                </span>
+                                <span class="add-label">@Loc["AddCategoryButton"]</span>
+                            </button>
                         }
                     </div>
-                }
-            }
-        </div>
+                </div>
+            </div>
+        </RadzenCard>
+    }
+    else
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <div class="list-view">
+                <div class="list-root">
+                    @foreach (var category in _categories)
+                    {
+                        @RenderCategoryListItem(category)
+                    }
+
+                    @* End-of-group + button for the root level (adds a
+                       new top-level Category). Same handler as the tree
+                       view's + button — both views share state. *@
+                    <div class="list-add-row">
+                        @if (_addingTopLevel)
+                        {
+                            <div class="inline-add-form">
+                                <input class="name-input"
+                                       value="@_newCategoryName"
+                                       @oninput="@(e => _newCategoryName = e.Value?.ToString() ?? "")"
+                                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateCategoryAsync(); })"
+                                       @ref="_topLevelInputRef" />
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["SaveButton"]"
+                                        disabled="@_isCreating"
+                                        @onclick="@HandleCreateCategoryAsync">
+                                    <RadzenIcon Icon="check" />
+                                </button>
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["CancelButton"]"
+                                        disabled="@_isCreating"
+                                        @onclick="@CancelAddTopLevel">
+                                    <RadzenIcon Icon="close" />
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="group-add-btn"
+                                    title="@Loc["AddCategoryButton"]"
+                                    aria-label="@Loc["AddCategoryButton"]"
+                                    disabled="@_isCreating"
+                                    @onclick="@StartAddTopLevel">
+                                <span class="add-icon-circle">
+                                    <RadzenIcon Icon="add" />
+                                </span>
+                                <span class="add-label">@Loc["AddCategoryButton"]</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </RadzenCard>
     }
 </RadzenStack>
 
+@* ── Recursive node renderers ────────────────────────────────────────
+   Each level has its own render fragment so the markup stays readable
+   and so we can pass the right depth/parent IDs down without juggling
+   a tuple. The data-node-id / data-parent-id attributes are read by
+   adminCategoriesTree.js to know which DOM elements to measure.
+
+   v5: Each oval contains the node icon + label + an inline action
+   group (edit + activate/deactivate). The action group is on the
+   inline-end edge of the oval so it doesn't crowd the label. *@
+
 @code {
-    // ── Form model ──────────────────────────────────────────────────────
 
-    private sealed class NewCategoryFormModel
+    // ── Recursive node render: Category (depth 0) ──
+    private RenderFragment RenderCategoryNode(CategoryDto category) => __builder =>
     {
-        // Validation mirrors CreateCategoryCommandValidator (NotEmpty +
-        // MaximumLength(100)). The cross-aggregate name-uniqueness check
-        // is the handler's responsibility (requires DB access).
-        [Required(ErrorMessage = "Category name is required.")]
-        [StringLength(100, ErrorMessage = "Category name cannot exceed 100 characters.")]
-        public string Name { get; set; } = string.Empty;
-    }
+        var nodeId = "cat:" + category.Id.ToString();
+        var isRenaming = _renamingNode == nodeId;
+        var isAddingSub = _addingSubTo == category.Id;
+        var isExpanded = _expandedCategories.Contains(category.Id) || isAddingSub;
 
-    private NewCategoryFormModel _newCategoryModel = new();
+        <div class="tree-node" data-node-id="@nodeId">
+            <div class="node-content">
+                @if (isRenaming)
+                {
+                    <div class="node-oval is-editing">
+                        <input class="rename-input"
+                               value="@_renameValue"
+                               @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                               @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameCategoryAsync(category.Id); })"
+                               @ref="_renameInputRef" />
+                    </div>
+                    <div class="inline-rename-actions">
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["SaveButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@(() => HandleRenameCategoryAsync(category.Id))">
+                            <RadzenIcon Icon="check" />
+                        </button>
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["CancelButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@CancelRename">
+                            <RadzenIcon Icon="close" />
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="node-oval @(category.IsActive ? "" : "is-inactive")">
+                        @* Expand/collapse chevron — only for non-leaf
+                           nodes (Category has SubCategories). Clicking
+                           toggles _expandedCategories, which controls
+                           whether the .tree-children container renders.
+                           v5 originally had no chevron, so users could
+                           never see sub-cats — that was the "categories
+                           shown but nothing else" bug. *@
+                        <button type="button"
+                                class="chevron-btn @(isExpanded ? "is-expanded" : "")"
+                                title="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                aria-label="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                aria-expanded="@isExpanded"
+                                disabled="@_isRenaming"
+                                @onclick="@(() => ToggleExpandCategory(category.Id))">
+                            <RadzenIcon Icon="expand_more" />
+                        </button>
+                        <RadzenIcon Icon="folder" Class="node-icon" Style="color: var(--rz-primary);" />
+                        <span class="node-label">@category.Name</span>
+                        <span class="node-actions">
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["EditButton"]"
+                                    aria-label="@Loc["EditButton"]"
+                                    disabled="@_isRenaming"
+                                    @onclick="@(() => StartRenameCategory(category))">
+                                <RadzenIcon Icon="edit" />
+                            </button>
+                            <button type="button"
+                                    class="action-btn @(category.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                                    title="@(category.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    aria-label="@(category.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    disabled="@_isToggling"
+                                    @onclick="@(() => HandleToggleCategoryActiveAsync(category))">
+                                <RadzenIcon Icon="@(category.IsActive ? "block" : "check_circle")" />
+                            </button>
+                        </span>
+                    </div>
+                }
 
+                @* Inline add form — appears under the last sub-cat of
+                   this category (in the .tree-children container below)
+                   when the user clicks the end-of-group + button. The
+                   form itself is rendered inside the children container
+                   so it sits in the same column as the sub-cats. *@
+            </div>
+
+            @* Children — render when expanded. The end-of-group +
+               button (or inline add form) sits at the BOTTOM of this
+               list, in the same column as the sub-cats. *@
+            @if (isExpanded)
+            {
+                <div class="tree-children">
+                    @foreach (var sub in category.SubCategories)
+                    {
+                        @RenderSubNode(category.Id, sub)
+                    }
+
+                    @* End-of-group + button for this Category's sub-cats
+                       (adds a new SubCategory under THIS Category). *@
+                    <div class="group-add-row">
+                        @if (isAddingSub)
+                        {
+                            <div class="inline-add-form">
+                                <input class="name-input"
+                                       value="@_newSubName"
+                                       @oninput="@(e => _newSubName = e.Value?.ToString() ?? "")"
+                                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubAsync(category.Id); })"
+                                       @ref="_subInputRef" />
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["SaveButton"]"
+                                        disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
+                                        @onclick="@(() => HandleCreateSubAsync(category.Id))">
+                                    <RadzenIcon Icon="check" />
+                                </button>
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["CancelButton"]"
+                                        disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
+                                        @onclick="@CancelAddSub">
+                                    <RadzenIcon Icon="close" />
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="group-add-btn"
+                                    title="@Loc["AddSubCategoryButton"]"
+                                    aria-label="@Loc["AddSubCategoryButton"]"
+                                    disabled="@_isCreating"
+                                    @onclick="@(() => StartAddSub(category.Id))">
+                                <span class="add-icon-circle">
+                                    <RadzenIcon Icon="add" />
+                                </span>
+                                <span class="add-label">@Loc["AddSubCategoryButton"]</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    };
+
+    // ── Recursive node render: SubCategory (depth 1) ──
+    private RenderFragment RenderSubNode(Guid categoryId, SubCategoryDto sub) => __builder =>
+    {
+        var nodeId = "sub:" + sub.Id.ToString();
+        var parentId = "cat:" + categoryId.ToString();
+        var isRenaming = _renamingNode == nodeId;
+        var isAddingSubSub = _addingSubSubTo == sub.Id;
+        var isExpanded = _expandedSubs.Contains(sub.Id) || isAddingSubSub;
+
+        <div class="tree-node" data-node-id="@nodeId" data-parent-id="@parentId">
+            <div class="node-content">
+                @if (isRenaming)
+                {
+                    <div class="node-oval is-editing">
+                        <input class="rename-input"
+                               value="@_renameValue"
+                               @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                               @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameSubAsync(categoryId, sub.Id); })"
+                               @ref="_renameInputRef" />
+                    </div>
+                    <div class="inline-rename-actions">
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["SaveButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@(() => HandleRenameSubAsync(categoryId, sub.Id))">
+                            <RadzenIcon Icon="check" />
+                        </button>
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["CancelButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@CancelRename">
+                            <RadzenIcon Icon="close" />
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="node-oval @(sub.IsActive ? "" : "is-inactive")">
+                        @* Expand/collapse chevron for SubCategory —
+                           same rationale as Category. SubSubCategory is
+                           a leaf so it gets no chevron. *@
+                        <button type="button"
+                                class="chevron-btn @(isExpanded ? "is-expanded" : "")"
+                                title="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                aria-label="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                aria-expanded="@isExpanded"
+                                disabled="@_isRenaming"
+                                @onclick="@(() => ToggleExpandSub(sub.Id))">
+                            <RadzenIcon Icon="expand_more" />
+                        </button>
+                        <RadzenIcon Icon="circle" Class="node-icon" Style="color: var(--rz-success); font-size: 0.75rem;" />
+                        <span class="node-label">@sub.Name</span>
+                        <span class="node-actions">
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["EditButton"]"
+                                    aria-label="@Loc["EditButton"]"
+                                    disabled="@_isRenaming"
+                                    @onclick="@(() => StartRenameSub(categoryId, sub))">
+                                <RadzenIcon Icon="edit" />
+                            </button>
+                            <button type="button"
+                                    class="action-btn @(sub.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                                    title="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    aria-label="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    disabled="@_isToggling"
+                                    @onclick="@(() => HandleToggleSubActiveAsync(categoryId, sub))">
+                                <RadzenIcon Icon="@(sub.IsActive ? "block" : "check_circle")" />
+                            </button>
+                        </span>
+                    </div>
+                }
+            </div>
+
+            @if (isExpanded)
+            {
+                <div class="tree-children">
+                    @foreach (var ssub in sub.SubSubCategories)
+                    {
+                        @RenderSubSubNode(categoryId, sub.Id, ssub)
+                    }
+
+                    @* End-of-group + button for this SubCategory's
+                       sub-subs (adds a new SubSubCategory under THIS
+                       SubCategory). *@
+                    <div class="group-add-row">
+                        @if (isAddingSubSub)
+                        {
+                            <div class="inline-add-form">
+                                <input class="name-input"
+                                       value="@_newSubSubName"
+                                       @oninput="@(e => _newSubSubName = e.Value?.ToString() ?? "")"
+                                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubSubAsync(categoryId, sub.Id); })"
+                                       @ref="_subSubInputRef" />
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["SaveButton"]"
+                                        disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
+                                        @onclick="@(() => HandleCreateSubSubAsync(categoryId, sub.Id))">
+                                    <RadzenIcon Icon="check" />
+                                </button>
+                                <button type="button"
+                                        class="action-btn"
+                                        title="@Loc["CancelButton"]"
+                                        disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
+                                        @onclick="@CancelAddSubSub">
+                                    <RadzenIcon Icon="close" />
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="group-add-btn"
+                                    title="@Loc["AddSubSubCategoryButton"]"
+                                    aria-label="@Loc["AddSubSubCategoryButton"]"
+                                    disabled="@_isCreating"
+                                    @onclick="@(() => StartAddSubSub(sub.Id))">
+                                <span class="add-icon-circle">
+                                    <RadzenIcon Icon="add" />
+                                </span>
+                                <span class="add-label">@Loc["AddSubSubCategoryButton"]</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    };
+
+    // ── Recursive node render: SubSubCategory (depth 2 — leaf) ──
+    private RenderFragment RenderSubSubNode(Guid categoryId, Guid subId, SubSubCategoryDto ssub) => __builder =>
+    {
+        var nodeId = "subsub:" + ssub.Id.ToString();
+        var parentId = "sub:" + subId.ToString();
+        var isRenaming = _renamingNode == nodeId;
+
+        <div class="tree-node" data-node-id="@nodeId" data-parent-id="@parentId">
+            <div class="node-content">
+                @if (isRenaming)
+                {
+                    <div class="node-oval is-editing">
+                        <input class="rename-input"
+                               value="@_renameValue"
+                               @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                               @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameSubSubAsync(categoryId, subId, ssub.Id); })"
+                               @ref="_renameInputRef" />
+                    </div>
+                    <div class="inline-rename-actions">
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["SaveButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@(() => HandleRenameSubSubAsync(categoryId, subId, ssub.Id))">
+                            <RadzenIcon Icon="check" />
+                        </button>
+                        <button type="button"
+                                class="action-btn"
+                                title="@Loc["CancelButton"]"
+                                disabled="@(_isRenaming && _renamingNode == nodeId)"
+                                @onclick="@CancelRename">
+                            <RadzenIcon Icon="close" />
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="node-oval @(ssub.IsActive ? "" : "is-inactive")">
+                        <RadzenIcon Icon="circle" Class="node-icon" Style="color: var(--rz-warning); font-size: 0.625rem;" />
+                        <span class="node-label">@ssub.Name</span>
+                        <span class="node-actions">
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["EditButton"]"
+                                    aria-label="@Loc["EditButton"]"
+                                    disabled="@_isRenaming"
+                                    @onclick="@(() => StartRenameSubSub(categoryId, subId, ssub))">
+                                <RadzenIcon Icon="edit" />
+                            </button>
+                            <button type="button"
+                                    class="action-btn @(ssub.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                                    title="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    aria-label="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                    disabled="@_isToggling"
+                                    @onclick="@(() => HandleToggleSubSubActiveAsync(categoryId, subId, ssub))">
+                                <RadzenIcon Icon="@(ssub.IsActive ? "block" : "check_circle")" />
+                            </button>
+                        </span>
+                    </div>
+                }
+            </div>
+            @* Leaf node — no children, no end-of-group + button. *@
+        </div>
+    };
+}
+
+@* ── List-view render fragments ─────────────────────────────────────
+   v6: These mirror the tree-view render fragments above (same data,
+   same actions, same state) but produce the classic file-explorer
+   layout: rows stacked vertically with indentation + elbow connectors
+   showing parent-child relationships.
+
+   They are COMPLETELY SEPARATE from the tree render fragments so the
+   tree markup is untouched (per the user's instruction: "do not change
+   the tree/node parts"). The list fragments reuse the same .action-btn,
+   .chevron-btn, .group-add-btn CSS classes so the action buttons look
+   consistent across both views. The list-specific layout (.list-row,
+   .list-children, .list-node-label) is in the <style> block above. *@
+
+@code {
+
+    // ── List-view render: Category (depth 0) ──
+    private RenderFragment RenderCategoryListItem(CategoryDto category) => __builder =>
+    {
+        var nodeId = "cat:" + category.Id.ToString();
+        var isRenaming = _renamingNode == nodeId;
+        var isAddingSub = _addingSubTo == category.Id;
+        var isExpanded = _expandedCategories.Contains(category.Id) || isAddingSub;
+
+        <div class="list-row @(category.IsActive ? "" : "is-inactive")">
+            @if (isRenaming)
+            {
+                <input class="rename-input"
+                       value="@_renameValue"
+                       @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameCategoryAsync(category.Id); })"
+                       @ref="_renameInputRef" />
+            }
+            else
+            {
+                <button type="button"
+                        class="chevron-btn @(isExpanded ? "is-expanded" : "")"
+                        title="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                        aria-label="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                        aria-expanded="@isExpanded"
+                        disabled="@_isRenaming"
+                        @onclick="@(() => ToggleExpandCategory(category.Id))">
+                    <RadzenIcon Icon="expand_more" />
+                </button>
+                <RadzenIcon Icon="folder" Class="node-icon" Style="color: var(--rz-primary);" />
+                <span class="list-node-label">@category.Name</span>
+            }
+            <span class="row-actions">
+                @if (isRenaming)
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["SaveButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@(() => HandleRenameCategoryAsync(category.Id))">
+                        <RadzenIcon Icon="check" />
+                    </button>
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["CancelButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@CancelRename">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["EditButton"]"
+                            aria-label="@Loc["EditButton"]"
+                            disabled="@_isRenaming"
+                            @onclick="@(() => StartRenameCategory(category))">
+                        <RadzenIcon Icon="edit" />
+                    </button>
+                    <button type="button"
+                            class="action-btn @(category.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                            title="@(category.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            aria-label="@(category.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            disabled="@_isToggling"
+                            @onclick="@(() => HandleToggleCategoryActiveAsync(category))">
+                        <RadzenIcon Icon="@(category.IsActive ? "block" : "check_circle")" />
+                    </button>
+                }
+            </span>
+        </div>
+
+        @if (isExpanded)
+        {
+            <div class="list-children">
+                @foreach (var sub in category.SubCategories)
+                {
+                    @RenderSubListItem(category.Id, sub)
+                }
+
+                @* End-of-group + button for this Category's sub-cats. *@
+                <div class="list-add-row">
+                    @if (isAddingSub)
+                    {
+                        <div class="inline-add-form">
+                            <input class="name-input"
+                                   value="@_newSubName"
+                                   @oninput="@(e => _newSubName = e.Value?.ToString() ?? "")"
+                                   @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubAsync(category.Id); })"
+                                   @ref="_subInputRef" />
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["SaveButton"]"
+                                    disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
+                                    @onclick="@(() => HandleCreateSubAsync(category.Id))">
+                                <RadzenIcon Icon="check" />
+                            </button>
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["CancelButton"]"
+                                    disabled="@(_isCreating && _creatingFor == $"sub:{category.Id}")"
+                                    @onclick="@CancelAddSub">
+                                <RadzenIcon Icon="close" />
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                class="group-add-btn"
+                                title="@Loc["AddSubCategoryButton"]"
+                                aria-label="@Loc["AddSubCategoryButton"]"
+                                disabled="@_isCreating"
+                                @onclick="@(() => StartAddSub(category.Id))">
+                            <span class="add-icon-circle">
+                                <RadzenIcon Icon="add" />
+                            </span>
+                            <span class="add-label">@Loc["AddSubCategoryButton"]</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    };
+
+    // ── List-view render: SubCategory (depth 1) ──
+    private RenderFragment RenderSubListItem(Guid categoryId, SubCategoryDto sub) => __builder =>
+    {
+        var nodeId = "sub:" + sub.Id.ToString();
+        var isRenaming = _renamingNode == nodeId;
+        var isAddingSubSub = _addingSubSubTo == sub.Id;
+        var isExpanded = _expandedSubs.Contains(sub.Id) || isAddingSubSub;
+
+        <div class="list-row @(sub.IsActive ? "" : "is-inactive")">
+            @if (isRenaming)
+            {
+                <input class="rename-input"
+                       value="@_renameValue"
+                       @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameSubAsync(categoryId, sub.Id); })"
+                       @ref="_renameInputRef" />
+            }
+            else
+            {
+                <button type="button"
+                        class="chevron-btn @(isExpanded ? "is-expanded" : "")"
+                        title="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                        aria-label="@(isExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                        aria-expanded="@isExpanded"
+                        disabled="@_isRenaming"
+                        @onclick="@(() => ToggleExpandSub(sub.Id))">
+                    <RadzenIcon Icon="expand_more" />
+                </button>
+                <RadzenIcon Icon="circle" Class="node-icon" Style="color: var(--rz-success); font-size: 0.75rem;" />
+                <span class="list-node-label">@sub.Name</span>
+            }
+            <span class="row-actions">
+                @if (isRenaming)
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["SaveButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@(() => HandleRenameSubAsync(categoryId, sub.Id))">
+                        <RadzenIcon Icon="check" />
+                    </button>
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["CancelButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@CancelRename">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["EditButton"]"
+                            aria-label="@Loc["EditButton"]"
+                            disabled="@_isRenaming"
+                            @onclick="@(() => StartRenameSub(categoryId, sub))">
+                        <RadzenIcon Icon="edit" />
+                    </button>
+                    <button type="button"
+                            class="action-btn @(sub.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                            title="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            aria-label="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            disabled="@_isToggling"
+                            @onclick="@(() => HandleToggleSubActiveAsync(categoryId, sub))">
+                        <RadzenIcon Icon="@(sub.IsActive ? "block" : "check_circle")" />
+                    </button>
+                }
+            </span>
+        </div>
+
+        @if (isExpanded)
+        {
+            <div class="list-children">
+                @foreach (var ssub in sub.SubSubCategories)
+                {
+                    @RenderSubSubListItem(categoryId, sub.Id, ssub)
+                }
+
+                <div class="list-add-row">
+                    @if (isAddingSubSub)
+                    {
+                        <div class="inline-add-form">
+                            <input class="name-input"
+                                   value="@_newSubSubName"
+                                   @oninput="@(e => _newSubSubName = e.Value?.ToString() ?? "")"
+                                   @onkeypress="@(async e => { if (e.Key == "Enter") await HandleCreateSubSubAsync(categoryId, sub.Id); })"
+                                   @ref="_subSubInputRef" />
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["SaveButton"]"
+                                    disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
+                                    @onclick="@(() => HandleCreateSubSubAsync(categoryId, sub.Id))">
+                                <RadzenIcon Icon="check" />
+                            </button>
+                            <button type="button"
+                                    class="action-btn"
+                                    title="@Loc["CancelButton"]"
+                                    disabled="@(_isCreating && _creatingFor == $"subsub:{sub.Id}")"
+                                    @onclick="@CancelAddSubSub">
+                                <RadzenIcon Icon="close" />
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                class="group-add-btn"
+                                title="@Loc["AddSubSubCategoryButton"]"
+                                aria-label="@Loc["AddSubSubCategoryButton"]"
+                                disabled="@_isCreating"
+                                @onclick="@(() => StartAddSubSub(sub.Id))">
+                            <span class="add-icon-circle">
+                                <RadzenIcon Icon="add" />
+                            </span>
+                            <span class="add-label">@Loc["AddSubSubCategoryButton"]</span>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    };
+
+    // ── List-view render: SubSubCategory (depth 2 — leaf) ──
+    private RenderFragment RenderSubSubListItem(Guid categoryId, Guid subId, SubSubCategoryDto ssub) => __builder =>
+    {
+        var nodeId = "subsub:" + ssub.Id.ToString();
+        var isRenaming = _renamingNode == nodeId;
+
+        <div class="list-row @(ssub.IsActive ? "" : "is-inactive")">
+            @if (isRenaming)
+            {
+                <input class="rename-input"
+                       value="@_renameValue"
+                       @oninput="@(e => _renameValue = e.Value?.ToString() ?? "")"
+                       @onkeypress="@(async e => { if (e.Key == "Enter") await HandleRenameSubSubAsync(categoryId, subId, ssub.Id); })"
+                       @ref="_renameInputRef" />
+            }
+            else
+            {
+                @* No chevron for leaf nodes — they have no children to
+                   expand. A spacer keeps the icon aligned with siblings
+                   that DO have chevrons (visual column alignment). *@
+                <span class="chevron-spacer" style="display: inline-block; width: 1.25rem; flex-shrink: 0;"></span>
+                <RadzenIcon Icon="circle" Class="node-icon" Style="color: var(--rz-warning); font-size: 0.625rem;" />
+                <span class="list-node-label">@ssub.Name</span>
+            }
+            <span class="row-actions">
+                @if (isRenaming)
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["SaveButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@(() => HandleRenameSubSubAsync(categoryId, subId, ssub.Id))">
+                        <RadzenIcon Icon="check" />
+                    </button>
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["CancelButton"]"
+                            disabled="@(_isRenaming && _renamingNode == nodeId)"
+                            @onclick="@CancelRename">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="action-btn"
+                            title="@Loc["EditButton"]"
+                            aria-label="@Loc["EditButton"]"
+                            disabled="@_isRenaming"
+                            @onclick="@(() => StartRenameSubSub(categoryId, subId, ssub))">
+                        <RadzenIcon Icon="edit" />
+                    </button>
+                    <button type="button"
+                            class="action-btn @(ssub.IsActive ? "action-toggle-will-deactivate" : "action-toggle-will-activate")"
+                            title="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            aria-label="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                            disabled="@_isToggling"
+                            @onclick="@(() => HandleToggleSubSubActiveAsync(categoryId, subId, ssub))">
+                        <RadzenIcon Icon="@(ssub.IsActive ? "block" : "check_circle")" />
+                    </button>
+                }
+            </span>
+        </div>
+    };
+
+
+@code {
     // ── State ────────────────────────────────────────────────────────────
+
+    // ── View mode (v6) ──
+    // Tree = horizontal node-tree with SVG bezier connectors.
+    // List = classic file-explorer layout with indentation + elbow lines (default).
+    // The user can switch between them via the .view-switcher in the header.
+    // Both views share ALL other state (categories, expand/collapse, rename,
+    // activate, add) so switching mid-task works seamlessly.
+    //
+    // v6.1: List is the DEFAULT view now (was Tree). The list view is denser
+    // and reads more naturally for staff managing a large catalog — the tree
+    // view remains available via the switcher for users who prefer the
+    // spatial node-diagram layout. When the user switches TO Tree view,
+    // SetViewMode triggers a connector re-measure + JS rebind (the canvas
+    // was unmounted while in List view, so the old _connectors are stale).
+    private ViewMode _viewMode = ViewMode.List;
+
+    /// <summary>
+    /// Toggles between Tree and List view. Called by the .view-switcher
+    /// buttons in the page header. We don't need to call StateHasChanged
+    /// explicitly because @onclick triggers a re-render automatically.
+    /// We DO need to mark connectors as stale when switching TO Tree view
+    /// so the JS re-measures node positions (the canvas was unmounted
+    /// while in List view, so the old connector paths are stale).
+    /// </summary>
+    private void SetViewMode(ViewMode mode)
+    {
+        if (_viewMode == mode) return;
+        _viewMode = mode;
+        // When switching back to Tree view, force a connector re-measure
+        // on the next render (the canvas was unmounted while in List
+        // view, so the old _connectors list is stale and the JS
+        // ResizeObserver hasn't seen a resize event to trigger redraw).
+        if (mode == ViewMode.Tree)
+        {
+            _needsConnectorUpdate = true;
+            _jsBound = false;  // also re-bind JS (canvas ref changed)
+        }
+    }
 
     private List<CategoryDto> _categories = new();
     private bool _isLoading = true;
     private string? _loadError;
     private bool _isCreating;
-    private string? _createError;
+    private bool _isRenaming;
+    private bool _isToggling;
 
-    // ── Inline add-form state (Phase 3.3 v3 — file-explorer tree) ───────
+    // ── Inline add-form state ───────────────────────────────────────────
     //
+    // _addingTopLevel: when true, the inline add form is open at the
+    //   bottom of the root-level categories list. The user is creating
+    //   a new top-level Category.
     // _addingSubTo / _addingSubSubTo: when non-null, an inline add form
-    //   is open under that parent. Only one form open at a time per level
-    //   (you can't add a sub to category A and category B simultaneously
-    //   — the UI would get confusing).
-    // _newSubName / _newSubSubName: bound to the inline textboxes.
-    // _creatingFor: tracks WHICH form is currently submitting, so we can
-    //   disable only that form's buttons (not every button on the page)
-    //   while a creation is in flight. Format: "sub:{catId}" or
-    //   "subsub:{subId}".
-    //
-    // EXPAND STATE (v3 — flipped from v2's collapse semantics):
-    //   _expandedCategories / _expandedSubs: HashSet of node IDs whose
-    //   children are VISIBLE. Default: empty (top-level Categories only —
-    //   SubCategories and SubSubCategories are collapsed by default).
-    //   User clicks the chevron to expand → ID added to set → children
-    //   render. Click again to collapse → ID removed → children hidden.
-    //   This matches the user's "top-level only expanded" preference and
-    //   is more natural than v2's "everything expanded by default".
-
+    //   is open at the bottom of THAT parent's children list.
+    // _newCategoryName / _newSubName / _newSubSubName: bound to the
+    //   inline textboxes.
+    // _creatingFor: tracks WHICH form is currently submitting, so we
+    //   can disable only that form's buttons. Format: "cat" (top-level),
+    //   "sub:{catId}", or "subsub:{subId}".
+    // _expandedCategories / _expandedSubs: HashSet of node IDs whose
+    //   children are VISIBLE. Default: empty (top-level only). Auto-
+    //   expanded when the user opens an inline add form on that node so
+    //   the new child appears in the right place.
+    private bool _addingTopLevel;
+    private string _newCategoryName = string.Empty;
     private Guid? _addingSubTo;
     private string _newSubName = string.Empty;
     private Guid? _addingSubSubTo;
@@ -651,11 +1749,145 @@
     private readonly HashSet<Guid> _expandedCategories = new();
     private readonly HashSet<Guid> _expandedSubs = new();
 
+    // ── Inline rename state ─────────────────────────────────────────────
+    private string? _renamingNode;
+    private string _renameValue = string.Empty;
+
+    // ── JS interop ──────────────────────────────────────────────────────
+    private ElementReference _canvasRef;
+    private ElementReference _renameInputRef;
+    private ElementReference _topLevelInputRef;
+    private ElementReference _subInputRef;
+    private ElementReference _subSubInputRef;
+    private DotNetObjectReference<AdminCategories>? _dotNetRef;
+    private List<ConnectorInfo> _connectors = new();
+    private bool _needsConnectorUpdate = true;
+
+    // Tracks whether the JS redraw listener (ResizeObserver + dir
+    // MutationObserver) has been successfully bound to the .tree-canvas
+    // element. We can't bind on firstRender unconditionally because the
+    // canvas only renders in the "else" branch (after loading completes
+    // AND at least one category exists). On firstRender the page is
+    // typically still showing the loading spinner, so _canvasRef is an
+    // empty ElementReference — passing it to bindRedraw throws
+    // "Failed to execute 'observe' on 'ResizeObserver': parameter 1 is
+    // not of type 'Element'" and crashes the circuit.
+    //
+    // We retry on every render where _canvasRef.Context is non-null
+    // until the binding succeeds. Once bound, _jsBound short-circuits
+    // further attempts.
+    private bool _jsBound;
+
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
         await LoadCategoriesAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Bind the JS redraw listener once the canvas element is
+        // actually in the DOM. _canvasRef.Context is null when the
+        // .tree-canvas div hasn't been rendered yet (loading / empty /
+        // error states). The first time the tree state renders, the
+        // ElementReference becomes bound and we can safely bind JS.
+        if (!_jsBound && _canvasRef.Context is not null)
+        {
+            _jsBound = true;
+            // v6: Dispose any previous DotNetObjectReference before
+            // creating a new one. When the user switches from List to
+            // Tree view, _jsBound is reset to false by SetViewMode,
+            // causing this block to re-execute. Without disposing the
+            // old _dotNetRef, we would leak one per view switch.
+            _dotNetRef?.Dispose();
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("adminCategoriesTree.bindRedraw", _canvasRef, _dotNetRef);
+            }
+            catch
+            {
+                // If JS interop fails (e.g. circuit disposing), reset
+                // so we retry on the next render.
+                _jsBound = false;
+            }
+        }
+
+        // Focus whichever inline input is currently active so the user
+        // can start typing immediately.
+        await FocusActiveInputAsync();
+
+        if (_needsConnectorUpdate && _canvasRef.Context is not null)
+        {
+            _needsConnectorUpdate = false;
+            try
+            {
+                var paths = await JS.InvokeAsync<List<ConnectorInfo>>(
+                    "adminCategoriesTree.measureConnectors", _canvasRef);
+                _connectors = paths;
+                StateHasChanged();
+            }
+            catch
+            {
+                // JS interop can fail during circuit disposal or initial
+                // prerender. Safe to ignore — the next render will retry.
+            }
+        }
+    }
+
+    private async Task FocusActiveInputAsync()
+    {
+        try
+        {
+            if (_renamingNode is not null && _renameInputRef.Context is not null)
+            {
+                await _renameInputRef.FocusAsync();
+                return;
+            }
+            if (_addingTopLevel && _topLevelInputRef.Context is not null)
+            {
+                await _topLevelInputRef.FocusAsync();
+                return;
+            }
+            if (_addingSubTo is not null && _subInputRef.Context is not null)
+            {
+                await _subInputRef.FocusAsync();
+                return;
+            }
+            if (_addingSubSubTo is not null && _subSubInputRef.Context is not null)
+            {
+                await _subSubInputRef.FocusAsync();
+                return;
+            }
+        }
+        catch
+        {
+            // Focus may fail during render — safe to ignore.
+        }
+    }
+
+    /// <summary>
+    /// JS-invokable callback. Called by adminCategoriesTree.js whenever
+    /// the canvas resizes or the document direction changes (language
+    /// switch). Updates the connector paths without triggering a re-measure
+    /// loop.
+    /// </summary>
+    [JSInvokable]
+    public Task UpdateConnectors(List<ConnectorInfo> paths)
+    {
+        _connectors = paths ?? new();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // ── Connector info (returned by JS) ─────────────────────────────────
+
+    public sealed class ConnectorInfo
+    {
+        public string ParentId { get; set; } = string.Empty;
+        public string ChildId { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
     }
 
     // ── Data loading ────────────────────────────────────────────────────
@@ -667,8 +1899,17 @@
 
         try
         {
+            // Use GetAllCategoriesQuery (NOT GetActiveCategoriesQuery) so
+            // deactivated Categories / SubCategories / SubSubCategories
+            // STAY on the page — the markup renders them with a red
+            // outline + an "activate" toggle so the admin can reactivate
+            // them. GetActiveCategoriesQuery would filter out deactivated
+            // top-level Categories entirely, making them (and their whole
+            // subtrees, since the .Include only fires for categories that
+            // pass the .Where filter) vanish from the page — which is the
+            // v5 bug the user reported.
             var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
-                new GetActiveCategoriesQuery());
+                new GetAllCategoriesQuery());
 
             if (result.IsSuccess)
             {
@@ -686,54 +1927,61 @@
         finally
         {
             _isLoading = false;
+            _needsConnectorUpdate = true;
         }
     }
 
-    // ── Create category (top-level) ─────────────────────────────────────
+    // ── Create category (top-level, inline + at end of root list) ───────
+
+    private void StartAddTopLevel()
+    {
+        _addingTopLevel = true;
+        _newCategoryName = string.Empty;
+        _needsConnectorUpdate = true;
+    }
+
+    private void CancelAddTopLevel()
+    {
+        _addingTopLevel = false;
+        _newCategoryName = string.Empty;
+        _needsConnectorUpdate = true;
+    }
 
     private async Task HandleCreateCategoryAsync()
     {
-        _createError = null;
-
-        if (string.IsNullOrWhiteSpace(_newCategoryModel.Name))
+        if (string.IsNullOrWhiteSpace(_newCategoryName))
         {
-            _createError = Loc["Error_NameRequired"];
+            await Toast.Error(Loc["Error_NameRequired"], summary: Loc["ErrorTitle"]);
             return;
         }
 
+        var trimmedName = _newCategoryName.Trim();
         _isCreating = true;
         _creatingFor = "cat";
 
         try
         {
-            var command = new CreateCategoryCommand(_newCategoryModel.Name.Trim());
+            var command = new CreateCategoryCommand(trimmedName);
             var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
 
             if (result.IsSuccess)
             {
                 await Toast.Success(
-                    string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccess"], _newCategoryModel.Name),
+                    string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccess"], trimmedName),
                     summary: Loc["CreateSuccessTitle"]);
 
-                // Clear the form for the next entry.
-                _newCategoryModel = new NewCategoryFormModel();
-
-                // Reload the list so the new category appears.
+                _addingTopLevel = false;
+                _newCategoryName = string.Empty;
                 await LoadCategoriesAsync();
             }
             else
             {
-                // Most likely: name already exists. Surface the backend's
-                // friendly message via toast AND the inline alert (so the
-                // user sees it even if they navigated away from the toast).
-                _createError = result.Error ?? Loc["Error_GenericCreate"];
-                await Toast.Error(_createError, summary: Loc["ErrorTitle"]);
+                await Toast.Error(result.Error ?? Loc["Error_GenericCreate"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            _createError = Loc["Error_GenericCreate"];
-            await Toast.Error(_createError, summary: Loc["ErrorTitle"]);
+            await Toast.Error(Loc["Error_GenericCreate"], summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -742,18 +1990,21 @@
         }
     }
 
-    // ── Create sub-category (inline under a category) ───────────────────
+    // ── Create sub-category (inline + at end of category's sub list) ────
 
     private void StartAddSub(Guid categoryId)
     {
         _addingSubTo = categoryId;
         _newSubName = string.Empty;
+        _expandedCategories.Add(categoryId);
+        _needsConnectorUpdate = true;
     }
 
     private void CancelAddSub()
     {
         _addingSubTo = null;
         _newSubName = string.Empty;
+        _needsConnectorUpdate = true;
     }
 
     private async Task HandleCreateSubAsync(Guid categoryId)
@@ -765,7 +2016,6 @@
         }
 
         var trimmedName = _newSubName.Trim();
-
         _isCreating = true;
         _creatingFor = $"sub:{categoryId}";
 
@@ -776,16 +2026,12 @@
 
             if (result.IsSuccess)
             {
-                // Find the parent category name for the toast message.
                 var parentName = _categories.FirstOrDefault(c => c.Id == categoryId)?.Name ?? "";
 
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["SubCategoryCreated"], trimmedName, parentName),
                     summary: Loc["SubCategoryCreatedTitle"]);
 
-                // Close the inline form + reload the tree. Make sure the
-                // parent category stays expanded so the user sees the new
-                // sub appear under it.
                 _addingSubTo = null;
                 _newSubName = string.Empty;
                 _expandedCategories.Add(categoryId);
@@ -793,9 +2039,6 @@
             }
             else
             {
-                // Backend returns friendly DomainException messages for
-                // duplicate names + inactive parents. Surface via toast;
-                // keep the form open so the user can rename + retry.
                 await Toast.Error(result.Error ?? Loc["Error_CreateSub"], summary: Loc["ErrorTitle"]);
             }
         }
@@ -810,18 +2053,21 @@
         }
     }
 
-    // ── Create sub-sub-category (inline under a sub-category) ───────────
+    // ── Create sub-sub-category (inline + at end of sub's sub-sub list) ─
 
     private void StartAddSubSub(Guid subCategoryId)
     {
         _addingSubSubTo = subCategoryId;
         _newSubSubName = string.Empty;
+        _expandedSubs.Add(subCategoryId);
+        _needsConnectorUpdate = true;
     }
 
     private void CancelAddSubSub()
     {
         _addingSubSubTo = null;
         _newSubSubName = string.Empty;
+        _needsConnectorUpdate = true;
     }
 
     private async Task HandleCreateSubSubAsync(Guid categoryId, Guid subCategoryId)
@@ -833,7 +2079,6 @@
         }
 
         var trimmedName = _newSubSubName.Trim();
-
         _isCreating = true;
         _creatingFor = $"subsub:{subCategoryId}";
 
@@ -844,7 +2089,6 @@
 
             if (result.IsSuccess)
             {
-                // Find the parent sub-category name for the toast.
                 var parentSub = _categories
                     .FirstOrDefault(c => c.Id == categoryId)?
                     .SubCategories.FirstOrDefault(s => s.Id == subCategoryId)?.Name ?? "";
@@ -853,9 +2097,6 @@
                     string.Format(CultureInfo.CurrentCulture, Loc["SubSubCategoryCreated"], trimmedName, parentSub),
                     summary: Loc["SubSubCategoryCreatedTitle"]);
 
-                // Close the inline form + reload the tree. Make sure both
-                // the category AND the sub stay expanded so the user sees
-                // the new sub-sub appear in the right place.
                 _addingSubSubTo = null;
                 _newSubSubName = string.Empty;
                 _expandedCategories.Add(categoryId);
@@ -878,7 +2119,280 @@
         }
     }
 
+    // ── Rename (inline edit on any node) ────────────────────────────────
+
+    private void StartRenameCategory(CategoryDto category)
+    {
+        _renamingNode = "cat:" + category.Id.ToString();
+        _renameValue = category.Name;
+        _needsConnectorUpdate = true;
+    }
+
+    private void StartRenameSub(Guid categoryId, SubCategoryDto sub)
+    {
+        _renamingNode = "sub:" + sub.Id.ToString();
+        _renameValue = sub.Name;
+        _needsConnectorUpdate = true;
+    }
+
+    private void StartRenameSubSub(Guid categoryId, Guid subId, SubSubCategoryDto ssub)
+    {
+        _renamingNode = "subsub:" + ssub.Id.ToString();
+        _renameValue = ssub.Name;
+        _needsConnectorUpdate = true;
+    }
+
+    private void CancelRename()
+    {
+        _renamingNode = null;
+        _renameValue = string.Empty;
+        _needsConnectorUpdate = true;
+    }
+
+    private async Task HandleRenameCategoryAsync(Guid categoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        _isRenaming = true;
+
+        try
+        {
+            var command = new RenameCategoryCommand(categoryId, trimmed);
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["CategoryRenamed"], trimmed),
+                    summary: Loc["CategoryRenamedTitle"]);
+
+                _renamingNode = null;
+                _renameValue = string.Empty;
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isRenaming = false;
+        }
+    }
+
+    private async Task HandleRenameSubAsync(Guid categoryId, Guid subCategoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        _isRenaming = true;
+
+        try
+        {
+            var command = new RenameSubCategoryCommand(categoryId, subCategoryId, trimmed);
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubCategoryRenamed"], trimmed),
+                    summary: Loc["SubCategoryRenamedTitle"]);
+
+                _renamingNode = null;
+                _renameValue = string.Empty;
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isRenaming = false;
+        }
+    }
+
+    private async Task HandleRenameSubSubAsync(Guid categoryId, Guid subCategoryId, Guid subSubCategoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        _isRenaming = true;
+
+        try
+        {
+            var command = new RenameSubSubCategoryCommand(categoryId, subCategoryId, subSubCategoryId, trimmed);
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubSubCategoryRenamed"], trimmed),
+                    summary: Loc["SubSubCategoryRenamedTitle"]);
+
+                _renamingNode = null;
+                _renameValue = string.Empty;
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isRenaming = false;
+        }
+    }
+
+    // ── Activate / Deactivate toggle ────────────────────────────────────
+    //
+    // Each node has a single toggle icon. If the node is active, the
+    // icon is "block" and clicking dispatches Deactivate (which also
+    // cascades to children for Category/SubCategory). If the node is
+    // inactive, the icon is "check_circle" and clicking dispatches
+    // Activate (which does NOT cascade — children must be reactivated
+    // individually, per the domain's intentional design).
+
+    private async Task HandleToggleCategoryActiveAsync(CategoryDto category)
+    {
+        _isToggling = true;
+        try
+        {
+            var result = category.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateCategoryCommand(category.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateCategoryCommand(category.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        category.IsActive ? Loc["CategoryDeactivated"] : Loc["CategoryActivated"],
+                        category.Name),
+                    summary: category.IsActive ? Loc["CategoryDeactivatedTitle"] : Loc["CategoryActivatedTitle"]);
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isToggling = false;
+        }
+    }
+
+    private async Task HandleToggleSubActiveAsync(Guid categoryId, SubCategoryDto sub)
+    {
+        _isToggling = true;
+        try
+        {
+            var result = sub.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateSubCategoryCommand(categoryId, sub.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateSubCategoryCommand(categoryId, sub.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        sub.IsActive ? Loc["SubCategoryDeactivated"] : Loc["SubCategoryActivated"],
+                        sub.Name),
+                    summary: sub.IsActive ? Loc["SubCategoryDeactivatedTitle"] : Loc["SubCategoryActivatedTitle"]);
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isToggling = false;
+        }
+    }
+
+    private async Task HandleToggleSubSubActiveAsync(Guid categoryId, Guid subId, SubSubCategoryDto ssub)
+    {
+        _isToggling = true;
+        try
+        {
+            var result = ssub.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateSubSubCategoryCommand(categoryId, subId, ssub.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateSubSubCategoryCommand(categoryId, subId, ssub.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        ssub.IsActive ? Loc["SubSubCategoryDeactivated"] : Loc["SubSubCategoryActivated"],
+                        ssub.Name),
+                    summary: ssub.IsActive ? Loc["SubSubCategoryDeactivatedTitle"] : Loc["SubSubCategoryActivatedTitle"]);
+                await LoadCategoriesAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isToggling = false;
+        }
+    }
+
     // ── Expand toggles ──────────────────────────────────────────────────
+    //
+    // Each non-leaf node (Category, SubCategory) carries a chevron button
+    // in its oval. Clicking it toggles that node's entry in the
+    // _expandedCategories / _expandedSubs HashSet, which controls whether
+    // the .tree-children container renders. v5 originally had NO chevron,
+    // so users couldn't expand categories — they saw only top-level
+    // categories with no way to drill into sub-cats. That was the
+    // "categories are shown but nothing else" bug.
+    //
+    // These methods are also called from StartAddSub / StartAddSubSub to
+    // auto-expand the parent when the user opens an inline add form, so
+    // the new child appears in the right place.
 
     private void ToggleExpandCategory(Guid categoryId)
     {
@@ -886,6 +2400,7 @@
         {
             _expandedCategories.Add(categoryId);
         }
+        _needsConnectorUpdate = true;
     }
 
     private void ToggleExpandSub(Guid subCategoryId)
@@ -894,5 +2409,26 @@
         {
             _expandedSubs.Add(subCategoryId);
         }
+        _needsConnectorUpdate = true;
     }
+
+    // ── IDisposable ─────────────────────────────────────────────────────
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+}
+
+@* ── ViewMode enum (v6) ──
+   Defines the two display modes for the categories page. Kept in a
+   separate @code block so it's visually distinct from the main page
+   logic. *@
+@code {
+    private enum ViewMode
+    {
+        Tree,
+        List
+    }
+}
 }
