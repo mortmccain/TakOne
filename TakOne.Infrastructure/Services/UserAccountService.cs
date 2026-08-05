@@ -545,9 +545,18 @@ public sealed class UserAccountService : IUserAccountService
     /// "PasswordTooShort") and a Description (the user-facing message,
     /// localized by the IdentityErrorDescriber).
     ///
-    /// We include both in the flattened form "{Code}: {Description}" so the
-    /// log + error message is grep-friendly by code while still being
-    /// readable.
+    /// v6.2: We now drop the <c>{Code}: </c> prefix and join ONLY the
+    /// <c>Description</c>, because the description is now localized via
+    /// <c>TakOneIdentityErrorDescriber</c> + <c>IdentityErrorMessages.{culture}.resx</c>.
+    /// Previously, when Identity returned English descriptions, we kept the
+    /// code prefix so the message was grep-friendly by code in logs. Now
+    /// that the description is in the user's UI culture, the raw English
+    /// code is just noise — Persian users would see
+    /// "PasswordRequiresNonAlphanumeric: رمز عبور باید..." which is
+    /// confusing. The Code is still available in the structured log
+    /// above (see the <c>Errors: {Errors}</c> parameter in the
+    /// <c>_logger.LogWarning</c> call that precedes the
+    /// <c>Result.Failure</c> return), so log greppability is preserved.
     /// </summary>
     private static string FlattenErrors(IdentityResult result)
     {
@@ -556,6 +565,6 @@ public sealed class UserAccountService : IUserAccountService
             return "Unknown Identity failure.";
         }
 
-        return string.Join("; ", result.Errors.Select(e => $"{e.Code}: {e.Description}"));
+        return string.Join("; ", result.Errors.Select(e => e.Description));
     }
 }

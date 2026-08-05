@@ -199,6 +199,36 @@
                 gap: 0.5rem;
             }
 
+            /* Group-section invalid state — applied to the outer container
+                           wrapping the entire group-name section (label + Existing/New
+                           toggle + group list OR text box) when the user has tried to
+                           submit without selecting or typing a group name. Mirrors the
+                           .gender-toggle.gender-invalid pattern: red border +
+                           danger-tinted background to draw the eye to the missing
+                           field. Toggled by the conditional class in the markup:
+                           _submitAttempted AND UserType is Customer AND GroupName is
+                           empty/whitespace. The class falls away automatically on
+                           re-render as soon as the user picks an existing group
+                           (SelectExistingGroup sets GroupName) or types in the New-mode
+                           text box (two-way binding updates GroupName per keystroke). */
+            .group-section-invalid {
+                border: 2px solid var(--rz-danger, #f87171);
+                border-radius: var(--rz-border-radius-sm, 6px);
+                padding: 0.5rem 0.75rem;
+                background-color: rgba(248, 113, 113, 0.08);
+                outline: none;
+            }
+
+            /* Inline error text below the group section (only rendered when the
+                           group is invalid). Color matches the border above. Same
+                           visual style as .gender-error-text. */
+            .group-error-text {
+                color: var(--rz-danger, #f87171);
+                font-size: 0.8125rem;
+                margin-top: 0.25rem;
+                display: block;
+            }
+
             /* Gender toggle — same visual pattern as the Customer/Staff toggle
                            above (two RadzenCard buttons side-by-side, one selected at a
                            time). Uses the same .usertype-option class so the selected
@@ -417,8 +447,35 @@
                     <div>
                         <div class="password-row">
                             <RadzenFormField Text="@Loc["FieldPassword"]" Class="password-field" Style="width: 100%;">
-                                <RadzenTextBox Value="_model.InitialPassword"
-                                               ValueChanged="@OnPasswordChanged"
+                                @* v6.3: Switched from Value=/ValueChanged= (one-way binding
+                                   with manual update) to @bind-Value (two-way binding).
+
+                                   The previous Value="_model.InitialPassword" (WITHOUT the
+                                   @ prefix) was a Razor STRING LITERAL, not a C# expression —
+                                   the textbox displayed the literal text "_model.InitialPassword"
+                                   instead of the model's value. Verified empirically via the
+                                   compiled Razor source generator output:
+                                     Value="x"        → AddComponentParameter(..., "x")     ← literal
+                                     Value="@x"       → AddComponentParameter(..., x)       ← expression
+                                     @bind-Value="x"  → Value + ValueChanged + ValueExpression
+
+                                   @bind-Value also wires up ValueExpression, which is required
+                                   for EditContext validation to fire. Without it, the [Required]
+                                   attribute on InitialPassword was never checked client-side —
+                                   the user could submit an empty password and see no validation
+                                   error. With @bind-Value, the [Required] + [StringLength] rules
+                                   now fire automatically, and RadzenFormField renders the
+                                   validation message.
+
+                                   The old comment claimed @bind-Value "can drop the current
+                                   input" when toggling Type between text/password. This is not
+                                   a real concern: RadzenTextBox syncs on every keystroke, and
+                                   the value lives in _model — even if the DOM input element is
+                                   re-rendered on Type change, the model retains the value and
+                                   the next render restores it. All other RadzenTextBoxes on
+                                   this page (WorkerId, FullName, GroupName) already use
+                                   @bind-Value with no issues. *@
+                                <RadzenTextBox @bind-Value="_model.InitialPassword"
                                                Type="@(_showPassword ? "text" : "password")"
                                                Placeholder="@Loc["FieldPasswordPlaceholder"]"
                                                TValue="string"
@@ -520,7 +577,8 @@
                        must explicitly pick or type one in the new mode. *@
                     @if (_model.UserType == UserType.Customer)
                     {
-                        <div>
+                        var groupIsInvalid = _submitAttempted && string.IsNullOrWhiteSpace(_model.GroupName);
+                        <div class="@(groupIsInvalid ? "group-section-invalid" : "")">
                             <RadzenText Text="@Loc["FieldGroupName"]"
                                         TextStyle="TextStyle.Caption"
                                         Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
@@ -612,6 +670,22 @@
                                         @Loc["NewGroupHint"]
                                     </RadzenText>
                                 </div>
+                            }
+
+                            @* Inline error — shown when the user has tried to submit
+                               without selecting (Existing mode) or typing (New mode)
+                               a group name. Mirrors the .gender-error-text pattern:
+                               red text below the field, color-matched to the
+                               .group-section-invalid border above. The error clears
+                               automatically on re-render as soon as GroupName becomes
+                               non-empty (via SelectExistingGroup or @bind-Value on
+                               the New-mode text box). The top-of-form _submitError
+                               banner also shows the same message, but this inline
+                               error makes it impossible to miss — the user doesn't
+                               need to scroll up to see what went wrong. *@
+                            @if (groupIsInvalid)
+                            {
+                                <span class="group-error-text">@Loc["Error_GroupNameRequired"]</span>
                             }
                         </div>
                     }
@@ -1063,18 +1137,6 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Bound to the password field's ValueChanged callback so we can
-    /// toggle the input type between Text and Password without losing
-    /// the value (using @bind-Value with a type change can drop the
-    /// current input).
-    /// </summary>
-    private Task OnPasswordChanged(string value)
-    {
-        _model.InitialPassword = value ?? string.Empty;
-        return Task.CompletedTask;
-    }
-
     // Toggle helper methods — each takes a `bool selected` parameter so the
     // SAME helpers can be reused for:
     //   - The User Type toggle (Customer / Staff) — pass `(_model.UserType == X)`
@@ -1236,9 +1298,17 @@
                 // result.Error contains a user-friendly message from the
                 // handler — e.g.:
                 //   "A user with worker ID 'EMP-123' already exists."
-                //   "User name 'EMP-123' is already taken." (Identity)
-                //   "Email 'foo@bar.com' is already taken." (Identity)
-                //   "Passwords must have at least one non-alphanumeric character." (Identity)
+                //   "کد پرسنلی «EMP-123» قبلاً ثبت شده است." (Identity, fa-IR)
+                //   "ایمیل «foo@bar.com» قبلاً ثبت شده است." (Identity, fa-IR)
+                //   "رمز عبور باید حداقل شامل یک کاراکتر غیر الفبایی-عددی باشد." (Identity, fa-IR)
+                //
+                // v6.2: Identity errors are now localized at the source via
+                // TakOneIdentityErrorDescriber + IdentityErrorMessages.{culture}.resx,
+                // so result.Error is in the request's UI culture (fa-IR or en-US)
+                // — no per-call-site mapping required. The Code (e.g.
+                // "PasswordRequiresNonAlphanumeric") is logged server-side by
+                // UserAccountService / the handler, but no longer prefixed to
+                // the user-facing string.
                 _submitError = result.Error ?? Loc["Error_GenericCreate"];
             }
         }

@@ -270,7 +270,17 @@ public static class ServiceCollectionExtensions
             identitySection.GetSection("SignIn").Bind(options.SignIn);
         })
             .AddEntityFrameworkStores<ApplicationDbContext>()
-            .AddDefaultTokenProviders();
+            .AddDefaultTokenProviders()
+            // v6.2: Localize Identity's built-in error messages
+            // (PasswordRequiresNonAlphanumeric, DuplicateUserName,
+            // InvalidToken, etc.) at the source. The describer resolves
+            // strings from IdentityErrorMessages.{culture}.resx via
+            // IStringLocalizer<IdentityErrorMessages>, so every
+            // UserManager / SignInManager call site returns the message
+            // in the request's current UI culture (fa-IR or en-US).
+            // Without this, weak-password errors came back in English
+            // even when the rest of the page was Persian.
+            .AddErrorDescriber<TakOneIdentityErrorDescriber>();
 
         // ------------------------------------------------------------------
         // 3b. Cookie auth configuration (Concern F — locked in).

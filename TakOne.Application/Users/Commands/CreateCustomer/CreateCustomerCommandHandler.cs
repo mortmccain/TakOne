@@ -98,6 +98,28 @@ public sealed class CreateCustomerCommandHandler
                 ("CreateCustomer: Identity account creation failed for worker ID '{WorkerId}'. Reason: {Reason}. Requested by user {UserId}.",
                 command.WorkerId, accountResult.Error, currentUser.UserId);
 
+            // v6.2 — CRITICAL: detach the Domain User we tracked at step 3.
+            //
+            // Without this, the handler returns Result.Failure (a normal
+            // return, NOT an exception). Wolverine's DbTransactionMiddleware
+            // sees a normal return and proceeds to call SaveChangesAsync +
+            // CommitAsync on the scoped DbContext — which would persist the
+            // tracked Domain User even though Identity account creation
+            // failed. The result: an orphan Domain User with no
+            // corresponding ApplicationUser (no login possible, but the
+            // user shows up in admin lists). Horrible bug.
+            //
+            // ClearChangeTracker calls DbContext.ChangeTracker.Clear(),
+            // detaching ALL tracked entities. In this handler, the only
+            // tracked entity is the new Domain User we AddedAsync'd above,
+            // so the clear is safe — no other in-flight work is lost.
+            //
+            // Alternative considered: throw an exception to make Wolverine
+            // roll back. Rejected because it loses the structured
+            // Result<Guid> pattern the rest of the handler uses and forces
+            // the Razor page to wrap every call in try/catch.
+            unitOfWork.ClearChangeTracker();
+
             return Result<Guid>.Failure(accountResult.Error);
         }
 
