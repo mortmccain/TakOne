@@ -361,3 +361,21 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local environment / secrets
+.env
+.env.*
+*.pfx
+*.p12
+secrets.json
+
+# Logs and temporary files
+*.log
+logs/
+
+# User-uploaded files
+**/wwwroot/uploads/
+
+# ASP.NET Core Data Protection keys – never commit
+**/ .dataprotection-keys/
+**/.dataprotection-keys/
