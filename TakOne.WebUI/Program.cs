@@ -3,13 +3,16 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Localization;
 using Radzen;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Configuration;
 using TakOne.Application.DependencyInjection;
 using TakOne.Infrastructure.DependencyInjection;
 using TakOne.Infrastructure.Identity;
+using TakOne.Infrastructure.Persistence;
 using TakOne.WebUI.Components;
 using TakOne.WebUI.Hubs;
 using TakOne.WebUI.Services;
@@ -28,6 +31,22 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTakOneApplication(builder.Configuration);
 builder.Services.AddTakOneInfrastructure(builder.Configuration, builder.Environment);
 
+// --- Default admin seeder options (Issue #02 — Hardcoded default admin password) ---
+//
+// The bootstrap admin's WorkerId / Email / Password are bound from the
+// "TakOne:DefaultAdmin" configuration section. The Password NEVER lives in
+// appsettings.json or any source-controlled file — in Development it comes
+// from .NET user secrets, in Production from an environment variable or a
+// secret store like Azure Key Vault. See DefaultAdminOptions.cs for the
+// full rationale and the security guarantees this class enforces.
+//
+// We bind the options here (rather than inside AddTakOneInfrastructure) so
+// that the WebUI's Program.cs owns the decision of WHEN to validate and
+// WHEN to invoke the seeder — both are environment-dependent and that
+// decision belongs at the composition root.
+builder.Services.Configure<DefaultAdminOptions>(
+    builder.Configuration.GetSection(DefaultAdminOptions.SectionName));
+
 // --- Data Protection key persistence (CRITICAL for dev cookie survival) ---
 //
 // Without explicit key persistence, ASP.NET Core Data Protection uses an
@@ -44,24 +63,52 @@ builder.Services.AddTakOneInfrastructure(builder.Configuration, builder.Environm
 //      "LoginRequired" info banner — looks like "login failed with
 //      no error"
 //
-// In production, this is solved by PersistKeysToDbContext<T>() or
-// PersistKeysToFileSystem(new DirectoryInfo("\\\\server\\share\\keys"))
-// pointing to a shared, replicated location. For dev, we use a local
-// folder under the user profile so keys survive across restarts.
+// PERSISTENCE CHOICE — PersistKeysToDbContext<ApplicationDbContext>:
+//   The key ring lives in a SQL Server table (`DataProtectionKeys`) inside
+//   the same ApplicationDbContext that already holds the domain, Identity,
+//   and Wolverine outbox tables. One connection, one transaction boundary,
+//   one backup story.
+//
+//   WHY NOT PersistKeysToFileSystem (the previous approach):
+//     - Multi-node failure: each web node had its own private key ring →
+//       cookies issued by node A couldn't be decrypted by node B →
+//       "random logouts" behind a load balancer.
+//     - Redeploy failure: the key folder lived inside the app folder →
+//       any deploy that replaced the folder (Docker image rebuild,
+//       blue/green swap) wiped the keys → mass-logout of every active
+//       session on every deploy.
+//     - Backup story was awkward: a folder inside the app had to be
+//       tracked separately from the database.
+//
+//   PersistKeysToDbContext eliminates all three failure modes because every
+//   web node already shares the same SQL Server, and the DB is outside the
+//   app folder. Backups come for free with the DB backup.
+//
+//   The DbContext must implement IDataProtectionKeyContext (expose a
+//   `DbSet<DataProtectionKey> DataProtectionKeys`). ApplicationDbContext
+//   does — see TakOne.Infrastructure/Persistence/ApplicationDbContext.cs.
+//   The package providing that interface (Microsoft.AspNetCore.DataProtection
+//   .EntityFrameworkCore) is referenced from TakOne.Infrastructure (not
+//   WebUI), and the extension method `PersistKeysToDbContext<T>()` is
+//   visible here via the transitive package reference flowing through the
+//   project reference.
 //
 // SetApplicationName is REQUIRED when multiple apps share a key ring —
 // and even with a single app it makes the key discriminator stable
 // across rebuilds (otherwise the app's "default" discriminator can shift
 // if the entry-assembly name changes during refactoring).
 //
-// PRODUCTION HARDENING (future):
-//   Replace PersistKeysToFileSystem with PersistKeysToDbContext<DataProtectionKeyDbContext>()
-//   (or a dedicated schema in ApplicationDbContext) so all web nodes share
-//   the same key ring in SQL Server.
+// SECURITY NOTE:
+//   The XML in the `Xml` column is in CLEAR TEXT inside the database —
+//   same as it would have been on disk under PersistKeysToFileSystem.
+//   The security boundary is SQL Server access control: only the
+//   application's DB user has SELECT/INSERT on the DataProtectionKeys
+//   table. If you later need defense-in-depth beyond SQL access control,
+//   layer `.ProtectKeysWithCertificate(...)` with an X.509 cert from the
+//   machine cert store — no cloud service required.
 builder.Services.AddDataProtection()
     .SetApplicationName("TakOne")
-    .PersistKeysToFileSystem(new DirectoryInfo(
-        Path.Combine(builder.Environment.ContentRootPath, ".dataprotection-keys")));
+    .PersistKeysToDbContext<ApplicationDbContext>();
 
 // --- Wolverine host (configures discovery, middleware, persistence) ---
 //
@@ -304,6 +351,104 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// --- Force-password-change redirect (Issue #02 — Force one-time password
+//     change on first login) ---
+//
+// If the authenticated user has a `must_change_password` claim on their
+// auth cookie, they MUST be redirected to /Account/ChangePassword and
+// blocked from every other path until they change their password.
+//
+// WHEN THE CLAIM GETS SET:
+//   Login.razor adds the claim to the cookie at sign-in time IF the
+//   ApplicationUser.MustChangePassword flag is true. The flag is set to
+//   true by DefaultAdminSeeder on the bootstrap admin, and by the
+//   AddMustChangePasswordFlag migration on every pre-existing admin (to
+//   close the known-compromised-password hole from Issue #02).
+//
+// WHEN THE CLAIM GETS CLEARED:
+//   ChangePassword.razor calls SignInManager.SignInWithClaimsAsync to
+//   re-issue the cookie WITHOUT the claim, after the password has been
+//   changed and the MustChangePassword flag has been cleared on the user
+//   row.
+//
+// WHY A MIDDLEWARE (not a Blazor Router guard):
+//   The redirect must fire for EVERY authenticated request, including
+//   static-SSR pages (Login.razor, ChangePassword.razor), Blazor circuit
+//   initial connections, SignalR hub handshakes (/notificationHub), and
+//   minimal API endpoints. A Blazor <AuthorizeRouteView> / Router guard
+//   only protects Blazor-paged routes — it would NOT block API calls or
+//   static-SSR endpoints. A middleware is the only place where we can
+//   intercept every request uniformly.
+//
+// ALLOWED PATHS (the user can reach these even with the claim):
+//   - /Account/ChangePassword  — the page they need to use
+//   - /Account/LogOut          — so they can sign out if they don't want
+//                                 to change the password right now
+//   - /Account/Login           — defensive; they shouldn't reach this
+//                                 page while authenticated, but if they
+//                                 do we don't want a redirect loop
+//
+// STATIC FILES + BLOWER ASSETS:
+//   We deliberately allow /_framework, /_blazor, /css, /js, /lib, /favicon,
+//   /TakLogo.png etc. through without redirect. Without this, the
+//   ChangePassword page itself would fail to render (its CSS/JS wouldn't
+//   load). The check is a simple StartsWith against a small allowlist of
+//   static-asset prefixes.
+//
+// SECURITY NOTE:
+//   The middleware reads the claim only — it does NOT query the database.
+//   The claim is the source of truth at request time. If the
+//   MustChangePassword flag is cleared on the user row but the cookie
+//   hasn't been re-issued yet (e.g. the user changed their password in
+//   another browser tab), the middleware will still redirect — but the
+//   ChangePassword page will detect that the flag is already false and
+//   clear the claim by re-issuing the cookie. So the system self-heals
+//   within one request.
+app.Use(async (context, next) =>
+{
+    var user = context.User;
+    if (user.Identity?.IsAuthenticated == true &&
+        user.HasClaim("must_change_password", "true"))
+    {
+        var path = context.Request.Path.Value ?? string.Empty;
+
+        // Static assets and Blazor framework files are always allowed —
+        // without them the ChangePassword page itself can't render.
+        // The list is intentionally short and explicit; any new static
+        // asset folder should be added here.
+        var isStaticAsset =
+            path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/_blazor", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/css", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/js", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/lib", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/uploads", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/TakLogo.png", StringComparison.OrdinalIgnoreCase);
+
+        // Account paths the user is allowed to hit while their password
+        // is in the must-change state.
+        var isAllowedAccountPath =
+            path.StartsWith("/Account/ChangePassword", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/Account/LogOut", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/Account/Login", StringComparison.OrdinalIgnoreCase);
+
+        if (!isStaticAsset && !isAllowedAccountPath)
+        {
+            // 302 redirect to the ChangePassword page. We use a query
+            // string parameter so the page knows to show a "you must
+            // change your password before continuing" banner.
+            var returnUrl = context.Request.Path + context.Request.QueryString.Value;
+            var redirectUrl = $"/Account/ChangePassword?returnUrl={Uri.EscapeDataString(returnUrl)}";
+            context.Response.Redirect(redirectUrl);
+            return;
+        }
+    }
+
+    await next();
+});
+
 app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
@@ -524,13 +669,45 @@ await RoleSeeder.EnsureRolesCreatedAsync(app.Services);
 // user-management page is locked to Admin/Manager. After this runs once,
 // you have a known login to bootstrap the rest of the system from.
 //
-// Default credentials are logged at WARNING level on first creation and
-// are documented in DefaultAdminSeeder.cs. CHANGE THE PASSWORD after
-// first login.
+// SECURITY POSTURE (Issue #02 — Hardcoded default admin password):
+//   PREVIOUSLY: the seeder ran unconditionally on every startup, in every
+//   environment, with a hard-coded password committed to source. The
+//   password was logged at WARNING level on first creation.
 //
-// Idempotent: GetUsersInRoleAsync("Admin") non-empty → no-op. Safe to
-// leave wired in for every startup.
-await DefaultAdminSeeder.EnsureDefaultAdminAsync(app.Services);
+//   NOW: the seeder is GATED to Development OR explicit opt-in via
+//   TakOne:DefaultAdmin:Enabled=true. The password comes from
+//   configuration (user secrets in Dev, env var / Key Vault in Prod) —
+//   NEVER from source. The password is NEVER logged. The seeded admin's
+//   MustChangePassword flag is set to true (unless opted out via
+//   ForcePasswordChangeOnFirstLogin=false), so the first human admin must
+//   set their own password before accessing any other page.
+//
+// IDEMPOTENT: GetUsersInRoleAsync("Admin") non-empty → no-op. Safe to
+// leave wired in for every startup — it will do nothing on the second and
+// subsequent runs.
+//
+// VALIDATION:
+//   We resolve the bound DefaultAdminOptions from DI and call
+//   EnsureValid(env). In a non-Development environment where Enabled=true
+//   but no password is configured, EnsureValid THROWS and the application
+//   refuses to start. This is intentional — a Production deployment
+//   should NEVER silently seed an admin with an empty password.
+var defaultAdminOptions = app.Services
+    .GetRequiredService<Microsoft.Extensions.Options.IOptions<DefaultAdminOptions>>()
+    .Value;
+defaultAdminOptions.EnsureValid(app.Environment);
+
+// Run the seeder only in Development, OR when explicitly enabled via
+// configuration. The check is here (not inside the seeder) so the seeder
+// stays a pure "create the admin if asked" function and Program.cs owns
+// the environment-aware "should we even ask" decision.
+if (app.Environment.IsDevelopment() || defaultAdminOptions.Enabled)
+{
+    await DefaultAdminSeeder.EnsureDefaultAdminAsync(
+        app.Services,
+        defaultAdminOptions,
+        app.Environment);
+}
 
 // ==================================================================================================================================
 //                                                          RUN

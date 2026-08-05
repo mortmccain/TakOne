@@ -49,7 +49,10 @@ namespace TakOne.Infrastructure.Persistence;
 ///   If you ever change the startup project layout, the walk-up logic still
 ///   works. The fallback (env var <c>TakOne__Database__ConnectionString</c>)
 ///   is also supported so CI pipelines can override it without touching
-///   appsettings.json.
+///   appsettings.json. User secrets (from the WebUI project's
+///   <c>&lt;UserSecretsId&gt;</c>) are also loaded so a developer's real
+///   Dev connection string — stored in user secrets so it never enters
+///   source control — is honored by EF tooling too.
 /// </summary>
 public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<ApplicationDbContext>
 {
@@ -57,10 +60,16 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Applicatio
     public ApplicationDbContext CreateDbContext(string[] args)
     {
         // ----------------------------------------------------------------
-        // 1. Build an IConfiguration from the WebUI's appsettings.json.
+        // 1. Build an IConfiguration that mirrors what the real app uses in
+        //    Development: appsettings.json + user secrets + env vars.
+        //
         //    The WebUI project is the startup project passed via
         //    --startup-project, so its appsettings.json is the canonical
-        //    source of the connection string.
+        //    base source of the connection string. User secrets are loaded
+        //    so that `dotnet ef database update` uses the SAME connection
+        //    string the running app uses in Development (the real DB
+        //    server, not the placeholder `Server=localhost;` shipped in
+        //    appsettings.json).
         //
         //    NOTE on appsettings.Development.json: deliberately NOT loaded
         //    by the factory, even though the real app loads it in Dev. The
@@ -71,13 +80,40 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Applicatio
         //    Visual Studio, accidentally truncated, etc.). Design-time
         //    tooling should not fail because of a broken Dev-only config
         //    file, so we skip it.
+        //
+        //    NOTE on user secrets: the <UserSecretsId> element lives in
+        //    TakOne.WebUI.csproj (NOT in this project), so we can't use
+        //    the generic `AddUserSecrets<T>()` overload — T would need to
+        //    be a type from the WebUI assembly, which we can't reference
+        //    from Infrastructure (circular dependency). Instead, we find
+        //    the WebUI assembly at runtime (EF tooling has already loaded
+        //    it because it's the --startup-project) and pass it to the
+        //    `AddUserSecrets(Assembly)` overload. That overload looks up
+        //    the AssemblyUserSecretsIdAttribute on the assembly — the
+        //    attribute that the <UserSecretsId> MSBuild property emits at
+        //    build time — and uses its ID to locate the secrets file
+        //    (e.g. %APPDATA%\Microsoft\UserSecrets\<id>\secrets.json on
+        //    Windows). If the assembly can't be found (e.g. running the
+        //    factory from a non-WebUI startup project), we silently skip
+        //    user secrets — the env var fallback still applies.
         // ----------------------------------------------------------------
         var webUiProjectRoot = FindWebUiProjectRoot();
-        var configuration = new ConfigurationBuilder()
+        var configBuilder = new ConfigurationBuilder()
             .SetBasePath(webUiProjectRoot)
             .AddJsonFile("appsettings.json", optional: false)
-            .AddEnvironmentVariables()
-            .Build();
+            .AddEnvironmentVariables();
+
+        // Try to load the WebUI assembly's user secrets. Best-effort:
+        // if the assembly isn't loaded, skip — the user can still set
+        // the env var TakOne__Database__ConnectionString.
+        var webUiAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "TakOne.WebUI");
+        if (webUiAssembly is not null)
+        {
+            configBuilder.AddUserSecrets(webUiAssembly);
+        }
+
+        var configuration = configBuilder.Build();
 
         // ----------------------------------------------------------------
         // 2. Read the connection string the same way AddTakOneInfrastructure
@@ -104,6 +140,8 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Applicatio
                 $"for design-time EF tooling. Looked under " +
                 $"'{TakOneDatabaseOptions.SectionName}:ConnectionString' in " +
                 $"'{Path.Combine(webUiProjectRoot, "appsettings.json")}', " +
+                $"in the TakOne.WebUI user secrets " +
+                $"(UserSecretsId cb14d953-0abd-4c19-9089-e4566a8d4717), " +
                 $"and under 'ConnectionStrings:DefaultConnection'. " +
                 $"Set one of these, or set the env var " +
                 $"'TakOne__Database__ConnectionString'.");

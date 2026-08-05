@@ -106,4 +106,60 @@ public class ApplicationUser : IdentityUser<Guid>
     /// pre-date the Phase 0.5 migration.
     /// </summary>
     public Gender Gender { get; set; } = Gender.Male;
+
+    /// <summary>
+    /// Whether the user MUST change their password at the next login
+    /// before being allowed to access any other page.
+    ///
+    /// WHEN THIS IS SET TO <c>true</c>:
+    ///   <list type="bullet">
+    ///     <item>
+    ///       <c>Login.razor</c> adds a <c>must_change_password</c> claim to
+    ///       the auth cookie after a successful sign-in.
+    ///     </item>
+    ///     <item>
+    ///       A middleware in <c>Program.cs</c> (
+    ///       <c>MustChangePasswordRedirectMiddleware</c>) inspects every
+    ///       authenticated request and, if the claim is present, redirects
+    ///       the user to <c>/Account/ChangePassword</c> — except for the
+    ///       <c>/Account/ChangePassword</c>, <c>/Account/LogOut</c>, and
+    ///       <c>/Account/Login</c> paths themselves.
+    ///     </item>
+    ///     <item>
+    ///       <c>ChangePassword.razor</c> clears this flag (sets it to
+    ///       <c>false</c>) on a successful password change and re-issues
+    ///       the auth cookie without the claim.
+    ///     </item>
+    ///   </list>
+    ///
+    /// WHO SETS THIS FLAG:
+    ///   <list type="bullet">
+    ///     <item>
+    ///       <c>DefaultAdminSeeder</c> sets it to <c>true</c> on the
+    ///       bootstrap admin — so the operator who configured the initial
+    ///       password cannot log in as the admin after the first human
+    ///       admin changes it.
+    ///     </item>
+    ///     <item>
+    ///       A one-time data migration (see
+    ///       <c>20260805xxxxxx_AddMustChangePasswordFlag.cs</c>) sets it
+    ///       to <c>true</c> for ALL existing admins at the time the column
+    ///       is introduced — this forces every existing admin (including
+    ///       the one seeded with the previously-hardcoded password) to
+    ///       change their password on next login, closing the
+    ///       known-compromised-password hole.
+    ///     </item>
+    ///     <item>
+    ///       Future code paths (admin-initiated password reset, security
+    ///       incident response) may also set this to <c>true</c> to force
+    ///       a one-time password change.
+    ///     </item>
+    ///   </list>
+    ///
+    /// Stored as a <c>bit</c> column on <c>AspNetUsers</c>. Defaults to
+    /// <c>false</c> (0) for users created via the normal user-management
+    /// UI — they set their own password at creation time, so there's no
+    /// need to force a change.
+    /// </summary>
+    public bool MustChangePassword { get; set; } = false;
 }

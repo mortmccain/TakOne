@@ -537,6 +537,90 @@ public sealed class UserAccountService : IUserAccountService
         return roles.ToList();
     }
 
+    /// <inheritdoc />
+    public async Task<Result> ChangePasswordAsync(
+        Guid userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // 1. Load the ApplicationUser (tracked — we'll mutate
+        //    MustChangePassword on success).
+        // ------------------------------------------------------------------
+        var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        if (appUser is null)
+        {
+            _logger.LogWarning(
+                "UserAccountService.ChangePasswordAsync: userId {UserId} not found.",
+                userId);
+            return Result.Failure($"Identity account for user '{userId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // 2. UserManager.ChangePasswordAsync does three things atomically:
+        //      a. Verifies currentPassword against the stored hash
+        //         (returns PasswordMismatch error if wrong).
+        //      b. Validates newPassword against the configured complexity
+        //         rules (returns PasswordTooShort / PasswordRequiresDigit /
+        //         etc. if it fails).
+        //      c. Hashes newPassword and stores it, rotating the
+        //         SecurityStamp (which invalidates other sessions on the
+        //         next request — see SecurityStampValidator).
+        //
+        //    The Razor page is responsible for the "new password must not
+        //    equal current password" check before calling this method
+        //    (defense-in-depth; UserManager.ChangePasswordAsync will
+        //    actually accept an identical password because Identity doesn't
+        //    enforce password-history by default).
+        // ------------------------------------------------------------------
+        var result = await _userManager.ChangePasswordAsync(appUser, currentPassword, newPassword);
+        if (!result.Succeeded)
+        {
+            var error = FlattenErrors(result);
+            _logger.LogWarning(
+                "UserAccountService.ChangePasswordAsync: ChangePasswordAsync failed " +
+                "for userId {UserId}. Errors: {Errors}.",
+                userId, error);
+            return Result.Failure(error);
+        }
+
+        // ------------------------------------------------------------------
+        // 3. Clear the MustChangePassword flag. This is the second half of
+        //    the "force one-time password change on first login" flow:
+        //      - The flag was set to true by DefaultAdminSeeder (or by the
+        //        one-time data migration that introduced the column).
+        //      - Login.razor added a `must_change_password` claim to the
+        //        auth cookie at sign-in.
+        //      - The redirect middleware in Program.cs redirected the user
+        //        here until they changed their password.
+        //      - This method clears the flag on the user row.
+        //      - The Razor page re-issues the auth cookie WITHOUT the
+        //        claim after this method returns success.
+        //
+        //    We deliberately set this even if the flag was already false
+        //    (e.g. for users created via the user-management UI who decided
+        //    to change their password voluntarily). Setting false to false
+        //    is a no-op and saves a branch.
+        // ------------------------------------------------------------------
+        if (appUser.MustChangePassword)
+        {
+            appUser.MustChangePassword = false;
+            // UserManager.ChangePasswordAsync already called SaveChanges
+            // internally (Identity's EF store auto-saves). But to be safe
+            // and explicit — the MustChangePassword mutation happened
+            // AFTER ChangePasswordAsync's internal save, so we need our
+            // own save here to persist the flag clear.
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "UserAccountService.ChangePasswordAsync: password changed for userId {UserId}.",
+            userId);
+
+        return Result.Success();
+    }
+
     /// <summary>
     /// Flattens an <c>IdentityResult</c>'s Errors collection into a single
     /// semicolon-joined string for surface-friendly error messages.

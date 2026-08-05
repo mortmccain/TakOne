@@ -86,6 +86,49 @@
 	  <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
 
 
+	  <!--
+      ASP.NET Core Data Protection — EF Core integration.
+
+      Provides:
+        - `DataProtectionKey` entity (a one-row-per-key record: Id, Name,
+          Value, Xml). ASP.NET Core Data Protection reads/writes its key
+          ring from this table.
+        - `IDataProtectionKeyContext` interface. We implement it on
+          `ApplicationDbContext` (see Persistence/ApplicationDbContext.cs)
+          to expose `DbSet<DataProtectionKey> DataProtectionKeys`.
+        - `IDataProtectionBuilder.PersistKeysToDbContext<TDbContext>()`
+          extension method — called from `TakOne.WebUI/Program.cs`.
+
+      WHY THIS LIVES HERE (not in TakOne.WebUI):
+        - The entity, the DbSet, and the IDataProtectionKeyContext
+          implementation are PERSISTENCE concerns. They belong with the
+          DbContext, which is in Infrastructure.
+        - `Program.cs` only needs to call `.PersistKeysToDbContext
+          <ApplicationDbContext>()` — that's an extension method on
+          `IDataProtectionBuilder`. The method is resolved at compile
+          time via the transitive package reference flowing from
+          Infrastructure -> WebUI through the project reference.
+          SDK-style PackageReferences propagate by default
+          (PrivateAssets="none"), so WebUI sees the extension method
+          WITHOUT a direct package reference.
+        - This keeps the UI layer free of persistence concerns.
+
+      WHY THIS REPLACES PersistKeysToFileSystem:
+        - File-system persistence broke multi-node deployments (each web
+          node had its own private key ring -> cookies issued by node A
+          couldn't be decrypted by node B -> random logouts).
+        - It also tied the key ring to the app folder, so any redeploy
+          that replaced the folder (Docker image rebuild, blue/green
+          swap) wiped the keys -> mass-logout of every active session.
+        - Persisting to the SQL Server DB that every web node already
+          shares eliminates both failure modes and gets backed up with
+          the database automatically.
+
+      Version must match the EF Core / Identity versions above (10.0.10).
+    -->
+	  <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.10" />
+
+
 
 	  <!--
       ASP.NET Core Identity + EF Core integration.

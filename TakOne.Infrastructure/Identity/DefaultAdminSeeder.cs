@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Configuration;
 using TakOne.Domain.Users;
 using TakOne.Infrastructure.Persistence;
 
@@ -18,64 +20,123 @@ namespace TakOne.Infrastructure.Identity;
 ///   the first set of users through the UI (the user-management page is
 ///   locked to Admin/Manager). This seeder breaks the chicken-and-egg:
 ///   after the first <c>dotnet run</c>, you have exactly one admin you can
-///   log in with.
+///   log in with — but ONLY in Development, or in Production when
+///   explicitly opted in via <c>TakOne:DefaultAdmin:Enabled = true</c>.
 ///
 /// WHEN IT RUNS:
 ///   From <c>Program.cs</c>, AFTER <see cref="RoleSeeder.EnsureRolesCreatedAsync"/>
 ///   (so the Admin role already exists when we try to assign it) and BEFORE
-///   <c>app.RunAsync()</c>.
+///   <c>app.RunAsync()</c>. Program.cs also gates the call:
+///   <code>
+///   if (builder.Environment.IsDevelopment() || adminOptions.Enabled)
+///   {
+///       await DefaultAdminSeeder.EnsureDefaultAdminAsync(app.Services, adminOptions);
+///   }
+///   </code>
+///   so the seeder NEVER runs silently in a Production environment where
+///   the operator has not opted in.
 ///
 /// IDEMPOTENCY:
 ///   The seeder queries <c>UserManager.GetUsersInRoleAsync("Admin")</c>.
 ///   If the returned list is non-empty, the seeder is a no-op. Safe to call
 ///   on every startup. After the first run, subsequent runs do nothing.
 ///
-/// DEFAULT CREDENTIALS:
-///   WorkerId (login): <c>ADMIN-0001</c>
-///   Email:            <c>admin@takone.local</c>
-    ///   Password:         <c>MarkMccain2323!</c>
+/// SECURITY POSTURE (Issue #02 — Hardcoded default administrator password):
+///   PREVIOUSLY: the default admin's WorkerId, Email, AND Password were
+///   hard-coded as <c>public const string</c> fields on this class. The
+///   seeder ran unconditionally on every startup, in every environment.
+///   On first creation, it logged the password at WARNING level — leaking
+///   it to anyone with read access to the source or the production logs.
 ///
-///   The password meets Identity's default complexity rules (8+ chars,
-///   upper + lower + digit + non-alphanumeric, 4+ unique chars). The email
-///   is marked confirmed so the user can sign in without an email loop.
-///
-/// SECURITY:
-///   The default password is logged at WARNING level on first creation so
-///   the developer notices it. CHANGE THE PASSWORD IMMEDIATELY after
-///   first login (or, better, change it before exposing the app to anyone
-///   else). For production, set the password via an environment variable
-///   instead — see the TODO in <see cref="EnsureDefaultAdminAsync"/>.
+///   NOW:
+///     <item>
+///       Credentials come from <see cref="DefaultAdminOptions"/>, which is
+///       bound from the <c>TakOne:DefaultAdmin</c> configuration section.
+///       The password is supplied via .NET user secrets (Development) or
+///       an environment variable / secret store (Production). It is NEVER
+///       in source control.
+///     </item>
+///     <item>
+///       The seeder is gated by Program.cs — it only runs in Development,
+///       or when <c>TakOne:DefaultAdmin:Enabled</c> is explicitly set to
+///       <c>true</c> in a non-Development environment.
+///     </item>
+///     <item>
+///       The seeder NEVER logs the password — not at WARNING, not at DEBUG,
+///       not anywhere. The structured log on first creation reports only
+///       the WorkerId and Email (which are not secrets — they're well-known
+///       bootstrap identifiers). See the SECURITY NOTE on the
+///       <c>LogInformation</c> call below for the rationale.
+///     </item>
+///     <item>
+///       The seeded admin's <see cref="ApplicationUser.MustChangePassword"/>
+///       flag is set to <c>true</c> (unless <c>ForcePasswordChangeOnFirstLogin</c>
+///       is explicitly <c>false</c> in configuration). This forces the
+///       first human admin to set their own password before accessing any
+///       other page — so the password the operator configured (and may
+///       have shared out-of-band) is no longer valid after first login.
+///     </item>
 /// </summary>
 public static class DefaultAdminSeeder
 {
-    /// <summary>
-    /// The default admin's login identifier (used as <c>UserName</c> on
-    /// <c>ApplicationUser</c> and <c>WorkerId</c> on the Domain <c>User</c>).
-    /// Hardcoded because this is a single, well-known bootstrap account.
-    /// </summary>
-    public const string DefaultWorkerId = "ADMIN-0001";
-
-    /// <summary>
-    /// The default admin's email. Uses the <c>.local</c> TLD so it can never
-    /// accidentally route to a real mailbox.
-    /// </summary>
-    public const string DefaultEmail = "admin@takone.local";
-
-    /// <summary>
-    /// The default admin's initial password. MEETS Identity's default
-    /// complexity rules. CHANGE THIS AFTER FIRST LOGIN.
-    /// </summary>
-    public const string DefaultPassword = "MarkMccain2323!";
-
     /// <summary>
     /// Creates the default admin user if no Admin role users exist.
     /// </summary>
     /// <param name="rootProvider">
     /// The root <c>IServiceProvider</c> from <see cref="WebApplication.Services"/>.
     /// </param>
-    public static async Task EnsureDefaultAdminAsync(IServiceProvider rootProvider)
+    /// <param name="options">
+    /// The bound <see cref="DefaultAdminOptions"/>. Caller is responsible
+    /// for calling <see cref="DefaultAdminOptions.EnsureValid"/> BEFORE
+    /// invoking this method — we don't re-validate here.
+    /// </param>
+    /// <param name="hostEnvironment">
+    /// The current <c>IHostEnvironment</c>. Used only to log a more
+    /// helpful message when the seeder skips itself in Development
+    /// because the password is missing.
+    /// </param>
+    public static async Task EnsureDefaultAdminAsync(
+        IServiceProvider rootProvider,
+        DefaultAdminOptions options,
+        IHostEnvironment hostEnvironment)
     {
         ArgumentNullException.ThrowIfNull(rootProvider);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(hostEnvironment);
+
+        // ----------------------------------------------------------------
+        // 0. If the password is empty, skip the seeder entirely.
+        //
+        //    In Development, this lets a developer `dotnet run` the app
+        //    immediately after cloning — they just won't get a default
+        //    admin until they set up user secrets. In Production, this
+        //    branch is unreachable for an Enabled seeder because
+        //    DefaultAdminOptions.EnsureValid throws before we get here.
+        //    But defense-in-depth — never trust the caller.
+        // ----------------------------------------------------------------
+        if (string.IsNullOrWhiteSpace(options.Password))
+        {
+            // We log at Information (not Warning) — this is an expected,
+            // benign state in Development. The developer hasn't set up
+            // user secrets yet.
+            //
+            // We log the configuration KEY (never the value — there is no
+            // value to log here anyway, but the rule applies generally).
+            using var scope0 = rootProvider.CreateScope();
+            var skipLogger = scope0.ServiceProvider
+                .GetService<ILoggerFactory>()
+                ?.CreateLogger("DefaultAdminSeeder");
+            skipLogger?.LogInformation(
+                "DefaultAdminSeeder: skipping — no password configured under " +
+                "'{SectionKey}:Password'. Set it via 'dotnet user-secrets set " +
+                "\"{SectionKey}:Password\" \"&lt;your-strong-password&gt;\" " +
+                "--project TakOne.WebUI' (Development) or the environment variable " +
+                "'{EnvVarName}' (Production).",
+                DefaultAdminOptions.SectionName,
+                DefaultAdminOptions.SectionName,
+                DefaultAdminOptions.SectionName.Replace(":", "__") + "__Password");
+            return;
+        }
 
         using var scope = rootProvider.CreateScope();
         var sp = scope.ServiceProvider;
@@ -118,11 +179,11 @@ public static class DefaultAdminSeeder
 
         // ----------------------------------------------------------------
         // 3. Safety check: even though GetUsersInRoleAsync was empty, make
-        //    sure nobody has already grabbed the default WorkerId/Email —
+        //    sure nobody has already grabbed the configured WorkerId/Email —
         //    otherwise we'd collide on the unique index. This handles the
         //    "user was created but role-assignment failed" edge case.
         // ----------------------------------------------------------------
-        var existingByWorkerId = await userManager.FindByNameAsync(DefaultWorkerId);
+        var existingByWorkerId = await userManager.FindByNameAsync(options.WorkerId);
         if (existingByWorkerId is not null)
         {
             logger?.LogWarning(
@@ -130,7 +191,7 @@ public static class DefaultAdminSeeder
                 "exists but is NOT in the Admin role. Skipping default admin " +
                 "seeding to avoid duplicate. If this is unexpected, inspect " +
                 "the AspNetUsers table manually.",
-                DefaultWorkerId);
+                options.WorkerId);
             return;
         }
 
@@ -141,7 +202,7 @@ public static class DefaultAdminSeeder
         //    ApplicationUser).
         // ----------------------------------------------------------------
         var domainUser = User.CreateStaff(
-            workerId: DefaultWorkerId,
+            workerId: options.WorkerId,
             fullName: "System Administrator",
             gender: Gender.Male);
 
@@ -155,37 +216,88 @@ public static class DefaultAdminSeeder
         // ----------------------------------------------------------------
         var result = await userAccountService.CreateIdentityAccountAsync(
             userId: domainUser.Id,
-            workerId: DefaultWorkerId,
-            email: DefaultEmail,
-            initialPassword: DefaultPassword,
+            workerId: options.WorkerId,
+            email: options.Email,
+            initialPassword: options.Password,
             role: Roles.Admin,
             gender: Gender.Male);
 
         if (result.IsSuccess)
         {
-            // Mark email as confirmed so the user can sign in without
-            // an email loop. IUserAccountService.CreateIdentityAccountAsync
-            // already does this in its documented contract, but we re-affirm
-            // it here in case the implementation changes — without a confirmed
-            // email, Identity's default sign-in flow may refuse to issue a
-            // cookie if RequireConfirmedEmail is ever flipped to true in
-            // appsettings.json.
+            // ------------------------------------------------------------
+            // 6. Mark email as confirmed so the user can sign in without
+            //    an email loop. IUserAccountService.CreateIdentityAccountAsync
+            //    already does this in its documented contract, but we
+            //    re-affirm it here in case the implementation changes —
+            //    without a confirmed email, Identity's default sign-in
+            //    flow may refuse to issue a cookie if RequireConfirmedEmail
+            //    is ever flipped to true in appsettings.json.
+            // ------------------------------------------------------------
             var appUser = await userManager.FindByIdAsync(domainUser.Id.ToString());
-            if (appUser is not null && !appUser.EmailConfirmed)
+            if (appUser is not null)
             {
-                var token = await userManager.GenerateEmailConfirmationTokenAsync(appUser);
-                await userManager.ConfirmEmailAsync(appUser, token);
+                if (!appUser.EmailConfirmed)
+                {
+                    var token = await userManager.GenerateEmailConfirmationTokenAsync(appUser);
+                    await userManager.ConfirmEmailAsync(appUser, token);
+                }
+
+                // --------------------------------------------------------
+                // 7. Set MustChangePassword = true so the first human
+                //    admin must change it before accessing any other page.
+                //    This is the operational guarantee behind Issue #02's
+                //    "force a one-time password change on first login"
+                //    requirement.
+                //
+                //    We set this AFTER CreateIdentityAccountAsync returns
+                //    success (so we know the ApplicationUser row exists),
+                //    using a tracked entity from UserManager. SaveChanges
+                //    is required because we're outside
+                //    CreateIdentityAccountAsync's auto-save window.
+                // --------------------------------------------------------
+                if (options.ForcePasswordChangeOnFirstLogin)
+                {
+                    appUser.MustChangePassword = true;
+                    await userManager.UpdateAsync(appUser);
+                }
             }
 
-            logger?.LogWarning(
-                """
-                DefaultAdminSeeder: CREATED default admin user.
-                  WorkerId (login): {WorkerId}
-                  Email:            {Email}
-                  Password:         {Password}
-                CHANGE THIS PASSWORD IMMEDIATELY after first login.
-                """,
-                DefaultWorkerId, DefaultEmail, DefaultPassword);
+            // ------------------------------------------------------------
+            // SECURITY NOTE on logging (Issue #02 — "Never log passwords"):
+            //
+            // The previous implementation logged the password at WARNING
+            // level on first creation, supposedly so the developer would
+            // notice it. That was a leak — anyone with read access to
+            // production logs (operators, log aggregators, SIEM systems,
+            // backups, etc.) would know the default admin password for
+            // every fresh install.
+            //
+            // We now log ONLY the WorkerId and Email. These are not
+            // secrets — they're well-known bootstrap identifiers
+            // (defaulting to "ADMIN-0001" and "admin@takone.local") that
+            // are documented in the README and in this file. The password
+            // is supplied by the operator via configuration; if they've
+            // forgotten it, they can re-read their secret store.
+            //
+            // We log at Information (not Warning) — a successful seed is
+            // an expected, normal event, not something that warrants
+            // attention. Warning would just train operators to ignore
+            // warnings.
+            //
+            // We NEVER log the password — not at Information, not at
+            // Debug, not at Trace, not anywhere. Even at Debug/Trace,
+            // logs get captured by log aggregators and persisted to
+            // long-term storage; "debug-only" is a false comfort.
+            // ------------------------------------------------------------
+            logger?.LogInformation(
+                "DefaultAdminSeeder: CREATED default admin user. " +
+                "WorkerId (login): {WorkerId}, Email: {Email}. " +
+                "The password is not logged — see the configuration source " +
+                "(user secrets / environment variable / Key Vault) if you " +
+                "need to retrieve it. MustChangePassword={MustChange}.",
+                options.WorkerId,
+                options.Email,
+                options.ForcePasswordChangeOnFirstLogin);
         }
         else
         {

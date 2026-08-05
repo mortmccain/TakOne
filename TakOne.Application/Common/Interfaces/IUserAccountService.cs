@@ -156,4 +156,61 @@ public interface IUserAccountService
     Task<IReadOnlyList<string>> GetRolesAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Self-service password change. Verifies the user's current password,
+    /// then sets the new password. Used by the
+    /// <c>/Account/ChangePassword</c> page — including the
+    /// forced-first-login flow triggered by
+    /// <see cref="TakOne.Infrastructure.Identity.ApplicationUser.MustChangePassword"/>.
+    ///
+    /// WHY THIS LIVES ON IUserAccountService (not just on UserManager):
+    ///   The WebUI layer's Razor page could in principle call
+    ///   <c>UserManager.ChangePasswordAsync</c> directly — the method
+    ///   takes (user, currentPassword, newPassword). But routing through
+    ///   the Application-layer abstraction gives us:
+    ///     1. A single, well-documented failure surface (returns
+    ///        <see cref="Result"/> with a flattened error string, same as
+    ///        every other Identity operation in this interface).
+    ///     2. A place to enforce any future domain-side invariants (e.g.
+    ///        "you cannot reuse any of your last 5 passwords" — currently
+    ///        not implemented, but easy to add here without touching the
+    ///        Razor page).
+    ///     3. Testability — the ChangePassword page can be unit-tested
+    ///        against a fake <c>IUserAccountService</c> without standing
+    ///        up a real UserManager + DbContext.
+    ///
+    /// FAILURE MODES:
+    ///   - User not found → <c>Result.Failure</c> with a generic message.
+    ///   - Current password incorrect → <c>Result.Failure</c> with
+    ///     Identity's <c>PasswordMismatch</c> error description
+    ///     (localized by <c>TakOneIdentityErrorDescriber</c>).
+    ///   - New password fails Identity's complexity rules →
+    ///     <c>Result.Failure</c> with the relevant Identity error
+    ///     description.
+    ///   - New password is identical to the current password → handled
+    ///     by the caller (the Razor page validates this client-side via
+    ///     <c>[Compare]</c>); defense-in-depth, the page also rejects
+    ///     server-side if the strings are equal before calling this
+    ///     method.
+    /// </summary>
+    /// <param name="userId">
+    /// The user's Id (the shared PK on both <c>Domain.User</c> and
+    /// <c>ApplicationUser</c>).
+    /// </param>
+    /// <param name="currentPassword">
+    /// The user's current password, as typed into the "current password"
+    /// field on the ChangePassword form. Verified by
+    /// <c>UserManager.ChangePasswordAsync</c> — we never read the stored
+    /// hash directly.
+    /// </param>
+    /// <param name="newPassword">
+    /// The new password, as typed into the "new password" field. Must
+    /// satisfy Identity's complexity rules.
+    /// </param>
+    Task<Result> ChangePasswordAsync(
+        Guid userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default);
 }

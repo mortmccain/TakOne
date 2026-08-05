@@ -1,7 +1,8 @@
 <Solution>
-  <Project Path="TakOne.Application/TakOne.Application.csproj" />
-  <Project Path="TakOne.Domain/TakOne.Domain.csproj" />
-  <Project Path="TakOne.Infrastructure/TakOne.Infrastructure.csproj" />
-  <Project Path="TakOne.SharedKernel/TakOne.SharedKernel.csproj" />
-  <Project Path="TakOne.WebUI/TakOne.WebUI.csproj" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.Analyzer/TakOne.Analyzer.csproj" Id="380ef132-9281-409b-b7bd-c1aca2f5c6c3" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.Application/TakOne.Application.csproj" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.Domain/TakOne.Domain.csproj" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.Infrastructure/TakOne.Infrastructure.csproj" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.SharedKernel/TakOne.SharedKernel.csproj" />
+  <Project Path="../../../../../../source/repos/TakOne/TakOne.WebUI/TakOne.WebUI.csproj" />
 </Solution>

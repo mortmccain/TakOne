@@ -376,6 +376,19 @@
             //    existing sign-in (from step 1) is replaced atomically —
             //    no race window where the user is signed in but missing
             //    the custom claims.
+            //
+            //    ISSUE #02 — Force one-time password change on first login:
+            //    If the ApplicationUser.MustChangePassword flag is true
+            //    (set by DefaultAdminSeeder on the bootstrap admin, OR by
+            //    the AddMustChangePasswordFlag migration on every pre-
+            //    existing admin), we ALSO add a `must_change_password`
+            //    claim to the cookie. The middleware in Program.cs
+            //    inspects this claim on every authenticated request and
+            //    redirects the user to /Account/ChangePassword — except
+            //    for /Account/ChangePassword, /Account/LogOut, and
+            //    /Account/Login themselves. The ChangePassword page
+            //    clears the flag on the user row and re-issues the cookie
+            //    WITHOUT the claim.
             // --------------------------------------------------------------
             var extraClaims = new List<Claim>
             {
@@ -388,6 +401,16 @@
             // Also stash Gender as a claim — cheap to add, useful for the
             // profile page (avoids a DB lookup just to render "Gender: Male").
             extraClaims.Add(new Claim("Gender", domainUser?.Gender.ToString() ?? Gender.Male.ToString()));
+
+            // ISSUE #02 — force one-time password change on first login.
+            // The claim is read by the MustChangePasswordRedirectMiddleware
+            // in Program.cs. We use "true" (string) as the claim value
+            // because Claim values are always strings — the middleware
+            // checks `HasClaim("must_change_password", "true")`.
+            if (appUser.MustChangePassword)
+            {
+                extraClaims.Add(new Claim("must_change_password", "true"));
+            }
 
             // Re-sign-in with the enriched principal. The
             // AuthenticationProperties here match what
@@ -413,6 +436,13 @@
             //    default — UNLESS the returnUrl is the login page itself
             //    (which would create an infinite redirect loop).
             //
+            //    ISSUE #02 OVERRIDE: if MustChangePassword is true, we
+            //    redirect to /Account/ChangePassword regardless of role
+            //    or returnUrl. The MustChangePassword middleware would
+            //    redirect them there on the very next request anyway,
+            //    but doing it here avoids an extra round-trip and gives
+            //    the user immediate visual feedback.
+            //
             //    forceLoad:true is CRITICAL — it forces a full HTTP
             //    round-trip so the new cookie is visible to Blazor's
             //    circuit. Without it, Blazor would try to handle the
@@ -420,11 +450,21 @@
             //    still see the pre-login auth state, and the user would
             //    bounce back to /Account/Login.
             // --------------------------------------------------------------
-            var returnUrl = httpContext.Request.Query["returnUrl"].ToString();
-            var principalForRedirect = await CreateUserPrincipalWithRolesAsync(appUser);
-            var target = !string.IsNullOrEmpty(returnUrl) && IsSafeReturnUrl(returnUrl)
-                ? returnUrl
-                : GetRoleAwareLandingUrl(principalForRedirect);
+            string target;
+            if (appUser.MustChangePassword)
+            {
+                // Force password change first — role-aware landing page
+                // and any returnUrl are deferred until after the change.
+                target = "/Account/ChangePassword";
+            }
+            else
+            {
+                var returnUrl = httpContext.Request.Query["returnUrl"].ToString();
+                var principalForRedirect = await CreateUserPrincipalWithRolesAsync(appUser);
+                target = !string.IsNullOrEmpty(returnUrl) && IsSafeReturnUrl(returnUrl)
+                    ? returnUrl
+                    : GetRoleAwareLandingUrl(principalForRedirect);
+            }
 
             LoginLogger.LogWarning("DIAG Login: NavigateTo target='{Target}', forceLoad=true.", target);
             Navigation.NavigateTo(target, forceLoad: true);

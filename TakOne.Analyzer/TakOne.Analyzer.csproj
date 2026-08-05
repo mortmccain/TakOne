@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<!--
+    TakOne.Analyzers — Roslyn analyzers enforcing security invariants that
+    cannot be expressed by the type system alone.
+
+    WHY A SEPARATE PROJECT:
+      Roslyn analyzers MUST target netstandard2.0 (the TFM the Roslyn
+      compiler hosts them on) and MUST NOT reference any of the application
+      projects (Application, Infrastructure, WebUI). They run at build time,
+      inside the compiler, so they can only see the Roslyn object model
+      (Microsoft.CodeAnalysis.*) — never your runtime types.
+
+    HOW IT'S CONSUMED:
+      TakOne.WebUI.csproj references this project as an analyzer:
+        <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false" />
+      The analyzer DLL is loaded by the compiler at build time and runs
+      against every C# file in the consuming project.
+
+    CURRENT RULES:
+      - TAKONE_LOGIN_001 (ForbiddenLoggingAnalyzer): flags any call to
+        ILogger.Log* whose format string contains a banned credential-state
+        or PII token. Severity: Error. See ForbiddenLoggingAnalyzer.cs
+        for the full rationale and the banned-token list.
+  -->
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<IsRoslynComponent>true</IsRoslynComponent>
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- Suppress the "analyzer should be in a folder named analyzers" warning;
+         we ship via direct ProjectReference, not as a NuGet package. -->
+		<NoWarn>$(NoWarn);RS1022</NoWarn>
+		<Version>1.0.0</Version>
+		<Description>TakOne security analyzers — flags credential-state/PII leakage in ILogger.Log* calls.</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+	</ItemGroup>
+
+</Project>

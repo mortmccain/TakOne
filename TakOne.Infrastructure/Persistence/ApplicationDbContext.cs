@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TakOne.Domain.Categories.Entities;
@@ -21,6 +22,11 @@ namespace TakOne.Infrastructure.Persistence;
 ///   - Serves as the Unit-of-Work boundary: a single <c>SaveChangesAsync</c> call
 ///     commits ALL changes (domain aggregates + identity tables + outbox entries)
 ///     in one transaction.
+///   - Stores the ASP.NET Core Data Protection key ring in a <c>DataProtectionKeys</c>
+///     table (see <see cref="DataProtectionKeys"/> below). Implemented via
+///     <see cref="IDataProtectionKeyContext"/> so that
+///     <c>PersistKeysToDbContext&lt;ApplicationDbContext&gt;()</c> in
+///     <c>TakOne.WebUI/Program.cs</c> can persist keys to this DbContext.
 ///
 /// WHY ONE DbContext (not separate ones for Domain and Identity):
 ///   The Application layer's command handlers sometimes need to create a Domain
@@ -36,7 +42,7 @@ namespace TakOne.Infrastructure.Persistence;
 ///     <see cref="ApplicationUser"/>. Renaming ours avoids the collision and
 ///     makes it obvious at the call site which "user" you mean.
 ///   - All other DbSet names are pluralized entity names (Products, Categories,
-///     SubCategories, SubSubCategories, Sales, SaleLineItems).
+///     SubCategories, SubSubCategories, Sales, SaleLineItems, DataProtectionKeys).
 ///
 /// CONFIGURATION DISCOVERY:
 ///   Entity configurations live in <c>Persistence/Configurations/</c> as separate
@@ -44,8 +50,15 @@ namespace TakOne.Infrastructure.Persistence;
 ///   automatically by <see cref="OnModelCreating"/> via
 ///   <c>ApplyConfigurationsFromAssembly</c> — no manual registration needed
 ///   when adding a new entity.
+///
+///   The Data Protection key entity (<c>DataProtectionKey</c> from the
+///   <c>Microsoft.AspNetCore.DataProtection.EntityFrameworkCore</c> package)
+///   is mapped by EF Core CONVENTION (no IEntityTypeConfiguration needed) —
+///   see <see cref="DataProtectionKeys"/> below for details.
 /// </summary>
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
+public class ApplicationDbContext
+    : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>,
+      IDataProtectionKeyContext
 {
     /// <summary>
     /// Domain User aggregate (NOT the Identity user). Maps to the
@@ -92,6 +105,38 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
     /// <c>SaleLineItems</c> table.
     /// </summary>
     public DbSet<SaleLineItem> SaleLineItems { get; set; } = null!;
+
+    /// <summary>
+    /// ASP.NET Core Data Protection key ring. One row per key. The
+    /// <c>DataProtectionKey</c> entity (from
+    /// <c>Microsoft.AspNetCore.DataProtection.EntityFrameworkCore</c>)
+    /// carries: <c>Id</c> (int, SQL Server identity), <c>FriendlyName</c>
+    /// (a human-readable label, e.g. the key id as a Guid string), and
+    /// <c>Xml</c> (the full key material XML — same format as the
+    /// file-system store would have written to
+    /// <c>.dataprotection-keys/key-*.xml</c>).
+    ///
+    /// This DbSet is REQUIRED by <see cref="IDataProtectionKeyContext"/>
+    /// and is what <c>PersistKeysToDbContext&lt;ApplicationDbContext&gt;()</c>
+    /// reads/writes when the Data Protection subsystem creates, rotates, or
+    /// revokes keys. The auth cookie (TakOne.Auth) and antiforgery tokens
+    /// are encrypted with keys from this ring.
+    ///
+    /// MAPPING:
+    ///   Mapped by EF Core CONVENTION (no IEntityTypeConfiguration needed).
+    ///   Table name defaults to <c>DataProtectionKeys</c>. See the migration
+    ///   <c>20260805092026_AddDataProtectionKeys</c> for the concrete schema.
+    ///
+    /// SECURITY NOTE: the XML in this column is in CLEAR TEXT inside the
+    /// database — same as it would be on disk under
+    /// <c>PersistKeysToFileSystem</c>. The security boundary is SQL Server
+    /// access control: only the application's DB user has SELECT/INSERT on
+    /// this table. If you need defense-in-depth beyond SQL access control
+    /// (e.g. to protect against DBA-level access), layer
+    /// <c>ProtectKeysWithCertificate(...)</c> with an X.509 cert from the
+    /// machine cert store — no cloud service required.
+    /// </summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; } = null!;
 
 
     /// <summary>
@@ -155,6 +200,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
         // `modelBuilder.Entity<Category>().HasKey(...)` etc. — each entity's
         // mapping lives in its own file, which is easier to read, test, and
         // maintain.
+        //
+        // NOTE on DataProtectionKey: it is NOT configured by an
+        // IEntityTypeConfiguration<T> in this assembly, and
+        // ApplyConfigurationsFromAssembly only scans the CURRENT assembly
+        // (the Infrastructure assembly), not the NuGet package's assembly.
+        // Instead, DataProtectionKey is mapped by EF Core CONVENTION:
+        //   - PK is `Id` (int, SQL Server identity-by-default).
+        //   - Table name is `DataProtectionKeys` (pluralized entity name).
+        //   - `FriendlyName` and `Xml` are nvarchar(max) columns.
+        // No explicit configuration is needed — exposing the
+        // DbSet<DataProtectionKey> (declared above) is sufficient for the
+        // conventions to map it. See migration
+        // `20260805092026_AddDataProtectionKeys` for the concrete schema.
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly);
     }
