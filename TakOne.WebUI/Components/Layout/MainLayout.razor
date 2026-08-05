@@ -151,12 +151,53 @@
                                 ValueChanged="@OnCultureChanged"
                                 TValue="string" />
 
-                @* Role badge + display name + logout (only when authenticated) *@
+                @* Role badge + display name + logout (only when authenticated).
+
+                   ISSUE #05 — CSRF-safe logout:
+                     The logout button is now a SUBMIT button inside a
+                     <form method="post" action="/Account/Logout"> with an
+                     <AntiforgeryToken /> hidden field. Clicking it does a
+                     real browser POST to the /Account/Logout minimal-API
+                     endpoint, which is registered with RequireAntiforgery().
+                     A cross-site attacker who embeds
+                       <img src="https://takone.example/Account/Logout">
+                     on a third-party page sends a GET (browsers only GET
+                     for <img>); that GET hits the MapGet handler which
+                     returns 405 and does NOT call SignOutAsync. A forged
+                     cross-site <form method=post> would lack the
+                     antiforgery token and get 400. Either way: no logout.
+
+                   WHY A PLAIN <form> (not EditForm):
+                     EditForm is for forms whose OnValidSubmit handler runs
+                     in the same Blazor page that rendered them. We want a
+                     plain browser POST to a SEPARATE URL (/Account/Logout)
+                     handled by a minimal-API endpoint. A plain HTML <form>
+                     with method+action is the right tool. The
+                     <AntiforgeryToken /> component (from
+                     Microsoft.AspNetCore.Components.Forms) renders the
+                     hidden __RequestVerificationToken input — the same
+                     token EditForm would render. It works in BOTH static
+                     SSR (prerender) and interactive render modes, so this
+                     button is safe regardless of whether MainLayout is
+                     currently being prerendered or running in a circuit.
+
+                   WHY display:inline (not the RadzenButton's own margin):
+                     The form is a block element by default; making it
+                     inline keeps it on the same row as the badge and
+                     display name in the toolbar. The 8px left margin
+                     matches the previous button's spacing. *@
                 <AuthorizeView>
                     <Authorized>
                         <RadzenBadge Text="@_roleBadge" IsPill="true" Style="margin-left: 12px;" />
                         <RadzenText Text="@_displayName" Style="margin-left: 8px;" />
-                        <RadzenButton Icon="logout" Click="@DoLogout" Variant="Variant.Text" Style="margin-left: 8px;" />
+                        <form method="post"
+                              action="/Account/Logout"
+                              style="display: inline; margin-left: 8px;">
+                            <AntiforgeryToken />
+                            <RadzenButton Icon="logout"
+                                          ButtonType="ButtonType.Submit"
+                                          Variant="Variant.Text" />
+                        </form>
                     </Authorized>
                 </AuthorizeView>
             </div>
@@ -386,8 +427,4 @@
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 
-    private void DoLogout()
-    {
-        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
-    }
 }

@@ -199,8 +199,13 @@
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 
-    private void DoLogout()
-    {
-        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
-    }
+    // ISSUE #05 — DoLogout() removed.
+    //   ShopLayout never rendered a logout button (the shop page provides
+    //   its own header inside @Body), so the previous NavigateTo-based
+    //   DoLogout was dead code. It is deleted here both to remove the dead
+    //   code and to ensure no future maintainer wires it up to a button —
+    //   any logout trigger in this codebase MUST go through the POST
+    //   /Account/Logout form pattern (see MainLayout.razor for the
+    //   canonical example). A GET-based logout would re-introduce the
+    //   CSRF vulnerability that Issue #05 fixed.
 }

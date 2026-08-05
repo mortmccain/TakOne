@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Radzen;
 using TakOne.Application.Common.Authorization;
@@ -16,6 +17,7 @@ using TakOne.Infrastructure.Persistence;
 using TakOne.WebUI.Components;
 using TakOne.WebUI.Hubs;
 using TakOne.WebUI.Services;
+using TakOne.WebUI.Services.Logging;
 using Wolverine;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -220,6 +222,23 @@ builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
 
 // --- WebUI-only services ---
 builder.Services.AddScoped<ToastService>();
+
+// --- Login audit logger (Issue #03 — replace DIAG Login leak pattern) ---
+//
+// LoginAuditLogger is the ONLY sanctioned logger for the login flow. It
+// enforces an allow-list by construction (only LoginLogContext fields can
+// be logged — Password, PasswordLength, EmailConfirmed, LockoutEnd,
+// AccessFailedCount, Email, FullName, Gender are deliberately absent from
+// the record and therefore cannot leak). The ForbiddenLoggingAnalyzer in
+// TakOne.Analyzers is the CI-level backstop: it flags any ILogger.Log*
+// call whose format string contains a banned token ("DIAG Login",
+// "PasswordLength", etc.) and fails the build at Error severity.
+//
+// Scoped lifetime matches the convention used by other WebUI services
+// (BlazorCurrentUserService, ToastService). The logger's dependencies
+// (ILogger<LoginAuditLogger> singleton, IHostEnvironment singleton) are
+// both singletons, so Scoped is fine and Singleton would also work.
+builder.Services.AddScoped<LoginAuditLogger>();
 
 // --- HttpClient for client-side API calls from Blazor Server circuits ---
 //
@@ -455,6 +474,76 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapHub<NotificationHub>("/notificationHub");
+
+// ==================================================================================================================================
+//                                                          LOGOUT ENDPOINT (Issue #05 — CSRF-safe logout)
+// ==================================================================================================================================
+// Logout MUST be a POST request with antiforgery-token validation. The
+// previous implementation was a Blazor @page "/Account/Logout" that ran
+// SignInManager.SignOutAsync() inside OnInitializedAsync — i.e. on a
+// plain GET. That meant an attacker could embed
+//   <img src="https://takone.example/Account/Logout">
+// on ANY third-party page; when any logged-in user visited that page,
+// the browser sent a GET to /Account/Logout, the cookie was attached
+// (same-site), and the user was silently logged out. SameSite=Strict on
+// the auth cookie mitigates this in modern browsers but fails for older
+// browsers, relaxed SameSite configs (Lax/None), and same-site attacker
+// content (e.g. a comment box on the same domain).
+//
+// The fix is the standard ASP.NET Core CSRF-safe logout pattern:
+//   1. GET  /Account/Logout → 405 Method Not Allowed (no SignOutAsync).
+//        An <img src=".../Account/Logout"> tag now hits this handler
+//        and gets a 405 response — the auth cookie is NOT touched.
+//   2. POST /Account/Logout  → SignOutAsync + 302 redirect to login.
+//        In .NET 8+, minimal-API POST endpoints are validated by the
+//        UseAntiforgery middleware AUTOMATICALLY (no RequireAntiforgery()
+//        call exists — antiforgery is the default; only DisableAntiforgery()
+//        opts OUT, as the /api/product-image endpoint below does). The
+//        <AntiforgeryToken /> component inside the logout <form> in
+//        MainLayout / ShopLayout / AccessDenied renders the
+//        __RequestVerificationToken hidden field. A forged cross-site
+//        POST has no token → 400 Bad Request → no logout.
+//
+// WHY A MINIMAL-API ENDPOINT (not a Razor page):
+//   The original LogOut.razor used OnInitializedAsync, which runs on
+//   BOTH GET (initial page load) and POST (form submission). To make
+//   GET safe we'd have to add manual method-checking inside the page.
+//   A minimal-API endpoint is method-dispatched by the router itself —
+//   GET and POST are completely separate handlers, and there is no way
+//   for the GET handler to accidentally trigger SignOutAsync. This is
+//   the cleanest, least-error-prone structure.
+//
+// WHY THE REDIRECT GOES TO /Account/Login (not /):
+//   After SignOutAsync the auth cookie is gone. Sending the user to any
+//   protected page would just bounce them to /Account/Login anyway via
+//   the cookie middleware's LoginPath. Going straight to /Account/Login
+//   saves a round-trip and gives the user an immediate visual signal
+//   that they're signed out.
+//
+// COOKIE MIDDLEWARE NOTE:
+//   CookieAuthenticationOptions.LogoutPath is configured to
+//   "/Account/Logout" in AddTakOneInfrastructure. When
+//   SignInManager.SignOutAsync() is called from a handler whose
+//   request path EQUALS LogoutPath, the cookie handler clears the
+//   cookie and returns without issuing its own redirect — so our
+//   explicit Results.Redirect("/Account/Login") is the response the
+//   browser actually sees. No redirect loop, no double-302.
+app.MapGet("/Account/Logout",
+    () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+
+app.MapPost("/Account/Logout",
+    async (SignInManager<ApplicationUser> signInManager) =>
+    {
+        await signInManager.SignOutAsync();
+        return Results.Redirect("/Account/Login", permanent: false);
+    });
+// ↑ NOTE: no .DisableAntiforgery() here — antiforgery validation is the
+//   DEFAULT for minimal-API POST endpoints in .NET 8+. The
+//   UseAntiforgery middleware (line ~471) automatically validates the
+//   __RequestVerificationToken field on every unsafe-method request.
+//   Only the /api/product-image endpoint below calls DisableAntiforgery()
+//   to opt OUT — that's the explicit opt-out path. For logout we want
+//   the default (validate), so we do nothing.
 
 // ==================================================================================================================================
 //                                                          PRODUCT IMAGE UPLOAD ENDPOINT

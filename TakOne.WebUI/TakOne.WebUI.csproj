@@ -71,11 +71,13 @@
       Domain is reachable transitively via Application.
     -->
   <ItemGroup>
+    <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj" />
     <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="wwwroot\lib\microsoft-signalr\" />
     <Folder Include="wwwroot\uploads\products\" />
   </ItemGroup>
   <ItemGroup>

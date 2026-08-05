@@ -68,12 +68,6 @@
   <data name="ErrorTitle" xml:space="preserve">
     <value>ورود ناموفق بود</value>
   </data>
-  <data name="LoginRequiredTitle" xml:space="preserve">
-    <value>لطفاً وارد شوید</value>
-  </data>
-  <data name="LoginRequiredMessage" xml:space="preserve">
-    <value>برای دسترسی به آن صفحه باید وارد سیستم شوید.</value>
-  </data>
   <data name="WorkerIdLabel" xml:space="preserve">
     <value>کد پرسنلی</value>
   </data>
@@ -88,9 +82,6 @@
   </data>
   <data name="SubmitButton" xml:space="preserve">
     <value>ورود</value>
-  </data>
-  <data name="ForgotPasswordLink" xml:space="preserve">
-    <value>رمز عبور خود را فراموش کرده‌اید؟</value>
   </data>
   <data name="Error_NoHttpContext" xml:space="preserve">
     <value>پردازش درخواست شما ممکن نیست. لطفاً صفحه را مجدداً بارگذاری کنید و دوباره تلاش کنید.</value>

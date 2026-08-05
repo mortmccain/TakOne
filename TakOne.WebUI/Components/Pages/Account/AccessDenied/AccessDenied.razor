@@ -42,11 +42,25 @@
                       Icon="home"
                       Click="@GoHome" />
 
-        <RadzenButton Text="@Loc["LogoutButton"]"
-                      ButtonStyle="ButtonStyle.Secondary"
-                      Variant="Variant.Outlined"
-                      Icon="logout"
-                      Click="@DoLogout" />
+        @* ISSUE #05 — CSRF-safe logout.
+           The previous version was a RadzenButton with Click="@DoLogout"
+           that called Navigation.NavigateTo("/Account/Logout", forceLoad: true).
+           That sent a GET to /Account/Logout, which used to trigger
+           SignOutAsync — a CSRF vulnerability (an attacker could embed
+           <img src=".../Account/Logout"> on a third-party page to log
+           any user out). The /Account/Logout endpoint is now POST-only
+           with RequireAntiforgery(); this form submits the POST with an
+           <AntiforgeryToken /> hidden field, exactly like the logout
+           button in MainLayout.razor. See MainLayout.razor for the full
+           rationale and the pattern. *@
+        <form method="post" action="/Account/Logout" style="display: inline;">
+            <AntiforgeryToken />
+            <RadzenButton Text="@Loc["LogoutButton"]"
+                          ButtonType="ButtonType.Submit"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Icon="logout" />
+        </form>
     </RadzenStack>
 </RadzenStack>
 
@@ -60,9 +74,9 @@
         Navigation.NavigateTo("/", forceLoad: true);
     }
 
-    private void DoLogout()
-    {
-        // Clear the cookie and go back to the login page.
-        Navigation.NavigateTo("/Account/Logout", forceLoad: true);
-    }
+    // ISSUE #05 — DoLogout() removed.
+    //   The logout button is now a submit button inside a POST form
+    //   pointing at /Account/Logout (see markup above). The handler
+    //   lives in the minimal-API endpoint in Program.cs, not here —
+    //   a GET-based logout is a CSRF vulnerability (Issue #05).
 }

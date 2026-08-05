@@ -36,9 +36,66 @@
        browser to fetch the latest theme.js (now includes tak-dark registry). *@
     <script src="js/theme.js?v=12"></script>
 
-    @* SignalR client + our hub bridge. Loaded in <head> so it's ready
-       before any page tries to call notificationHub.start(). *@
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    @* SignalR client — VENDORED locally (Issue #07).
+       Previously loaded from cdnjs with no integrity attribute. Two problems:
+         (a) SECURITY — if cdnjs were ever compromised, an attacker could
+             inject arbitrary JS into every TakOne user's browser, running
+             with full page-origin privileges (reading non-HttpOnly cookies,
+             making authenticated API calls, exfiltrating data, keylogging).
+             CDNs have been compromised before — cdnjs itself had a near-miss
+             in 2018. The SRI hash below pins the file: any tampering causes
+             the browser to refuse to execute it (the <script> fails to load,
+             which is the safer failure mode — the notificationHub.js bridge
+             catches the missing `signalR` global and logs a warning instead
+             of executing attacker code).
+         (b) AVAILABILITY — cdnjs is intermittently blocked in Iran, the
+             primary audience (fa-IR is the default culture). With the CDN
+             URL, real users saw a broken notification hub whenever the
+             CDN was unreachable. Vendoring the file serves it from our own
+             origin, so it's always available as long as TakOne itself is.
+
+       WHY @microsoft/signalr@8.0.0 (npm) instead of cdnjs:
+         cdnjs's signalr.min.js IS the npm package's UMD bundle (cdnjs
+         mirrors npm). Downloading from unpkg.com (the npm CDN) gets the
+         exact same bytes that `npm install @microsoft/signalr@8.0.0`
+         would put in node_modules. The SHA-256 of this file is
+         fa4ed1a6561e0596b5c31df36f47c16926115fac45dcf02fab50a0a79e580b4e
+         if you want to cross-verify against the npm registry.
+
+       WHY crossorigin="anonymous" on a SAME-ORIGIN script:
+         Per the SRI spec, integrity checks require the request to be in
+         CORS mode. For same-origin resources, `crossorigin="anonymous"`
+         opts the request into CORS mode WITHOUT triggering an actual
+         preflight (same-origin requests don't need one). Without this
+         attribute, some browsers silently skip the integrity check on
+         same-origin scripts — defeating the whole point of SRI. Always
+         pair `integrity=` with `crossorigin="anonymous"`.
+
+       WHY ?v=8.0.0:
+         Cache-bust query string. If we ever upgrade the SignalR client,
+         bumping the version (e.g. to ?v=8.0.7) forces browsers to fetch
+         the new file AND reminds the developer to recompute the SRI hash
+         (a mismatch is the security guarantee — a stale hash on a new
+         file fails closed, refusing to load).
+
+       HOW TO UPDATE THE SIGNALR CLIENT:
+         1. Download the new version:
+              curl -fsSL -o wwwroot/lib/microsoft-signalr/signalr.min.js \
+                https://unpkg.com/@microsoft/signalr@<NEW_VERSION>/dist/browser/signalr.min.js
+              curl -fsSL -o wwwroot/lib/microsoft-signalr/signalr.min.js.map \
+                https://unpkg.com/@microsoft/signalr@<NEW_VERSION>/dist/browser/signalr.min.js.map
+         2. Recompute the SRI hash:
+              openssl dgst -sha384 -binary wwwroot/lib/microsoft-signalr/signalr.min.js | openssl base64 -A
+         3. Update the integrity attribute below with `sha384-<hash>`.
+         4. Bump ?v= below to the new version.
+         The .map file is for dev-tools source mapping only — it's not
+         security-relevant. *@
+    <script src="lib/microsoft-signalr/signalr.min.js?v=8.0.0"
+            integrity="sha384-/taWmisziXYpcfnYsumSUmNaiMvG/fF/OJOUCLnqCIYTrpOZy7WbFF6FfIxwOrfL"
+            crossorigin="anonymous"></script>
+    @* Hub bridge — depends on the `signalR` global exposed by the script
+       above. Loaded after signalr.min.js so the global is available when
+       notificationHub.js's IIFE runs. *@
     <script src="js/notificationHub.js?v=10"></script>
 
     @* Shop page (Products) — Ctrl+F focuses the search bar (replaces the

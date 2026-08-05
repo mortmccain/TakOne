@@ -47,13 +47,13 @@
 @using TakOne.Infrastructure.Identity
 @using TakOne.Infrastructure.Persistence
 @using Microsoft.EntityFrameworkCore
-@using Microsoft.Extensions.Logging
+@using TakOne.WebUI.Services.Logging
 @inject SignInManager<ApplicationUser> SignInManager
 @inject UserManager<ApplicationUser> UserManager
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Login> Loc
-@inject ILogger<Login> LoginLogger
+@inject LoginAuditLogger AuditLogger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -84,16 +84,6 @@
         <RadzenAlert Title="@Loc["ErrorTitle"]"
                      Text="@_errorMessage"
                      AlertStyle="AlertStyle.Danger"
-                     Variant="Variant.Filled"
-                     ShowIcon="true" />
-    }
-
-    @* Information banner — shown when redirected from an auth-required page. *@
-    @if (_showLoginRequiredBanner)
-    {
-        <RadzenAlert Title="@Loc["LoginRequiredTitle"]"
-                     Text="@Loc["LoginRequiredMessage"]"
-                     AlertStyle="AlertStyle.Info"
                      Variant="Variant.Filled"
                      ShowIcon="true" />
     }
@@ -136,15 +126,6 @@
                                 Placeholder="@Loc["PasswordPlaceholder"]" />
             </RadzenFormField>
 
-            <RadzenStack Orientation="Orientation.Horizontal"
-                         JustifyContent="JustifyContent.End"
-                         Style="margin-top: -0.25rem;">
-                <RadzenLink Text="@Loc["ForgotPasswordLink"]"
-                            Path="/Account/ForgotPassword"
-                            Icon="lock_reset"
-                            Style="font-size: 0.85rem;" />
-            </RadzenStack>
-
             <RadzenButton Text="@Loc["SubmitButton"]"
                           ButtonType="ButtonType.Submit"
                           ButtonStyle="ButtonStyle.Primary"
@@ -180,7 +161,6 @@
     private LoginModel? FormModel { get; set; }
 
     private string _errorMessage = string.Empty;
-    private bool _showLoginRequiredBanner;
     private bool _isSubmitting;
 
     protected override void OnInitialized()
@@ -202,15 +182,6 @@
             Navigation.NavigateTo(target, forceLoad: true);
             return;
         }
-
-        // Show the "you must log in to access that page" banner when the
-        // user was redirected here by the cookie middleware's LoginPath
-        // redirect. The middleware appends ?returnUrl=... to the URL.
-        var query = httpContext?.Request.Query;
-        if (query is not null && query.ContainsKey("returnUrl"))
-        {
-            _showLoginRequiredBanner = true;
-        }
     }
 
     private async Task HandleLoginAsync()
@@ -222,17 +193,32 @@
         _isSubmitting = true;
         _errorMessage = string.Empty;
 
-        // ─── DIAGNOSTIC LOGGING (temporary — remove once login is stable) ───
-        LoginLogger.LogWarning(
-            "DIAG Login: HandleLoginAsync STARTED. WorkerId='{WorkerId}', PasswordLength={PwdLen}",
-            model.WorkerId, model.Password?.Length ?? -1);
+        // ISSUE #03 — Audit logging goes through LoginAuditLogger.
+        //   - LogFlowStart is GATED to IsDevelopment() inside the logger
+        //     itself, so it no-ops in Production regardless of log level.
+        //   - It logs ONLY WorkerId (the user-supplied identifier, which is
+        //     not a secret — it's the username equivalent). Password,
+        //     PasswordLength, EmailConfirmed, LockoutEnd, AccessFailedCount
+        //     are NEVER logged — they cannot even be passed to the audit
+        //     logger because its only input shape is LoginLogContext, and
+        //     none of those fields exist on that record (allow-list by
+        //     construction).
+        //   - The ForbiddenLoggingAnalyzer (TakOne.Analyzers) is the CI-level
+        //     backstop: any attempt to call ILogger.Log* with a banned token
+        //     ("DIAG Login", "PasswordLength", "EmailConfirmed", "LockoutEnd",
+        //     "AccessFailedCount", "Password=", "Password:") fails the build.
+        AuditLogger.LogFlowStart(model.WorkerId);
 
         try
         {
             var httpContext = HttpContextAccessor.HttpContext;
             if (httpContext is null)
             {
-                LoginLogger.LogError("DIAG Login: HttpContext is NULL — cannot proceed.");
+                AuditLogger.Log(new LoginLogContext
+                {
+                    WorkerId = model.WorkerId,
+                    Outcome = LoginLogOutcome.NoHttpContext,
+                });
                 _errorMessage = Loc["Error_NoHttpContext"];
                 return;
             }
@@ -255,17 +241,17 @@
             //     attacker enumerate valid WorkerIds.
             // --------------------------------------------------------------
             var appUser = await UserManager.FindByNameAsync(model.WorkerId);
-            LoginLogger.LogWarning(
-                "DIAG Login: FindByNameAsync('{WorkerId}') → {Found}. IsActive={IsActive}, EmailConfirmed={EmailConfirmed}, LockoutEnd={LockoutEnd}, AccessFailedCount={AccessFailed}",
-                model.WorkerId,
-                appUser is not null ? "FOUND" : "NULL",
-                appUser?.IsActive,
-                appUser?.EmailConfirmed,
-                appUser?.LockoutEnd,
-                appUser?.AccessFailedCount);
+            // ISSUE #03 — no DIAG logging of user state. The pre-check
+            // result is folded into the InvalidCredentials outcome below;
+            // logging "user not found" vs. "user deactivated" separately
+            // would let an attacker enumerate valid WorkerIds.
             if (appUser is null || !appUser.IsActive)
             {
-                LoginLogger.LogError("DIAG Login: pre-check failed (user not found OR inactive). Returning InvalidCredentials.");
+                AuditLogger.Log(new LoginLogContext
+                {
+                    WorkerId = model.WorkerId,
+                    Outcome = LoginLogOutcome.InvalidCredentials,
+                });
                 _errorMessage = Loc["Error_InvalidCredentials"];
                 return;
             }
@@ -278,33 +264,15 @@
             var domainUser = await db.DomainUsers
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == appUser.Id);
-            LoginLogger.LogWarning(
-                "DIAG Login: DomainUser lookup → {Found}, FullName='{Name}'",
-                domainUser is not null ? "FOUND" : "NULL",
-                domainUser?.FullName);
-
-            // ─── DEFENSIVE: warn if DomainUser is missing ───────────────
-            // If domainUser is null, the FullName claim below will fall back
-            // to appUser.UserName (e.g. "ADMIN-0001"). This is almost always
-            // a bug — the DomainUser row should exist (the seeder creates
-            // both DomainUser and ApplicationUser with the same Guid).
-            //
-            // NOTE: FullNameClaimsTransformation (registered in Infrastructure
-            // DI) will fix the stale claim on the NEXT request by re-reading
-            // from the DB. But we still log here so the underlying issue is
-            // visible in the logs for diagnosis.
-            if (domainUser is null)
-            {
-                LoginLogger.LogError(
-                    "DIAG Login: DomainUser NOT FOUND for UserId={UserId} " +
-                    "(WorkerId='{WorkerId}'). The FullName claim will fall back " +
-                    "to the UserName for this login. FullNameClaimsTransformation " +
-                    "will correct it on subsequent requests, but the missing " +
-                    "DomainUser row indicates a data integrity issue — check " +
-                    "the DefaultAdminSeeder and the Users table.",
-                    appUser.Id,
-                    model.WorkerId);
-            }
+            // ISSUE #03 — DomainUser lookup result is NOT logged.
+            //   - Logging "FOUND" vs "NULL" leaks whether the DomainUser row
+            //     exists for a given AspNetUsers.Id — account-state intel.
+            //   - Logging FullName leaks PII.
+            //   - The data-integrity issue (missing DomainUser row) is still
+            //     detected — FullNameClaimsTransformation will log a warning
+            //     on the next request when it re-reads from the DB. That
+            //     warning is appropriately scoped (transformation layer,
+            //     not the credential-checking layer).
 
             // --------------------------------------------------------------
             // 1b. Validate credentials via SignInManager.
@@ -324,9 +292,15 @@
                 isPersistent: false,        // session cookie — closes with browser
                 lockoutOnFailure: true);    // honor lockout policy on bad password
 
-            LoginLogger.LogWarning(
-                "DIAG Login: PasswordSignInAsync → Succeeded={Succeeded}, IsLockedOut={Locked}, IsNotAllowed={NotAllowed}, Requires2FA={TwoFA}",
-                result.Succeeded, result.IsLockedOut, result.IsNotAllowed, result.RequiresTwoFactor);
+            // ISSUE #03 — SignInResult branch is NOT logged.
+            //   - The original DIAG call logged Succeeded / IsLockedOut /
+            //     IsNotAllowed / Requires2FA — that told an attacker which
+            //     accounts are locked, which have unconfirmed emails, which
+            //     have 2FA enabled. Credential-stuffing goldmine.
+            //   - We collapse everything except LockedOut into the
+            //     InvalidCredentials outcome. Lockout stays distinct so
+            //     SIEM can correlate brute-force attempts; LockoutEnd is
+            //     never logged (tells attacker when to retry).
 
             if (!result.Succeeded)
             {
@@ -336,7 +310,11 @@
                 // to prevent username enumeration.
                 if (result.IsLockedOut)
                 {
-                    LoginLogger.LogError("DIAG Login: branch = LOCKED_OUT.");
+                    AuditLogger.Log(new LoginLogContext
+                    {
+                        WorkerId = model.WorkerId,
+                        Outcome = LoginLogOutcome.LockedOut,
+                    });
                     _errorMessage = Loc["Error_LockedOut"];
                 }
                 else if (result.IsNotAllowed)
@@ -346,24 +324,41 @@
                     // RequireConfirmedAccount=false (our config), this
                     // branch is unlikely to fire — but we handle it
                     // defensively in case someone tightens the config.
-                    LoginLogger.LogError("DIAG Login: branch = NOT_ALLOWED (likely EmailConfirmed=false).");
+                    // Collapsed into InvalidCredentials — never logged
+                    // separately (would leak account-state intel).
+                    AuditLogger.Log(new LoginLogContext
+                    {
+                        WorkerId = model.WorkerId,
+                        Outcome = LoginLogOutcome.InvalidCredentials,
+                    });
                     _errorMessage = Loc["Error_NotAllowed"];
                 }
                 else if (result.RequiresTwoFactor)
                 {
                     // 2FA not implemented in v1 (roadmap Section 11).
-                    LoginLogger.LogError("DIAG Login: branch = REQUIRES_2FA (not supported).");
+                    // Collapsed into InvalidCredentials — never logged
+                    // separately (would reveal which accounts have 2FA).
+                    AuditLogger.Log(new LoginLogContext
+                    {
+                        WorkerId = model.WorkerId,
+                        Outcome = LoginLogOutcome.InvalidCredentials,
+                    });
                     _errorMessage = Loc["Error_TwoFactorNotSupported"];
                 }
                 else
                 {
-                    LoginLogger.LogError("DIAG Login: branch = INVALID_CREDENTIALS (wrong password OR user not found).");
+                    AuditLogger.Log(new LoginLogContext
+                    {
+                        WorkerId = model.WorkerId,
+                        Outcome = LoginLogOutcome.InvalidCredentials,
+                    });
                     _errorMessage = Loc["Error_InvalidCredentials"];
                 }
                 return;
             }
 
-            LoginLogger.LogWarning("DIAG Login: PasswordSignInAsync SUCCEEDED — auth cookie should be on the response.");
+            // ISSUE #03 — success is logged AFTER the cookie enrichment
+            // step (below), so the audit event includes MustChangePassword.
 
             // --------------------------------------------------------------
             // 2. Login succeeded. Now enrich the principal with our
@@ -422,7 +417,22 @@
                 new AuthenticationProperties { IsPersistent = false },
                 extraClaims);
 
-            LoginLogger.LogWarning("DIAG Login: SignInWithClaimsAsync completed — enriched cookie should now be on the response.");
+            // ISSUE #03 — success audit event. Logged AFTER the enriched
+            // cookie is issued, so the audit record includes the
+            // MustChangePassword flag (useful for tracking Issue #02
+            // forced-password-change compliance). UserId is logged here
+            // because the user is now authenticated — the SIEM can
+            // correlate post-login activity with this audit row.
+            // On InvalidCredentials (above), UserId is deliberately
+            // absent: an attacker submitting random WorkerIds must not
+            // learn which ones resolve to valid Guids.
+            AuditLogger.Log(new LoginLogContext
+            {
+                WorkerId = model.WorkerId,
+                Outcome = LoginLogOutcome.Success,
+                UserId = appUser.Id,
+                MustChangePassword = appUser.MustChangePassword,
+            });
 
             // --------------------------------------------------------------
             // 3. Role-aware redirect.
@@ -466,15 +476,31 @@
                     : GetRoleAwareLandingUrl(principalForRedirect);
             }
 
-            LoginLogger.LogWarning("DIAG Login: NavigateTo target='{Target}', forceLoad=true.", target);
+            // ISSUE #03 — NavigateTo target is NOT logged.
+            //   - Logging the target URL leaks whether the user has the
+            //     Customer role (target=/Products) vs. staff role (target=/)
+            //     vs. forced-change flow (target=/Account/ChangePassword).
+            //     That's role-state intel — useful for an attacker deciding
+            //     which compromised accounts are worth pursuing.
+            //   - The success audit event above already records everything
+            //     the SIEM needs.
             Navigation.NavigateTo(target, forceLoad: true);
         }
         catch (Exception ex)
         {
             // Defensive: any unexpected error → generic message. Don't
             // leak exception details to the user.
-            LoginLogger.LogError(ex, "DIAG Login: EXCEPTION thrown in HandleLoginAsync. Type={Type}, Message={Message}",
-                ex.GetType().Name, ex.Message);
+            // ISSUE #03 — only the exception TYPE NAME is logged. The
+            // message may contain PII or config details; the stack trace
+            // leaks internal structure. The full exception is available
+            // in the developer's local debugger; production logs get
+            // only the classification.
+            AuditLogger.Log(new LoginLogContext
+            {
+                WorkerId = model.WorkerId,
+                Outcome = LoginLogOutcome.Exception,
+                ExceptionTypeName = ex.GetType().Name,
+            });
             _errorMessage = Loc["Error_Unexpected"];
         }
         finally
