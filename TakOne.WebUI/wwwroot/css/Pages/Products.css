@@ -556,6 +556,87 @@
 }
 
 /* =============================================================================
+   LOGOUT BUTTON — sits on the outer edge of the actions block (left in
+   RTL/Persian, right in LTR/English). Visually identical to the other
+   .tm-icon-button instances (cart, theme) in its resting state, with a
+   subtle red/danger tint on hover to signal that it's a destructive
+   action — without making it shouty or breaking the visual rhythm of
+   the top bar.
+
+   WHY NOT A FULL RED BACKGROUND:
+   A bright red button next to the user avatar would draw too much
+   attention and look out of place in a calm gold/green themed header.
+   The danger tint is reserved for the hover state, where the user is
+   actively considering the action. The icon itself is the universal
+   "logout" door-arrow glyph, which is sufficient signaling at rest.
+   ========================================================================== */
+
+/* The <form> wrapper — must not add any visual chrome. Its only purpose
+   is to make the inner <button type="submit"> emit a POST request with
+   the antiforgery token. */
+.tm-logout-form {
+    display: inline-flex;
+    margin: 0;
+    padding: 0;
+}
+
+/* The button itself inherits from .tm-icon-button (transparent background,
+   green icon, hover cream-tint). We just override the hover/active colors
+   so the danger state is signaled without affecting the other icon
+   buttons in the same .tm-actions-block. */
+.tm-logout-button {
+    /* Same dimensions as the other icon buttons — no size drift. */
+    padding: 10px;
+}
+
+    .tm-logout-button svg {
+        /* Slightly smaller than the cart icon (24px) so it doesn't visually
+       outweigh the user avatar. 22px matches the theme-toggle icon size. */
+        width: 22px;
+        height: 22px;
+    }
+
+        /* Resting state: same green as other icons. */
+        .tm-logout-button svg path {
+            stroke: var(--tm-green, var(--rz-primary)) !important;
+        }
+
+    /* Hover: subtle danger tint. We use a soft red background + red icon
+   instead of the cream/green hover the other buttons get. This is the
+   only visual cue that this button is different — and it only appears
+   when the user is actively interacting with it. */
+    .tm-logout-button:hover {
+        background: rgba(239, 107, 107, 0.10);
+    }
+
+        .tm-logout-button:hover svg path {
+            stroke: #EF6B6B !important;
+        }
+
+    /* Active (mouse-down): slightly stronger danger tint for tactile feedback. */
+    .tm-logout-button:active {
+        background: rgba(239, 107, 107, 0.18);
+    }
+
+    /* Focus ring for keyboard users — same shape as the icon button, danger
+   color so keyboard users also get the "this is destructive" cue. */
+    .tm-logout-button:focus-visible {
+        outline: 2px solid #EF6B6B;
+        outline-offset: 2px;
+    }
+
+/* RTL ICON MIRROR:
+   The logout icon is a door-arrow glyph that points RIGHT in its native
+   (LTR) form. In RTL layouts, "exiting" should visually point LEFT to
+   match the reversed flow direction. We mirror the SVG horizontally
+   when the document (or any ancestor) is in RTL mode. The selector
+   matches both `dir="rtl"` on <html> and any inline `dir="rtl"` on a
+   closer ancestor — covers all the ways RTL can be set on this page. */
+[dir="rtl"] .tm-logout-button svg {
+    transform: scaleX(-1);
+}
+
+/* =============================================================================
    2. GOLDEN SHIMMER LINE — animated gradient under the header
    ========================================================================== */
 .tm-gold-shimmer {
@@ -1010,23 +1091,50 @@
 
 .tm-product-image {
     position: relative;
-    height: 176px;
-    background: linear-gradient(135deg, var(--tm-gold-soft, var(--rz-secondary-lighter)), #fefce8);
+    /* 200px gives uploaded product images enough vertical room to be
+       recognizable. Previously 176px which, combined with object-fit:
+       cover, was cropping tall product images badly. */
+    height: 200px;
+    /* Subtle neutral background — replaces the previous gold gradient.
+       WHY: with object-fit: contain (below), images that don't match
+       the container's aspect ratio are letterboxed (empty space on
+       top/bottom or sides). A loud gold gradient made those letterbox
+       bars look like big gold blocks and distracted from the image.
+       A soft neutral tint recedes so the eye focuses on the product. */
+    background: var(--tm-cream, var(--rz-base-background-color, #FAF7F0));
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    /* Internal padding so the contained image never touches the card
+       edges — gives every product image a consistent frame regardless
+       of its aspect ratio. */
+    padding: 12px;
+    /* Isolate the image container's box so the internal padding doesn't
+       change the outer 200px height. */
+    box-sizing: border-box;
 }
 
     .tm-product-image img {
+        /* object-fit: contain shows the FULL uploaded image, letterboxing
+           any aspect-ratio mismatch against the neutral background above.
+           Previously this was `cover`, which CROPPED uploaded images to
+           fill the container — the user reported "the picture uploaded
+           isn't complete". With `contain`, the entire image is always
+           visible. */
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         transition: transform 0.4s ease;
     }
 
 .tm-product-card:hover .tm-product-image img {
-    transform: scale(1.05);
+    /* Slightly smaller scale than the previous 1.05 — with object-fit:
+       contain, the IMG element fills the container (the image CONTENT
+       is letterboxed inside it), so scaling the element by 1.05 made
+       the letterbox bars disappear under the card's overflow:hidden
+       and looked glitchy. 1.03 is a gentler nudge that stays clean. */
+    transform: scale(1.03);
 }
 
 .tm-product-image-placeholder {
@@ -1070,11 +1178,17 @@
 }
 
 .tm-product-body {
-    padding: 16px;
+    /* 18px padding (was 16px) + 10px gap (was 8px) gives the name /
+       description / price / actions stack a touch more breathing room
+       so the card doesn't feel cramped. The user reported the bottom
+       of the card "seems cut and not complete" — part of that
+       perception was the tight spacing making the action row feel
+       pinned to the edge. */
+    padding: 18px;
     display: flex;
     flex-direction: column;
     flex: 1;
-    gap: 8px;
+    gap: 10px;
 }
 
 .tm-product-name {
@@ -1118,7 +1232,11 @@
 .tm-product-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    /* 12px gap (was 8px) gives the qty selector and Add button a
+       clearer visual separation. With the previous 8px, the two
+       elements read as a single crowded cluster, especially in RTL
+       where the eye expects more space between interactive controls. */
+    gap: 12px;
     margin-top: auto;
 }
 
@@ -1183,6 +1301,15 @@
     justify-content: center;
     gap: 6px;
     min-height: 36px;
+    /* Keep the button label + icon on a single line. Previously the
+       text could wrap to a second line on narrow cards, making the
+       button look "cut" and uneven. white-space:nowrap + overflow
+       hidden + text-overflow ellipsis ensures a clean one-line button
+       that truncates gracefully if a translated label is unusually
+       long (e.g. "به سقف خرید رسیده‌اید" in the limit-reached state). */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
     .tm-add-btn:hover:not(:disabled) {

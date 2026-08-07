@@ -88,4 +88,92 @@ public interface IUnitOfWork
     ///   the single new entity the handler wants to persist.
     /// </summary>
     void AddEntity(object entity);
+
+    /// <summary>
+    /// Executes <paramref name="operation"/> inside a retry loop that
+    /// transparently handles EF Core concurrency conflicts
+    /// (<c>DbUpdateConcurrencyException</c>) and unique-constraint violations
+    /// by clearing the change tracker and re-running the operation.
+    /// </summary>
+    ///
+    /// <remarks>
+    /// <para>
+    /// <b>WHY THIS EXISTS:</b>
+    /// Several command handlers — most notably
+    /// <c>CreateOrAppendSaleCommandHandler</c> — are vulnerable to the
+    /// "double-add-to-cart" race. Two concurrent invocations both load the
+    /// same draft Sale (with no line for this product), both compute
+    /// <c>LineNumber = 1</c> for the new line, and both INSERT. The
+    /// <c>(SaleId, LineNumber)</c> unique index lets only one win; the
+    /// loser's <c>SaveChangesAsync</c> fails with a unique-constraint
+    /// violation surfaced as <c>DbUpdateConcurrencyException</c>
+    /// ("expected to affect 1 row(s), but actually affected 0 row(s)").
+    /// The retry loop resolves this by re-loading the now-modified
+    /// aggregate and re-applying the mutation from scratch.
+    /// </para>
+    /// <para>
+    /// <b>WHY THIS LIVES ON <c>IUnitOfWork</c> (not in the handler):</b>
+    /// The Application layer has no reference to EF Core — it cannot
+    /// catch <c>DbUpdateConcurrencyException</c> directly, because that
+    /// type lives in the <c>Microsoft.EntityFrameworkCore</c> package
+    /// which the Application project intentionally does not reference.
+    /// Centralizing the retry policy on <c>IUnitOfWork</c> keeps the
+    /// Application layer clean of persistence concerns while still
+    /// giving handlers a way to opt into retry-aware execution.
+    /// The implementation (in <c>Infrastructure.Services.UnitOfWork</c>)
+    /// translates the EF Core exceptions into a retry decision internally;
+    /// the contract exposed here is purely "run this, retry on transient
+    /// persistence conflicts".
+    /// </para>
+    /// <para>
+    /// <b>CONTRACT FOR <paramref name="operation"/>:</b>
+    /// <list type="bullet">
+    ///   <item>The delegate MUST be idempotent under re-execution.</item>
+    ///   <item>It MUST re-query the current state of any aggregates it
+    ///         mutates (e.g. re-load the draft Sale) on every attempt —
+    ///         it MUST NOT assume entities loaded before the call are
+    ///         still tracked, because the retry clears the change
+    ///         tracker between attempts.</item>
+    ///   <item>It MAY return a <c>Result&lt;T&gt;</c> for business-rule
+    ///         failures (stock check, purchase-limit, etc.) — those are
+    ///         returned to the caller unchanged, NOT retried. Only
+    ///         infrastructure-level exceptions trigger retry.</item>
+    ///   <item>The passed <c>CancellationToken</c> must be threaded into
+    ///         every async DB call inside the delegate, so cancellation
+    ///         aborts both the in-flight operation and any pending retry.</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>WHEN NOT TO USE THIS:</b>
+    /// <list type="bullet">
+    ///   <item>Handlers that perform a single, non-conflicting INSERT
+    ///         (e.g. <c>CreateCategoryCommandHandler</c>) don't need it.</item>
+    ///   <item>Handlers whose <c>SaveChangesAsync</c> cannot legally
+    ///         conflict at the DB level don't need it.</item>
+    ///   <item>Handlers that load an aggregate AsNoTracking and use
+    ///         <see cref="AddEntity"/> to persist only a single new child
+    ///         don't need it — the AsNoTracking + single-add pattern is
+    ///         already conflict-free.</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <param name="operation">The idempotent operation to execute. Receives
+    /// the same <c>CancellationToken</c> as <paramref name="cancellationToken"/>;
+    /// the delegate should forward it to every async call it makes.</param>
+    /// <param name="maxAttempts">Maximum number of attempts. Defaults to 3.
+    /// Must be ≥ 1. The operation is invoked AT MOST this many times;
+    /// on the final attempt, any exception propagates to the caller
+    /// unchanged.</param>
+    /// <param name="cancellationToken">Forwarded to <paramref name="operation"/>
+    /// AND used for the inter-retry backoff delay.</param>
+    /// <typeparam name="T">The return type of the operation. For command
+    /// handlers, this is typically <c>Result&lt;Guid&gt;</c> or
+    /// <c>Result</c>.</typeparam>
+    /// <returns>The result of <paramref name="operation"/> on the first
+    /// successful attempt. If all attempts fail with a retryable exception,
+    /// the final attempt's exception propagates to the caller.</returns>
+    Task<T> ExecuteWithRetryAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        int maxAttempts = 3,
+        CancellationToken cancellationToken = default);
 }

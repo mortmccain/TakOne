@@ -86,6 +86,23 @@ public sealed class TakOneDatabaseOptions
     /// We throw rather than return a bool because a missing connection
     /// string is a deployment misconfiguration — there's no recovery path
     /// other than fixing the configuration and restarting.
+    ///
+    /// MARS GUARD:
+    ///   We also reject connection strings that enable
+    ///   <c>MultipleActiveResultSets=True</c>. MARS disables EF Core's
+    ///   ability to create savepoints inside an ambient transaction, which
+    ///   means a failed <c>SaveChangesAsync</c> leaves the Wolverine-managed
+    ///   transaction in an indeterminate state. The application's retry
+    ///   loop (see <c>UnitOfWork.ExecuteWithRetryAsync</c>) cannot recover
+    ///   from this — every subsequent attempt on the same poisoned
+    ///   transaction fails again, exhausting all retries and surfacing the
+    ///   underlying <c>DbUpdateConcurrencyException</c> to the user.
+    ///
+    ///   This was the root cause of the "double-add-to-cart" failure
+    ///   where rapid clicks / multi-tab use / refresh-during-add produced
+    ///   repeated "expected to affect 1 row(s), but actually affected 0
+    ///   row(s)" errors. The fix is to keep MARS off — this guard makes
+    ///   that requirement unbreakable at startup.
     /// </summary>
     public void EnsureValid()
     {
@@ -100,5 +117,100 @@ public sealed class TakOneDatabaseOptions
                 $"or use Azure Key Vault / user secrets as appropriate for the environment. " +
                 $"The application cannot start without a valid database connection string.");
         }
+
+        // MARS guard. See the XML doc above for the full rationale.
+        // We do a case-insensitive substring search rather than a full
+        // SqlConnectionStringBuilder parse so that this validation also
+        // works for malformed connection strings (the parse would throw
+        // first and obscure the actionable "MARS is on" message).
+        if (ContainsMars(ConnectionString))
+        {
+            throw new InvalidOperationException(
+                $"The TakOne database connection string has " +
+                $"'MultipleActiveResultSets=True' (MARS) enabled. " +
+                $"MARS is incompatible with the application's retry-on-conflict " +
+                $"strategy: it disables EF Core savepoints inside the " +
+                $"Wolverine-managed transaction, so a failed SaveChangesAsync " +
+                $"poisons the transaction and the retry loop cannot recover. " +
+                $"Set 'MultipleActiveResultSets=False' in the connection string " +
+                $"(check appsettings.json, appsettings.Development.json, AND " +
+                $"the user secrets for the TakOne.WebUI project — user secrets " +
+                $"override appsettings and are the most common source of this " +
+                $"override). The application cannot start with MARS enabled.");
+        }
+    }
+
+    /// <summary>
+    /// Case-insensitive check for <c>MultipleActiveResultSets=True</c>
+    /// in a SQL Server connection string. Accepts <c>True</c>, <c>true</c>,
+    /// <c>TRUE</c>, and whitespace-padded variants. Returns <c>false</c>
+    /// for any other value (including <c>False</c>, <c>false</c>, or the
+    /// key being absent entirely — the SQL Server default is MARS off).
+    /// </summary>
+    private static bool ContainsMars(string connectionString)
+    {
+        // Simple case-insensitive search. A full parse via
+        // SqlConnectionStringBuilder would also work, but it would throw
+        // on a malformed string and obscure the actionable MARS message.
+        var span = connectionString.AsSpan();
+
+        // We're looking for the key "MultipleActiveResultSets" followed by
+        // "=" and a truthy value. SQL Server connection strings are
+        // case-insensitive on both keys and boolean values.
+        var key = "MultipleActiveResultSets".AsSpan();
+        var i = 0;
+        while (i <= span.Length - key.Length)
+        {
+            // Find the next occurrence of the key (case-insensitive).
+            var match = span.Slice(i).IndexOf(key, StringComparison.OrdinalIgnoreCase);
+            if (match < 0)
+            {
+                return false;
+            }
+            i += match;
+
+            // Make sure the match is a whole key, not a substring of a
+            // longer key name. The character before the match (if any)
+            // must be a key separator (';' or start of string).
+            if (i > 0 && span[i - 1] != ';' && !char.IsWhiteSpace(span[i - 1]))
+            {
+                i += key.Length;
+                continue;
+            }
+
+            // Skip the key itself.
+            var j = i + key.Length;
+
+            // Skip optional whitespace, then expect '='.
+            while (j < span.Length && char.IsWhiteSpace(span[j])) j++;
+            if (j >= span.Length || span[j] != '=')
+            {
+                i += key.Length;
+                continue;
+            }
+            j++;
+
+            // Skip optional whitespace after '='.
+            while (j < span.Length && char.IsWhiteSpace(span[j])) j++;
+
+            // Read the value up to the next ';' or end of string.
+            var valueEnd = j;
+            while (valueEnd < span.Length && span[valueEnd] != ';') valueEnd++;
+            var value = span.Slice(j, valueEnd - j).Trim();
+
+            // SQL Server accepts True/False/Yes/No (case-insensitive).
+            if (value.Equals("True".AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("Yes".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Keep scanning in case the key appears more than once (the
+            // last occurrence wins per SqlConnectionStringBuilder, but we
+            // are strict: any True occurrence is a hard fail).
+            i += key.Length;
+        }
+
+        return false;
     }
 }

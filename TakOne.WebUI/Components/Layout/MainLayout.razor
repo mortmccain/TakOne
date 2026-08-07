@@ -237,6 +237,45 @@
                             <span class="tm-user-avatar-initial">@GetUserInitial()</span>
                         </div>
                     </button>
+
+                    @* LOGOUT BUTTON — sits on the OUTER side of the user
+                       avatar in BOTH layouts (left in RTL/Persian, right in
+                       LTR/English). The .tm-actions-block is a flex container
+                       with the user-block as the previous child; because the
+                       flex direction follows the document's `direction`
+                       (rtl/ltr), placing this last in HTML order means it
+                       always renders on the side away from the brand/logo.
+
+                       WHY A POST FORM (not a button+handler):
+                       This is the same CSRF-safe logout pattern established
+                       in AccessDenied.razor and documented in the
+                       "LOGOUT ENDPOINT" section of Program.cs. A GET-based
+                       logout is a CSRF vulnerability (an attacker could
+                       embed `<img src=".../Account/SignOut">` on a
+                       third-party page to log any user out). The
+                       /Account/SignOut endpoint is POST-only and the
+                       UseAntiforgery middleware validates the
+                       __RequestVerificationToken field rendered by
+                       <AntiforgeryToken />.
+
+                       WHY A <button type="submit"> AND NOT <RadzenButton>:
+                       RadzenButton emits a <button> inside a <span> wrapper,
+                       which would break the form's submit-on-click behavior
+                       in some browsers. A native <button type="submit"> is
+                       the simplest, most reliable way to submit a form. The
+                       .tm-icon-button class gives it the same look as the
+                       other icon buttons (cart, theme) in the actions block. *@
+                    <form method="post" action="/Account/SignOut" class="tm-logout-form">
+                        <AntiforgeryToken />
+                        <button type="submit"
+                                class="tm-icon-button tm-logout-button"
+                                title="@ProductsLoc["LogoutTitle"]"
+                                aria-label="@ProductsLoc["LogoutAriaLabel"]">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l3 3m0 0l-3 3m3-3H2.25" />
+                            </svg>
+                        </button>
+                    </form>
                 </div>
             </div>
 

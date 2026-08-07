@@ -513,22 +513,29 @@ public sealed class Sale : AggregateRoot
     /// Recalculates the Sale Total from line items.
     /// Called after every line item change.
     ///
-    /// NOTE ON EF CORE TRACKING:
-    ///   This method REPLACES the `Total` reference with a brand-new Money
-    ///   instance (the `+` operator on Money always returns a new instance).
-    ///   This is safe ONLY because Money's properties have `private set`
-    ///   (see Money.cs for the full rationale). When EF Core's change tracker
-    ///   detects that `Sale.Total` now references a different Money object,
-    ///   it updates the OLD tracked Money instance's Amount and Currency
-    ///   in place (via the private setters, using reflection) to match the
-    ///   new reference's values. The tracked instance becomes Modified, and
-    ///   SaveChanges generates a correct UPDATE that affects 1 row.
+    /// VALUE OBJECT IMMUTABILITY — REFERENCE REPLACEMENT IS CORRECT:
+    ///   Money is an immutable value object. The correct way to "change"
+    ///   a Money value is to construct a new instance and assign it —
+    ///   which is exactly what this method does. The <c>+</c> operator
+    ///   on Money returns a brand-new instance; we replace <c>Total</c>
+    ///   with that new instance.
     ///
-    ///   If Money's properties were get-only (no setters at all), EF Core
-    ///   could NOT update the tracked instance in place, and SaveChanges
-    ///   would throw DbUpdateConcurrencyException:
-    ///     "The database operation was expected to affect 1 row(s),
-    ///      but actually affected 0 row(s)"
+    ///   This works correctly because Money is mapped as a
+    ///   <c>ComplexProperty</c> (not <c>OwnsOne</c>) on <c>Sale.Total</c>.
+    ///   <c>ComplexProperty</c> has VALUE SEMANTICS: EF Core compares
+    ///   complex type instances by value (via
+    ///   <see cref="BaseValueObject.GetEqualityComponents"/>), not by
+    ///   reference identity. Replacing the reference is the idiomatic
+    ///   mutation pattern — EF detects the value change and generates a
+    ///   clean UPDATE against the parent row's columns.
+    ///
+    ///   The previous mapping (<c>OwnsOne</c>) tracked Money by reference
+    ///   identity, so replacing the reference produced a confused change
+    ///   tracker and an UPDATE that affected 0 rows:
+    ///     <c>DbUpdateConcurrencyException: expected to affect 1 row(s),
+    ///     but actually affected 0 row(s)</c>
+    ///   The migration to <c>ComplexProperty</c> fixes this at the EF
+    ///   Core mapping level — no domain mutation hack required.
     /// </summary>
     private void RecalculateTotal()
     {

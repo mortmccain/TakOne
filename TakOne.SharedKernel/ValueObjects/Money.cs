@@ -3,6 +3,71 @@ using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.SharedKernel.ValueObjects;
 
+/// <summary>
+/// An immutable monetary value object representing an amount in a
+/// specific currency. Money is a VALUE OBJECT in the DDD sense: two
+/// Money instances with the same Amount and Currency are interchangeable,
+/// and an existing Money instance is NEVER mutated after construction —
+/// "changing" a Money value always produces a brand-new instance via the
+/// arithmetic operators (+, -, *) or the constructor.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>EF CORE MAPPING — <c>ComplexProperty</c> (value semantics):</b>
+/// </para>
+/// <para>
+/// Money is mapped as a <c>ComplexProperty</c> on three entities in this
+/// codebase (NOT <c>OwnsOne</c>):
+/// <list type="bullet">
+///   <item><c>Product.Price</c></item>
+///   <item><c>SaleLineItem.UnitPrice</c></item>
+///   <item><c>Sale.Total</c></item>
+/// </list>
+/// </para>
+/// <para>
+/// <c>ComplexProperty</c> was introduced in EF Core 9 specifically for
+/// value objects. Unlike <c>OwnsOne</c>, it has VALUE SEMANTICS: EF Core
+/// compares complex type instances BY VALUE (using
+/// <see cref="BaseValueObject"/>'s <c>GetEqualityComponents</c> override)
+/// instead of by reference identity. Replacing the reference — e.g.
+/// <c>Sale.Total = _lineItems.Aggregate(Money.Zero(currency), ...)</c>
+/// — works correctly: EF detects that the new instance's value differs
+/// from the original snapshot's value and generates a clean UPDATE
+/// against the parent row's columns.
+/// </para>
+/// <para>
+/// <b>WHY NOT <c>OwnsOne</c>?</b> <c>OwnsOne</c> tracks owned types by
+/// REFERENCE IDENTITY. When domain code replaces the reference, the
+/// change tracker has TWO instances for the same navigation (the old
+/// tracked one and the new one), and at <c>SaveChanges</c> it generates
+/// an UPDATE whose WHERE clause matches 0 rows, producing:
+/// <c>DbUpdateConcurrencyException: expected to affect 1 row(s), but
+/// actually affected 0 row(s)</c>. <c>ComplexProperty</c> fixes this
+/// cleanly — value semantics mean reference replacement is the correct
+/// and idiomatic mutation pattern.
+/// </para>
+/// <para>
+/// <b>WHY <c>private set</c> ON THE PROPERTIES (not get-only):</b>
+/// EF Core's <c>ComplexProperty</c> materialization path needs to set
+/// the properties when reconstructing the value from the database. With
+/// get-only auto-properties, EF would have no way to populate them (it
+/// would have to use the parameterful constructor, which performs
+/// validation that the DB snapshot may not satisfy — e.g. legacy data
+/// with a non-uppercase currency code). The <c>private set</c> lets EF
+/// populate via reflection while keeping Money immutable to all
+/// application and domain code (the class is sealed; the setters are
+/// only accessible from within Money itself, and no Money method calls
+/// them after construction).
+/// </para>
+/// <para>
+/// <b>NO <c>Update()</c> METHOD:</b> A previous (rejected) fix added
+/// an <c>internal void Update(decimal, string)</c> method that mutated
+/// the instance in place. That violated value object immutability and
+/// was reverted in favor of the <c>ComplexProperty</c> migration. The
+/// correct way to "change" a Money value is to construct a new instance
+/// and assign it: <c>Total = new Total + line.GrossTotal</c>.
+/// </para>
+/// </remarks>
 public sealed class Money : BaseValueObject
 {
 
@@ -15,54 +80,11 @@ public sealed class Money : BaseValueObject
 
 
     // ------------------------------------------------------------------
-    // WHY PRIVATE SETTERS (NOT GET-ONLY):
-    //   Money is an immutable VALUE OBJECT — application code never mutates
-    //   an existing Money instance; it always creates a new one via the
-    //   arithmetic operators (+, -, *) or the constructor. So the
-    //   `private set` here is NOT callable from any external code path or
-    //   even from a subclass (the class is sealed).
-    //
-    //   The reason we use `private set` instead of get-only auto-properties
-    //   is EF Core's change tracker. Money is mapped as an OwnsOne on THREE
-    //   entities in this codebase:
-    //     Product.Price#Money
-    //     SaleLineItem.UnitPrice#Money
-    //     Sale.Total#Money
-    //
-    //   When the Sale aggregate recalculates its Total (Sale.RecalculateTotal),
-    //   it REPLACES the Total reference:
-    //
-    //       Total = _lineItems.Aggregate(Money.Zero(currency), (s, i) => s + i.GrossTotal);
-    //
-    //   The `+` operator returns a BRAND NEW Money instance. So `Sale.Total`
-    //   now points to a different object than the one EF Core has tracked.
-    //
-    //   With GET-ONLY properties, EF Core CANNOT update the OLD tracked
-    //   Money instance's Amount/Currency to match the new reference — there
-    //   are no setters, not even private ones. The change tracker then gets
-    //   confused between the OLD tracked instance (state=Unchanged) and the
-    //   NEW reference assigned to Sale.Total, and at SaveChanges it generates
-    //   an UPDATE that affects 0 rows:
-    //
-    //       DbUpdateConcurrencyException:
-    //       "The database operation was expected to affect 1 row(s),
-    //        but actually affected 0 row(s)"
-    //
-    //   With PRIVATE SETTERS, EF Core's change tracker can (via reflection)
-    //   update the OLD tracked Money instance's Amount and Currency to match
-    //   the NEW reference's values. The tracked instance becomes Modified,
-    //   and SaveChanges generates a correct UPDATE that affects 1 row.
-    //
-    //   This preserves Money's immutability invariant for ALL application
-    //   and domain code (the setters are private — only Money itself can
-    //   call them, and it never does after construction). EF Core is the
-    //   sole exception, using reflection to mutate the tracked instance.
-    //
-    //   The parameterless constructor below is for EF Core's fallback
-    //   materialization path (when it can't match the parameterful
-    //   constructor). It's private so external code can't create an invalid
-    //   Money (one that bypasses the currency validation in the public
-    //   constructor).
+    // `private set` is for EF Core's ComplexProperty materialization path
+    // — see the class-level XML doc for the full rationale. The class is
+    // sealed and the setters are only accessible from within Money itself;
+    // no Money method calls them after construction. Money is therefore
+    // immutable to all application and domain code.
     // ------------------------------------------------------------------
     public decimal Amount { get; private set; }
     public string Currency { get; private set; }
@@ -167,7 +189,7 @@ public sealed class Money : BaseValueObject
 
 
     // ==================================================================================================================================
-    //                                                          ANYTHING ELSE   
+    //                                                          ANYTHING ELSE
     // ================================================================================================================================
 
 

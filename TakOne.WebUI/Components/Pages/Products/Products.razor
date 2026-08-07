@@ -258,6 +258,25 @@
                         <span class="tm-user-avatar-initial">@GetUserInitial()</span>
                     </div>
                 </button>
+
+                @* LOGOUT BUTTON — sits on the OUTER side of the user avatar
+                   in BOTH layouts (left in RTL/Persian, right in LTR/English).
+                   Same pattern as MainLayout.razor — see that file's comment
+                   block for the full CSRF-safe POST-form rationale. The
+                   /Account/SignOut endpoint is POST-only and validated by
+                   the UseAntiforgery middleware against the
+                   __RequestVerificationToken rendered by <AntiforgeryToken />. *@
+                <form method="post" action="/Account/SignOut" class="tm-logout-form">
+                    <AntiforgeryToken />
+                    <button type="submit"
+                            class="tm-icon-button tm-logout-button"
+                            title="@Loc["LogoutTitle"]"
+                            aria-label="@Loc["LogoutAriaLabel"]">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l3 3m0 0l-3 3m3-3H2.25" />
+                        </svg>
+                    </button>
+                </form>
             </div>
         </div>
 
@@ -461,7 +480,7 @@
                         var qty = GetQtyForProduct(product.Id);
                         var limitReached = remaining <= 0;
                         var stockOut = product.StockQuantity <= 0;
-                        var disabled = limitReached || stockOut || _addingProductId == product.Id;
+                        var disabled = limitReached || stockOut || _isAddingAny;
                         <div class="tm-product-card">
                             <div class="tm-product-image">
                                 @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
@@ -541,9 +560,9 @@
                                     {
                                         <button type="button"
                                                 class="tm-add-btn"
-                                                disabled="@(_addingProductId == product.Id)"
+                                                disabled="@(_isAddingAny)"
                                                 @onclick="(() => AddToCartAsync(product))">
-                                            @if (_addingProductId == product.Id)
+                                            @if (_isAddingAny)
                                             {
                                                 <span>…</span>
                                             }
@@ -746,6 +765,27 @@
 
     // Per-card "adding" flag (so only the clicked card shows a spinner).
     private Guid? _addingProductId;
+
+    // GLOBAL "any add-to-cart in flight" guard. Prevents concurrent
+    // CreateOrAppendSaleCommand invocations from racing on the user's
+    // draft Sale (the root cause of the DbUpdateConcurrencyException
+    // "expected to affect 1 row(s), but actually affected 0 row(s)" bug
+    // on rapid double-clicks of the Add button).
+    //
+    // WHY A GLOBAL FLAG (not just per-product):
+    //   The race happens when two AddToCartAsync invocations run in
+    //   parallel against the SAME draft Sale — even for DIFFERENT
+    //   products. Both invocations re-load the sale, both compute the
+    //   next LineNumber from the in-memory _lineItems collection, and
+    //   both INSERT with the same LineNumber → unique-index violation
+    //   on (SaleId, LineNumber).
+    //
+    //   Serializing ALL cart mutations on the client side is the clean
+    //   first line of defense. The server-side retry (in
+    //   CreateOrAppendSaleCommandHandler via IUnitOfWork.ExecuteWithRetryAsync)
+    //   is the second line of defense for the cases the UI can't prevent
+    //   (multi-tab users, refresh-during-add, network-retry double-fires).
+    private bool _isAddingAny;
 
     // Mini-cart line "updating" flag (so only the clicked line's buttons disable).
     private Guid? _updatingLineId;
@@ -1032,6 +1072,22 @@
 
     private async Task AddToCartAsync(ProductListItemDto product)
     {
+        // ── Re-entry guard ───────────────────────────────────────────────
+        // Blazor Server processes UI events on a single synchronization
+        // context per circuit, BUT only between awaits. Two rapid clicks
+        // on the Add button will both be dispatched, the second one
+        // starting after the first's await yields. Without this guard,
+        // both clicks fire CreateOrAppendSaleCommand concurrently, and
+        // the server-side retry (which is a defense-in-depth, not the
+        // primary fix) has to clean up the race.
+        //
+        // The check + set is synchronous, so it's atomic with respect
+        // to the circuit's event loop — no lock needed.
+        if (_isAddingAny)
+        {
+            return;
+        }
+
         var qty = GetQtyForProduct(product.Id);
         if (qty < 1)
         {
@@ -1056,7 +1112,19 @@
             await Toast.Info(string.Format(Loc["ToastQtyClamped"], ToPersian(remaining)));
         }
 
+        // Set BOTH flags before any await. _isAddingAny is the global
+        // guard (disables ALL Add buttons); _addingProductId drives the
+        // per-card spinner icon (still useful for visual feedback even
+        // though the disable is now global).
+        _isAddingAny = true;
         _addingProductId = product.Id;
+        // Force an immediate re-render so the buttons visually disable
+        // before the upcoming await yields control back to the circuit.
+        // Without this, the user could click a second button in the
+        // window between the flag set and the natural re-render that
+        // happens after the first await.
+        StateHasChanged();
+
         try
         {
             var result = await MessageBus.InvokeAsync<Result<Guid>>(
@@ -1081,6 +1149,7 @@
         }
         finally
         {
+            _isAddingAny = false;
             _addingProductId = null;
         }
     }

@@ -97,4 +97,164 @@ public sealed class UnitOfWork : IUnitOfWork
     {
         _db.Add(entity);
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// IMPLEMENTATION NOTES:
+    /// <list type="number">
+    ///   <item>
+    ///     The retry catches two exception types:
+    ///     <list type="bullet">
+    ///       <item><c>DbUpdateConcurrencyException</c> — EF Core's signal
+    ///             that a batched UPDATE/DELETE affected fewer rows than
+    ///             expected. In our codebase this happens when two
+    ///             concurrent INSERTs collide on a unique index (the
+    ///             affected-row count for the conflicting INSERT is 0,
+    ///             but EF Core expected 1), OR when a real optimistic-
+    ///             concurrency token (RowVersion) mismatch occurs. We
+    ///             don't currently use RowVersion on any entity, so the
+    ///             first cause dominates.</item>
+    ///       <item><c>DbUpdateException</c> wrapping a SQL Server
+    ///             <c>SqlException</c> with error number 2627 (UNIQUE
+    ///             CONSTRAINT violation) or 2601 (UNIQUE INDEX
+    ///             violation on a non-clustered index). This is the
+    ///             same race, surfaced differently when the unique
+    ///             index fires AFTER the INSERT is partially
+    ///             committed rather than as part of the affected-row
+    ///             count.</item>
+    ///     </list>
+    ///   </item>
+    ///   <item>
+    ///     Between attempts, the change tracker is cleared via
+    ///     <c>_db.ChangeTracker.Clear()</c>. This is mandatory: the
+    ///     failed <c>SaveChangesAsync</c> leaves the DbContext in a
+    ///     half-mutated state (some entities marked Modified, some
+    ///     Added, the Sale's <c>LineItems</c> collection containing
+    ///     the losing INSERT). Without clearing, the next attempt
+    ///     would re-attach to the same stale graph and immediately
+    ///     fail again.
+    ///   </item>
+    ///   <item>
+    ///     Inter-attempt backoff is <c>50ms * attempt</c> (so 50ms,
+    ///     100ms, ...). Linear, not exponential — concurrent UI
+    ///     clicks resolve in milliseconds, so we want the retry to
+    ///     fire quickly. If we ever retry on real DB contention
+    ///     (multi-second holds), upgrade to exponential backoff with
+    ///     jitter.
+    ///   </item>
+    ///   <item>
+    ///     On the LAST attempt, the <c>when</c> filter on the catch
+    ///     clauses evaluates to <c>false</c> (because
+    ///     <c>attempt &lt; maxAttempts</c> is false), so the exception
+    ///     propagates to the caller unchanged. The line after the loop
+    ///     is unreachable; the <c>throw new InvalidOperationException</c>
+    ///     exists only to satisfy the compiler's flow analysis.
+    ///   </item>
+    ///   <item>
+    ///     MARS WARNING: When SQL Server MARS (Multiple Active Result
+    ///     Sets) is enabled, EF Core cannot create savepoints inside
+    ///     the active transaction. A failed <c>SaveChangesAsync</c>
+    ///     therefore leaves the transaction in an indeterminate state
+    ///     — the partial changes from the failed attempt may or may
+    ///     not be rolled back. The retry clears the change tracker
+    ///     (which prevents re-issuing the same conflicting SQL), but
+    ///     the underlying transaction may still be poisoned. For
+    ///     maximum safety, MARS should be DISABLED in the connection
+    ///     string (<c>MultipleActiveResultSets=False</c>); with MARS
+    ///     off, EF Core uses savepoints, and a failed
+    ///     <c>SaveChangesAsync</c> rolls back cleanly to the
+    ///     savepoint, leaving the transaction safe for retry.
+    ///     <b>The <c>TakOneDatabaseOptions.EnsureValid</c> startup
+    ///     guard now enforces this — the application refuses to start
+    ///     if MARS is on, so this scenario should never occur at
+    ///     runtime.</b> If you ever see MARS-related warnings in the
+    ///     logs after the guard is in place, it means the guard was
+    ///     bypassed (e.g. someone removed the check) — investigate
+    ///     immediately. The historical symptom of MARS poisoning was
+    ///     repeated <c>DbUpdateConcurrencyException</c>s on
+    ///     <c>CreateOrAppendSaleCommand</c> where every retry failed
+    ///     identically because the Wolverine-managed transaction was
+    ///     indeterminate.
+    ///   </item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    public async Task<T> ExecuteWithRetryAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        int maxAttempts = 3,
+        CancellationToken cancellationToken = default)
+    {
+        if (operation is null)
+            throw new ArgumentNullException(nameof(operation));
+        if (maxAttempts < 1)
+            maxAttempts = 1;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await operation(cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < maxAttempts)
+            {
+                // The failed SaveChanges left the change tracker in a
+                // half-mutated state. Clear it so the retry's re-query
+                // returns a fresh, untracked graph.
+                _db.ChangeTracker.Clear();
+
+                // Brief linear backoff. Concurrent UI clicks resolve in
+                // milliseconds; we want the retry to fire quickly.
+                await Task.Delay(50 * attempt, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbUpdateException ex) when (attempt < maxAttempts && IsUniqueConstraintViolation(ex))
+            {
+                _db.ChangeTracker.Clear();
+                await Task.Delay(50 * attempt, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // Unreachable: the `when` filter on the final attempt's catch
+        // clauses evaluates to false, so the exception propagates
+        // directly. This throw exists only to satisfy the compiler's
+        // definite-return flow analysis.
+        throw new InvalidOperationException(
+            "ExecuteWithRetryAsync exhausted all attempts without returning a value or propagating an exception. " +
+            "This indicates a logic error in the retry loop.");
+    }
+
+    /// <summary>
+    /// Walks the <c>InnerException</c> chain of a
+    /// <see cref="DbUpdateException"/> looking for a SQL Server
+    /// <c>SqlException</c> whose <c>Number</c> indicates a unique-
+    /// constraint violation.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server error numbers we treat as "unique constraint violation":
+    /// <list type="bullet">
+    ///   <item><c>2627</c> — Violation of UNIQUE KEY constraint
+    ///         (raised when a UNIQUE constraint on the table is violated).</item>
+    ///   <item><c>2601</c> — Cannot insert duplicate key row in object
+    ///         (raised when a UNIQUE INDEX on the table is violated).</item>
+    /// </list>
+    /// Both are retryable in the "double-add-to-cart" race: the losing
+    /// INSERT failed because the winning INSERT committed first. After
+    /// clearing the change tracker and re-loading the aggregate, the
+    /// retry sees the new state and either succeeds (no longer a
+    /// duplicate INSERT — instead, an UPDATE that increments the
+    /// existing line's Quantity) or returns a clean business-rule
+    /// failure (e.g. stock exhausted by the concurrent winner).
+    /// </remarks>
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is Microsoft.Data.SqlClient.SqlException sql)
+            {
+                return sql.Number == 2627  // UNIQUE CONSTRAINT violation
+                    || sql.Number == 2601; // UNIQUE INDEX (non-clustered) violation
+            }
+        }
+        return false;
+    }
 }
