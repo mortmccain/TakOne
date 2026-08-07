@@ -140,6 +140,23 @@ public sealed class BlazorCurrentUserService : ICurrentUserService
         }
     }
 
+    /// <summary>
+    /// Reads the "Gender" claim (set at login time by Login.razor from the
+    /// Domain User's Gender). Returns "Male", "Female", or null if the claim
+    /// is missing (e.g. older sessions created before the Gender claim was
+    /// added). Used by the dashboard greeting to pick Mr./Ms.
+    /// </summary>
+    public string? Gender
+    {
+        get
+        {
+            var user = GetCurrentUser();
+            return user?.Identity?.IsAuthenticated == true
+                ? user.FindFirst("Gender")?.Value
+                : null;
+        }
+    }
+
     public bool IsAuthenticated =>
         GetCurrentUser()?.Identity?.IsAuthenticated == true;
 

@@ -178,6 +178,18 @@ public sealed class SaleRepository : ISaleRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Sale>> GetAllWithLineItemsBySpecificationAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // Same as GetAllBySpecificationAsync but eagerly includes line items
+        // via EF Core's Include. Single round-trip — avoids N+1 when the
+        // caller needs line items for many sales (e.g. dashboard aggregations).
+        var query = _evaluator.GetQuery(_db.Sales.Include(s => s.LineItems), specification);
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<Sale?> GetLastSubmittedSaleForUserAsync
         (
         Guid userId,

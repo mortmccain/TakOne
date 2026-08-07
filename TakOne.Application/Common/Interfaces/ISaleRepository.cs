@@ -76,6 +76,21 @@ public interface ISaleRepository
         );
 
     /// <summary>
+    /// Returns ALL matching sales WITHOUT pagination, with line items
+    /// eagerly loaded in a SINGLE round-trip (avoids N+1 when the caller
+    /// needs line items for many sales).
+    ///
+    /// Used by <c>GetDashboardStatsQueryHandler</c> to compute top-products,
+    /// top-categories, and recent-order product summaries without firing one
+    /// query per sale.
+    /// </summary>
+    Task<List<Sale>> GetAllWithLineItemsBySpecificationAsync
+        (
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default
+        );
+
+    /// <summary>
     /// Returns the user's most-recently SUBMITTED sale (with line items
     /// eagerly loaded), or <c>null</c> if the user has never submitted an
     /// order. "Submitted" here means any status <c>&gt; Draft</c> and not

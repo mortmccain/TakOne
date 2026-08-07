@@ -1,0 +1,773 @@
+﻿/* =============================================================================
+   Dashboard.css — Dashboard page styling for the redesigned Tak Makaron admin
+   dashboard. Matches the HTML reference (tak-makaron-admin-dashboard.html)
+   closely, with one major theme-awareness difference:
+
+   ROUNDED vs SHARP EDGES:
+     - tak-light and tak-dark themes define --tm-radius (in tak-light.css /
+       tak-dark.css). All cards, badges, avatars, etc. use
+       `border-radius: var(--tm-radius, 0)` so they get rounded corners in
+       Tak themes, and sharp corners (0) in all other themes (standard,
+       material, etc.).
+     - This matches the user's spec: "only the tak dark and tak light will
+       have round edges for everything like the cards and stuff because
+       other pages should have sharp edges for everything".
+
+   COLOR PALETTE:
+     Uses CSS variables defined in tak-light.css / tak-dark.css (--tm-*).
+     For non-Tak themes, fallback values are provided so the dashboard
+     renders acceptably (just with sharp corners + slightly different
+     colors that inherit from the active Radzen theme).
+
+   TAK-LIGHT CARD COLORS (user spec):
+     "the cards should be white with black and dark gray text". The base
+     --tm-text / --tm-surface variables already handle this, but the KPI
+     card uses --tm-surface-2 (a darker surface for the gradient) which
+     isn't defined in tak-light. We define it + the dashboard-specific
+     variables below, scoped to [data-theme-family="tak"] so they only
+     apply to tak-light/tak-dark, and then override again for tak-light
+     specifically to use white surfaces + dark text.
+
+   LOADED GLOBALLY via App.razor — applies only to elements with .tm-dash-*
+   classes, so it's safe to load on every page.
+   ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+   Dashboard-specific theme variables.
+   These are scoped to [data-theme-family="tak"] so they only apply when a
+   Tak theme (tak-light or tak-dark) is active. For non-Tak themes, the
+   fallback values in the individual rules below are used (dark surfaces
+   with light text — the original dark-mode design).
+
+   tak-light: white surfaces, dark text (user spec)
+   tak-dark:  dark surfaces, light text (original design)
+   -------------------------------------------------------------------------- */
+:root[data-theme-family="tak"] {
+    /* Default (tak-dark) — dark surfaces + light text */
+    --tm-dash-surface: var(--tm-surface, #15201A);
+    --tm-dash-surface-2: #1A2820;
+    --tm-dash-border: rgba(255, 255, 255, 0.06);
+    --tm-dash-text: var(--tm-text, #FAF7F0);
+    --tm-dash-muted: var(--tm-gray, #94A3A0);
+    --tm-dash-table-hover: rgba(255, 255, 255, 0.025);
+    --tm-dash-table-border: rgba(255, 255, 255, 0.05);
+}
+
+    /* tak-light override — white cards, dark text (per user spec) */
+    :root[data-theme-family="tak"][data-theme-name="tak-light"],
+    html[data-theme-family="tak"][data-theme-name="tak-light"] {
+        --tm-dash-surface: #FFFFFF;
+        --tm-dash-surface-2: #FAFAFA;
+        --tm-dash-border: #E5E7EB;
+        --tm-dash-text: #1F2937; /* slate-800 — primary text */
+        --tm-dash-muted: #6B7280; /* gray-500 — secondary text */
+        --tm-dash-table-hover: #F9FAFB;
+        --tm-dash-table-border: #F3F4F6;
+        /* Avatars + rank badges — on white cards, use light gray (not white
+       overlay) so they're visible. */
+        --tm-dash-avatar-bg: #F3F4F6;
+        --tm-dash-badge-bg: #E5E7EB;
+    }
+
+/* =============================================================================
+   1. PAGE WRAPPER + GREETING HEADER
+   ========================================================================== */
+.tm-dash-page {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.tm-dash-greeting {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.tm-dash-greeting-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    background: rgba(212, 175, 55, 0.10);
+    color: var(--tm-gold, #D4AF37);
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+}
+
+.tm-dash-greeting-pulse {
+    width: 6px;
+    height: 6px;
+    background: var(--tm-gold, #D4AF37);
+    border-radius: 50%;
+    animation: tm-pulse 2s infinite;
+}
+
+@keyframes tm-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}
+
+.tm-dash-greeting-date {
+    font-size: 0.6875rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin-right: 0.5rem;
+}
+
+.tm-dash-greeting-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    margin: 0.25rem 0;
+}
+
+.tm-dash-greeting-subtitle {
+    font-size: 0.875rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0;
+}
+
+/* =============================================================================
+   2. KPI CARDS — 4 cards in a row (responsive: 1 / 2 / 4 cols)
+   ========================================================================== */
+.tm-dash-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    .tm-dash-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1024px) {
+    .tm-dash-kpi-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.tm-dash-kpi-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--tm-dash-surface, var(--tm-surface, var(--rz-panel-background-color, #152019))) 0%, var(--tm-dash-surface-2, var(--rz-panel-content-background-color, #1A2820)) 100%);
+    border: 1px solid var(--tm-dash-border, var(--tm-border, rgba(255,255,255,0.06)));
+    border-radius: var(--tm-radius, 0);
+    padding: 1.25rem;
+    transition: transform 0.25s ease, border-color 0.25s ease;
+}
+
+    .tm-dash-kpi-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(212, 175, 55, 0.25);
+    }
+
+    .tm-dash-kpi-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        /* Use the logical "inline-start" so the glow sits behind the icon
+       in BOTH layouts: right side in RTL (fa-IR), left side in LTR (en-US).
+       Previously this was hard-coded to `right: 0`, which left the glow
+       floating on the right in English mode while the icon moved to the
+       left — making the icon look washed-out in LTR. */
+        inset-inline-start: 0;
+        width: 100px;
+        height: 100px;
+        background: radial-gradient(circle, var(--tm-glow, rgba(42, 157, 126, 0.18)) 0%, transparent 70%);
+        pointer-events: none;
+    }
+
+.tm-dash-kpi-glow-green {
+    --tm-glow: rgba(42, 157, 126, 0.20);
+}
+
+.tm-dash-kpi-glow-gold {
+    --tm-glow: rgba(212, 175, 55, 0.20);
+}
+
+.tm-dash-kpi-glow-warn {
+    --tm-glow: rgba(232, 161, 74, 0.20);
+}
+
+.tm-dash-kpi-glow-info {
+    --tm-glow: rgba(91, 168, 232, 0.20);
+}
+
+.tm-dash-kpi-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.tm-dash-icon-tile {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--tm-radius, 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+    .tm-dash-icon-tile svg {
+        width: 20px;
+        height: 20px;
+    }
+
+.tm-dash-icon-green {
+    background: rgba(42, 157, 126, 0.15);
+    color: var(--tm-green-light, #3DBE96);
+}
+
+.tm-dash-icon-gold {
+    background: rgba(212, 175, 55, 0.15);
+    color: var(--tm-gold-bright, #E8C547);
+}
+
+.tm-dash-icon-warn {
+    background: rgba(232, 161, 74, 0.15);
+    color: var(--tm-warning, #E8A14A);
+}
+
+.tm-dash-icon-info {
+    background: rgba(91, 168, 232, 0.15);
+    color: var(--tm-info, #5BA8E8);
+}
+
+.tm-dash-kpi-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+.tm-dash-badge-approved {
+    background: rgba(42, 157, 126, 0.15);
+    color: #3DBE96;
+}
+
+.tm-dash-badge-pending {
+    background: rgba(232, 161, 74, 0.15);
+    color: #E8A14A;
+}
+
+.tm-dash-badge-info {
+    background: rgba(91, 168, 232, 0.15);
+    color: #5BA8E8;
+}
+
+.tm-dash-badge-cancel {
+    background: rgba(239, 107, 107, 0.15);
+    color: #EF6B6B;
+}
+
+.tm-dash-badge-delivered {
+    background: rgba(212, 175, 55, 0.15);
+    color: #D4AF37;
+}
+
+.tm-dash-kpi-label {
+    font-size: 0.6875rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0 0 0.25rem 0;
+}
+
+.tm-dash-kpi-value {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    margin: 0 0 0.5rem 0;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.tm-dash-kpi-value-suffix {
+    font-size: 1rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    font-weight: 400;
+    margin-left: 0.25rem;
+}
+
+.tm-dash-kpi-spark {
+    width: 100%;
+    height: 40px;
+    display: block;
+}
+
+.tm-dash-kpi-footer {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0.5rem 0 0 0;
+}
+
+/* =============================================================================
+   3. CHART CARDS — generic card styling for the chart containers
+   ========================================================================== */
+.tm-dash-card {
+    background: var(--tm-dash-surface, var(--tm-surface, var(--rz-panel-background-color, #152019)));
+    border: 1px solid var(--tm-dash-border, var(--tm-border, rgba(255,255,255,0.06)));
+    border-radius: var(--tm-radius, 0);
+    padding: 1.25rem;
+    transition: border-color 0.2s ease;
+}
+
+    .tm-dash-card:hover {
+        border-color: rgba(212, 175, 55, 0.18);
+    }
+
+.tm-dash-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tm-dash-card-title {
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    margin: 0;
+    font-size: 1rem;
+}
+
+.tm-dash-card-subtitle {
+    font-size: 0.75rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0.125rem 0 0 0;
+}
+
+/* Chart row layouts */
+.tm-dash-chart-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+    .tm-dash-chart-row-2-1 {
+        grid-template-columns: 2fr 1fr;
+    }
+
+    .tm-dash-chart-row-1-1 {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.tm-dash-chart-canvas-wrap {
+    position: relative;
+}
+
+    .tm-dash-chart-canvas-wrap.tall {
+        height: 288px;
+    }
+
+    .tm-dash-chart-canvas-wrap.med {
+        height: 256px;
+    }
+
+    .tm-dash-chart-canvas-wrap.short {
+        height: 192px;
+    }
+
+    .tm-dash-chart-canvas-wrap canvas {
+        max-width: 100%;
+    }
+
+/* Donut center label (absolute-positioned inside .tm-dash-chart-canvas-wrap) */
+.tm-dash-donut-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.tm-dash-donut-center-value {
+    font-size: 1.875rem;
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    font-variant-numeric: tabular-nums;
+}
+
+.tm-dash-donut-center-label {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+}
+
+/* Chart legend list (manual legend below donut/pie charts) */
+.tm-dash-chart-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.tm-dash-chart-legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75rem;
+}
+
+.tm-dash-chart-legend-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+}
+
+.tm-dash-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.tm-dash-chart-legend-value {
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    font-variant-numeric: tabular-nums;
+}
+
+/* Chart footer summary (3 mini-stats below the line chart) */
+.tm-dash-chart-footer {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--tm-dash-table-border, var(--tm-border, rgba(255,255,255,0.05)));
+}
+
+.tm-dash-chart-footer-label {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0;
+}
+
+.tm-dash-chart-footer-value {
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+}
+
+    .tm-dash-chart-footer-value.gold {
+        color: var(--tm-gold-bright, #E8C547);
+    }
+
+    .tm-dash-chart-footer-value.green {
+        color: var(--tm-green-light, #3DBE96);
+    }
+
+/* =============================================================================
+   4. RECENT ORDERS TABLE
+   ========================================================================== */
+.tm-dash-table-wrap {
+    overflow-x: auto;
+}
+
+.tm-dash-table {
+    width: 100%;
+    font-size: 0.875rem;
+    border-collapse: collapse;
+}
+
+    .tm-dash-table thead th {
+        font-size: 0.6875rem;
+        color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+        text-align: start;
+        padding: 0.75rem 0.75rem;
+    }
+
+        .tm-dash-table thead th:first-child {
+            padding-right: 1.25rem;
+        }
+
+        .tm-dash-table thead th:last-child {
+            padding-left: 1.25rem;
+        }
+
+    .tm-dash-table tbody tr {
+        border-top: 1px solid var(--tm-dash-table-border, var(--tm-border, rgba(255,255,255,0.05)));
+        transition: background 0.15s ease;
+    }
+
+        .tm-dash-table tbody tr:hover {
+            background: var(--tm-dash-table-hover, rgba(255, 255, 255, 0.025));
+        }
+
+    .tm-dash-table tbody td {
+        padding: 0.75rem 0.75rem;
+        vertical-align: middle;
+    }
+
+        .tm-dash-table tbody td:first-child {
+            padding-right: 1.25rem;
+        }
+
+        .tm-dash-table tbody td:last-child {
+            padding-left: 1.25rem;
+        }
+
+.tm-dash-sale-number {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--tm-gold, #D4AF37);
+}
+
+.tm-dash-customer-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tm-dash-avatar-sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.tm-dash-customer-name {
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    font-weight: 500;
+    font-size: 0.75rem;
+}
+
+.tm-dash-product-cell {
+    font-size: 0.75rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+}
+
+.tm-dash-amount-cell {
+    font-weight: 700;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    font-variant-numeric: tabular-nums;
+    font-size: 0.75rem;
+}
+
+.tm-dash-time-cell {
+    font-size: 0.75rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+}
+
+/* Status badges inside the table */
+.tm-dash-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+}
+
+    .tm-dash-status-badge .tm-dash-status-dot {
+        width: 6px;
+        height: 6px;
+    }
+
+/* =============================================================================
+   5. TOP EMPLOYEES CARD
+   ========================================================================== */
+.tm-dash-employee-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.tm-dash-employee-avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.tm-dash-employee-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.875rem;
+}
+
+    .tm-dash-employee-avatar.rank-1 {
+        background: linear-gradient(135deg, var(--tm-gold, #D4AF37), var(--tm-gold-bright, #E8C547));
+        color: var(--tm-green-dark, #0A2A1F);
+    }
+
+    .tm-dash-employee-avatar.rank-2,
+    .tm-dash-employee-avatar.rank-3,
+    .tm-dash-employee-avatar.rank-4 {
+        background: var(--tm-dash-avatar-bg, rgba(255, 255, 255, 0.10));
+        color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    }
+
+.tm-dash-employee-rank-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.5625rem;
+    font-weight: 700;
+}
+
+    .tm-dash-employee-rank-badge.rank-1 {
+        background: var(--tm-gold, #D4AF37);
+        color: var(--tm-green-dark, #0A2A1F);
+    }
+
+    .tm-dash-employee-rank-badge.rank-2,
+    .tm-dash-employee-rank-badge.rank-3,
+    .tm-dash-employee-rank-badge.rank-4 {
+        background: var(--tm-dash-badge-bg, rgba(255, 255, 255, 0.20));
+        color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    }
+
+.tm-dash-employee-info {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tm-dash-employee-name {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tm-dash-employee-group {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0;
+}
+
+.tm-dash-employee-amount {
+    text-align: end;
+    flex-shrink: 0;
+}
+
+.tm-dash-employee-amount-value {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--tm-gold-bright, #E8C547);
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+}
+
+    .tm-dash-employee-amount-value.rank-2,
+    .tm-dash-employee-amount-value.rank-3,
+    .tm-dash-employee-amount-value.rank-4 {
+        color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    }
+
+.tm-dash-employee-amount-label {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0;
+}
+
+/* =============================================================================
+   6. QUICK ACCESS ROW — bottom action cards (Settings + Users)
+   ========================================================================== */
+.tm-dash-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    .tm-dash-quick-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.tm-dash-quick-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--tm-dash-surface, var(--tm-surface, var(--rz-panel-background-color, #152019)));
+    border: 1px solid var(--tm-dash-border, var(--tm-border, rgba(255,255,255,0.06)));
+    border-radius: var(--tm-radius, 0);
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+    .tm-dash-quick-card:hover {
+        border-color: rgba(212, 175, 55, 0.30);
+        transform: translateY(-1px);
+    }
+
+.tm-dash-quick-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    margin: 0;
+}
+
+.tm-dash-quick-desc {
+    font-size: 0.625rem;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    margin: 0;
+}
+
+/* =============================================================================
+   7. LOADING + ERROR STATES
+   ========================================================================== */
+.tm-dash-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    height: 50vh;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+}
+
+.tm-dash-empty {
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    text-align: center;
+    padding: 2rem;
+    font-size: 0.875rem;
+}

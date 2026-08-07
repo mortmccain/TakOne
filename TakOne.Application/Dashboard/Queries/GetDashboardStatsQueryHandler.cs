@@ -1,4 +1,5 @@
-﻿using Ardalis.Specification;
+﻿using System.Globalization;
+using Ardalis.Specification;
 using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
@@ -15,27 +16,26 @@ namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
 /// Handler for <see cref="GetDashboardStatsQuery"/>. Builds the
 /// <see cref="DashboardStatsDto"/> consumed by the Dashboard razor page.
 ///
-/// DATA LOADING STRATEGY (v1):
-///   For v1 we load ALL sales in scope via
-///   <see cref="ISaleRepository.GetAllBySpecificationAsync"/> and aggregate
-///   in-memory. This is fine for small datasets (≤5 years of sales — the
-///   dashboard only shows the last 5 years anyway). When the dataset grows
-///   past ~10K sales, we should add server-side aggregation methods to
-///   <c>ISaleRepository</c> (CountByStatusAsync, SumRevenueByYearAsync, etc.)
-///   and have this handler call them directly.
+/// DATA LOADING STRATEGY:
+///   Loads ALL sales in scope (with line items eagerly loaded) via
+///   <see cref="ISaleRepository.GetAllWithLineItemsBySpecificationAsync"/>
+///   and aggregates in-memory. Single round-trip — no N+1.
 ///
-/// WHY WE DON'T USE PaginatedResult HERE:
-///   The dashboard needs every sale in scope to compute totals — pagination
-///   would require either N+1 queries (bad) or a single query that loads
-///   everything anyway (same as <c>GetAllBySpecificationAsync</c>).
+/// CURRENCY CONVERSION (IRR → Toman):
+///   Per user spec, when the sale currency is IRR, all amounts shown in the
+///   UI must be in Toman (divide IRR amount by 10). The handler performs
+///   this conversion ONCE for all amounts (TotalRevenue, weekly trend,
+///   top employees, recent orders, monthly employee purchase total) and
+///   sets <see cref="DashboardStatsDto.DisplayCurrency"/> = "تومان" +
+///   <see cref="DashboardStatsDto.IsToman"/> = true. The razor page + JS
+///   then just display the (already-converted) numbers + the label.
 ///
 /// EMPLOYEE SCOPING:
 ///   Per roadmap Section 12.2 (Option D), an Employee's dashboard shows
 ///   ONLY the sales they personally approved. We use
 ///   <see cref="SaleByApproverSpecification"/> for this — it filters on
 ///   <c>Sale.ApprovedByUserId == currentUserId</c> AND
-///   <c>Sale.Status &gt;= Approved</c>. The status filter excludes Drafts
-///   and Pending sales (which have no approver yet).
+///   <c>Sale.Status &gt;= Approved</c>.
 ///
 /// REVENUE EXCLUSIONS:
 ///   - Drafts excluded (not yet revenue — the customer hasn't committed)
@@ -50,6 +50,8 @@ public sealed class GetDashboardStatsQueryHandler
         GetDashboardStatsQuery query,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
+        IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         ILogger<GetDashboardStatsQueryHandler> logger,
         CancellationToken cancellationToken
@@ -89,21 +91,6 @@ public sealed class GetDashboardStatsQueryHandler
         // ------------------------------------------------------------------
         // 2. Build the spec based on role scope.
         // ------------------------------------------------------------------
-        // `ISpecification<Sale>` is the Ardalis interface (from the
-        // Ardalis.Specification package). Both SaleByApproverSpecification
-        // and AllSalesSpecification inherit from Specification<Sale>,
-        // which implements ISpecification<Sale>. We declare the variable
-        // as the interface type so the if/else branches can assign either
-        // concrete spec without a cast.
-        //
-        // WHY if/else instead of a ternary:
-        //   The ternary operator's type inference looks for a COMMON type
-        //   between the two branches. The compiler would pick
-        //   `Specification<Sale>` (the most-derived common base), which is
-        //   fine but requires either a fully-qualified name or an extra
-        //   using directive. Using if/else with the variable typed as the
-        //   interface makes the intent clearer and avoids the type-inference
-        //   dance.
         ISpecification<Sale> spec;
 
         if (isEmployee)
@@ -116,19 +103,31 @@ public sealed class GetDashboardStatsQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Load all sales in scope. v1 in-memory aggregation — see the
-        //    class-level comment for the future migration path.
+        // 3. Load all sales in scope WITH line items (single round-trip).
+        //    Line items are needed for top-products, top-categories, and
+        //    recent-order product summaries.
         // ------------------------------------------------------------------
-        var sales = await saleRepository.GetAllBySpecificationAsync(spec, cancellationToken);
+        var sales = await saleRepository.GetAllWithLineItemsBySpecificationAsync(spec, cancellationToken);
 
         // ------------------------------------------------------------------
-        // 4. Build the DTO. All aggregations are pure LINQ on `sales`.
+        // 4. Currency conversion setup. If currency is IRR, all amounts
+        //    will be divided by 10 to convert to Toman for display.
         // ------------------------------------------------------------------
         var currentYear = DateTime.UtcNow.Year;
-        var currency = sales
+        var now = DateTime.UtcNow;
+        var todayUtc = DateTime.UtcNow.Date;
+        var thisMonthStartUtc = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var rawCurrency = sales
             .Where(s => !string.IsNullOrEmpty(s.Total.Currency))
             .Select(s => s.Total.Currency)
             .FirstOrDefault() ?? "IRR";
+
+        var isToman = string.Equals(rawCurrency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var displayCurrency = isToman ? "تومان" : rawCurrency;
+
+        // Conversion function: IRR → Toman (÷10); other currencies pass through.
+        decimal ToDisplay(decimal amount) => isToman ? amount / 10m : amount;
 
         // Revenue-eligible sales: Pending, Approved, or Invoiced.
         // Drafts and Cancelled are excluded (see class-level comment).
@@ -138,21 +137,271 @@ public sealed class GetDashboardStatsQueryHandler
                         s.Status == SaleStatus.Invoiced)
             .ToList();
 
+        // Submitted sales (any non-Draft status). Used for "today's orders"
+        // and "this month" counts.
+        var submittedSales = sales
+            .Where(s => s.Status != SaleStatus.Draft)
+            .ToList();
+
+        // ------------------------------------------------------------------
+        // 5. Build the weekly revenue trend (last 7 days + previous 7 days).
+        //    Each series has 7 points, aligned by day-of-week.
+        // ------------------------------------------------------------------
+        var lastWeekStart = todayUtc.AddDays(-7);
+        var twoWeeksAgoStart = todayUtc.AddDays(-14);
+
+        var thisWeekRevenue = Enumerable.Range(0, 7)
+            .Select(offset =>
+            {
+                var day = todayUtc.AddDays(-6 + offset);
+                var dayNext = day.AddDays(1);
+                var dayTotal = revenueEligibleSales
+                    .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= day &&
+                                (s.SubmittedAtUtc ?? s.CreatedAtUtc) < dayNext)
+                    .Sum(s => ToDisplay(s.Total.Amount));
+                return new WeeklyRevenueDto
+                {
+                    Date = day,
+                    DayLabel = day.ToString("ddd", CultureInfo.CurrentCulture),
+                    TotalAmount = dayTotal
+                };
+            })
+            .ToList();
+
+        var lastWeekRevenue = Enumerable.Range(0, 7)
+            .Select(offset =>
+            {
+                var day = twoWeeksAgoStart.AddDays(offset);
+                var dayNext = day.AddDays(1);
+                var dayTotal = revenueEligibleSales
+                    .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= day &&
+                                (s.SubmittedAtUtc ?? s.CreatedAtUtc) < dayNext)
+                    .Sum(s => ToDisplay(s.Total.Amount));
+                return new WeeklyRevenueDto
+                {
+                    Date = day,
+                    DayLabel = day.ToString("ddd", CultureInfo.CurrentCulture),
+                    TotalAmount = dayTotal
+                };
+            })
+            .ToList();
+
+        // ------------------------------------------------------------------
+        // 6. Top products by sales count (last 30 days, approved+invoiced).
+        //    Sum quantity per ProductName across all approved+invoiced sales
+        //    submitted in the last 30 days. Take top 7.
+        // ------------------------------------------------------------------
+        var thirtyDaysAgo = todayUtc.AddDays(-30);
+        var recentApprovedSales = sales
+            .Where(s => (s.Status == SaleStatus.Approved || s.Status == SaleStatus.Invoiced) &&
+                        (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thirtyDaysAgo)
+            .ToList();
+
+        var topProducts = recentApprovedSales
+            .SelectMany(s => s.LineItems)
+            .GroupBy(li => li.ProductName)
+            .Select(g => new TopProductDto
+            {
+                ProductName = g.Key,
+                QuantitySold = g.Sum(li => li.Quantity)
+            })
+            .OrderByDescending(p => p.QuantitySold)
+            .Take(7)
+            .ToList();
+
+        // ------------------------------------------------------------------
+        // 7. Top categories by NUMBER OF APPROVED SALES (all-time in scope).
+        //    For each approved+invoiced sale, count 1 per unique category
+        //    that appears in its line items. Then take top 5 + "Others".
+        //
+        //    This requires joining line items → products → categories. We
+        //    batch-load all products by Id (single round-trip) and all
+        //    categories (single round-trip), then build a lookup dictionary.
+        // ------------------------------------------------------------------
+        var allProductIds = sales
+            .SelectMany(s => s.LineItems)
+            .Select(li => li.ProductId)
+            .Distinct()
+            .ToList();
+
+        var products = allProductIds.Count > 0
+            ? await productRepository.GetByIdsReadOnlyAsync(allProductIds, cancellationToken)
+            : new List<Domain.Products.Entities.Product>();
+
+        var allCategories = await categoryRepository.GetAllAsync(cancellationToken);
+        var categoryNameById = allCategories
+            .ToDictionary(c => c.Id, c => c.Name);
+
+        var productIdToCategoryId = products
+            .ToDictionary(p => p.Id, p => p.CategoryId);
+
+        // For each approved+invoiced sale, find the unique set of categories
+        // in its line items (via the product → category lookup).
+        var approvedOrInvoicedSales = sales
+            .Where(s => s.Status == SaleStatus.Approved || s.Status == SaleStatus.Invoiced)
+            .ToList();
+
+        var categorySalesCounts = new Dictionary<Guid, int>();
+
+        foreach (var sale in approvedOrInvoicedSales)
+        {
+            var saleCategoryIds = new HashSet<Guid>();
+
+            foreach (var li in sale.LineItems)
+            {
+                if (productIdToCategoryId.TryGetValue(li.ProductId, out var categoryId))
+                {
+                    saleCategoryIds.Add(categoryId);
+                }
+            }
+
+            foreach (var categoryId in saleCategoryIds)
+            {
+                categorySalesCounts[categoryId] = categorySalesCounts.GetValueOrDefault(categoryId) + 1;
+            }
+        }
+
+        // Build the top-5 + "Others" list.
+        var othersLabel = CultureInfo.CurrentCulture.TwoLetterISOLanguageName == "fa"
+            ? "سایر"
+            : "Others";
+
+        var topCategories = categorySalesCounts
+            .OrderByDescending(kv => kv.Value)
+            .Take(5)
+            .Select(kv => new CategorySalesCountDto
+            {
+                CategoryName = categoryNameById.TryGetValue(kv.Key, out var name) ? name : "—",
+                SalesCount = kv.Value
+            })
+            .ToList();
+
+        var othersCount = categorySalesCounts
+            .OrderByDescending(kv => kv.Value)
+            .Skip(5)
+            .Sum(kv => kv.Value);
+
+        if (othersCount > 0)
+        {
+            topCategories.Add(new CategorySalesCountDto
+            {
+                CategoryName = othersLabel,
+                SalesCount = othersCount
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // 8. Top employees by purchase amount this month.
+        //    Group non-cancelled non-draft sales submitted this month by
+        //    CustomerId, sum Total.Amount, take top 4.
+        // ------------------------------------------------------------------
+        var thisMonthSales = submittedSales
+            .Where(s => s.Status != SaleStatus.Cancelled &&
+                        (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thisMonthStartUtc)
+            .ToList();
+
+        var topEmployees = thisMonthSales
+            .GroupBy(s => new { s.CustomerId, s.CustomerName })
+            .Select(g => new TopEmployeeDto
+            {
+                FullName = g.Key.CustomerName,
+                TotalAmount = g.Sum(s => ToDisplay(s.Total.Amount))
+            })
+            .OrderByDescending(e => e.TotalAmount)
+            .Take(4)
+            .ToList();
+
+        for (var i = 0; i < topEmployees.Count; i++)
+        {
+            topEmployees[i].Rank = i + 1;
+        }
+
+        // ------------------------------------------------------------------
+        // 9. Recent orders — last 6 submitted sales, newest first.
+        // ------------------------------------------------------------------
+        var recentOrders = submittedSales
+            .OrderByDescending(s => s.SubmittedAtUtc ?? s.CreatedAtUtc)
+            .Take(6)
+            .Select(s =>
+            {
+                var firstLine = s.LineItems.FirstOrDefault();
+                var productSummary = firstLine is not null
+                    ? $"{firstLine.ProductName} × {firstLine.Quantity}"
+                    : "—";
+
+                return new RecentOrderDto
+                {
+                    SaleNumber = s.SaleNumber?.Value ?? "—",
+                    CustomerName = s.CustomerName,
+                    ProductSummary = productSummary,
+                    TotalAmount = ToDisplay(s.Total.Amount),
+                    Status = s.Status.ToString(),
+                    SubmittedAtUtc = s.SubmittedAtUtc
+                };
+            })
+            .ToList();
+
+        // ------------------------------------------------------------------
+        // 10. Build the final DTO.
+        // ------------------------------------------------------------------
+
+        // Oldest pending sale age (in minutes). Null when there are no
+        // pending sales — the razor page hides the footer in that case.
+        // Computed from the OLDEST SubmittedAtUtc (or CreatedAtUtc fallback)
+        // among pending sales. Used by KPI card 3's footer.
+        int? oldestPendingAgeMinutes = null;
+        var pendingSales = sales.Where(s => s.Status == SaleStatus.Pending).ToList();
+        if (pendingSales.Count > 0)
+        {
+            var oldestSubmitted = pendingSales
+                .Min(s => s.SubmittedAtUtc ?? s.CreatedAtUtc);
+            oldestPendingAgeMinutes = (int)(now - oldestSubmitted).TotalMinutes;
+        }
+
+        // Distinct employees (by CustomerId) who have at least one submitted
+        // non-cancelled sale this month. Used by KPI card 2's footer.
+        var thisMonthActiveEmployeeCount = thisMonthSales
+            .Select(s => s.CustomerId)
+            .Distinct()
+            .Count();
+
         var dto = new DashboardStatsDto
         {
             CurrentUserName = currentUser.FullName,
             IsEmployeeScoped = isEmployee,
-            Currency = currency,
+            Currency = rawCurrency,
+            DisplayCurrency = displayCurrency,
+            IsToman = isToman,
 
-            // ── KPI counts ────────────────────────────────────────────
+            // ── Original KPI counts ────────────────────────────────────
             TotalSalesCount = sales.Count,
             DraftSalesCount = sales.Count(s => s.Status == SaleStatus.Draft),
             PendingSalesCount = sales.Count(s => s.Status == SaleStatus.Pending),
             ApprovedSalesCount = sales.Count(s => s.Status == SaleStatus.Approved),
             CancelledSalesCount = sales.Count(s => s.Status == SaleStatus.Cancelled),
 
+            // ── NEW KPI counts ─────────────────────────────────────────
+            TodayOrdersCount = submittedSales
+                .Count(s => s.Status != SaleStatus.Cancelled &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc).Date == todayUtc),
+            ThisMonthEmployeePurchaseTotal = thisMonthSales
+                .Sum(s => ToDisplay(s.Total.Amount)),
+            ThisMonthApprovedSalesCount = submittedSales
+                .Count(s => s.Status == SaleStatus.Approved &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thisMonthStartUtc),
+
+            // ── NEW KPI footer data (replaces hard-coded placeholders) ─
+            ThisMonthActiveEmployeeCount = thisMonthActiveEmployeeCount,
+            OldestPendingSaleAgeMinutes = oldestPendingAgeMinutes,
+
+            // ── Greeting header data ───────────────────────────────────
+            // Read the Gender claim (set at login time by Login.razor).
+            // Null if missing (older sessions) — the page falls back to a
+            // gender-neutral greeting.
+            UserGender = currentUser.Gender,
+
             // ── Revenue ───────────────────────────────────────────────
-            TotalRevenue = revenueEligibleSales.Sum(s => s.Total.Amount),
+            TotalRevenue = revenueEligibleSales.Sum(s => ToDisplay(s.Total.Amount)),
 
             // 5-year yearly breakdown (current year + 4 prior years).
             // Always 5 rows, even if some years have zero revenue.
@@ -164,7 +413,7 @@ public sealed class GetDashboardStatsQueryHandler
                     TotalAmount = revenueEligibleSales
                         .Where(s => s.SubmittedAtUtc?.Year == year ||
                                     s.CreatedAtUtc.Year == year)
-                        .Sum(s => s.Total.Amount)
+                        .Sum(s => ToDisplay(s.Total.Amount))
                 })
                 .OrderBy(y => y.Year)
                 .ToList(),
@@ -175,11 +424,11 @@ public sealed class GetDashboardStatsQueryHandler
                 {
                     Month = month,
                     MonthLabel = new DateTime(currentYear, month, 1)
-                        .ToString("MMM", System.Globalization.CultureInfo.InvariantCulture),
+                        .ToString("MMM", CultureInfo.InvariantCulture),
                     TotalAmount = revenueEligibleSales
                         .Where(s => (s.SubmittedAtUtc?.Year ?? s.CreatedAtUtc.Year) == currentYear &&
                                     (s.SubmittedAtUtc?.Month ?? s.CreatedAtUtc.Month) == month)
-                        .Sum(s => s.Total.Amount)
+                        .Sum(s => ToDisplay(s.Total.Amount))
                 })
                 .OrderBy(m => m.Month)
                 .ToList(),
@@ -194,15 +443,23 @@ public sealed class GetDashboardStatsQueryHandler
                     Count = g.Count()
                 })
                 .OrderByDescending(s => s.Count)
-                .ToList()
+                .ToList(),
+
+            // ── NEW chart data ────────────────────────────────────────
+            ThisWeekRevenue = thisWeekRevenue,
+            LastWeekRevenue = lastWeekRevenue,
+            TopProducts = topProducts,
+            TopCategories = topCategories,
+            TopEmployees = topEmployees,
+            RecentOrders = recentOrders
         };
 
         // ------------------------------------------------------------------
-        // 5. Active customer count. This is a separate query against the
-        //    user table (with a join to AspNetUserRoles for the Customer
-        //    role). Done LAST because it's independent of the sales
-        //    aggregation above and we don't want a failure here to nuke
-        //    the entire dashboard.
+        // 11. Active customer count. This is a separate query against the
+        //     user table (with a join to AspNetUserRoles for the Customer
+        //     role). Done LAST because it's independent of the sales
+        //     aggregation above and we don't want a failure here to nuke
+        //     the entire dashboard.
         // ------------------------------------------------------------------
         try
         {
@@ -213,7 +470,7 @@ public sealed class GetDashboardStatsQueryHandler
             // Don't fail the whole dashboard if the user-count query blows
             // up. Log and surface a 0 — the KPI card will just show 0.
             logger.LogWarning
-                (ex,"GetDashboardStats: failed to load active customer count. Defaulting to 0.");
+                (ex, "GetDashboardStats: failed to load active customer count. Defaulting to 0.");
 
             dto.ActiveCustomersCount = 0;
         }

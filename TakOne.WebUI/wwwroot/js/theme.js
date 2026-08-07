@@ -46,14 +46,14 @@
     var TAK_THEMES = {
         'tak-light': {
             base: 'standard',                                  // Radzen light theme
-            override: '/css/Themes/tak-light.css?v=11'         // Tak Light palette + utilities
+            override: '/css/Themes/tak-light.css?v=12'         // Tak Light palette + utilities
             // ?v=11 cache-bust: path corrected from /css/themes/ to /css/Themes/
             //                  (case mismatch with on-disk directory was 404'ing
             //                  the file on Linux / case-sensitive macOS).
         },
         'tak-dark': {
             base: 'standard-dark',                             // Radzen dark theme
-            override: '/css/Themes/tak-dark.css?v=3'           // Tak Dark palette + utilities
+            override: '/css/Themes/tak-dark.css?v=4'           // Tak Dark palette + utilities
             // ?v=3 cache-bust: path corrected from /css/themes/ to /css/Themes/
         }
     };
@@ -89,6 +89,10 @@
     (function setInitialThemeFamily() {
         var isTak = Object.prototype.hasOwnProperty.call(TAK_THEMES, _desiredTheme);
         document.documentElement.setAttribute('data-theme-family', isTak ? 'tak' : 'standard');
+        // Also set the specific theme name so CSS can distinguish tak-light
+        // from tak-dark (e.g. tak-light needs white cards + dark text,
+        // tak-dark needs dark cards + light text).
+        document.documentElement.setAttribute('data-theme-name', _desiredTheme);
     })();
 
     // ---- Core: find the Radzen theme <link> -------------------------------
@@ -156,6 +160,10 @@
         //    updates the rounded/sharp edges without a page reload.
         var family = entry ? 'tak' : 'standard';
         document.documentElement.setAttribute('data-theme-family', family);
+        // Also set the specific theme name so CSS can distinguish tak-light
+        // from tak-dark (e.g. tak-light needs white cards + dark text,
+        // tak-dark needs dark cards + light text).
+        document.documentElement.setAttribute('data-theme-name', theme);
 
         // 5. Persist the user's choice.
         try {

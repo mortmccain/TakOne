@@ -68,6 +68,75 @@ public sealed class DashboardStatsDto
 
 
     // ───────────────────────────────────────────────────────────────
+    // NEW KPI COUNTS — for the redesigned Dashboard's 4 KPI cards
+    // (right-to-left in RTL: today orders, monthly employee purchase,
+    // pending approvals, monthly approved sales count)
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sales submitted TODAY (UTC today), any non-Draft non-Cancelled
+    /// status. KPI card 1 (rightmost in RTL): "سفارشات امروز".
+    /// </summary>
+    public int TodayOrdersCount { get; set; }
+
+    /// <summary>
+    /// Sum of <c>Sale.Total.Amount</c> across all non-cancelled, non-draft
+    /// sales submitted in the current month, in DISPLAY currency (Toman when
+    /// original is IRR). KPI card 2: "مجموع خرید کارکنان در این ماه".
+    /// </summary>
+    public decimal ThisMonthEmployeePurchaseTotal { get; set; }
+
+    /// <summary>
+    /// Count of APPROVED sales submitted in the current month. KPI card 4
+    /// (leftmost in RTL): "تعداد فروش های این ماه". Note: this counts
+    /// sales that are currently in Approved status AND were submitted this
+    /// month — Invoiced sales that moved past Approved are NOT counted
+    /// (they're "completed", not "approved this month").
+    /// </summary>
+    public int ThisMonthApprovedSalesCount { get; set; }
+
+
+    // ───────────────────────────────────────────────────────────────
+    // NEW KPI FOOTER DATA — computed values for the footer line on each
+    // KPI card. Previously these were hard-coded placeholders ("هدف ماهانه:
+    // ۳۰M تومان", "قدیمی‌ترین: ۲ ساعت پیش"). Per user spec, the footers
+    // must show real data.
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Number of DISTINCT employees who have at least one submitted
+    /// (non-Draft, non-Cancelled) sale this month. Shown in the footer of
+    /// KPI card 2 ("مجموع خرید کارکنان در این ماه") — gives context to the
+    /// total amount by showing how many employees contributed to it.
+    /// Replaces the previous "هدف ماهانه: ۳۰M تومان" placeholder.
+    /// </summary>
+    public int ThisMonthActiveEmployeeCount { get; set; }
+
+    /// <summary>
+    /// Age (in minutes) of the OLDEST pending sale in scope. Shown in the
+    /// footer of KPI card 3 ("در انتظار تأیید") as "قدیمی‌ترین: X ساعت پیش"
+    /// — tells the user how long the longest-waiting approval has been
+    /// sitting. Null when there are no pending sales (the card shows 0 in
+    /// that case, so the footer is hidden).
+    /// Replaces the previous "قدیمی‌ترین: ۲ ساعت پیش" placeholder.
+    /// </summary>
+    public int? OldestPendingSaleAgeMinutes { get; set; }
+
+
+    // ───────────────────────────────────────────────────────────────
+    // GREETING HEADER — time-of-day greeting + user gender
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The gender of the current user (Male/Female). Used to pick the
+    /// correct localized title ("آقای" / "خانم" in fa-IR, "Mr." / "Ms." in
+    /// en-US) for the time-of-day greeting ("Good morning, Mr. Smith").
+    /// Sourced from the Gender claim set at login time.
+    /// </summary>
+    public string? UserGender { get; set; }
+
+
+    // ───────────────────────────────────────────────────────────────
     // REVENUE — total + breakdowns for the three charts
     // ───────────────────────────────────────────────────────────────
 
@@ -117,6 +186,77 @@ public sealed class DashboardStatsDto
     /// (empty slices are visual noise).
     /// </summary>
     public List<StatusCountDto> StatusBreakdown { get; set; } = new();
+
+
+    // ───────────────────────────────────────────────────────────────
+    // NEW CHART DATA — for the redesigned Dashboard's 4 charts
+    // (weekly line, status donut, top products bar, category pie)
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Last 7 days of revenue (this week) for the weekly revenue trend
+    /// line chart. Always exactly 7 rows, ordered ascending by date.
+    /// Amounts are in DISPLAY currency (Toman when original is IRR).
+    /// </summary>
+    public List<WeeklyRevenueDto> ThisWeekRevenue { get; set; } = new();
+
+    /// <summary>
+    /// Previous 7 days of revenue (last week) for the dashed comparison
+    /// line on the weekly revenue trend chart. Always exactly 7 rows,
+    /// ordered ascending by date. The chart aligns this with
+    /// <see cref="ThisWeekRevenue"/> by day-of-week so the two series
+    /// are visually comparable.
+    /// </summary>
+    public List<WeeklyRevenueDto> LastWeekRevenue { get; set; } = new();
+
+    /// <summary>
+    /// Top 7 products by total quantity sold across approved+invoiced
+    /// sales in the last 30 days, for the horizontal bar chart. Ordered
+    /// descending by quantity.
+    /// </summary>
+    public List<TopProductDto> TopProducts { get; set; } = new();
+
+    /// <summary>
+    /// Top 5 categories by NUMBER OF APPROVED SALES that contain products
+    /// in that category, plus 1 "Others" slice = 6 total. For the pie
+    /// chart. Ordered descending by sales count.
+    /// </summary>
+    public List<CategorySalesCountDto> TopCategories { get; set; } = new();
+
+    /// <summary>
+    /// Top 4 employees by total purchase amount this month, for the side
+    /// widget card "کارکنان با بالاترین مبلغ خرید در این ماه". Ordered
+    /// descending by amount, with Rank 1..4.
+    /// </summary>
+    public List<TopEmployeeDto> TopEmployees { get; set; } = new();
+
+    /// <summary>
+    /// 6 most-recent submitted sales (any non-Draft status), for the
+    /// "آخرین سفارش ها" table. Ordered descending by submission date.
+    /// </summary>
+    public List<RecentOrderDto> RecentOrders { get; set; } = new();
+
+
+    // ───────────────────────────────────────────────────────────────
+    // DISPLAY CURRENCY — for IRR → Toman conversion
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The display currency label shown next to amounts in the UI
+    /// (e.g. "تومان" when original is IRR, "USD" if original is USD).
+    /// Set by the handler based on <see cref="Currency"/>:
+    ///   - IRR → "تومان" (and amounts divided by 10)
+    ///   - anything else → the original currency code (amounts unchanged)
+    /// </summary>
+    public string DisplayCurrency { get; set; } = "تومان";
+
+    /// <summary>
+    /// True when <see cref="Currency"/> is IRR and the handler converted
+    /// all amounts to Toman (divided by 10). The razor page + JS use this
+    /// to decide tooltip formatting (e.g. whether to show "M" suffix for
+    /// millions).
+    /// </summary>
+    public bool IsToman { get; set; } = true;
 
 
     // ───────────────────────────────────────────────────────────────

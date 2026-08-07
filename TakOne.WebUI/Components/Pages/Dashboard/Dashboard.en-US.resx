@@ -83,6 +83,42 @@
   <data name="WelcomeBack" xml:space="preserve">
     <value>Welcome back,</value>
   </data>
+  <!-- Time-of-day greetings — used by GreetingLabel based on server hour -->
+  <data name="Greeting_Morning" xml:space="preserve">
+    <value>Good morning,</value>
+  </data>
+  <data name="Greeting_Afternoon" xml:space="preserve">
+    <value>Good afternoon,</value>
+  </data>
+  <data name="Greeting_Evening" xml:space="preserve">
+    <value>Good evening,</value>
+  </data>
+  <data name="Greeting_LateNight" xml:space="preserve">
+    <value>Good night,</value>
+  </data>
+  <!-- Gender titles — used by GreetingLabel based on the Gender claim -->
+  <data name="Title_Male" xml:space="preserve">
+    <value>آقای</value>
+  </data>
+  <data name="Title_Female" xml:space="preserve">
+    <value>خانم</value>
+  </data>
+  <data name="Title_Male_En" xml:space="preserve">
+    <value>Mr.</value>
+  </data>
+  <data name="Title_Female_En" xml:space="preserve">
+    <value>Ms.</value>
+  </data>
+  <!-- Time units — used by FormatOldestPending in the KPI card 3 footer -->
+  <data name="MinutesUnit" xml:space="preserve">
+    <value>minutes</value>
+  </data>
+  <data name="HoursUnit" xml:space="preserve">
+    <value>hours</value>
+  </data>
+  <data name="DaysUnit" xml:space="preserve">
+    <value>days</value>
+  </data>
   <data name="ScopeEmployee" xml:space="preserve">
     <value>Your personal performance</value>
   </data>
@@ -92,8 +128,43 @@
   <data name="TotalRevenue" xml:space="preserve">
     <value>Total Revenue</value>
   </data>
+  <data name="GreetingSubtitle" xml:space="preserve">
+    <value>Here's a summary of today's activity at Tak Makaron.</value>
+  </data>
+  <data name="ActivePanel" xml:space="preserve">
+    <value>Active panel</value>
+  </data>
 
-  <!-- KPI cards -->
+  <!-- NEW KPI cards (right-to-left in RTL) -->
+  <data name="Kpi_TodayOrders" xml:space="preserve">
+    <value>Today's orders</value>
+  </data>
+  <data name="Kpi_TodayOrdersFooter" xml:space="preserve">
+    <value>orders pending approval</value>
+  </data>
+  <data name="Kpi_MonthlyEmployeePurchase" xml:space="preserve">
+    <value>Total employee purchases this month</value>
+  </data>
+  <data name="Kpi_MonthlyEmployeePurchaseFooter" xml:space="preserve">
+    <value>Employees who purchased this month:</value>
+  </data>
+  <data name="Kpi_PendingApprovals" xml:space="preserve">
+    <value>Pending approval</value>
+  </data>
+  <data name="Kpi_PendingApprovalsFooter_Prefix" xml:space="preserve">
+    <value>Oldest:</value>
+  </data>
+  <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve">
+    <value>No pending approvals</value>
+  </data>
+  <data name="Kpi_MonthlyApprovedSales" xml:space="preserve">
+    <value>Approved sales this month</value>
+  </data>
+  <data name="Kpi_MonthlyApprovedSalesFooter" xml:space="preserve">
+    <value>approved in current month</value>
+  </data>
+
+  <!-- Legacy KPI cards (still used by the role-scoped subtitle / fallback) -->
   <data name="Kpi_TotalSales" xml:space="preserve">
     <value>Total Sales</value>
   </data>
@@ -131,6 +202,144 @@
   </data>
   <data name="Chart_Last5Years" xml:space="preserve">
     <value>Last 5 years</value>
+  </data>
+
+  <!-- NEW chart titles (redesigned dashboard) -->
+  <data name="Chart_WeeklyRevenue" xml:space="preserve">
+    <value>Weekly revenue trend</value>
+  </data>
+  <data name="Chart_WeeklyRevenue_Sub" xml:space="preserve">
+    <value>Last 7 days · by day</value>
+  </data>
+  <data name="Chart_WeeklyLegend_This" xml:space="preserve">
+    <value>This week</value>
+  </data>
+  <data name="Chart_WeeklyLegend_Last" xml:space="preserve">
+    <value>Last week</value>
+  </data>
+  <data name="Chart_WeeklyAvg" xml:space="preserve">
+    <value>Daily average</value>
+  </data>
+  <data name="Chart_WeeklyMax" xml:space="preserve">
+    <value>Highest day</value>
+  </data>
+  <data name="Chart_WeeklyGrowth" xml:space="preserve">
+    <value>Weekly growth</value>
+  </data>
+  <data name="Chart_StatusDonut_Sub" xml:space="preserve">
+    <value>Total this month</value>
+  </data>
+  <data name="Chart_StatusDonut_Total" xml:space="preserve">
+    <value>Total orders</value>
+  </data>
+  <data name="Chart_TopProducts" xml:space="preserve">
+    <value>Top-selling products</value>
+  </data>
+  <data name="Chart_TopProducts_Sub" xml:space="preserve">
+    <value>Sales count · last 30 days</value>
+  </data>
+  <data name="Chart_CategoryPie" xml:space="preserve">
+    <value>Category share</value>
+  </data>
+  <data name="Chart_CategoryPie_Sub" xml:space="preserve">
+    <value>Of this month's sales</value>
+  </data>
+  <data name="Chart_ViewAll" xml:space="preserve">
+    <value>View all</value>
+  </data>
+
+  <!-- NEW chart status labels (for donut legend + tooltips) -->
+  <data name="Status_Approved" xml:space="preserve">
+    <value>Approved</value>
+  </data>
+  <data name="Status_Shipped" xml:space="preserve">
+    <value>Shipped</value>
+  </data>
+  <data name="Status_Pending" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="Status_Cancelled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="Status_Draft" xml:space="preserve">
+    <value>Draft</value>
+  </data>
+  <data name="Status_Delivered" xml:space="preserve">
+    <value>Delivered</value>
+  </data>
+  <data name="Status_OrdersUnit" xml:space="preserve">
+    <value>orders</value>
+  </data>
+  <data name="Status_SoldUnit" xml:space="preserve">
+    <value>units sold</value>
+  </data>
+
+  <!-- Recent orders table -->
+  <data name="Orders_Recent" xml:space="preserve">
+    <value>Recent orders</value>
+  </data>
+  <data name="Orders_Recent_Sub" xml:space="preserve">
+    <value>Last 6 orders in the system</value>
+  </data>
+  <data name="Orders_Col_Number" xml:space="preserve">
+    <value>Order #</value>
+  </data>
+  <data name="Orders_Col_Customer" xml:space="preserve">
+    <value>Employee</value>
+  </data>
+  <data name="Orders_Col_Product" xml:space="preserve">
+    <value>Product</value>
+  </data>
+  <data name="Orders_Col_Amount" xml:space="preserve">
+    <value>Amount</value>
+  </data>
+  <data name="Orders_Col_Time" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="Orders_Col_Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Orders_Empty" xml:space="preserve">
+    <value>No recent orders to display.</value>
+  </data>
+
+  <!-- Top employees card -->
+  <data name="TopEmployees_Title" xml:space="preserve">
+    <value>Employees with the highest purchase amount this month</value>
+  </data>
+  <data name="TopEmployees_Sub" xml:space="preserve">
+    <value>This month</value>
+  </data>
+  <data name="TopEmployees_Empty" xml:space="preserve">
+    <value>No employee purchases this month yet.</value>
+  </data>
+
+  <!-- Quick access cards -->
+  <data name="Quick_Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Quick_Settings_Desc" xml:space="preserve">
+    <value>Configuration</value>
+  </data>
+  <data name="Quick_Users" xml:space="preserve">
+    <value>System users</value>
+  </data>
+  <data name="Quick_Users_Desc" xml:space="preserve">
+    <value>Manage users</value>
+  </data>
+
+  <!-- Relative time (for the recent-orders table) -->
+  <data name="JustNow" xml:space="preserve">
+    <value>just now</value>
+  </data>
+  <data name="MinutesAgo" xml:space="preserve">
+    <value>minutes ago</value>
+  </data>
+  <data name="HoursAgo" xml:space="preserve">
+    <value>hours ago</value>
+  </data>
+  <data name="DaysAgo" xml:space="preserve">
+    <value>days ago</value>
   </data>
 
   <!-- Chart legends -->

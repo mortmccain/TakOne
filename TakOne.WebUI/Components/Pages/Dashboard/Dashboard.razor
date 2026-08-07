@@ -1,36 +1,50 @@
-﻿@* Dashboard.razor — Phase 2.1
+﻿@* Dashboard.razor — Redesigned (Phase 3)
    Staff-only dashboard at route "/". Per roadmap Section 12.8, Customers
-   never land here — they're redirected to /Products at login time. The
-   page is gated by [Authorize] (any authenticated user) PLUS a runtime
-   role check inside OnInitializedAsync that bounces Customers to
-   /Account/AccessDenied as defense-in-depth.
+   never land here — they're redirected to /Products at login time.
 
-   LAYOUT:
-     - Welcome header (current user's name + today's date + scope label)
-     - 6 KPI cards (total sales, draft, pending, approved, cancelled,
-       active customers)
-     - Split layout 9/3:
-       - Left (9): 5-year revenue pie, year column chart, monthly line
-       - Right (3): status donut + quick-actions panel
+   LAYOUT (top-to-bottom):
+     1. Greeting header — user name + date + scope subtitle
+     2. KPI row — 4 cards (right-to-left in RTL):
+          - سفارشات امروز (Today's Orders)
+          - مجموع خرید کارکنان در این ماه (Monthly Employee Purchase)
+          - در انتظار تأیید (Pending Approvals)
+          - تعداد فروش های این ماه (Approved Sales This Month)
+     3. Charts row 1 — Weekly Revenue Trend (line, 2/3) + Status Donut (1/3)
+     4. Charts row 2 — Top Products Bar (2/3) + Category Pie (1/3)
+     5. Bottom row — Recent Orders table (2/3) + Top Employees card (1/3)
+     6. Quick access row — Settings + Users (2 cards; per user spec,
+        مدیریت مالی and گزارش فروش quick-access cards are REMOVED)
 
-   DATA LOADING:
-     Single Wolverine IMessageBus.InvokeAsync<Result<DashboardStatsDto>>
-     call. Loading spinner while in-flight, error alert on failure.
+   REMOVED per user spec:
+     - هشدار موجودی (Low Stock Alert) card
+     - مدیریت مالی (Financial Management) quick action
+     - گزارش فروش (Sales Report) quick action
+     - برترین کارکنان → REPLACED with "کارکنان با بالاترین مبلغ خرید در این ماه"
 
-   ROLE-AWARE SCOPE (roadmap Section 12.2):
-     - Admin/Manager/ReadOnly → "Company-wide overview" (all sales)
-     - Employee → "Your personal performance" (only sales they approved)
-     The scope label in the welcome header switches on stats.IsEmployeeScoped.
+   CHARTS:
+     All 4 charts use Chart.js (vendored at /lib/chartjs/chart.umd.min.js).
+     The dashboard.js script exposes window.takDashboard.render(data)
+     which initializes all 4 charts with the Tak Makaron dark palette +
+     Persian digit tooltips. We pass the data + localized labels via
+     JS interop after the data loads.
 
-   LOCALIZATION:
-     All user-visible strings go through IStringLocalizer<Dashboard> (Loc).
-     Chart axis labels (month abbreviations) are NOT yet localized — see
-     the comment on MonthlyRevenueDto.MonthLabel for the deferral note. *@
+   CURRENCY CONVERSION (IRR → Toman):
+     Per user spec, when the sale currency is IRR, all amounts are divided
+     by 10 server-side (in the handler) and the DisplayCurrency is set to
+     "تومان". The razor page just displays the (already-converted) numbers
+     + the label.
+
+   ROUNDED vs SHARP EDGES:
+     Per user spec, only tak-light and tak-dark themes get rounded corners
+     on all cards. Other themes get sharp corners. This is handled by
+     `border-radius: var(--tm-radius, 0)` in Dashboard.css — the
+     --tm-radius variable is only defined in tak-light.css / tak-dark.css. *@
 
 @page "/"
 @attribute [Authorize(Roles = "Admin,Manager,Employee,ReadOnly")]
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Globalization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
@@ -40,91 +54,20 @@
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @inject IStringLocalizer<Dashboard> Loc
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
-<HeadContent>
-    <style>
-            .action-tile {
-                transition: all 0.2s ease;
-                cursor: pointer;
-                padding: 1rem;
-                border-radius: var(--rz-border-radius);
-                border: 1px solid transparent;
-            }
-
-                .action-tile:hover,
-                .action-tile:active {
-                    background: var(--rz-panelmenu-item-hover-background-color);
-                    border-color: gray;
-                    color: gray;
-                    transform: translateX(4px);
-                }
-
-                    .action-tile:hover .rz-icon,
-                    .action-tile:hover RadzenText {
-                        color: var(--rz-primary);
-                    }
-
-            .stat-value {
-                font-size: 1.75rem;
-                font-weight: 700;
-                line-height: 1;
-            }
-
-            /* ── KPI CARD SHADOW + HOVER (applies to ALL themes) ─────────────
-                           These rules EXACTLY REPLICATE the ERP app's card hover effect
-                           (from erp-reference/ERP.WebUI/Components/Pages/Home.razor):
-                             .summary-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
-                             .summary-card:hover { transform: scale(1.03); box-shadow: 0 12px 2px rgba(49, 45, 47, 0.8); }
-
-                           The shadow color rgba(49, 45, 47, 0.8) is a dark warm-gray/purple
-                           tint — the ERP app's signature card shadow. The transform is
-                           scale(1.03) (a slight zoom-in), NOT translateY.
-
-                           They live here in the page's inline style block (NOT in app.css)
-                           because:
-                             1. The inline style block is guaranteed to load with the page in
-                                every theme — no CSS file loading order issues.
-                             2. It renders via HeadContent/HeadOutlet AFTER Radzen's theme
-                                CSS, so it wins any same-specificity tie.
-
-                           TAK LIGHT OVERRIDE: tak-light.css re-declares these same
-                           selectors with !important and a GREEN shadow + translateY(-6px)
-                           lift (instead of scale). Since tak-light.css loads AFTER this
-                           inline style (theme.js appends it post-hydration) and uses
-                           !important, the green + lift wins in Tak Light. In all other
-                           themes, tak-light.css is absent, so the ERP shadow + scale
-                           below applies. */
-            .summary-card.tm-kpi-card {
-                transition: transform 0.18s ease, box-shadow 0.18s ease;
-                cursor: default;
-            }
-
-                .summary-card.tm-kpi-card:hover {
-                    transform: scale(1.03);
-                    box-shadow: 0 12px 2px rgba(49, 45, 47, 0.8);
-                }
-
-            .status-chart .rz-legend-bottom {
-                bottom: -50px !important;
-            }
-    </style>
-</HeadContent>
-
 @* ── Loading ── *@
 @if (_isLoading)
 {
-    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
-                 Style="height: 50vh;" Gap="1rem">
+    <div class="tm-dash-loading">
         <RadzenProgressBarCircular ShowValue="false"
                                    Mode="ProgressBarMode.Indeterminate"
                                    Size="ProgressBarCircularSize.Large" />
-        <RadzenText TextStyle="TextStyle.Body2" ThemeColor="TextColor.Secondary">
-            @Loc["Loading"]
-        </RadzenText>
-    </RadzenStack>
+        <span>@Loc["Loading"]</span>
+    </div>
 }
 @* ── Error ── *@
 else if (!string.IsNullOrEmpty(_loadError))
@@ -134,448 +77,435 @@ else if (!string.IsNullOrEmpty(_loadError))
                  AlertStyle="AlertStyle.Danger"
                  Variant="Variant.Filled"
                  ShowIcon="true"
-                 class="mb-3" />
+                 class="m-4" />
 }
 @* ── Dashboard ── *@
 else if (_stats is not null)
 {
-    @* ════════════════════════════════════════
-       WELCOME HEADER
-       ════════════════════════════════════════ *@
-    <RadzenStack Orientation="Orientation.Horizontal"
-                 JustifyContent="JustifyContent.SpaceBetween"
-                 AlignItems="AlignItems.End"
-                 Wrap="FlexWrap.Wrap"
-                 Gap="0.75rem"
-                 class="mb-4">
-        <div>
-            <RadzenText TextStyle="TextStyle.H4" TagName="TagName.H2" class="mb-0">
-                @Loc["WelcomeBack"], @_stats.CurrentUserName
-            </RadzenText>
-            <RadzenText TextStyle="TextStyle.Body2" ThemeColor="TextColor.Secondary">
-                @DateTime.Now.ToString("dddd, MMMM d, yyyy")
-                @if (_stats.IsEmployeeScoped)
+    <div class="tm-dash-page">
+
+        @* ════════════════════════════════════════
+           GREETING HEADER
+           — Time-of-day greeting ("Good morning/afternoon/evening, Mr./Ms. {FullName}")
+             using the user's gender claim + the server's local time.
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-greeting">
+            <div>
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.25rem;">
+                    <span class="tm-dash-greeting-badge">
+                        <span class="tm-dash-greeting-pulse"></span>
+                        @Loc["ActivePanel"]
+                    </span>
+                    <span class="tm-dash-greeting-date">@FormatDate(DateTime.Now)</span>
+                </div>
+                <h2 class="tm-dash-greeting-title">
+                    @GreetingLabel @_stats.CurrentUserName
+                </h2>
+                <p class="tm-dash-greeting-subtitle">
+                    @if (_stats.IsEmployeeScoped)
+                    {
+                        @Loc["ScopeEmployee"]
+                    }
+                    else
+                    {
+                        @Loc["GreetingSubtitle"]
+                    }
+                </p>
+            </div>
+        </div>
+
+        @* ════════════════════════════════════════
+           KPI ROW — 4 cards (right-to-left in RTL)
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-kpi-grid">
+
+            @* KPI 1: Today's Orders (green glow, shopping bag icon) *@
+            <div class="tm-dash-kpi-card tm-dash-kpi-glow-green">
+                <div class="tm-dash-kpi-card-head">
+                    <div class="tm-dash-icon-tile tm-dash-icon-green">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                        </svg>
+                    </div>
+                    <span class="tm-dash-kpi-badge tm-dash-badge-approved">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width:12px;height:12px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13l4-4 4 4 8-8" />
+                        </svg>
+                        @FormatDigits(_stats.TodayOrdersCount)
+                    </span>
+                </div>
+                <p class="tm-dash-kpi-label">@Loc["Kpi_TodayOrders"]</p>
+                <p class="tm-dash-kpi-value">@FormatDigits(_stats.TodayOrdersCount)</p>
+                <p class="tm-dash-kpi-footer">@Loc["Kpi_TodayOrdersFooter"]</p>
+            </div>
+
+            @* KPI 2: Monthly Employee Purchase Total (gold glow, money icon) *@
+            <div class="tm-dash-kpi-card tm-dash-kpi-glow-gold">
+                <div class="tm-dash-kpi-card-head">
+                    <div class="tm-dash-icon-tile tm-dash-icon-gold">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                </div>
+                <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyEmployeePurchase"]</p>
+                <p class="tm-dash-kpi-value">
+                    @FormatMoneyShort(_stats.ThisMonthEmployeePurchaseTotal)
+                    <span class="tm-dash-kpi-value-suffix">@_stats.DisplayCurrency</span>
+                </p>
+                <p class="tm-dash-kpi-footer">
+                    @Loc["Kpi_MonthlyEmployeePurchaseFooter"]
+                    <strong>@FormatDigits(_stats.ThisMonthActiveEmployeeCount)</strong>
+                </p>
+            </div>
+
+            @* KPI 3: Pending Approvals (warn glow, clock icon) *@
+            <div class="tm-dash-kpi-card tm-dash-kpi-glow-warn">
+                <div class="tm-dash-kpi-card-head">
+                    <div class="tm-dash-icon-tile tm-dash-icon-warn">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                </div>
+                <p class="tm-dash-kpi-label">@Loc["Kpi_PendingApprovals"]</p>
+                <p class="tm-dash-kpi-value">@FormatDigits(_stats.PendingSalesCount)</p>
+                @if (_stats.OldestPendingSaleAgeMinutes is { } ageMinutes && ageMinutes > 0)
                 {
-                    <span> · @Loc["ScopeEmployee"]</span>
+                    <p class="tm-dash-kpi-footer">
+                        @Loc["Kpi_PendingApprovalsFooter_Prefix"]
+                        <strong>@FormatOldestPending(ageMinutes)</strong>
+                    </p>
                 }
                 else
                 {
-                    <span> · @Loc["ScopeCompany"]</span>
+                    <p class="tm-dash-kpi-footer">@Loc["Kpi_PendingApprovalsFooter_None"]</p>
                 }
-            </RadzenText>
+            </div>
+
+            @* KPI 4: Approved Sales This Month (info glow, users icon) *@
+            <div class="tm-dash-kpi-card tm-dash-kpi-glow-info">
+                <div class="tm-dash-kpi-card-head">
+                    <div class="tm-dash-icon-tile tm-dash-icon-info">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                        </svg>
+                    </div>
+                </div>
+                <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyApprovedSales"]</p>
+                <p class="tm-dash-kpi-value">@FormatDigits(_stats.ThisMonthApprovedSalesCount)</p>
+                <p class="tm-dash-kpi-footer">@Loc["Kpi_MonthlyApprovedSalesFooter"]</p>
+            </div>
         </div>
 
-        @* Total revenue — prominent but not a card *@
-        <div Style="text-align: right;">
-            <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary"
-                        Style="display: block; letter-spacing: .06em; text-transform: uppercase;">
-                @Loc["TotalRevenue"]
-            </RadzenText>
-            <span Style="font-size: 1.9rem; font-weight: 800; color: var(--rz-success);">
-                @FormatMoney(_stats.TotalRevenue)
-            </span>
-            <span Style="font-size: 0.85rem; color: var(--rz-text-secondary-color); margin-left: 3px;">
-                @_stats.Currency
-            </span>
-        </div>
-    </RadzenStack>
+        @* ════════════════════════════════════════
+           CHARTS ROW 1 — Revenue Trend (line, 2/3) + Status Donut (1/3)
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-chart-row tm-dash-chart-row-2-1">
 
-    @* ════════════════════════════════════════
-       TOP ROW — 6-Column Summary Cards Grid
-       ════════════════════════════════════════ *@
-    <RadzenRow Gap="7" Style="margin-bottom: 1rem;">
-        @* Total Sales — the .tm-kpi-total class lets the Tak Light theme
-           override the top-bar color to purple (per user spec). Other themes
-           keep whatever --rz-primary resolves to. *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card tm-kpi-total" Style="border-top: 4px solid var(--rz-primary); height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="receipt_long"
-                                Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @_stats.TotalSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_TotalSales"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
+            @* Revenue Trend (Line) *@
+            <div class="tm-dash-card">
+                <div class="tm-dash-card-head">
+                    <div>
+                        <h3 class="tm-dash-card-title">@Loc["Chart_WeeklyRevenue"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["Chart_WeeklyRevenue_Sub"]</p>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
+                            <span style="width:10px; height:10px; border-radius:2px; background:#2A9D7E;"></span>
+                            @Loc["Chart_WeeklyLegend_This"]
+                        </div>
+                        <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
+                            <span style="width:10px; height:10px; border-radius:2px; background:rgba(212, 175, 55, 0.6);"></span>
+                            @Loc["Chart_WeeklyLegend_Last"]
+                        </div>
+                    </div>
+                </div>
+                <div class="tm-dash-chart-canvas-wrap tall">
+                    <canvas id="tm-dash-revenue-chart"></canvas>
+                </div>
+                <div class="tm-dash-chart-footer">
+                    <div>
+                        <p class="tm-dash-chart-footer-label">@Loc["Chart_WeeklyAvg"]</p>
+                        <p class="tm-dash-chart-footer-value">@FormatMoneyShort(WeeklyAverage) @_stats.DisplayCurrency</p>
+                    </div>
+                    <div>
+                        <p class="tm-dash-chart-footer-label">@Loc["Chart_WeeklyMax"]</p>
+                        <p class="tm-dash-chart-footer-value gold">@FormatMoneyShort(WeeklyMax) @_stats.DisplayCurrency</p>
+                    </div>
+                    <div>
+                        <p class="tm-dash-chart-footer-label">@Loc["Chart_WeeklyGrowth"]</p>
+                        <p class="tm-dash-chart-footer-value green">@FormatPercent(WeeklyGrowthPct, 1)</p>
+                    </div>
+                </div>
+            </div>
 
-        @* Draft *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-info); height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="edit_note"
-                                Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @_stats.DraftSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_Draft"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
-
-        @* Pending *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-warning); height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="hourglass_empty"
-                                Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @_stats.PendingSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_Pending"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
-
-        @* Approved *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-success); height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="check_circle"
-                                Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @_stats.ApprovedSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_Approved"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
-
-        @* Cancelled *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid var(--rz-danger); height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="cancel"
-                                Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @_stats.CancelledSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_Cancelled"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
-
-        @* Invoiced — replaces the previous "Active Customers" card per user
-           spec. The Invoiced count is sourced from the donut chart's
-           StatusBreakdown (computed by the dashboard handler — one row per
-           SaleStatus value present in scope). If no sales are in Invoiced
-           status, the count falls back to 0.
-
-           The border-top color #14B8A6 (teal) MATCHES the Invoiced donut
-           slice color (see GetStatusColor("Invoiced") below) — so the card
-           and the chart slice are visually cross-referenceable, just like
-           the other 4 status cards (Draft/Pending/Approved/Cancelled). *@
-        <RadzenColumn Size="12" SizeMD="6" SizeLG="2">
-            <RadzenCard class="summary-card tm-kpi-card" Style="border-top: 4px solid #14B8A6; height: 100%;">
-                <RadzenStack Gap="0.4rem">
-                    <RadzenIcon Icon="request_quote" Style="font-size: 1.5rem;" />
-                    <span class="stat-value">
-                        @InvoicedSalesCount
-                    </span>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                        @Loc["Kpi_Invoiced"]
-                    </RadzenText>
-                </RadzenStack>
-            </RadzenCard>
-        </RadzenColumn>
-    </RadzenRow>
-
-    @* ════════════════════════════════════════
-       MIDDLE SECTION — Split Layout 9/3
-       ════════════════════════════════════════ *@
-    <RadzenRow Gap="3" class="mb-4">
-        @* Left Column (Size 9) — Revenue Charts *@
-        <RadzenColumn Size="12" SizeLG="9">
-            <RadzenStack Gap="3">
-                @* 5-Year Revenue Distribution Pie *@
-                <RadzenCard Style="height: 400px;">
-                    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H5" class="mb-0">
-                        @Loc["Chart_5YearPie"]
-                    </RadzenText>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary"
-                                Style="display: block; margin-bottom: 0.5rem;">
-                        @(DateTime.Now.Year - 4)–@DateTime.Now.Year
-                        · @(_stats.IsEmployeeScoped ? Loc["ChartLegend_Employee"] : Loc["ChartLegend_All"])
-                        · @Loc["ChartLegend_ExcludingCancelled"]
-                    </RadzenText>
-
-                    @if (_stats.YearlyData.All(y => y.TotalAmount == 0))
+            @* Status Donut *@
+            <div class="tm-dash-card">
+                <div class="tm-dash-card-head">
+                    <div>
+                        <h3 class="tm-dash-card-title">@Loc["Chart_StatusDonut"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["Chart_StatusDonut_Sub"]</p>
+                    </div>
+                </div>
+                <div class="tm-dash-chart-canvas-wrap short">
+                    <canvas id="tm-dash-status-donut"></canvas>
+                    <div class="tm-dash-donut-center">
+                        <p class="tm-dash-donut-center-value">@FormatDigits(TotalOrdersCount)</p>
+                        <p class="tm-dash-donut-center-label">@Loc["Chart_StatusDonut_Total"]</p>
+                    </div>
+                </div>
+                <div class="tm-dash-chart-legend">
+                    @foreach (var status in _stats.StatusBreakdown)
                     {
-                        <RadzenStack AlignItems="AlignItems.Center"
-                                     JustifyContent="JustifyContent.Center"
-                                     Style="height: 300px;" Gap="0.5rem">
-                            <RadzenIcon Icon="donut_large"
-                                        Style="font-size: 13rem; color: var(--rz-text-secondary-color);" />
-                            <RadzenText ThemeColor="TextColor.Secondary">@Loc["Empty_Revenue"]</RadzenText>
-                        </RadzenStack>
+                        <div class="tm-dash-chart-legend-row">
+                            <span class="tm-dash-chart-legend-name">
+                                <span class="tm-dash-status-dot" style="background:@(StatusColor(status.Status));"></span>
+                                @StatusLocalizedName(status.Status)
+                            </span>
+                            <span class="tm-dash-chart-legend-value">
+                                @FormatDigits(status.Count) (@FormatPercent(StatusPercent(status.Count), 0))
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ════════════════════════════════════════
+           CHARTS ROW 2 — Top Products Bar (2/3) + Category Pie (1/3)
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-chart-row tm-dash-chart-row-2-1">
+
+            @* Top Products (Bar) *@
+            <div class="tm-dash-card">
+                <div class="tm-dash-card-head">
+                    <div>
+                        <h3 class="tm-dash-card-title">@Loc["Chart_TopProducts"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["Chart_TopProducts_Sub"]</p>
+                    </div>
+                    <a href="/Admin/Products" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
+                        @Loc["Chart_ViewAll"]
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </a>
+                </div>
+                <div class="tm-dash-chart-canvas-wrap tall" style="height:288px;">
+                    <canvas id="tm-dash-top-products-chart"></canvas>
+                </div>
+            </div>
+
+            @* Category Pie *@
+            <div class="tm-dash-card">
+                <div class="tm-dash-card-head">
+                    <div>
+                        <h3 class="tm-dash-card-title">@Loc["Chart_CategoryPie"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["Chart_CategoryPie_Sub"]</p>
+                    </div>
+                </div>
+                <div class="tm-dash-chart-canvas-wrap short">
+                    <canvas id="tm-dash-category-pie"></canvas>
+                </div>
+                <div class="tm-dash-chart-legend">
+                    @for (var i = 0; i < _stats.TopCategories.Count; i++)
+                    {
+                        var cat = _stats.TopCategories[i];
+                        var color = CategoryColor(i);
+                        <div class="tm-dash-chart-legend-row">
+                            <span class="tm-dash-chart-legend-name">
+                                <span class="tm-dash-status-dot" style="background:@color;"></span>
+                                @cat.CategoryName
+                            </span>
+                            <span class="tm-dash-chart-legend-value">
+                                @FormatPercent(CategoryPercent(cat.SalesCount), 0)
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ════════════════════════════════════════
+           BOTTOM ROW — Recent Orders (2/3) + Top Employees (1/3)
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-chart-row tm-dash-chart-row-2-1">
+
+            @* Recent Orders table *@
+            <div class="tm-dash-card" style="padding:0; overflow:hidden;">
+                <div style="padding:1.25rem; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--tm-border, rgba(255,255,255,0.05));">
+                    <div>
+                        <h3 class="tm-dash-card-title">@Loc["Orders_Recent"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["Orders_Recent_Sub"]</p>
+                    </div>
+                    <a href="/Sales" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
+                        @Loc["Chart_ViewAll"]
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </a>
+                </div>
+                <div class="tm-dash-table-wrap">
+                    @if (_stats.RecentOrders.Count == 0)
+                    {
+                        <div class="tm-dash-empty" style="padding:2rem;">@Loc["Orders_Empty"]</div>
                     }
                     else
                     {
-                        <RadzenChart Style="height: 310px;">
-                            <RadzenPieSeries Data="@_stats.YearlyData.Where(y => y.TotalAmount > 0).ToList()"
-                                             Title="@Loc["ChartLegend_Revenue"]"
-                                             CategoryProperty="YearLabel"
-                                             ValueProperty="TotalAmount">
-                            </RadzenPieSeries>
-                            <RadzenLegend Position="LegendPosition.Bottom" />
-                        </RadzenChart>
+                        <table class="tm-dash-table">
+                            <thead>
+                                <tr>
+                                    <th>@Loc["Orders_Col_Number"]</th>
+                                    <th>@Loc["Orders_Col_Customer"]</th>
+                                    <th>@Loc["Orders_Col_Product"]</th>
+                                    <th>@Loc["Orders_Col_Amount"]</th>
+                                    <th>@Loc["Orders_Col_Time"]</th>
+                                    <th>@Loc["Orders_Col_Status"]</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var order in _stats.RecentOrders)
+                                {
+                                    <tr>
+                                        <td class="tm-dash-sale-number">#@order.SaleNumber</td>
+                                        <td>
+                                            <div class="tm-dash-customer-cell">
+                                                <div class="tm-dash-avatar-sm"
+                                                     style="background:@(AvatarBackground(order.CustomerName));
+                                                    color:@(AvatarTextColor(order.CustomerName));">
+                                                    @GetInitial(order.CustomerName)
+                                                </div>
+                                                <span class="tm-dash-customer-name">@order.CustomerName</span>
+                                            </div>
+                                        </td>
+                                        <td class="tm-dash-product-cell">@order.ProductSummary</td>
+                                        <td class="tm-dash-amount-cell">
+                                            @FormatMoney(order.TotalAmount)
+                                        </td>
+                                        <td class="tm-dash-time-cell">@FormatRelativeTime(order.SubmittedAtUtc)</td>
+                                        <td>
+                                            <span class="tm-dash-status-badge @StatusBadgeClass(order.Status)">
+                                                <span class="tm-dash-status-dot" style="background:@StatusColor(order.Status);"></span>
+                                                @StatusLocalizedName(order.Status)
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     }
-                </RadzenCard>
+                </div>
+            </div>
 
-                @* Year-over-Year Revenue Column *@
-                <RadzenCard Style="height: 400px;">
-                    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H5" class="mb-0">
-                        @Loc["Chart_YearColumn"]
-                    </RadzenText>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary"
-                                Style="display: block; margin-bottom: 0.5rem;">
-                        @Loc["Chart_Last5Years"] · @_stats.Currency · @Loc["ChartLegend_ExcludingCancelled"]
-                    </RadzenText>
-                    <RadzenChart Style="height: 310px;">
-                        <RadzenColumnSeries Data="@_stats.YearlyData"
-                                            Title="@(_stats.Currency)"
-                                            CategoryProperty="YearLabel"
-                                            ValueProperty="TotalAmount">
-                        </RadzenColumnSeries>
-                        <RadzenCategoryAxis Padding="20" />
-                        <RadzenValueAxis FormatString="{0:N0}">
-                            <RadzenGridLines Visible="true" />
-                        </RadzenValueAxis>
-                        <RadzenLegend Position="LegendPosition.Top" />
-                    </RadzenChart>
-                </RadzenCard>
-
-                @* Monthly Revenue Line Chart *@
-                <RadzenCard>
-                    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H5" class="mb-0">
-                        @Loc["Chart_MonthlyLine"] — @DateTime.Now.Year
-                    </RadzenText>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary"
-                                Style="display: block; margin-bottom: 0.5rem;">
-                        @_stats.Currency · @Loc["ChartLegend_ExcludingCancelled"] ·
-                        @(_stats.IsEmployeeScoped ? Loc["ChartLegend_EmployeeSales"] : Loc["ChartLegend_AllSellers"])
-                    </RadzenText>
-                    <RadzenChart Style="height: 270px;">
-                        <RadzenLineSeries Data="@_stats.CurrentYearMonthlyData"
-                                          Title="@(_stats.Currency)"
-                                          CategoryProperty="MonthLabel"
-                                          ValueProperty="TotalAmount">
-                            <RadzenSeriesDataLabels Visible="false" />
-                            <RadzenMarkers MarkerType="MarkerType.Circle" />
-                        </RadzenLineSeries>
-                        <RadzenCategoryAxis Padding="20" />
-                        <RadzenValueAxis FormatString="{0:N0}">
-                            <RadzenGridLines Visible="true" />
-                        </RadzenValueAxis>
-                        <RadzenLegend Position="LegendPosition.Top" />
-                    </RadzenChart>
-                </RadzenCard>
-            </RadzenStack>
-        </RadzenColumn>
-
-        @* Right Column (Size 3) — Stacked Charts Vertically *@
-        <RadzenColumn Size="12" SizeLG="3">
-            <RadzenStack Gap="3">
-                @* Sales by Status Donut (Top) *@
-                <RadzenCard Style="height: 400px;">
-                    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H5" class="mb-0">
-                        @Loc["Chart_StatusDonut"]
-                    </RadzenText>
-                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary"
-                                Style="display: block;">
-                        @Loc["Chart_StatusSubtitle"]
-                    </RadzenText>
-                    @if (!_stats.StatusBreakdown.Any())
-                    {
-                        <RadzenStack AlignItems="AlignItems.Center"
-                                     JustifyContent="JustifyContent.Center"
-                                     Style="height: 300px;" Gap="0.5rem">
-                            <RadzenIcon Icon="pie_chart"
-                                        Style="font-size: 13rem; color: var(--rz-text-secondary-color);" />
-                            <RadzenText ThemeColor="TextColor.Secondary">@Loc["Empty_Sales"]</RadzenText>
-                        </RadzenStack>
-                    }
-                    else
-                    {
-                        <RadzenChart class="status-chart"
-                                     Style="height: 260px;">
-                            @* Fills — per-slice colors matching the KPI card border-tops:
-                               Draft=blue(info), Pending=orange(warning),
-                               Approved=green(success), Invoiced=teal,
-                               Cancelled=red(danger).
-                               This makes the donut slices visually match the
-                               card accents so the user can cross-reference at
-                               a glance (e.g. red slice = cancelled = red card top). *@
-                            <RadzenDonutSeries Data="@_stats.StatusBreakdown"
-                                               Title="@Loc["ChartLegend_Count"]"
-                                               CategoryProperty="Status"
-                                               ValueProperty="Count"
-                                               Fills="@(_stats.StatusBreakdown.Select(s => GetStatusColor(s.Status)).ToList())">
-                            </RadzenDonutSeries>
-                            <RadzenLegend Position="LegendPosition.Bottom" />
-                        </RadzenChart>
-                    }
-                </RadzenCard>
-
-                @* Quick Actions (Bottom) *@
-                <RadzenCard>
-                    <RadzenText TextStyle="TextStyle.H6" class="mb-3">@Loc["QuickActions"]</RadzenText>
-                    <RadzenStack Gap="4">
-                        @* Browse Products — available to all staff (everyone except ReadOnly can shop;
-                           ReadOnly sees the catalog read-only too — clicking just navigates, no
-                           AddToCart since that button is hidden via AuthorizeView in MainLayout). *@
-                        <div class="action-tile rz-panelmenu-item"
-                             @onclick="@(() => Navigation.NavigateTo("/Products"))">
-                            <RadzenStack Gap="0.4rem">
-                                <RadzenIcon Icon="inventory_2"
-                                            Style="color: var(--rz-primary); font-size: 1.75rem;" />
-                                <RadzenText TextStyle="TextStyle.Subtitle2">@Loc["Action_BrowseProducts"]</RadzenText>
-                                <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                                    @Loc["Action_BrowseProducts_Desc"]
-                                </RadzenText>
-                            </RadzenStack>
-                        </div>
-
-                        @* View My Sales — everyone has order history (customers see their own purchases;
-                           staff see all sales they have visibility into). *@
-                        <div class="action-tile rz-panelmenu-item"
-                             @onclick="@(() => Navigation.NavigateTo("/Sales"))">
-                            <RadzenStack Gap="0.4rem">
-                                <RadzenIcon Icon="receipt_long"
-                                            Style="color: var(--rz-success); font-size: 1.75rem;" />
-                                <RadzenText TextStyle="TextStyle.Subtitle2">@Loc["Action_ViewSales"]</RadzenText>
-                                <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                                    @Loc["Action_ViewSales_Desc"]
-                                </RadzenText>
-                            </RadzenStack>
-                        </div>
-
-                        @* Manage Products — staff only (Admin/Manager/Employee). Hidden from
-                           Customer/ReadOnly per roadmap Section 12.7 (hide, don't disable). *@
-                        <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                            <div class="action-tile rz-panelmenu-item"
-                                 @onclick="@(() => Navigation.NavigateTo("/Admin/Products"))">
-                                <RadzenStack Gap="0.4rem">
-                                    <RadzenIcon Icon="inventory"
-                                                Style="color: var(--rz-info); font-size: 1.75rem;" />
-                                    <RadzenText TextStyle="TextStyle.Subtitle2">@Loc["Action_ManageProducts"]</RadzenText>
-                                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                                        @Loc["Action_ManageProducts_Desc"]
-                                    </RadzenText>
-                                </RadzenStack>
+            @* Top Employees card *@
+            <div class="tm-dash-card">
+                <div class="tm-dash-card-head" style="margin-bottom:1rem;">
+                    <div>
+                        <h3 class="tm-dash-card-title" style="font-size:0.875rem;">@Loc["TopEmployees_Title"]</h3>
+                        <p class="tm-dash-card-subtitle">@Loc["TopEmployees_Sub"]</p>
+                    </div>
+                </div>
+                @if (_stats.TopEmployees.Count == 0)
+                {
+                    <div class="tm-dash-empty">@Loc["TopEmployees_Empty"]</div>
+                }
+                else
+                {
+                    <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                        @foreach (var emp in _stats.TopEmployees)
+                        {
+                            <div class="tm-dash-employee-row">
+                                <div class="tm-dash-employee-avatar-wrap">
+                                    <div class="tm-dash-employee-avatar rank-@emp.Rank">
+                                        @GetInitial(emp.FullName)
+                                    </div>
+                                    <span class="tm-dash-employee-rank-badge rank-@emp.Rank">@FormatDigits(emp.Rank)</span>
+                                </div>
+                                <div class="tm-dash-employee-info">
+                                    <p class="tm-dash-employee-name">@emp.FullName</p>
+                                    <p class="tm-dash-employee-group">@(string.IsNullOrEmpty(emp.GroupName) ? "—" : emp.GroupName)</p>
+                                </div>
+                                <div class="tm-dash-employee-amount">
+                                    <p class="tm-dash-employee-amount-value rank-@emp.Rank">@FormatMoneyShort(emp.TotalAmount)</p>
+                                    <p class="tm-dash-employee-amount-label">@_stats.DisplayCurrency</p>
+                                </div>
                             </div>
-                        </AuthorizeView>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
 
-                        @* User Management — Admin + Manager only (per roadmap Section 12.6). *@
-                        <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager)">
-                            <div class="action-tile rz-panelmenu-item"
-                                 @onclick="@(() => Navigation.NavigateTo("/Admin/Users"))">
-                                <RadzenStack Gap="0.4rem">
-                                    <RadzenIcon Icon="manage_accounts"
-                                                Style="color: var(--rz-info); font-size: 1.75rem;" />
-                                    <RadzenText TextStyle="TextStyle.Subtitle2">@Loc["Action_ManageUsers"]</RadzenText>
-                                    <RadzenText TextStyle="TextStyle.Caption" ThemeColor="TextColor.Secondary">
-                                        @Loc["Action_ManageUsers_Desc"]
-                                    </RadzenText>
-                                </RadzenStack>
-                            </div>
-                        </AuthorizeView>
-                    </RadzenStack>
-                </RadzenCard>
-            </RadzenStack>
-        </RadzenColumn>
-    </RadzenRow>
+        @* ════════════════════════════════════════
+           QUICK ACCESS ROW — Settings + Users only
+           (مدیریت مالی and گزارش فروش REMOVED per user spec)
+           ════════════════════════════════════════ *@
+        <div class="tm-dash-quick-grid">
+            <a href="/Settings" class="tm-dash-quick-card">
+                <div class="tm-dash-icon-tile tm-dash-icon-warn">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <p class="tm-dash-quick-title">@Loc["Quick_Settings"]</p>
+                    <p class="tm-dash-quick-desc">@Loc["Quick_Settings_Desc"]</p>
+                </div>
+            </a>
+
+            <a href="/Admin/Users" class="tm-dash-quick-card">
+                <div class="tm-dash-icon-tile tm-dash-icon-info">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <p class="tm-dash-quick-title">@Loc["Quick_Users"]</p>
+                    <p class="tm-dash-quick-desc">@Loc["Quick_Users_Desc"]</p>
+                </div>
+            </a>
+        </div>
+
+    </div>
 }
 
 @code {
-    [CascadingParameter]
-    private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
-
     private DashboardStatsDto? _stats;
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
-    /// <summary>
-    /// Number of sales currently in <c>SaleStatus.Invoiced</c> status, within
-    /// the caller's scope. Sourced from <c>_stats.StatusBreakdown</c> (the
-    /// same data the donut chart binds to) — the dashboard handler emits one
-    /// <c>StatusCountDto</c> per status value present in scope, so we just
-    /// look up the "Invoiced" row and fall back to 0 if no sales are in
-    /// that status (e.g. an Employee-scoped dashboard with no invoiced sales
-    /// they personally approved).
-    ///
-    /// WHY NOT A DEDICATED DTO FIELD: the handler already produces the
-    /// StatusBreakdown list for the donut chart — adding a separate
-    /// <c>InvoicedSalesCount</c> property to <c>DashboardStatsDto</c> would
-    /// be redundant. The other 4 status cards (Draft, Pending, Approved,
-    /// Cancelled) DO have dedicated fields because they pre-date the
-    /// StatusBreakdown donut (added in task 7.2). Adding Invoiced directly
-    /// to the breakdown lookup keeps this card's data source consistent
-    /// with the donut's — they can never drift apart.
-    /// </summary>
-    private int InvoicedSalesCount =>
-        _stats?.StatusBreakdown?.FirstOrDefault(s => s.Status == "Invoiced")?.Count ?? 0;
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
-        // ------------------------------------------------------------------
-        // Defense-in-depth role check. The Dashboard route is [Authorize]
-        // (any authenticated user can hit it), but per roadmap Section 12.8
-        // Customers should NEVER see the dashboard — they redirect to
-        // /Products at login time. If a Customer somehow lands here (e.g.
-        // types "/" into the URL bar), bounce them to /Account/AccessDenied
-        // with forceLoad so the redirect takes effect cleanly.
-        // ------------------------------------------------------------------
-        var authState = await AuthStateTask;
-        var user = authState.User;
-
-        if (user.Identity?.IsAuthenticated != true)
-        {
-            // Shouldn't happen ([Authorize] would have caught this), but
-            // defense-in-depth: redirect to login.
-            Navigation.NavigateTo("/Account/Login", forceLoad: true);
-            return;
-        }
-
-        if (user.IsInRole(Roles.Customer))
-        {
-            Navigation.NavigateTo("/Account/AccessDenied", forceLoad: true);
-            return;
-        }
-
-        // ------------------------------------------------------------------
-        // Build the role list to pass into the query. The handler uses this
-        // to decide between the AllSales spec (Admin/Manager/ReadOnly) and
-        // the SaleByApprover spec (Employee).
-        // ------------------------------------------------------------------
-        var roles = new List<string>();
-        if (user.IsInRole(Roles.Admin)) roles.Add(Roles.Admin);
-        if (user.IsInRole(Roles.Manager)) roles.Add(Roles.Manager);
-        if (user.IsInRole(Roles.Employee)) roles.Add(Roles.Employee);
-        if (user.IsInRole(Roles.ReadOnly)) roles.Add(Roles.ReadOnly);
-        if (user.IsInRole(Roles.Customer)) roles.Add(Roles.Customer);
-
-        await LoadStatsAsync(roles);
-    }
-
-    private async Task LoadStatsAsync(IReadOnlyList<string> roles)
-    {
-        _isLoading = true;
-        _loadError = string.Empty;
-
         try
         {
+            _isLoading = true;
+
+            // Build the role list from the AuthenticationState — ICurrentUserService
+            // exposes IsInRole(string) but not the full role list, so we read it
+            // from the ClaimsPrincipal directly. The handler uses this list to
+            // decide between the AllSales spec (Admin/Manager/ReadOnly) and the
+            // SaleByApprover spec (Employee).
+            var authState = await AuthStateTask;
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                // Defense-in-depth — [Authorize] should have caught this.
+                Navigation.NavigateTo("/Account/Login", forceLoad: true);
+                return;
+            }
+
+            var roles = new List<string>();
+            if (user.IsInRole(Roles.Admin)) roles.Add(Roles.Admin);
+            if (user.IsInRole(Roles.Manager)) roles.Add(Roles.Manager);
+            if (user.IsInRole(Roles.Employee)) roles.Add(Roles.Employee);
+            if (user.IsInRole(Roles.ReadOnly)) roles.Add(Roles.ReadOnly);
+            if (user.IsInRole(Roles.Customer)) roles.Add(Roles.Customer);
+
             var query = new GetDashboardStatsQuery
             {
                 RequestedByUserId = CurrentUser.UserId,
@@ -599,9 +529,6 @@ else if (_stats is not null)
         }
         catch (Exception)
         {
-            // Defensive: any unexpected error → generic message. Don't
-            // leak exception details to the user (could expose DB schema
-            // or other sensitive info).
             _loadError = Loc["Error_Unexpected"];
         }
         finally
@@ -610,48 +537,445 @@ else if (_stats is not null)
         }
     }
 
-    /// <summary>
-    /// Formats a money amount for compact display: 1.2K, 3.4M, 5.6B.
-    /// Used in the "Total Revenue" header — the KPI cards show raw counts
-    /// (no formatting), but revenue is usually a large number that benefits
-    /// from abbreviation.
-    /// </summary>
-    private static string FormatMoney(decimal amount)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (amount >= 1_000_000_000m) return $"{amount / 1_000_000_000m:F1}B";
-        if (amount >= 1_000_000m) return $"{amount / 1_000_000m:F1}M";
-        if (amount >= 1_000m) return $"{amount / 1_000m:F1}K";
-        return amount.ToString("N0");
+        if (!firstRender || _stats is null) return;
+
+        // Pass the dashboard data + localized labels to dashboard.js so it
+        // can initialize all 4 charts. We pass a plain anonymous object —
+        // System.Text.Json serializes it as JSON for the JS side.
+        var chartData = new
+        {
+            isToman = _stats.IsToman,
+            displayCurrency = _stats.DisplayCurrency,
+
+            thisWeekRevenue = _stats.ThisWeekRevenue,
+            lastWeekRevenue = _stats.LastWeekRevenue,
+            statusBreakdown = _stats.StatusBreakdown,
+            topProducts = _stats.TopProducts,
+            topCategories = _stats.TopCategories,
+
+            // Localized labels for chart legends + tooltips
+            labelThisWeek = Loc["Chart_WeeklyLegend_This"],
+            labelLastWeek = Loc["Chart_WeeklyLegend_Last"],
+            labelApproved = Loc["Status_Approved"],
+            labelShipped = Loc["Status_Shipped"],
+            labelPending = Loc["Status_Pending"],
+            labelCancelled = Loc["Status_Cancelled"],
+            labelDraft = Loc["Status_Draft"],
+            labelOrdersUnit = Loc["Status_OrdersUnit"],
+            labelSalesCount = Loc["Chart_TopProducts"],
+            labelSoldUnit = Loc["Status_SoldUnit"]
+        };
+
+        try
+        {
+            await JS.InvokeVoidAsync("takDashboard.render", chartData);
+        }
+        catch
+        {
+            // Non-fatal — charts just don't render, but the rest of the
+            // dashboard still works. Usually means Chart.js failed to load
+            // (network issue) or the canvas elements aren't in the DOM yet.
+        }
+    }
+
+    // ── Helpers for formatting + display ────────────────────────────────
+
+    /// <summary>
+    /// Time-of-day greeting label for the dashboard header.
+    ///
+    /// Picks one of 4 greeting keys based on the SERVER's local hour:
+    ///   00:00–04:59 → Greeting_LateNight  ("شب بخیر" / "Good night")
+    ///   05:00–11:59 → Greeting_Morning    ("صبح بخیر" / "Good morning")
+    ///   12:00–16:59 → Greeting_Afternoon  ("ظهر بخیر" / "Good afternoon")
+    ///   17:00–23:59 → Greeting_Evening    ("عصر بخیر" / "Good evening")
+    ///
+    /// The greeting is prefixed with the user's title ("آقای"/"خانم" in
+    /// fa-IR, "Mr."/"Ms." in en-US) based on the Gender claim. Falls back
+    /// to a gender-neutral greeting when the gender is missing.
+    ///
+    /// WHY SERVER TIME: the dashboard is rendered server-side (Blazor SSR),
+    /// so DateTime.Now here is the server's local time. For Tak Makaron
+    /// (Iran-based, single office), this is fine — all users share the
+    /// same office hours. If we ever go multi-timezone, this should switch
+    /// to the user's timezone (read from their profile / browser).
+    /// </summary>
+    private string GreetingLabel
+    {
+        get
+        {
+            var hour = DateTime.Now.Hour;
+            var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
+
+            // Pick the time-of-day key.
+            // Persian convention used here:
+            //   00:00–04:59  → شب بخیر     (LateNight — small hours)
+            //   05:00–11:59  → صبح بخیر    (Morning)
+            //   12:00–16:59  → ظهر بخیر    (Afternoon)
+            //   17:00–19:59  → عصر بخیر    (Evening — early evening)
+            //   20:00–23:59  → شب بخیر     (LateNight — night)
+            // The 20:00 cutoff is important: Persian "شب" starts around 8 PM,
+            // so 10 PM must be "شب بخیر", not "عصر بخیر".
+            var timeKey = hour switch
+            {
+                < 5 => "Greeting_LateNight",
+                < 12 => "Greeting_Morning",
+                < 17 => "Greeting_Afternoon",
+                < 20 => "Greeting_Evening",
+                _ => "Greeting_LateNight"
+            };
+
+            // Pick the title key based on gender.
+            // Gender claim values are "Male" / "Female" (the enum names
+            // written by Login.razor). Null/unknown → neutral (no title).
+            var gender = _stats?.UserGender;
+            var titleKey = gender switch
+            {
+                "Male" => isFa ? "Title_Male" : "Title_Male_En",
+                "Female" => isFa ? "Title_Female" : "Title_Female_En",
+                _ => null
+            };
+
+            // Combine: "<TimeGreeting> <Title>" e.g. "صبح بخیر آقای" or
+            // "Good morning, Mr." (note the en-US key already includes the
+            // trailing period+space so the name follows naturally).
+            if (titleKey is null)
+            {
+                return Loc[timeKey] + " ";
+            }
+            return Loc[timeKey] + " " + Loc[titleKey] + " ";
+        }
     }
 
     /// <summary>
-    /// Maps a SaleStatus name (stringified by the DTO handler) to the hex
-    /// color used for the corresponding KPI card's border-top. This makes
-    /// the donut chart slices visually match the card accents — e.g. the
-    /// "Cancelled" slice is red, matching the red border-top on the
-    /// Cancelled KPI card.
+    /// Formats the "oldest pending sale" age (in minutes) as a localized
+    /// relative-time string for the KPI card 3 footer.
     ///
-    /// WHY HARDCODED HEX (not CSS variables): Radzen charts render slices
-    /// as SVG &lt;path fill="..."&gt; elements. SVG fill attributes do NOT
-    /// resolve CSS custom properties (var(--rz-info)) reliably across
-    /// browsers — the fill would be transparent. So we use the literal hex
-    /// values that the Radzen variables resolve to (defined in
-    /// tak-light.css's :root block).
+    /// Examples (fa-IR): "۵ دقیقه", "۳ ساعت", "۲ روز".
+    /// Examples (en-US): "5 minutes", "3 hours", "2 days".
     ///
-    /// Color mapping:
-    ///   Draft     → #3B82F6  (blue,    matches --rz-info / card border-top)
-    ///   Pending   → #F59E0B  (orange,  matches --rz-warning)
-    ///   Approved  → #16A34A  (green,   matches --rz-success)
-    ///   Invoiced  → #14B8A6  (teal,    distinct from Approved's green)
-    ///   Cancelled → #DC2626  (red,     matches --rz-danger)
+    /// Uses the same buckets as FormatRelativeTime (minutes / hours / days),
+    /// but WITHOUT the "ago" suffix — the footer already has a prefix like
+    /// "قدیمی‌ترین:" / "Oldest:" before this value.
     /// </summary>
-    private static string GetStatusColor(string status) => status switch
+    private string FormatOldestPending(int ageMinutes)
     {
-        "Draft" => "#3B82F6",
-        "Pending" => "#F59E0B",
-        "Approved" => "#16A34A",
-        "Invoiced" => "#14B8A6",
-        "Cancelled" => "#DC2626",
-        _ => "#0E4D3C"  // fallback: tm-green
+        if (ageMinutes < 60)
+        {
+            return FormatDigits(ageMinutes) + " " + Loc["MinutesUnit"];
+        }
+        var hours = ageMinutes / 60;
+        if (hours < 24)
+        {
+            return FormatDigits(hours) + " " + Loc["HoursUnit"];
+        }
+        var days = hours / 24;
+        return FormatDigits(days) + " " + Loc["DaysUnit"];
+    }
+
+    /// <summary>
+    /// Formats a date using the current UI culture's full date format.
+    /// In fa-IR mode this produces a Jalali (Persian) calendar date with
+    /// Persian digits (e.g. "جمعه, ۱۴۰۵/۰۵/۱۶"); in en-US mode it produces
+    /// a Gregorian date with ASCII digits (e.g. "Friday, 2026/08/07").
+    /// </summary>
+    /// <remarks>
+    /// WHY WE EXPLICITLY USE PersianCalendar:
+    /// .NET's fa-IR culture's default DateTimeFormat.Calendar is the
+    /// Gregorian calendar (a long-standing quirk), so
+    /// <c>date.ToString("yyyy/MM/dd", fa-IR)</c> returns the Gregorian year
+    /// (e.g. "2026") — not the Jalali year ("۱۴۰۵"). Even when the digits
+    /// render as Persian, the year is wrong. We therefore pull the Jalali
+    /// components from <see cref="PersianCalendar"/> explicitly, then format
+    /// each component with the current culture so the NativeDigits
+    /// (۰-۹ for fa-IR, 0-9 for en-US) kick in automatically.
+    /// </remarks>
+    private string FormatDate(DateTime date)
+    {
+        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
+        if (!isFa)
+        {
+            return date.ToString("dddd, yyyy/MM/dd", CultureInfo.CurrentCulture);
+        }
+
+        // fa-IR: build the Jalali date string piece by piece so both the
+        // calendar AND the digits are correct.
+        var pc = new PersianCalendar();
+        var dayName = date.ToString("dddd", CultureInfo.CurrentCulture);
+        var year = pc.GetYear(date).ToString("0000", CultureInfo.CurrentCulture);
+        var month = pc.GetMonth(date).ToString("00", CultureInfo.CurrentCulture);
+        var day = pc.GetDayOfMonth(date).ToString("00", CultureInfo.CurrentCulture);
+        return $"{dayName}, {year}/{month}/{day}";
+    }
+
+    /// <summary>
+    /// Formats an amount with thousands separators using the current UI
+    /// culture's number format. In fa-IR mode this produces Persian digits
+    /// + Persian thousands separator (e.g. "۱۴٬۰۰۰"); in en-US mode it
+    /// produces ASCII digits + comma separator (e.g. "14,000"). Used in the
+    /// recent-orders table.
+    /// </summary>
+    private string FormatMoney(decimal amount)
+    {
+        var rounded = Math.Round(amount, 0);
+        return rounded.ToString("N0", CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>
+    /// Formats an amount in millions (e.g. "۲٫۴M" in fa-IR, "2.4M" in en-US)
+    /// for KPI cards and chart footer summaries where large numbers need to
+    /// fit in a small space.
+    /// </summary>
+    private string FormatMoneyShort(decimal amount)
+    {
+        if (amount >= 1_000_000m)
+        {
+            var millions = (amount / 1_000_000m).ToString("0.0", CultureInfo.CurrentCulture);
+            return millions + "M";
+        }
+        if (amount >= 1_000m)
+        {
+            var thousands = (amount / 1_000m).ToString("0.0", CultureInfo.CurrentCulture);
+            return thousands + "K";
+        }
+        return Math.Round(amount, 0).ToString("N0", CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>
+    /// Formats a numeric string using the current UI culture's native
+    /// digits. In fa-IR mode this produces Persian digits (۰-۹); in en-US
+    /// mode it leaves ASCII digits unchanged (0-9). Leaves non-digit
+    /// characters untouched.
+    ///
+    /// WHY: the user asked that ALL numbers in the dashboard follow the
+    /// language rule — Persian digits in Persian mode, English digits in
+    /// English mode. The previous version was hard-coded to always convert
+    /// to Persian digits, which broke the English mode.
+    ///
+    /// HOW: .NET 10's fa-IR culture has NumberFormat.NativeDigits = ۰..۹.
+    /// int.ToString("0", CultureInfo.CurrentCulture) uses those native
+    /// digits. For string inputs (e.g. "0.0"), we parse and re-format so
+    /// the native digits + culture decimal separator are applied.
+    /// </summary>
+    private string FormatDigits(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+
+        // Try to format as a number — this gives us native digits + the
+        // culture's decimal separator for free.
+        if (decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var n))
+        {
+            // Preserve the original precision (e.g. "0.0" stays one decimal).
+            var decimals = value.Contains('.') ? value.Length - value.IndexOf('.') - 1 : 0;
+            var fmt = decimals > 0 ? "0." + new string('0', decimals) : "0";
+            return n.ToString(fmt, CultureInfo.CurrentCulture);
+        }
+
+        // Fallback: leave as-is (shouldn't happen for the inputs we pass).
+        return value;
+    }
+
+    /// <summary>
+    /// Formats an integer using the current UI culture's native digits.
+    /// </summary>
+    private string FormatDigits(int value) =>
+        value.ToString("0", CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Formats a percentage value (already calculated) using the current UI
+    /// culture's digits + decimal separator. Appends the localized percent
+    /// symbol (٪ in fa-IR, % in en-US) so the symbol also follows the culture.
+    /// </summary>
+    private string FormatPercent(decimal pct, int decimals = 1)
+    {
+        var fmt = decimals > 0 ? "0." + new string('0', decimals) : "0";
+        var s = pct.ToString(fmt, CultureInfo.CurrentCulture);
+        // In fa-IR, ٪ (U+066A ARABIC PERCENT SIGN) is the conventional
+        // percent symbol. In en-US, % is standard.
+        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
+        return s + (isFa ? "٪" : "%");
+    }
+
+    // ── Weekly revenue stats (for the line chart footer) ────────────────
+
+    private decimal WeeklyAverage =>
+        _stats?.ThisWeekRevenue.Count > 0
+            ? _stats.ThisWeekRevenue.Average(d => d.TotalAmount)
+            : 0m;
+
+    private decimal WeeklyMax =>
+        _stats?.ThisWeekRevenue.Count > 0
+            ? _stats.ThisWeekRevenue.Max(d => d.TotalAmount)
+            : 0m;
+
+    private decimal WeeklyGrowthPct
+    {
+        get
+        {
+            if (_stats is null) return 0m;
+            var thisTotal = _stats.ThisWeekRevenue.Sum(d => d.TotalAmount);
+            var lastTotal = _stats.LastWeekRevenue.Sum(d => d.TotalAmount);
+            if (lastTotal == 0) return 0m;
+            return ((thisTotal - lastTotal) / lastTotal) * 100m;
+        }
+    }
+
+    // ── Donut chart helpers ──────────────────────────────────────────────
+
+    private int TotalOrdersCount => _stats?.StatusBreakdown.Sum(s => s.Count) ?? 0;
+
+    private int StatusPercent(int count)
+    {
+        var total = TotalOrdersCount;
+        return total > 0 ? (int)Math.Round(count * 100.0 / total) : 0;
+    }
+
+    /// <summary>
+    /// Returns the hex color for a given sale status, matching the HTML
+    /// reference donut chart palette.
+    /// </summary>
+    private string StatusColor(string status) => status switch
+    {
+        "Approved" => "#2A9D7E",
+        "Invoiced" => "#5BA8E8",
+        "Pending" => "#E8A14A",
+        "Cancelled" => "#EF6B6B",
+        "Draft" => "#94A3A0",
+        _ => "#94A3A0"
     };
+
+    /// <summary>
+    /// Returns the CSS class for a status badge in the recent orders table.
+    /// </summary>
+    private string StatusBadgeClass(string status) => status switch
+    {
+        "Approved" => "tm-dash-badge-approved",
+        "Invoiced" => "tm-dash-badge-info",
+        "Pending" => "tm-dash-badge-pending",
+        "Cancelled" => "tm-dash-badge-cancel",
+        "Draft" => "tm-dash-badge-info",
+        _ => "tm-dash-badge-info"
+    };
+
+    /// <summary>
+    /// Returns the localized name for a sale status.
+    /// </summary>
+    private string StatusLocalizedName(string status) => status switch
+    {
+        "Approved" => Loc["Status_Approved"],
+        "Invoiced" => Loc["Status_Delivered"], // Invoiced = delivered/handed over
+        "Pending" => Loc["Status_Pending"],
+        "Cancelled" => Loc["Status_Cancelled"],
+        "Draft" => Loc["Status_Draft"],
+        _ => status
+    };
+
+    // ── Category pie chart helpers ──────────────────────────────────────
+
+    /// <summary>
+    /// Returns the color for the i-th category slice in the pie chart.
+    /// 6 distinct colors — no two are close to each other.
+    /// </summary>
+    private string CategoryColor(int index)
+    {
+        var colors = new[]
+        {
+            "#2A9D7E",  // green
+            "#D4AF37",  // gold
+            "#5BA8E8",  // blue
+            "#E8A14A",  // orange
+            "#9B59B6",  // purple
+            "#EF6B6B"   // red (Others)
+        };
+        return colors[index % colors.Length];
+    }
+
+    private int CategoryPercent(int count)
+    {
+        var total = _stats?.TopCategories.Sum(c => c.SalesCount) ?? 0;
+        return total > 0 ? (int)Math.Round(count * 100.0 / total) : 0;
+    }
+
+    // ── Avatar helpers ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the first character of a name for use as an avatar initial.
+    /// </summary>
+    private string GetInitial(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "؟";
+        return name.Trim().Substring(0, 1);
+    }
+
+    /// <summary>
+    /// Returns a deterministic background color for a customer-name avatar
+    /// (in the recent-orders table). Picks from a small palette based on
+    /// the first character's hash so the same name always gets the same
+    /// color.
+    /// </summary>
+    private string AvatarBackground(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "rgba(255,255,255,0.10)";
+        var palettes = new[]
+        {
+            "rgba(42, 157, 126, 0.20)",
+            "rgba(212, 175, 55, 0.20)",
+            "rgba(91, 168, 232, 0.20)",
+            "rgba(232, 161, 74, 0.20)",
+            "rgba(155, 89, 182, 0.20)",
+            "rgba(239, 107, 107, 0.20)"
+        };
+        var idx = name[0] % palettes.Length;
+        return palettes[idx];
+    }
+
+    private string AvatarTextColor(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "#94A3A0";
+        var palettes = new[]
+        {
+            "#3DBE96",  // green
+            "#E8C547",  // gold
+            "#5BA8E8",  // blue
+            "#E8A14A",  // orange
+            "#9B59B6",  // purple
+            "#EF6B6B"   // red
+        };
+        var idx = name[0] % palettes.Length;
+        return palettes[idx];
+    }
+
+    // ── Relative time formatter ─────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a UTC timestamp as a relative "X minutes ago" / "X hours ago"
+    /// / "X days ago" string, with culture-native digits. Falls back to
+    /// absolute date if older than 7 days.
+    ///
+    /// In fa-IR mode this produces Persian digits (e.g. "۵ دقیقه پیش");
+    /// in en-US mode it produces ASCII digits (e.g. "5 minutes ago").
+    /// </summary>
+    private string FormatRelativeTime(DateTime? submittedAtUtc)
+    {
+        if (submittedAtUtc is null) return "—";
+
+        var now = DateTime.UtcNow;
+        var diff = now - submittedAtUtc.Value;
+
+        if (diff.TotalMinutes < 1) return Loc["JustNow"];
+        if (diff.TotalMinutes < 60)
+            return FormatDigits((int)diff.TotalMinutes) + " " + Loc["MinutesAgo"];
+        if (diff.TotalHours < 24)
+            return FormatDigits((int)diff.TotalHours) + " " + Loc["HoursAgo"];
+        if (diff.TotalDays < 7)
+            return FormatDigits((int)diff.TotalDays) + " " + Loc["DaysAgo"];
+
+        // Fallback for items older than a week: show the absolute Jalali
+        // (fa-IR) or Gregorian (en-US) date, with culture-native digits.
+        // Convert from UTC to local time first so the displayed date matches
+        // what the user expects, then reuse FormatDate for calendar + digit
+        // correctness.
+        return FormatDate(submittedAtUtc.Value.ToLocalTime());
+    }
 }

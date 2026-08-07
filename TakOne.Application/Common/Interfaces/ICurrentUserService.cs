@@ -30,6 +30,14 @@ public interface ICurrentUserService
     string? GroupName { get; }
 
     /// <summary>
+    /// The gender of the authenticated user ("Male" or "Female"), or null if
+    /// not authenticated or the claim is missing. Sourced from the "Gender"
+    /// claim set at login time by Login.razor (which reads the Domain User's
+    /// Gender). Used by the dashboard greeting ("Good morning, Mr./Ms. Smith").
+    /// </summary>
+    string? Gender { get; }
+
+    /// <summary>
     /// Whether a user is currently authenticated.
     /// </summary>
     bool IsAuthenticated { get; }

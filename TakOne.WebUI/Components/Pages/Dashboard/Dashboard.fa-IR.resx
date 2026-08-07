@@ -86,6 +86,42 @@
   <data name="WelcomeBack" xml:space="preserve">
     <value>خوش آمدید،</value>
   </data>
+  <!-- Time-of-day greetings — used by GreetingLabel based on server hour -->
+  <data name="Greeting_Morning" xml:space="preserve">
+    <value>صبح بخیر</value>
+  </data>
+  <data name="Greeting_Afternoon" xml:space="preserve">
+    <value>ظهر بخیر</value>
+  </data>
+  <data name="Greeting_Evening" xml:space="preserve">
+    <value>عصر بخیر</value>
+  </data>
+  <data name="Greeting_LateNight" xml:space="preserve">
+    <value>شب بخیر</value>
+  </data>
+  <!-- Gender titles — used by GreetingLabel based on the Gender claim -->
+  <data name="Title_Male" xml:space="preserve">
+    <value>آقای</value>
+  </data>
+  <data name="Title_Female" xml:space="preserve">
+    <value>خانم</value>
+  </data>
+  <data name="Title_Male_En" xml:space="preserve">
+    <value>Mr.</value>
+  </data>
+  <data name="Title_Female_En" xml:space="preserve">
+    <value>Ms.</value>
+  </data>
+  <!-- Time units — used by FormatOldestPending in the KPI card 3 footer -->
+  <data name="MinutesUnit" xml:space="preserve">
+    <value>دقیقه</value>
+  </data>
+  <data name="HoursUnit" xml:space="preserve">
+    <value>ساعت</value>
+  </data>
+  <data name="DaysUnit" xml:space="preserve">
+    <value>روز</value>
+  </data>
   <data name="ScopeEmployee" xml:space="preserve">
     <value>عملکرد شخصی شما</value>
   </data>
@@ -95,8 +131,43 @@
   <data name="TotalRevenue" xml:space="preserve">
     <value>درآمد کل</value>
   </data>
+  <data name="GreetingSubtitle" xml:space="preserve">
+    <value>خلاصه فعالیت‌های امروز تک‌ماکارون را در ادامه ببینید.</value>
+  </data>
+  <data name="ActivePanel" xml:space="preserve">
+    <value>پنل فعال</value>
+  </data>
 
-  <!-- KPI cards -->
+  <!-- NEW KPI cards (right-to-left in RTL) -->
+  <data name="Kpi_TodayOrders" xml:space="preserve">
+    <value>سفارشات امروز</value>
+  </data>
+  <data name="Kpi_TodayOrdersFooter" xml:space="preserve">
+    <value>سفارش در انتظار تأیید</value>
+  </data>
+  <data name="Kpi_MonthlyEmployeePurchase" xml:space="preserve">
+    <value>مجموع خرید کارکنان در این ماه</value>
+  </data>
+  <data name="Kpi_MonthlyEmployeePurchaseFooter" xml:space="preserve">
+    <value>تعداد کارکنان خریدار در این ماه:</value>
+  </data>
+  <data name="Kpi_PendingApprovals" xml:space="preserve">
+    <value>در انتظار تأیید</value>
+  </data>
+  <data name="Kpi_PendingApprovalsFooter_Prefix" xml:space="preserve">
+    <value>قدیمی‌ترین:</value>
+  </data>
+  <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve">
+    <value>هیچ سفارش در انتظار تأییدی وجود ندارد</value>
+  </data>
+  <data name="Kpi_MonthlyApprovedSales" xml:space="preserve">
+    <value>تعداد فروش های این ماه</value>
+  </data>
+  <data name="Kpi_MonthlyApprovedSalesFooter" xml:space="preserve">
+    <value>تأیید شده در ماه جاری</value>
+  </data>
+
+  <!-- Legacy KPI cards (still used by the role-scoped subtitle / fallback) -->
   <data name="Kpi_TotalSales" xml:space="preserve">
     <value>کل فروش</value>
   </data>
@@ -134,6 +205,144 @@
   </data>
   <data name="Chart_Last5Years" xml:space="preserve">
     <value>۵ سال گذشته</value>
+  </data>
+
+  <!-- NEW chart titles (redesigned dashboard) -->
+  <data name="Chart_WeeklyRevenue" xml:space="preserve">
+    <value>روند درآمد هفتگی</value>
+  </data>
+  <data name="Chart_WeeklyRevenue_Sub" xml:space="preserve">
+    <value>۷ روز گذشته • به تفکیک روز</value>
+  </data>
+  <data name="Chart_WeeklyLegend_This" xml:space="preserve">
+    <value>این هفته</value>
+  </data>
+  <data name="Chart_WeeklyLegend_Last" xml:space="preserve">
+    <value>هفته قبل</value>
+  </data>
+  <data name="Chart_WeeklyAvg" xml:space="preserve">
+    <value>میانگین روزانه</value>
+  </data>
+  <data name="Chart_WeeklyMax" xml:space="preserve">
+    <value>بالاترین روز</value>
+  </data>
+  <data name="Chart_WeeklyGrowth" xml:space="preserve">
+    <value>رشد هفتگی</value>
+  </data>
+  <data name="Chart_StatusDonut_Sub" xml:space="preserve">
+    <value>مجموع ماه جاری</value>
+  </data>
+  <data name="Chart_StatusDonut_Total" xml:space="preserve">
+    <value>کل سفارش‌ها</value>
+  </data>
+  <data name="Chart_TopProducts" xml:space="preserve">
+    <value>پرفروش‌ترین محصولات</value>
+  </data>
+  <data name="Chart_TopProducts_Sub" xml:space="preserve">
+    <value>تعداد فروش • ۳۰ روز گذشته</value>
+  </data>
+  <data name="Chart_CategoryPie" xml:space="preserve">
+    <value>سهم دسته‌بندی‌ها</value>
+  </data>
+  <data name="Chart_CategoryPie_Sub" xml:space="preserve">
+    <value>از کل فروش ماه</value>
+  </data>
+  <data name="Chart_ViewAll" xml:space="preserve">
+    <value>مشاهده همه</value>
+  </data>
+
+  <!-- NEW chart status labels (for donut legend + tooltips) -->
+  <data name="Status_Approved" xml:space="preserve">
+    <value>تأیید شده</value>
+  </data>
+  <data name="Status_Shipped" xml:space="preserve">
+    <value>ارسال شده</value>
+  </data>
+  <data name="Status_Pending" xml:space="preserve">
+    <value>در انتظار</value>
+  </data>
+  <data name="Status_Cancelled" xml:space="preserve">
+    <value>لغو شده</value>
+  </data>
+  <data name="Status_Draft" xml:space="preserve">
+    <value>پیش‌نویس</value>
+  </data>
+  <data name="Status_Delivered" xml:space="preserve">
+    <value>تحویل شده</value>
+  </data>
+  <data name="Status_OrdersUnit" xml:space="preserve">
+    <value>سفارش</value>
+  </data>
+  <data name="Status_SoldUnit" xml:space="preserve">
+    <value>عدد فروخته شده</value>
+  </data>
+
+  <!-- Recent orders table -->
+  <data name="Orders_Recent" xml:space="preserve">
+    <value>آخرین سفارش‌ها</value>
+  </data>
+  <data name="Orders_Recent_Sub" xml:space="preserve">
+    <value>۶ سفارش اخیر سیستم</value>
+  </data>
+  <data name="Orders_Col_Number" xml:space="preserve">
+    <value>شماره سفارش</value>
+  </data>
+  <data name="Orders_Col_Customer" xml:space="preserve">
+    <value>کارمند</value>
+  </data>
+  <data name="Orders_Col_Product" xml:space="preserve">
+    <value>محصول</value>
+  </data>
+  <data name="Orders_Col_Amount" xml:space="preserve">
+    <value>مبلغ</value>
+  </data>
+  <data name="Orders_Col_Time" xml:space="preserve">
+    <value>زمان</value>
+  </data>
+  <data name="Orders_Col_Status" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="Orders_Empty" xml:space="preserve">
+    <value>سفارش اخیری برای نمایش وجود ندارد.</value>
+  </data>
+
+  <!-- Top employees card -->
+  <data name="TopEmployees_Title" xml:space="preserve">
+    <value>کارکنان با بالاترین مبلغ خرید در این ماه</value>
+  </data>
+  <data name="TopEmployees_Sub" xml:space="preserve">
+    <value>این ماه</value>
+  </data>
+  <data name="TopEmployees_Empty" xml:space="preserve">
+    <value>خرید کارکنان در این ماه ثبت نشده است.</value>
+  </data>
+
+  <!-- Quick access cards -->
+  <data name="Quick_Settings" xml:space="preserve">
+    <value>تنظیمات</value>
+  </data>
+  <data name="Quick_Settings_Desc" xml:space="preserve">
+    <value>پیکربندی</value>
+  </data>
+  <data name="Quick_Users" xml:space="preserve">
+    <value>کاربران سیستم</value>
+  </data>
+  <data name="Quick_Users_Desc" xml:space="preserve">
+    <value>مدیریت کاربران</value>
+  </data>
+
+  <!-- Relative time (for the recent-orders table) -->
+  <data name="JustNow" xml:space="preserve">
+    <value>همین حالا</value>
+  </data>
+  <data name="MinutesAgo" xml:space="preserve">
+    <value>دقیقه پیش</value>
+  </data>
+  <data name="HoursAgo" xml:space="preserve">
+    <value>ساعت پیش</value>
+  </data>
+  <data name="DaysAgo" xml:space="preserve">
+    <value>روز پیش</value>
   </data>
 
   <!-- Chart legends -->

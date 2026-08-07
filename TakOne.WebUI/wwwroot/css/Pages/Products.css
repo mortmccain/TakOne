@@ -198,12 +198,20 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        /* The brand block sits inside the sidebar (which always has a dark
+           green background, even in tak-light). The default --tm-green
+           (dark green) text would be invisible against the dark green
+           sidebar background, so we override to a light color via the
+           sidebar-text variable. Non-Tak themes fall back to --rz-text-color. */
+        color: var(--tm-sidebar-text, var(--rz-text-color, #1F2937));
     }
 
     .tm-sidebar-brand .tm-portal-subtitle {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        /* Subtitle uses the muted sidebar text color for hierarchy. */
+        color: var(--tm-sidebar-muted, var(--rz-text-secondary-color, #6B7280));
     }
 
 .tm-portal-icon {

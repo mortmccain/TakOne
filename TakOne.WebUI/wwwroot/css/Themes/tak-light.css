@@ -73,6 +73,16 @@
     --tm-surface-muted: var(--tm-cream);
     --tm-on-primary: #FFFFFF;
     --tm-on-accent: var(--tm-green-dark);
+    /* Sidebar text colors — the sidebar always has a dark green background
+       (even in tak-light), so text on it MUST be light regardless of the
+       body text color. These variables let sidebar.css reference light
+       text without hard-coding, and let non-Tak themes fall back to their
+       own --rz-text-color / --rz-text-secondary-color. */
+    --tm-sidebar-text: #FAF7F0; /* primary sidebar text — warm white */
+    --tm-sidebar-muted: #B8C4C0; /* muted/secondary sidebar text */
+    --tm-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --tm-sidebar-active-bg: rgba(212, 175, 55, 0.18);
+    --tm-sidebar-active-text: #FFFFFF;
     /* Effects */
     --tm-radius-sm: 8px;
     --tm-radius: 12px; /* rounded-xl feel */

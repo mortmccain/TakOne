@@ -64,7 +64,7 @@
 .tm-nav-section-header {
     font-size: 0.625rem; /* 10px */
     font-weight: 600;
-    color: var(--tm-gray, var(--rz-text-secondary-color));
+    color: var(--tm-sidebar-muted, var(--tm-gray, var(--rz-text-secondary-color)));
     opacity: 0.7;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -90,7 +90,7 @@
     gap: 0.75rem;
     padding: 0.625rem 0.875rem;
     border-radius: var(--tm-radius, 0); /* rounded on Tak themes, sharp on others */
-    color: var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));
+    color: var(--tm-sidebar-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
     font-size: 0.875rem; /* 14px */
     font-weight: 500;
     transition: background 0.2s ease, color 0.2s ease;
@@ -110,14 +110,14 @@
 
     /* Hover state — subtle white overlay + brighter text */
     .tm-nav-item:hover {
-        background: rgba(255, 255, 255, 0.04);
-        color: var(--tm-text, var(--rz-text-color, #E8EDE9));
+        background: var(--tm-sidebar-hover-bg, rgba(255, 255, 255, 0.04));
+        color: var(--tm-sidebar-text, var(--tm-text, var(--rz-text-color, #E8EDE9)));
     }
 
-    /* Active state — green gradient background + bright text */
+    /* Active state — green/gold tinted background + bright text */
     .tm-nav-item.active {
-        background: linear-gradient(90deg, rgba(42, 157, 126, 0.18) 0%, rgba(42, 157, 126, 0.04) 100%);
-        color: var(--tm-text, var(--rz-text-color, #E8EDE9));
+        background: var(--tm-sidebar-active-bg, linear-gradient(90deg, rgba(42, 157, 126, 0.18) 0%, rgba(42, 157, 126, 0.04) 100%));
+        color: var(--tm-sidebar-active-text, var(--tm-text, var(--rz-text-color, #E8EDE9)));
     }
 
         /* Active left-border bar — gold, on the right side in RTL (right: 0) */
@@ -163,7 +163,7 @@
    6. SUPPORT CARD — bottom of sidebar
    ==========================================================================
    Matches the HTML reference's support card: green gradient background,
-   gold title, white hours text, and the phone number (55555) as plain text
+   gold title, white hours text, and the phone number (482) as plain text
    (replacing the HTML's "تماس با ما" button per user spec). */
 .tm-support-card {
     position: relative;
@@ -197,10 +197,11 @@
     margin: 0;
     text-align: center;
     letter-spacing: 0.1em;
-    /* The phone number is displayed as Persian digits (۵۵۵۵۵) in the markup.
-       This styling makes it prominent without being a button — per user spec:
-       "should have the number 55555 instead of the تماس با ما button, just
-       a number and not a button." */
+    /* The phone number is rendered through FormatLocalDigits() so it shows
+       Persian digits (۴۸۲) in fa-IR mode and ASCII digits (482) in en-US
+       mode. This styling makes it prominent without being a button — per
+       user spec: "should have the number 482 instead of the تماس با ما
+       button, just a number and not a button." */
 }
 
 /* =============================================================================

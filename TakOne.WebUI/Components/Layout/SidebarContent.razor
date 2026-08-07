@@ -48,6 +48,8 @@
 @inject IStringLocalizer<MainLayout> Localizer
 @inject IStringLocalizer<Products> ProductsLoc
 @using TakOne.WebUI.Components.Pages.Products
+@using System.Globalization
+@implements IDisposable
 
 @* Brand block — same .tm-sidebar-brand as before. The icon is a refresh
    trigger (clicking it force-reloads the current page). *@
@@ -141,16 +143,56 @@
 
 @* ── Support card — bottom of sidebar.
    Per user spec: show "پشتیبانی فنی" + "ساعات پاسخگویی: ۸ تا ۱۷" + the
-   number "55555" as PLAIN TEXT (not a button — the HTML reference had a
+   number "482" as PLAIN TEXT (not a button — the HTML reference had a
    "تماس با ما" button, but the user asked to replace it with just the
-   number 55555). *@
+   number 482).
+
+   DIGIT FORMATTING: the number is rendered through FormatLocalDigits()
+   so it shows Persian digits (۴۸۲) in fa-IR mode and ASCII digits
+   (482) in en-US mode — same rule as all other numbers on the page. *@
 <div class="tm-support-card">
     <p class="tm-support-title">@ProductsLoc["SupportTitle"]</p>
     <p class="tm-support-hours">@ProductsLoc["SupportHours"]</p>
-    <p class="tm-support-phone">۵۵۵۵۵</p>
+    <p class="tm-support-phone">@FormatLocalDigits("482")</p>
 </div>
 
 @code {
+    protected override void OnInitialized()
+    {
+        // Subscribe to navigation events so the sidebar's active state
+        // stays in sync after Blazor enhanced-navigation clicks.
+        //
+        // WHY THIS IS NEEDED:
+        // With InteractiveServer render mode + enhanced navigation, Blazor
+        // patches the DOM with the new server-rendered sidebar HTML after
+        // a click — so visually the new item lights up. BUT the live
+        // interactive SidebarContent component instance is NOT re-rendered
+        // automatically (its OnInitialized/OnParametersSet don't fire again
+        // because the layout component is preserved across navigations).
+        // Its in-memory state still has the OLD active page.
+        //
+        // Later, when anything triggers a re-render in the circuit (a hover
+        // transition, a sibling StateHasChanged, a Radzen update), the
+        // component re-evaluates IsActive(...) with its stale state and
+        // OVERWRITES the patched DOM — putting the highlight back on the
+        // old page. This is exactly the "sometimes it works, sometimes it
+        // doesn't" symptom the user reported.
+        //
+        // Subscribing to LocationChanged + calling StateHasChanged() forces
+        // the component to re-evaluate IsActive(...) with the new URL
+        // immediately after every navigation, so its in-memory state matches
+        // the patched DOM. No more flicker / revert.
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Trigger a re-render so IsActive(...) re-evaluates against the new URL.
+        // StateHasChanged is safe to call from this event handler — Blazor
+        // schedules the render on the circuit's sync context.
+        StateHasChanged();
+    }
+
     /// <summary>
     /// Force-reloads the current page. Triggered by the brand icon at the
     /// top of the sidebar. Uses Navigation.Uri so the refresh works on ANY
@@ -162,16 +204,98 @@
     }
 
     /// <summary>
-    /// Returns true if the given path matches the current page. Used to
+    /// Formats a numeric string (ASCII digits) using the current UI culture's
+    /// native digits. In fa-IR mode this produces Persian digits (۴۸۲); in
+    /// en-US mode it leaves ASCII digits unchanged (482). Used for the
+    /// sidebar support phone number so it follows the same digit rule as the
+    /// rest of the UI.
+    ///
+    /// WHY (instead of hard-coding ۴۸۲): the user asked that ALL numbers in
+    /// the app follow the culture rule — Persian digits in Persian mode,
+    /// English digits in English mode. Hard-coding either form would break
+    /// one of the two cultures.
+    ///
+    /// IMPLEMENTATION: parses the input as an integer and re-formats it with
+    /// CultureInfo.CurrentCulture.NumberFormat.NativeDigits via ToString("0").
+    /// .NET 10's fa-IR culture has NativeDigits = ۰..۹, so this produces
+    /// Persian digits in fa-IR mode. Returns the original string unchanged
+    /// if parsing fails (defensive — should never happen for "482").
+    /// </summary>
+    private string FormatLocalDigits(string value)
+    {
+        if (int.TryParse(value, out var n))
+        {
+            return n.ToString("0", CultureInfo.CurrentCulture);
+        }
+        return value;
+    }
+
+    /// <summary>
+    /// Returns true if the given nav path matches the current page. Used to
     /// apply the .active class to the current page's nav item.
     ///
-    /// Uses Navigation.ToBaseRelativePath to extract just the path portion
-    /// (e.g. "/Admin/Products") from the full URL. Exact match — no prefix
-    /// matching — so "/Products" does NOT activate when on "/Admin/Products".
+    /// MATCHING RULES (more robust than the previous exact-string compare):
+    ///   1. Strip query string and fragment from the current URL
+    ///      (e.g. "/Sales?tab=active" → "/Sales"). Otherwise a query string
+    ///      would silently break the active highlight.
+    ///   2. Trim trailing slash (e.g. "/Sales/" → "/Sales"). Browsers and
+    ///      Blazor sometimes normalize URLs with trailing slashes.
+    ///   3. Case-insensitive compare (paths are case-insensitive on the server).
+    ///   4. For non-root paths, ALSO match sub-routes — e.g. being on
+    ///      "/Sales/{id}" (sale detail) still highlights the "My Sales"
+    ///      nav item. This is done via StartsWith(path + "/").
+    ///   5. For the root path "/", EXACT match only — otherwise every URL
+    ///      would match (since every URL starts with "/").
+    ///
+    /// IMPORTANT: "/Admin/Products" does NOT activate the "/Products" nav
+    /// item, because StartsWith("/Products/") returns false for
+    /// "/Admin/Products". The previous behavior is preserved.
     /// </summary>
     private bool IsActive(string path)
     {
-        var currentPath = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).TrimStart('/');
-        return string.Equals(currentPath, path, StringComparison.OrdinalIgnoreCase);
+        // Extract the relative path (e.g. "Sales" from "https://x/Sales?y=1#z").
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri);
+
+        // Split off query string and fragment — keep only the path portion.
+        // Use OrdinalIndexOf to find '?' or '#' (whichever comes first).
+        var queryStart = relative.IndexOfAny(new[] { '?', '#' });
+        if (queryStart >= 0)
+        {
+            relative = relative.Substring(0, queryStart);
+        }
+
+        // Normalize: ensure leading slash, trim trailing slash (except for root).
+        var currentPath = "/" + relative.TrimStart('/');
+        if (currentPath.Length > 1 && currentPath.EndsWith('/'))
+        {
+            currentPath = currentPath.TrimEnd('/');
+        }
+
+        // Case-insensitive comparison.
+        if (string.Equals(currentPath, path, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Sub-route match for non-root paths only.
+        // "/Sales/abc-123" should highlight "/Sales".
+        // "/Products/abc-123" should highlight "/Products".
+        // "/Admin/Users/abc-123" should highlight "/Admin/Users".
+        // But "/" must NOT prefix-match (otherwise it matches everything).
+        if (path.Length > 1 &&
+            currentPath.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public void Dispose()
+    {
+        // Always unsubscribe to prevent memory leaks if the component is
+        // disposed (e.g. when navigating to a statically-rendered page like
+        // /Account/*, the interactive circuit is torn down).
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }
