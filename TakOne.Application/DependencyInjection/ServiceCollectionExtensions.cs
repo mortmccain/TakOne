@@ -2,6 +2,7 @@
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Middlewares;
 using Wolverine;
 using Wolverine.FluentValidation;
@@ -137,6 +138,27 @@ public static class ServiceCollectionExtensions
         {
             PerformanceMiddleware.SlowRequestThresholdMs = slowThresholdMs.Value;
         }
+
+        // ------------------------------------------------------------------
+        // 3. AUTHORIZATION POLICY VERIFICATION (Issue #08 — fail-closed).
+        //
+        //    Scans this assembly for every command/query type and asserts
+        //    each one has [RequireRoles] or [RequireAuthentication]. If any
+        //    type is missing BOTH attributes, throws InvalidOperationException
+        //    and the app REFUSES TO START.
+        //
+        //    This is the startup-time backstop for the runtime fail-closed
+        //    check in AuthorizationMiddleware. Together they enforce:
+        //      - Startup: missing attribute → app won't launch (developer
+        //        sees the error immediately, with a list of offending types).
+        //      - Runtime: missing attribute → middleware rejects the message
+        //        with Result.Failure (defense-in-depth for dynamically-
+        //        constructed message types that bypass the startup scan).
+        //
+        //    The unit test in TakOne.Application.Tests performs the same
+        //    scan and fails in CI if any type is missing an attribute.
+        // ------------------------------------------------------------------
+        AuthorizationPolicyVerifier.Verify(Assembly.GetExecutingAssembly());
 
         return services;
     }

@@ -7,13 +7,19 @@ using Wolverine;
 namespace TakOne.Application.Common.Middlewares;
 
 /// <summary>
-/// Wolverine middleware that runs BEFORE each command handler. If the command
-/// is decorated with <see cref="RequireRolesAttribute"/>, checks whether the
-/// current user is in at least one of the listed roles. If not, short-circuits
-/// the pipeline and returns a failed Result.
+/// Wolverine middleware that runs BEFORE each command handler. Enforces
+/// the authorization policy declared on the message type via
+/// <see cref="RequireRolesAttribute"/> or
+/// <see cref="RequireAuthenticationAttribute"/>.
 ///
-/// The middleware is opt-in per command via the attribute -- commands without
-/// the attribute skip the role check entirely.
+/// FAIL-CLOSED POLICY (Issue #08):
+///   If a command/query has NEITHER attribute, the middleware REJECTS it
+///   with a <see cref="Result"/> failure. This is the inverted policy from
+///   the original implementation (which was fail-OPEN — commands without
+///   the attribute skipped the check entirely). The
+///   <see cref="AuthorizationPolicyVerifier"/> runs at startup to catch
+///   missing attributes at app-launch time, but this runtime check is the
+///   defense-in-depth backstop.
 /// </summary>
 /// <remarks>
 /// WOLVERINE MIDDLEWARE PARAMETER CONVENTION (CRITICAL):
@@ -77,19 +83,49 @@ public class AuthorizationMiddleware
 
         var messageType = message.GetType();
 
-        var attr = messageType.GetCustomAttribute<RequireRolesAttribute>();
-        if (attr is null)
-            return null; // No role requirement -- let the pipeline continue.
+        var requireRolesAttr = messageType.GetCustomAttribute<RequireRolesAttribute>();
+        var requireAuthAttr = messageType.GetCustomAttribute<RequireAuthenticationAttribute>();
 
+        // --------------------------------------------------------------
+        // FAIL-CLOSED (Issue #08):
+        //   If neither authorization attribute is present, REJECT the
+        //   message. The original implementation returned null here
+        //   (fail-OPEN), which meant any command without the attribute
+        //   was dispatched without any auth check. The
+        //   AuthorizationPolicyVerifier catches this at startup, but
+        //   this runtime check is the defense-in-depth backstop for
+        //   messages that somehow bypass the startup scan (e.g. a
+        //   dynamically-constructed message type).
+        // --------------------------------------------------------------
+        if (requireRolesAttr is null && requireAuthAttr is null)
+        {
+            return Result.Failure(
+                $"Authorization policy missing for {messageType.Name}. " +
+                "Every command/query MUST have [RequireRoles] or [RequireAuthentication]. " +
+                "This is a fail-closed security policy (Issue #08).");
+        }
+
+        // Both attribute types require authentication.
         if (!_currentUser.IsAuthenticated)
             return Result.Failure("Authentication required.");
 
-        // User must be in AT LEAST ONE of the required roles.
-        bool allowed = attr.Roles.Any(r => _currentUser.IsInRole(r));
-        if (!allowed)
-            return Result.Failure(
-                $"You do not have permission to perform this action. " +
-                $"Required role(s): {string.Join(", ", attr.Roles)}.");
+        // [RequireAuthentication] only checks authentication (already done
+        // above) — no role check needed.
+        if (requireAuthAttr is not null && requireRolesAttr is null)
+            return null; // Authenticated — continue to the handler.
+
+        // [RequireRoles] checks that the user is in AT LEAST ONE of the
+        // required roles.
+        if (requireRolesAttr is not null)
+        {
+            bool allowed = requireRolesAttr.Roles.Any(r => _currentUser.IsInRole(r));
+            if (!allowed)
+            {
+                return Result.Failure(
+                    $"You do not have permission to perform this action. " +
+                    $"Required role(s): {string.Join(", ", requireRolesAttr.Roles)}.");
+            }
+        }
 
         return null; // Continue to the handler.
     }

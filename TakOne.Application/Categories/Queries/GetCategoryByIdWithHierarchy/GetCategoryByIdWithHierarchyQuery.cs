@@ -1,5 +1,5 @@
 ﻿using TakOne.Application.Categories.DTOs;
-using TakOne.SharedKernel.Common;
+using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy;
 
@@ -17,6 +17,7 @@ namespace TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy;
 /// page can show them; the shop page uses <c>GetActiveCategories</c> instead,
 /// which filters inactive out at the repository level.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetCategoryByIdWithHierarchyQuery
 {
     public Guid CategoryId { get; init; }

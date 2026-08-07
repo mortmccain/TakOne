@@ -40,7 +40,7 @@
         },
         'tak-dark': {
             base: 'standard-dark',                             // Radzen dark theme
-            override: '/css/themes/tak-dark.css?v=2'            // Tak Dark palette + utilities
+            override: '/css/Themes/tak-dark.css?v=2'            // Tak Dark palette + utilities
             // ?v=2 cache-bust: Phase 6.3 — added explicit --rz-grid-* background-color
             // overrides (the purple-tinted --rz-base-800/900 from standard-dark.css
             // was leaking through to the admin-users data grid). Also replaced

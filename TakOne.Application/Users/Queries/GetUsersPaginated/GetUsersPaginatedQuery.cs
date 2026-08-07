@@ -1,4 +1,5 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Application.Common.Authorization;
+using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Users.Queries.GetUsersPaginated;
 
@@ -26,6 +27,7 @@ namespace TakOne.Application.Users.Queries.GetUsersPaginated;
 ///   - <see cref="IsActive"/>: tristate. Null = both, true = active only,
 ///     false = inactive only.
 /// </summary>
+[RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetUsersPaginatedQuery
 {
     public int PageNumber { get; init; } = 1;

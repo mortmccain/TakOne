@@ -23,6 +23,7 @@ namespace TakOne.Application.Sales.Queries.GetSaleById;
 ///   dispatches it through the same pipeline (auth, logging, performance),
 ///   but no outbox entry is written because nothing changed.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetSaleByIdQuery
 {
     public Guid SaleId { get; init; }

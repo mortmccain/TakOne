@@ -12,8 +12,8 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260805105840_MustChangePasswordAdded")]
-    partial class MustChangePasswordAdded
+    [Migration("20260806165144_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

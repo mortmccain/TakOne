@@ -1,4 +1,5 @@
-﻿namespace TakOne.Application.Sales.Queries.GetCustomerShopStats;
+﻿using TakOne.Application.Common.Authorization;
+namespace TakOne.Application.Sales.Queries.GetCustomerShopStats;
 
 /// <summary>
 /// Loads the 4 numeric shop-page stats for the current caller. See
@@ -15,6 +16,7 @@
 ///   it can't be used to inspect another user's stats (defense-in-depth
 ///   against impersonation through the bus).
 /// </summary>
+[RequireAuthentication]
 public sealed class GetCustomerShopStatsQuery
 {
 }

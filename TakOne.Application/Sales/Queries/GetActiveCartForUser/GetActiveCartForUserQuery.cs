@@ -1,4 +1,5 @@
-﻿namespace TakOne.Application.Sales.Queries.GetActiveCartForUser;
+﻿using TakOne.Application.Common.Authorization;
+namespace TakOne.Application.Sales.Queries.GetActiveCartForUser;
 
 /// <summary>
 /// Loads the current user's active shopping cart (their Draft Sale, if any)
@@ -28,6 +29,7 @@
 ///   through this query. Use <c>GetSaleByIdQuery</c> (with its own auth
 ///   checks) for staff-side sale inspection.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetActiveCartForUserQuery
 {
     // ----------------------------------------------------------------

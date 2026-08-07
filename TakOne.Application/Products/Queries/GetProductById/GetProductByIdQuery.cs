@@ -1,6 +1,7 @@
 ﻿using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Products.DTOs;
 using TakOne.SharedKernel.Common;
+using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Products.Queries.GetProductById;
 
@@ -28,6 +29,7 @@ namespace TakOne.Application.Products.Queries.GetProductById;
 ///   only render their own limit anyway, but the API never sends the other
 ///   groups' limits over the wire.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetProductByIdQuery
 {
     public Guid ProductId { get; init; }

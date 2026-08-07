@@ -1,6 +1,6 @@
-﻿using TakOne.Application.Sales.DTOs;
-using TakOne.Domain.Sales.Enums;
+﻿using TakOne.Domain.Sales.Enums;
 using TakOne.SharedKernel.Common;
+using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 
@@ -32,6 +32,7 @@ namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 ///   filter is applied in SQL (via the specification), not in-memory, so
 ///   pagination TotalCount is accurate.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetSalesPaginatedQuery
 {
     /// <summary>
@@ -59,5 +60,4 @@ public sealed class GetSalesPaginatedQuery
 
     // NOTE: no FilterByCreatorId on the query object — the handler resolves
     // the current user's id from ICurrentUserService so callers can't snoop
-    // on other users' sales by passing a foreign Guid.
 }

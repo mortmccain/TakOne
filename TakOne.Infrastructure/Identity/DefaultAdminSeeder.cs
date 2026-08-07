@@ -243,21 +243,31 @@ public static class DefaultAdminSeeder
                 }
 
                 // --------------------------------------------------------
-                // 7. Set MustChangePassword = true so the first human
-                //    admin must change it before accessing any other page.
-                //    This is the operational guarantee behind Issue #02's
-                //    "force a one-time password change on first login"
-                //    requirement.
+                // 7. Honor the ForcePasswordChangeOnFirstLogin opt-out.
                 //
-                //    We set this AFTER CreateIdentityAccountAsync returns
-                //    success (so we know the ApplicationUser row exists),
-                //    using a tracked entity from UserManager. SaveChanges
-                //    is required because we're outside
-                //    CreateIdentityAccountAsync's auto-save window.
+                //    UserAccountService.CreateIdentityAccountAsync now sets
+                //    MustChangePassword = true by DEFAULT on every new
+                //    ApplicationUser (Issue #08 — all new users must change
+                //    their password on first login). The bootstrap admin is
+                //    created via that same method, so by the time we reach
+                //    here, appUser.MustChangePassword is already true.
+                //
+                //    If the operator explicitly opted out
+                //    (ForcePasswordChangeOnFirstLogin = false), we override
+                //    the default back to false here. This is the ONLY way to
+                //    get a bootstrap admin that is NOT forced to change
+                //    their password — recommended only for fully-automated
+                //    deployments where the configured password is already a
+                //    unique, non-shared secret.
+                //
+                //    If ForcePasswordChangeOnFirstLogin = true (the default),
+                //    MustChangePassword is already true from step 5 — no
+                //    action needed (setting true to true is a no-op we just
+                //    skip).
                 // --------------------------------------------------------
-                if (options.ForcePasswordChangeOnFirstLogin)
+                if (!options.ForcePasswordChangeOnFirstLogin)
                 {
-                    appUser.MustChangePassword = true;
+                    appUser.MustChangePassword = false;
                     await userManager.UpdateAsync(appUser);
                 }
             }
@@ -294,7 +304,8 @@ public static class DefaultAdminSeeder
                 "WorkerId (login): {WorkerId}, Email: {Email}. " +
                 "The password is not logged — see the configuration source " +
                 "(user secrets / environment variable / Key Vault) if you " +
-                "need to retrieve it. MustChangePassword={MustChange}.",
+                "need to retrieve it. MustChangePassword={MustChange} " +
+                "(forced change is the default; operator opt-out is honored by overriding the flag back to false).",
                 options.WorkerId,
                 options.Email,
                 options.ForcePasswordChangeOnFirstLogin);

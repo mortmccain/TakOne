@@ -1,4 +1,5 @@
-﻿namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
+﻿using TakOne.Application.Common.Authorization;
+namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
 
 /// <summary>
 /// Query for the Dashboard page's KPI cards + revenue charts + status donut.
@@ -28,6 +29,7 @@
 ///   role combination) and matches the convention used by the existing
 ///   <c>GetSalesPaginatedQuery</c>.
 /// </summary>
+[RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly)]
 public sealed class GetDashboardStatsQuery
 {
     /// <summary>

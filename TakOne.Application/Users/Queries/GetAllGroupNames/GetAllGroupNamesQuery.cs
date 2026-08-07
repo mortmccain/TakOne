@@ -1,4 +1,6 @@
-﻿namespace TakOne.Application.Users.Queries.GetAllGroupNames;
+﻿using TakOne.Application.Common.Authorization;
+
+namespace TakOne.Application.Users.Queries.GetAllGroupNames;
 
 /// <summary>
 /// Returns the distinct list of customer group names that currently exist
@@ -8,21 +10,23 @@
 /// staff can pick from existing group names rather than typing them. Also
 /// used by the AdminProducts page when editing an existing product's limits.
 ///
-/// AUTHORIZATION:
-///   Staff only (Employee/Manager/Admin) — customers never need to enumerate
-///   groups. Authorization is enforced at the ROUTE level: every page that
-///   invokes this query is decorated with
-///   <c>[Authorize(Roles = "Admin,Manager,Employee")]</c>.
+/// AUTHORIZATION (Issue #08):
+///   [RequireRoles(Roles.Employee, Roles.Manager, Roles.Admin)] — staff
+///   only. Customers never need to enumerate groups. The route-level
+///   <c>[Authorize(Roles = "Admin,Manager,Employee")]</c> on the pages
+///   that invoke this query is the first line of defense; this attribute
+///   is the middleware-level backstop.
 ///
-///   This query deliberately does NOT use <c>[RequireRoles]</c> because
-///   <c>AuthorizationMiddleware</c> reads <c>ICurrentUserService.IsAuthenticated</c>,
-///   which in Blazor Server relies on <c>IHttpContextAccessor.HttpContext</c> —
-///   and that is <c>null</c> during <c>OnInitializedAsync</c> (after the
-///   circuit is established). With <c>[RequireRoles]</c> the middleware
-///   would return <c>Result.Failure("Authentication required.")</c> — a
-///   non-generic <c>Result</c> — which Wolverine cannot use as the
-///   <c>Result&lt;List&lt;string&gt;&gt;</c> the caller is awaiting,
-///   causing the page to hang on the "LoadingGroups" placeholder.
+///   PREVIOUS WORKAROUND (NOW OBSOLETE):
+///   This query deliberately did NOT use <c>[RequireRoles]</c> because
+///   <c>AuthorizationMiddleware</c> read <c>ICurrentUserService.IsAuthenticated</c>,
+///   which in Blazor Server relied on <c>IHttpContextAccessor.HttpContext</c> —
+///   and that was <c>null</c> during <c>OnInitializedAsync</c> (after the
+///   circuit was established). That workaround is no longer needed because
+///   <c>BlazorCurrentUserService</c> now resolves the user from
+///   <c>AuthenticationStateProvider</c> when <c>HttpContext</c> is null
+///   (the Issue #08 fix). The middleware now correctly authenticates
+///   circuit-initiated calls.
 ///
 /// EMPTY RESULT:
 ///   An empty list is a NORMAL result — it means no customer users have
@@ -31,6 +35,7 @@
 ///   case (forward-looking — a limit can be set for a group before any
 ///   users exist in it).
 /// </summary>
+[RequireRoles(Roles.Employee, Roles.Manager, Roles.Admin)]
 public sealed class GetAllGroupNamesQuery
 {
     // No parameters — returns the global list of distinct group names.

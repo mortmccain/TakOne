@@ -10,6 +10,7 @@ namespace TakOne.Application.Users.Queries.GetAllGroupNames;
 /// list of customer group names. See the query file for authorization +
 /// empty-result semantics.
 /// </summary>
+[RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetAllGroupNamesQueryHandler
 {
     public static async Task<Result<List<string>>> HandleAsync

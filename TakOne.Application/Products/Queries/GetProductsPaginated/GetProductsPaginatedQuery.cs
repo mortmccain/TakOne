@@ -1,4 +1,5 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Application.Common.Authorization;
+using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Products.Queries.GetProductsPaginated;
 
@@ -21,6 +22,7 @@ namespace TakOne.Application.Products.Queries.GetProductsPaginated;
 ///     defense-in-depth: even if a malicious client sets the flag, the
 ///     server-side check still wins.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetProductsPaginatedQuery
 {
     public int PageNumber { get; init; } = 1;

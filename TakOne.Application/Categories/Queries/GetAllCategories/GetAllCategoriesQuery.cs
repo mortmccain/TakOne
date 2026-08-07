@@ -1,5 +1,6 @@
 ﻿using TakOne.Application.Categories.DTOs;
 using TakOne.SharedKernel.Common;
+using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Categories.Queries.GetAllCategories;
 
@@ -33,6 +34,7 @@ namespace TakOne.Application.Categories.Queries.GetAllCategories;
 ///   first within each parent) so the rendered tree is stable and
 ///   predictable.
 /// </summary>
+[RequireRoles(Roles.Admin, Roles.Manager)]
 public sealed class GetAllCategoriesQuery
 {
     // No parameters — this is a "load the whole tree, including

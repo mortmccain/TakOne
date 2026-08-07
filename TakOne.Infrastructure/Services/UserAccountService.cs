@@ -137,6 +137,23 @@ public sealed class UserAccountService : IUserAccountService
         //    class-level remark for the rationale — lets the admin user list
         //    render without a join to the Domain Users table). The Domain
         //    User remains the source of truth.
+        //
+        //    MUST_CHANGE_PASSWORD (Issue #08 — all new users must change
+        //    password on first login):
+        //      Every account created through this method gets
+        //      MustChangePassword = true. This covers:
+        //        - Bootstrap admin (DefaultAdminSeeder) — opt-out is honored
+        //          by the seeder, which sets it back to false AFTER
+        //          CreateIdentityAccountAsync returns if
+        //          ForcePasswordChangeOnFirstLogin = false.
+        //        - Staff users (CreateStaffCommandHandler)
+        //        - Customer users (CreateCustomerCommandHandler)
+        //      Rationale: every newly created user receives a password that
+        //      was chosen by SOMEONE ELSE (the operator, an admin, or a
+        //      manager). Forcing a one-time change on first login ensures
+        //      the password known to the creator and the password known to
+        //      the eventual human user are different from that point forward.
+        //      The creator cannot log in as the new user after first login.
         // ------------------------------------------------------------------
         var appUser = new ApplicationUser
         {
@@ -146,6 +163,7 @@ public sealed class UserAccountService : IUserAccountService
             EmailConfirmed = true,       // admin-created accounts skip email confirmation
             IsActive = true,             // mirrors Domain User.IsActive default
             Gender = gender,             // denormalized copy (Phase 0.5)
+            MustChangePassword = true,   // Issue #08 — force one-time change on first login
             SecurityStamp = Guid.NewGuid().ToString("N")
         };
 
@@ -289,8 +307,30 @@ public sealed class UserAccountService : IUserAccountService
                 $"The user cannot log in until this is resolved — please retry with a stronger password.");
         }
 
+        // ------------------------------------------------------------------
+        // Issue #08 — Force a one-time password change after admin reset.
+        //
+        // The admin set a TEMPORARY password and will communicate it to the
+        // user out-of-band (Slack, phone call, etc.). Forcing a change on
+        // the user's next login ensures the temporary password known to the
+        // admin and the new password known only to the user are different
+        // from that point forward.
+        //
+        // We set this even if the flag was already true (the user was
+        // already in a must-change state) — setting true to true is a no-op
+        // and saves a branch.
+        //
+        // UserManager.AddPasswordAsync already called SaveChanges internally
+        // (Identity's EF store auto-saves), so the password change itself
+        // is persisted. This mutation happened AFTER that save, so we need
+        // our own save here to persist the flag.
+        // ------------------------------------------------------------------
+        appUser.MustChangePassword = true;
+        await _db.SaveChangesAsync(cancellationToken);
+
         _logger.LogInformation(
-            "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}.",
+            "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}. " +
+            "MustChangePassword flag set to true (user must change password on next login).",
             userId);
 
         return Result.Success();

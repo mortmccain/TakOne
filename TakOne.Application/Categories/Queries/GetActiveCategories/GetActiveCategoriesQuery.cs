@@ -1,5 +1,5 @@
 ﻿using TakOne.Application.Categories.DTOs;
-using TakOne.SharedKernel.Common;
+using TakOne.Application.Common.Authorization;
 
 namespace TakOne.Application.Categories.Queries.GetActiveCategories;
 
@@ -14,6 +14,13 @@ namespace TakOne.Application.Categories.Queries.GetActiveCategories;
 ///   - The product-create / product-edit page's category picker (so users
 ///     can't assign a product to a deactivated category).
 ///
+/// AUTHORIZATION (Issue #08):
+///   [RequireAuthentication] — any authenticated user. The shop category
+///   tree is public to all logged-in users (customers browsing, staff
+///   managing). Inactive categories are filtered out at the repository
+///   level, so there's no data-leakage risk from letting customers call
+///   this query.
+///
 /// PERFORMANCE:
 ///   This query returns the entire active category tree in one shot. For
 ///   TakOne's expected scale (tens to low hundreds of categories), this is
@@ -23,6 +30,7 @@ namespace TakOne.Application.Categories.Queries.GetActiveCategories;
 /// NOTE: this query returns ALL active categories. There is no per-user
 /// filtering — categories are public to all authenticated users.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetActiveCategoriesQuery
 {
     // No parameters — this is a "load the whole tree" query.

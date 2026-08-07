@@ -1,4 +1,5 @@
-﻿using TakOne.Application.Users.DTOs;
+﻿using TakOne.Application.Common.Authorization;
+using TakOne.Application.Users.DTOs;
 
 namespace TakOne.Application.Users.Queries.GetUserById;
 
@@ -19,6 +20,7 @@ namespace TakOne.Application.Users.Queries.GetUserById;
 /// WHY THIS IS A QUERY, NOT A COMMAND:
 ///   Reads are stateless. See GetSaleByIdQuery for the full rationale.
 /// </summary>
+[RequireAuthentication]
 public sealed class GetUserByIdQuery
 {
     public Guid UserId { get; init; }

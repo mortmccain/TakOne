@@ -27,6 +27,7 @@ namespace TakOne.Application.Users.Queries.GetCustomersByGroup;
 ///   employee to see the whole group at once so they can pick a customer
 ///   from a dropdown.
 /// </summary>
+[RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetCustomersByGroupQuery
 {
     /// <summary>
