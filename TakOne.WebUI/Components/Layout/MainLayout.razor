@@ -1,9 +1,25 @@
 ﻿@* MainLayout.razor — Phase 0.10 + 0.20
    Radzen-based main layout with:
      - Sidebar with role-gated navigation (uses Roles static class)
-     - Header bar with: hamburger toggle, page title, theme switcher,
-       language switcher, role badge, display name, logout button
+       + BRAND BLOCK at the top of the sidebar (Tak Makaron logo +
+         "تک ماکارون" / "پورتال سفارش کارکنان"). Same .tm-sidebar-brand
+         block as in ShopLayout.razor — the user asked for the brand to
+         appear on the sidebar of EVERY page, not just /Products. The
+         icon is a refresh trigger (clicking it force-reloads the
+         current page via RefreshCurrentPage).
+     - TOP BAR (redesigned to match the Products page top bar, per user
+       spec). Same .tm-shop-header / .tm-shop-header-inner / .tm-portal-block /
+       .tm-actions-block / .tm-gold-shimmer markup + CSS classes as
+       Products.razor — so the two layouts feel visually consistent.
+       Differences from the Products page top bar:
+         - NO search bar (only /Products has a search bar)
+         - NO cart count badge (MainLayout doesn't subscribe to cart
+           updates — the icon still navigates to /Cart on click)
+       Everything else (hamburger, EN|FA toggle, cart icon, sun/moon
+       theme toggle, user avatar, gold shimmer line) is identical to
+       the Products page top bar.
      - Session-expiry warning toast at 55 minutes (5 min before 1h expiry)
+       [TODO — not yet implemented]
      - Notification hub auto-connect on circuit start
 
    Role-gated nav:
@@ -19,189 +35,222 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ToastService Toast
-@inject AuthenticationStateProvider AuthStateProvider
+@inject ICurrentUserService CurrentUser
+@inject IStringLocalizer<Products> ProductsLoc
 @using System.Globalization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.WebUI.Components.Pages.Products
 
 <RadzenLayout>
     @* Sidebar with role-gated navigation *@
     <RadzenSidebar @ref="sidebar" Style="width: 240px;">
-        @*
-           Component-name fix: the previous draft used `RadzenSidebarMenu` /
-           `RadzenSidebarMenuItem`, which DON'T exist in Radzen.Blazor 11.1.1.
-           The correct names are `RadzenPanelMenu` / `RadzenPanelMenuItem`.
-           (`RadzenSidebar` itself stays — that's the container.)
-        *@
-        <RadzenPanelMenu>
-            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
-                <RadzenPanelMenuItem Text="@Localizer["Dashboard"]" Icon="dashboard" Path="/" />
-            </AuthorizeView>
-
-            <AuthorizeView>
-                <RadzenPanelMenuItem Text="@Localizer["Products"]" Icon="inventory_2" Path="/Products" />
-            </AuthorizeView>
-
-            <AuthorizeView>
-                <RadzenPanelMenuItem Text="@Localizer["MyOrders"]" Icon="receipt_long" Path="/Sales" />
-            </AuthorizeView>
-
-            <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
-            </AuthorizeView>
-            <AuthorizeView Roles="@Roles.Customer">
-                <RadzenPanelMenuItem Text="@Localizer["Cart"]" Icon="shopping_cart" Path="/Cart" />
-            </AuthorizeView>
-
-            @* Admin section — staff only (no customers, no read-only).
-               The outer <AuthorizeView> gates the WHOLE group (header +
-               children). Its `Context` is renamed to `adminSectionCtx`
-               so it doesn't collide with the implicit `context` parameter
-               name on the inner <AuthorizeView> elements (Blazor errors
-               on nested AuthorizeViews that both use the default name).
-               The inner AuthorizeViews each get their own `Context` name
-               for the same reason — every nested AuthorizeView in the
-               tree must have a unique context name. *@
-            <AuthorizeView Context="adminSectionCtx"
-                           Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                @* Parent menu item — uses `Text` (not `Title`), and acts as
-                   a collapsible group because it has child items. *@
-                <RadzenPanelMenuItem Text="@Localizer["AdminSection"]" Icon="admin_panel_settings">
-                    <AuthorizeView Context="adminProductsCtx"
-                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                        <RadzenPanelMenuItem Text="@Localizer["ManageProducts"]" Icon="inventory" Path="/Admin/Products" />
-                    </AuthorizeView>
-                    <AuthorizeView Context="adminCategoriesCtx"
-                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                        <RadzenPanelMenuItem Text="@Localizer["ManageCategories"]" Icon="category" Path="/Admin/Categories" />
-                    </AuthorizeView>
-                    <AuthorizeView Context="adminUsersCtx"
-                                   Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                        <RadzenPanelMenuItem Text="@Localizer["ManageUsers"]" Icon="group" Path="/Admin/Users" />
-                    </AuthorizeView>
-                </RadzenPanelMenuItem>
-            </AuthorizeView>
-
-            <AuthorizeView>
-                <RadzenPanelMenuItem Text="@Localizer["Profile"]" Icon="account_circle" Path="/Profile" />
-            </AuthorizeView>
-            <AuthorizeView>
-                <RadzenPanelMenuItem Text="@Localizer["Settings"]" Icon="settings" Path="/Settings" />
-            </AuthorizeView>
-        </RadzenPanelMenu>
+        @* Sidebar content (brand block + nav + support card) is now in a
+           shared SidebarContent.razor component — same markup for both
+           MainLayout and ShopLayout. The sidebar uses plain HTML nav items
+           (not RadzenPanelMenu) styled to match the HTML reference design
+           exactly. See SidebarContent.razor for the full nav structure. *@
+        <SidebarContent />
     </RadzenSidebar>
 
     <RadzenBody>
-        @* Top header bar.
-           NOTE on component choices: a previous version used <RadzenToolBar>,
-           <RadzenIconButton>, and <RadzenSpacer>. None of these exist in
-           Radzen.Blazor 11.1.1 — the compiler flagged them as "unexpected
-           markup element". The replacements are:
-             - <RadzenToolBar>  →  plain <div class="takone-toolbar"> with
-               flexbox layout (Radzen's CSS already styles children correctly
-               because the rz- classes are still on the inner components).
-             - <RadzenIconButton Icon="X">  →  <RadzenButton Icon="X"
-               Variant="Variant.Text" />  (RadzenButton with Icon= and a Text
-               variant behaves as an icon-only button).
-             - <RadzenSpacer />  →  <div class="takone-spacer" /> with
-               `flex: 1 1 auto` (standard flexbox spacer pattern). *@
-        <RadzenHeader>
-            <div class="takone-toolbar" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; min-height: 56px;">
-                <RadzenButton Icon="menu" Click="@ToggleSidebar" Variant="Variant.Text" />
-                <RadzenText Text="TakOne" Style="font-weight: 600; margin-left: 12px;" />
+        @* ── TOP BAR — redesigned to match the Products page top bar
+           (per user spec). The previous MainLayout top bar used Radzen
+           dropdowns for theme + culture, a RadzenBadge + RadzenText for
+           the user, and a CSRF-safe logout <form> with a RadzenButton.
+           The user asked for ALL non-Products pages to use the SAME top
+           bar design as the Products page, MINUS the search box (only
+           /Products has a search bar).
 
-                <div class="takone-spacer" style="flex: 1 1 auto;"></div>
+           So this header now reuses the EXACT same markup pattern + CSS
+           classes as Products.razor's <header class="tm-shop-header">:
+             - .tm-portal-block (right side in RTL): hamburger + EN|FA toggle
+             - .tm-actions-block (left side in RTL): cart icon + theme
+               toggle (sun/moon) + user avatar
+             - .tm-gold-shimmer: the animated gold gradient bar that sits
+               BELOW the top bar (the "shining small bar" the user asked
+               for on all pages)
 
-                @* Theme switcher — Tak custom themes (tak-light) + 10 free Radzen themes.
-                   Persisted to localStorage via window.takTheme.set().
+           The .tm-search-block (center search input) is INTENTIONALLY
+           OMITTED — only /Products has a search bar. The flex
+           justify-content:space-between on .tm-shop-header-inner pushes
+           .tm-portal-block and .tm-actions-block to opposite ends, which
+           looks clean without a center element.
 
-                   NOTE on callback choice: an earlier draft used `@bind-Value`
-                   + `Change`. RadzenDropDown<T>.Change is EventCallback<object?>
-                   (NOT EventCallback<string>), so a lambda `args => Handler(args)`
-                   fails with CS1503 "cannot convert from 'object' to 'string'"
-                   when Handler takes string. A method group fails too (Blazor
-                   can't convert Func<string,Task> to EventCallback<object?>).
+           WHY NOT <RadzenHeader>: the previous version wrapped the toolbar
+           in <RadzenHeader>. We drop that wrapper and use a plain
+           <header class="tm-shop-header"> instead — same pattern as
+           ShopLayout.razor (which also has no RadzenHeader). The
+           .tm-shop-header CSS provides its own background/border/shadow
+           + position:sticky, so RadzenHeader's styling is not needed.
+           RadzenLayout works fine without a RadzenHeader child (ShopLayout
+           proves this).
 
-                   The fix is to use Radzen's standard ValueChanged callback
-                   instead — ValueChanged IS EventCallback<T>, so with
-                   TValue="string" it's EventCallback<string>, and the handler
-                   `OnThemeChanged(string theme)` matches directly. We drop
-                   @bind-Value (since ValueChanged replaces its auto-generated
-                   setter) and bind Value + ValueChanged manually. The handler
-                   already assigns _selectedTheme, so two-way binding is
-                   preserved.
+           CSS SOURCE: all the .tm-shop-header / .tm-shop-header-inner /
+           .tm-portal-block / .tm-hamburger / .tm-lang-* / .tm-icon-button /
+           .tm-theme-toggle / .tm-user-* / .tm-gold-shimmer rules live in
+           wwwroot/css/Pages/Products.css. They are NOT scoped under
+           .tm-shop-page (despite the file's intro comment claiming
+           otherwise — the actual selectors are top-level), so they apply
+           here in MainLayout too. Products.css is loaded globally via
+           App.razor's <link> tag (cache-bust query string ?v=11).
 
-                   DISPLAY NAMES: previously _themes was List<string> and the
-                   dropdown showed the raw key ("tak-light", "standard-dark").
-                   Now it's List<ThemeOption> so the dropdown shows friendly
-                   names ("Tak Light", "Standard Dark") while binding to the
-                   underlying key ("tak-light", "standard-dark") via
-                   TextProperty="Display" ValueProperty="Key". Same pattern as
-                   the currency dropdown on CreateProduct.razor. *@
-                <RadzenDropDown Value="_selectedTheme"
-                                Data="_themes"
-                                TextProperty="Display"
-                                ValueProperty="Key"
-                                Style="width: 180px;"
-                                ValueChanged="@OnThemeChanged"
-                                TValue="string" />
+           LOCALIZATION: the localization keys (MenuTitle, MenuAriaLabel,
+           LanguageAriaLabel, CartTitle, UserMenuTitle, ThemeSwitchToLight,
+           ThemeSwitchToDark, RoleAdmin/Manager/Employee/ReadOnly/Customer)
+           all live in the Products resource files (Products.en-US.resx,
+           Products.fa-IR.resx). We read them via the ProductsLoc
+           IStringLocalizer<Products> injected at the top of this file —
+           same keys the Products page itself uses, so translations are
+           shared and consistent across both layouts.
 
-                @* Language switcher — Persian (fa-IR, RTL) or English (en-US, LTR) *@
-                <RadzenDropDown Value="_selectedCulture"
-                                Data="_cultures"
-                                Style="width: 120px; margin-left: 8px;"
-                                ValueChanged="@OnCultureChanged"
-                                TValue="string" />
+           LOGOUT: the previous top bar had a CSRF-safe logout <form>
+           POSTing to /Account/SignOut. The Products page top bar does
+           NOT have a logout button (the user avatar clicks go to
+           /Settings, where logout lives). To match the Products page
+           design exactly (per the user's "look like the one on products
+           page" instruction), the logout <form> is REMOVED from this top
+           bar. Logout is still accessible by clicking the user avatar →
+           /Settings. If a future sidebar-based logout is desired, it can
+           be added to the sidebar nav below without touching this header. *@
+        <header class="tm-shop-header">
+            <div class="tm-shop-header-inner">
 
-                @* Role badge + display name + logout (only when authenticated).
+                @* Right side (RTL): hamburger + EN|FA language toggle.
+                   Same .tm-portal-block as Products.razor. The hamburger
+                   toggles THIS layout's sidebar (ToggleSidebar method
+                   below). The EN|FA toggle commits the culture cookie
+                   and force-reloads so App.razor re-evaluates
+                   <html lang/dir> from the new CurrentUICulture. *@
+                <div class="tm-portal-block">
+                    <button type="button"
+                            class="tm-hamburger"
+                            title="@ProductsLoc["MenuTitle"]"
+                            aria-label="@ProductsLoc["MenuAriaLabel"]"
+                            @onclick="ToggleSidebar">
+                        @* Inline style on <path> as a DEFENSIVE fallback —
+                           same pattern as Products.razor. The CSS rule
+                           `.tm-hamburger svg path { stroke: ... !important; }`
+                           is the primary fix; this inline style is the
+                           highest-priority backup. Hardcoded color (not
+                           var()) because CSS variables don't work in inline
+                           SVG attributes outside of style="". *@
+                        <svg fill="none" stroke="#0E4D3C" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true" style="display:block;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
+                        </svg>
+                    </button>
 
-                   ISSUE #05 — CSRF-safe logout:
-                     The logout button is now a SUBMIT button inside a
-                     <form method="post" action="/Account/Logout"> with an
-                     <AntiforgeryToken /> hidden field. Clicking it does a
-                     real browser POST to the /Account/Logout minimal-API
-                     endpoint, which is registered with RequireAntiforgery().
-                     A cross-site attacker who embeds
-                       <img src="https://takone.example/Account/Logout">
-                     on a third-party page sends a GET (browsers only GET
-                     for <img>); that GET hits the MapGet handler which
-                     returns 405 and does NOT call SignOutAsync. A forged
-                     cross-site <form method=post> would lack the
-                     antiforgery token and get 400. Either way: no logout.
+                    @* EN | FA language toggle — plain text, no popup.
+                       Clicking either code immediately commits the culture
+                       cookie and force-reloads the page. Same component as
+                       on the Products page top bar (identical markup +
+                       behavior). The active language is rendered with the
+                       theme accent color via the .is-active class. *@
+                    <div class="tm-lang-toggle" role="group" aria-label="@ProductsLoc["LanguageAriaLabel"]">
+                        <button type="button"
+                                class='tm-lang-btn @(_currentCulture == "en-US" ? "is-active" : "")'
+                                aria-pressed='@(_currentCulture == "en-US")'
+                                @onclick='(() => SetCultureAsync("en-US"))'>
+                            EN
+                        </button>
+                        <span class="tm-lang-sep" aria-hidden="true">|</span>
+                        <button type="button"
+                                class='tm-lang-btn @(_currentCulture == "fa-IR" ? "is-active" : "")'
+                                aria-pressed='@(_currentCulture == "fa-IR")'
+                                @onclick='(() => SetCultureAsync("fa-IR"))'>
+                            FA
+                        </button>
+                    </div>
+                </div>
 
-                   WHY A PLAIN <form> (not EditForm):
-                     EditForm is for forms whose OnValidSubmit handler runs
-                     in the same Blazor page that rendered them. We want a
-                     plain browser POST to a SEPARATE URL (/Account/Logout)
-                     handled by a minimal-API endpoint. A plain HTML <form>
-                     with method+action is the right tool. The
-                     <AntiforgeryToken /> component (from
-                     Microsoft.AspNetCore.Components.Forms) renders the
-                     hidden __RequestVerificationToken input — the same
-                     token EditForm would render. It works in BOTH static
-                     SSR (prerender) and interactive render modes, so this
-                     button is safe regardless of whether MainLayout is
-                     currently being prerendered or running in a circuit.
+                @* Center: EMPTY — the search bar lives ONLY on /Products
+                   (per user spec). The flex justify-content:space-between
+                   on .tm-shop-header-inner pushes the two side blocks to
+                   opposite edges, which looks clean without a center
+                   element. Adding an empty <div> here would just create
+                   an unnecessary flex child. *@
 
-                   WHY display:inline (not the RadzenButton's own margin):
-                     The form is a block element by default; making it
-                     inline keeps it on the same row as the badge and
-                     display name in the toolbar. The 8px left margin
-                     matches the previous button's spacing. *@
-                <AuthorizeView>
-                    <Authorized>
-                        <RadzenBadge Text="@_roleBadge" IsPill="true" Style="margin-left: 12px;" />
-                        <RadzenText Text="@_displayName" Style="margin-left: 8px;" />
-                        <form method="post"
-                              action="/Account/Logout"
-                              style="display: inline; margin-left: 8px;">
-                            <AntiforgeryToken />
-                            <RadzenButton Icon="logout"
-                                          ButtonType="ButtonType.Submit"
-                                          Variant="Variant.Text" />
-                        </form>
-                    </Authorized>
-                </AuthorizeView>
+                @* Left side (RTL): cart icon + theme toggle (sun/moon) +
+                   user avatar. Identical to Products.razor's
+                   .tm-actions-block. The cart icon navigates to /Cart
+                   (no badge here — the cart count is only tracked on the
+                   /Products page; MainLayout doesn't subscribe to cart
+                   updates, so we show the icon without a count badge).
+                   The theme toggle flips between tak-light and tak-dark.
+                   The user avatar shows the user's initial + role label
+                   and navigates to /Settings on click. *@
+                <div class="tm-actions-block">
+                    <button type="button"
+                            class="tm-icon-button"
+                            title="@ProductsLoc["CartTitle"]"
+                            @onclick="GoToCart">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                        </svg>
+                    </button>
+
+                    @* Theme quick-toggle — switches between tak-light and
+                       tak-dark. The ICON itself changes with the theme:
+                       when LIGHT is active, a MOON icon is shown (click →
+                       switch to dark); when DARK is active, a SUN icon is
+                       shown (click → switch to light). Same convention as
+                       the Products page toggle. *@
+                    <button type="button"
+                            class="tm-icon-button tm-theme-toggle"
+                            title='@(_currentTheme == "tak-dark" ? ProductsLoc["ThemeSwitchToLight"] : ProductsLoc["ThemeSwitchToDark"])'
+                            aria-label='@(_currentTheme == "tak-dark" ? ProductsLoc["ThemeSwitchToLight"] : ProductsLoc["ThemeSwitchToDark"])'
+                            @onclick="ToggleThemeAsync">
+                        @if (_currentTheme == "tak-dark")
+                        {
+                            @* Sun icon — shown when dark is active (click → light) *@
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="22" height="22" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+                            </svg>
+                        }
+                        else
+                        {
+                            @* Moon icon — shown when light is active (click → dark) *@
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="22" height="22" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                            </svg>
+                        }
+                    </button>
+
+                    @* User avatar — circle with first initial of the
+                       user's actual name + their access level. Clicking
+                       it goes to /Settings (same as the Products page
+                       avatar). Markup is identical to Products.razor's
+                       .tm-user-block so the two layouts look the same. *@
+                    <button type="button"
+                            class="tm-user-block"
+                            title="@ProductsLoc["UserMenuTitle"]"
+                            @onclick="GoToSettings">
+                        <div class="tm-user-text">
+                            <p class="tm-user-name">@CurrentUser.FullName</p>
+                            <p class="tm-user-role">@GetRoleLabel()</p>
+                        </div>
+                        @* Inline style on the avatar div as a DEFENSIVE
+                           fallback — same pattern as Products.razor.
+                           Hardcoded gradient (not var()) for maximum
+                           robustness across themes. *@
+                        <div class="tm-user-avatar"
+                             style="border-radius:50%; -webkit-border-radius:50%; -moz-border-radius:50%; background:linear-gradient(135deg, #0E4D3C, #0A3528); width:44px; height:44px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; position:relative; box-shadow:0 0 0 2px rgba(201,162,39,0.3), 0 2px 8px rgba(14,77,60,0.3);">
+                            <span class="tm-user-avatar-initial">@GetUserInitial()</span>
+                        </div>
+                    </button>
+                </div>
             </div>
-        </RadzenHeader>
+
+            @* ── GOLDEN SHIMMER LINE — inside <header> so it sticks with it.
+               Same .tm-gold-shimmer element as Products.razor — an
+               animated gold gradient bar that sits just below the top bar.
+               The user explicitly asked that "those new top bars design
+               for all pages should have that shining small bar under it",
+               so this is included on every MainLayout page. Placing it
+               INSIDE <header> (rather than as a sibling) means it sticks
+               along with the header (position:sticky is on
+               .tm-shop-header) — same pattern as Products.razor. *@
+            <div class="tm-gold-shimmer" aria-hidden="true"></div>
+        </header>
 
         <RadzenContent Style="padding: 24px;">
             @Body
@@ -213,66 +262,32 @@
 
 @code {
     private RadzenSidebar? sidebar;
-    private string _selectedTheme = "tak-light";
 
-    // Initialize from the current UI culture so the dropdown shows the
-    // ACTUAL active culture on first render (was previously hardcoded to
-    // "fa-IR" which would show fa-IR even when the server had fallen back
-    // to en-US via the Accept-Language header).
-    private string _selectedCulture = CultureInfo.CurrentUICulture.Name;
+    // Theme + culture backing fields for the new top bar (matching the
+    // Products.razor pattern). The previous MainLayout used _selectedTheme /
+    // _selectedCulture + RadzenDropDown dropdowns; the new top bar uses a
+    // sun/moon toggle button (tak-light <-> tak-dark) and an EN|FA text
+    // toggle, so the field names mirror Products.razor's _currentTheme /
+    // _currentCulture for consistency across the two layouts.
+    private string _currentTheme = "tak-light";
 
-    private string _displayName = string.Empty;
-    private string _roleBadge = string.Empty;
-
-    // Theme list — Tak custom themes (tak-light, future tak-dark) appear
-    // first as "recommended" options; the 10 free Radzen themes follow as
-    // fallbacks. The Display string is what the user sees in the dropdown;
-    // the Key is what we persist to localStorage and pass to takTheme.set.
-    //
-    // To add a new Tak theme:
-    //   1. Add the CSS file at wwwroot/css/themes/{key}.css
-    //   2. Register the (key, base, override) tuple in TAK_THEMES in
-    //      wwwroot/js/theme.js
-    //   3. Add a new ThemeOption entry to _themes below
-    private readonly List<ThemeOption> _themes = new()
-    {
-        new(Key: "tak-light",       Display: "Tak Light"),
-        new(Key: "tak-dark",        Display: "Tak Dark"),
-        new(Key: "standard-dark",   Display: "Standard Dark"),
-        new(Key: "standard",        Display: "Standard"),
-        new(Key: "material-dark",   Display: "Material Dark"),
-        new(Key: "material",        Display: "Material"),
-        new(Key: "software-dark",   Display: "Software Dark"),
-        new(Key: "software",        Display: "Software"),
-        new(Key: "humanistic-dark", Display: "Humanistic Dark"),
-        new(Key: "humanistic",      Display: "Humanistic"),
-        new(Key: "dark",            Display: "Dark"),
-        new(Key: "default",         Display: "Default")
-    };
-
-    /// <summary>
-    /// Simple (Key, Display) record for binding the theme dropdown. The
-    /// RadzenDropDown uses TextProperty="Display" ValueProperty="Key" to
-    /// show the friendly name while persisting the underlying theme key.
-    /// </summary>
-    private sealed record ThemeOption(string Key, string Display);
-
-    private readonly List<string> _cultures = new() { "fa-IR", "en-US" };
+    // Initialize from the current UI culture so the EN|FA toggle highlights
+    // the ACTUAL active language on first render (was previously hardcoded
+    // to "fa-IR" which would highlight FA even when the server had fallen
+    // back to en-US via the Accept-Language header).
+    private string _currentCulture = CultureInfo.CurrentUICulture.Name;
 
     [Inject] private IStringLocalizer<MainLayout> Localizer { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
-        // Read the current user's name + role for the header badge.
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        if (user.Identity?.IsAuthenticated == true)
-        {
-            _displayName = user.FindFirst("FullName")?.Value
-                            ?? user.Identity?.Name
-                            ?? "User";
-            _roleBadge = string.Join(", ", user.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value));
-        }
+        // The previous MainLayout read the user's display name + role badge
+        // here via AuthStateProvider for the RadzenBadge + RadzenText in the
+        // old top bar. The new top bar uses ICurrentUserService directly
+        // (CurrentUser.FullName, CurrentUser.IsInRole(...)) — same pattern as
+        // Products.razor — so there's no auth-state reading to do here anymore.
+        //
+        // We keep OnInitializedAsync for the SignalR connection start below.
 
         // Start the SignalR connection to NotificationHub.
         try
@@ -285,17 +300,18 @@
         }
     }
 
-    // Sync the theme dropdown with the actually-applied theme after the
-    // first interactive render.
+    // Sync the sun/moon toggle icon with the actually-applied theme after
+    // the first interactive render.
     //
     // WHY THIS IS NEEDED:
-    //   - _selectedTheme is initialized to "tak-light" (the project default)
-    //     so the dropdown shows SOMETHING on the very first paint.
+    //   - _currentTheme is initialized to "tak-light" (the project default)
+    //     so the toggle shows a MOON icon on the very first paint (indicating
+    //     "click to switch to dark").
     //   - But theme.js's IIFE reads localStorage and applies whatever is
-    //     actually saved — which might be "standard", "dark", etc. if the
-    //     user previously picked a different theme.
-    //   - Without this sync, the dropdown would show "Tak Light" while the
-    //     page actually rendered as (say) "Standard" — a confusing mismatch.
+    //     actually saved — which might be "tak-dark", "standard", "dark",
+    //     etc. if the user previously picked a different theme.
+    //   - Without this sync, the icon would show MOON (light is active)
+    //     while the page actually rendered as tak-dark — confusing mismatch.
     //
     // WHY OnAfterRenderAsync (not OnInitializedAsync):
     //   - OnInitializedAsync runs TWICE in InteractiveServer + prerender:
@@ -306,9 +322,9 @@
     //     circuit is established. JS interop definitely works here.
     //
     // BRIEF FLASH TRADE-OFF:
-    //   - The dropdown paints with "Tak Light" on first render, then updates
-    //     to the saved theme after this method runs. If the saved theme IS
-    //     "tak-light" (the common case for new users), there's no flash.
+    //   - The icon paints as MOON on first render, then updates to SUN after
+    //     this method runs IF the saved theme is tak-dark. If the saved theme
+    //     IS "tak-light" (the common case for new users), there's no flash.
     //     For users with a different saved theme, the brief flash is
     //     acceptable — the alternative (cookie-based theme sync) adds
     //     complexity for marginal gain.
@@ -320,21 +336,21 @@
         {
             var saved = await JS.InvokeAsync<string>("takTheme.get");
             // Only update + re-render if the saved theme differs from what
-            // the dropdown currently shows. Avoids a needless StateHasChanged
+            // the toggle currently assumes. Avoids a needless StateHasChanged
             // call in the common case where saved == "tak-light".
-            if (!string.IsNullOrEmpty(saved) && saved != _selectedTheme)
+            if (!string.IsNullOrEmpty(saved) && saved != _currentTheme)
             {
-                _selectedTheme = saved;
+                _currentTheme = saved;
                 StateHasChanged();
             }
         }
         catch
         {
             // If JS interop fails (e.g. theme.js didn't load due to a network
-            // error), leave _selectedTheme at its "tak-light" default. The
-            // dropdown still works for showing the user's intended theme;
-            // only the runtime switch (takTheme.set) would also fail, and
-            // that's a separate problem to surface via the error UI.
+            // error), leave _currentTheme at its "tak-light" default. The
+            // toggle still works for showing the user's intended theme; only
+            // the runtime switch (takTheme.set) would also fail, and that's
+            // a separate problem to surface via the error UI.
         }
     }
 
@@ -359,72 +375,124 @@
         sidebar?.Toggle();
     }
 
-    private async Task OnThemeChanged(string theme)
-    {
-        // RadzenDropDown<string>.ValueChanged is EventCallback<string> — not
-        // EventCallback<object> — so the parameter type must be `string`.
-        // (The previous `object` parameter failed to convert at the call
-        // site when @bind-Value was strongly typed to string.)
-        _selectedTheme = theme;
+    // ── Navigation helpers (cart + settings) ───────────────────────────
+    // These mirror Products.razor's GoToCart / GoToSettings so the top
+    // bar's cart icon and user avatar behave identically across both
+    // layouts. forceLoad:false is fine here (no need for a full HTTP
+    // reload — these are normal Blazor navigations to in-app routes).
 
-        // Delegate ALL theme-swapping logic to wwwroot/js/theme.js. It handles:
-        //   - Built-in Radzen themes (single CSS file swap)
-        //   - Custom Tak themes (Radzen base + override CSS layer)
-        //   - localStorage persistence
-        // Keeping the JS as the single source of truth means the FOUC-safe
-        // initial-load path and the runtime-switch path use the exact same
-        // code — no risk of drift between them.
-        //
-        // DEFENSIVE TRY/CATCH: if theme.js failed to load for any reason
-        // (network error, browser extension blocking it, stale cached OLD
-        // version that didn't yet define window.takTheme, etc.), the JS
-        // interop call throws JSException. WITHOUT this catch, that exception
-        // escapes the EventCallback and crashes the Blazor circuit — the user
-        // sees a "Reconnect" modal and loses their current page state. WITH
-        // this catch, the dropdown still updates (we set _selectedTheme above)
-        // but the actual theme swap silently fails. The user can retry by
-        // reloading the page, which re-runs theme.js's IIFE.
-        try
-        {
-            await JS.InvokeVoidAsync("takTheme.set", theme);
-        }
-        catch (JSException)
-        {
-            // Swallow — see comment above. StateHasChanged is implicit
-            // because EventCallback methods trigger a re-render after
-            // they return (even partially).
-        }
+    private void GoToCart()
+    {
+        Navigation.NavigateTo("/Cart", forceLoad: false);
     }
 
-    private async Task OnCultureChanged(string culture)
+    private void GoToSettings()
     {
-        _selectedCulture = culture;
+        // Settings page route — may not exist yet. Navigation will land on
+        // the not-found page if so, which is acceptable until /Settings is
+        // built. Same defensive comment as in Products.razor's GoToSettings.
+        Navigation.NavigateTo("/Settings", forceLoad: false);
+    }
+
+    // ── Language toggle (EN | FA) ───────────────────────────────────────
+    // Single-click switch: clicking EN or FA immediately commits the culture
+    // cookie and force-reloads the page. Same behavior as Products.razor's
+    // SetCultureAsync. The cookie format/name matches what Program.cs's
+    // CookieRequestCultureProvider reads. force-reload so App.razor
+    // re-evaluates <html lang/dir> from the new CurrentUICulture and the
+    // whole page swaps RTL/LTR + localized strings.
+    //
+    // If the user clicks the already-active language, we no-op (avoids an
+    // unnecessary reload).
+    private async Task SetCultureAsync(string culture)
+    {
+        if (string.Equals(culture, _currentCulture, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         // CRITICAL: CookieRequestCultureProvider expects the cookie VALUE
         // to be in the format `c=<culture>|uic=<ui-culture>` — NOT a bare
-        // culture name like `fa-IR`. The previous implementation wrote
-        // `takone_culture=fa-IR` which the provider couldn't parse, so
-        // it returned null and the default culture kicked in (always
-        // fa-IR regardless of what the user picked). The language
-        // switcher appeared to do nothing.
-        //
-        // The `c=` part sets CultureInfo.CurrentCulture (number/date
-        // formatting) and `uic=` sets CultureInfo.CurrentUICulture
-        // (which .resx file IStringLocalizer picks). We always set both
-        // to the same value.
+        // culture name like `fa-IR`. The `c=` part sets
+        // CultureInfo.CurrentCulture (number/date formatting) and `uic=`
+        // sets CultureInfo.CurrentUICulture (which .resx file
+        // IStringLocalizer picks). We always set both to the same value.
         //
         // Cookie name MUST match `CookieRequestCultureProvider.CookieName`
         // configured in Program.cs (currently `takone_culture`).
         var cookieValue = $"c={culture}|uic={culture}";
         await JS.InvokeVoidAsync("eval",
             $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
-
-        // forceLoad:true triggers a full HTTP request so the new cookie
-        // is sent back to the server and the localization middleware
-        // can re-evaluate the culture. Without forceLoad, Blazor's
-        // interactive navigation wouldn't trigger a fresh HTTP request
-        // and the culture wouldn't change.
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    // ── Theme toggle (sun/moon) ────────────────────────────────────────
+    // Flips between tak-light and tak-dark. If the current theme is neither
+    // (e.g. user picked "material-dark" via the previous dropdown — now
+    // removed, but the saved localStorage value might still be non-Tak),
+    // we default to flipping TO tak-light — this way the sun/moon button
+    // always lands on a known Tak theme and the icon's meaning stays
+    // predictable. Same logic as Products.razor's ToggleThemeAsync.
+    //
+    // No force-reload needed — theme.js's takTheme.set() swaps the CSS
+    // <link> href in-place and appends/removes the override <link> at
+    // runtime. The whole page re-paints with the new theme without a
+    // round-trip. We just update _currentTheme + StateHasChanged so the
+    // sun/moon icon flips too.
+    private async Task ToggleThemeAsync()
+    {
+        var newTheme = _currentTheme == "tak-dark" ? "tak-light" : "tak-dark";
+
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", newTheme);
+            _currentTheme = newTheme;
+        }
+        catch (JSException)
+        {
+            // Swallow — same defensive pattern as Products.razor. If
+            // theme.js didn't load, the toggle silently fails rather than
+            // crashing the Blazor circuit.
+        }
+    }
+
+    // ── User avatar helpers ─────────────────────────────────────────────
+    // Same helpers as Products.razor — they read from ICurrentUserService
+    // (injected at the top of this file) so the avatar shows the user's
+    // ACTUAL name (not their worker ID) and a localized role label.
+
+    /// <summary>
+    /// Returns the first character of the current user's ACTUAL NAME (not
+    /// their worker ID / username). Used as the single-letter initial
+    /// inside the circle avatar in the top bar — matches the Products
+    /// page avatar and the HTML reference design.
+    ///
+    /// Falls back to "؟" (Persian question mark) if the name is empty/null
+    /// (shouldn't happen — ICurrentUserService.FullName falls back to the
+    /// worker ID — but defensive).
+    /// </summary>
+    private string GetUserInitial()
+    {
+        var name = CurrentUser.FullName?.Trim();
+        return string.IsNullOrEmpty(name) ? "؟" : name.Substring(0, 1);
+    }
+
+    /// <summary>
+    /// Returns the user's access level as a localized label for the avatar
+    /// badge. Same priority order + same localization keys as
+    /// Products.razor's GetRoleLabel — Admin > Manager > Employee >
+    /// ReadOnly > Customer. The labels themselves come from the Products
+    /// resource files (read via ProductsLoc) so the two layouts show the
+    /// SAME label for the SAME role.
+    /// </summary>
+    private string GetRoleLabel()
+    {
+        if (CurrentUser.IsInRole(Roles.Admin)) return ProductsLoc["RoleAdmin"];
+        if (CurrentUser.IsInRole(Roles.Manager)) return ProductsLoc["RoleManager"];
+        if (CurrentUser.IsInRole(Roles.Employee)) return ProductsLoc["RoleEmployee"];
+        if (CurrentUser.IsInRole(Roles.ReadOnly)) return ProductsLoc["RoleReadOnly"];
+        if (CurrentUser.IsInRole(Roles.Customer)) return ProductsLoc["RoleCustomer"];
+        return ProductsLoc["RoleEmployee"]; // fallback
     }
 
 }

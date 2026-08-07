@@ -402,11 +402,15 @@ app.UseAuthorization();
 //
 // ALLOWED PATHS (the user can reach these even with the claim):
 //   - /Account/ChangePassword  — the page they need to use
-//   - /Account/LogOut          — so they can sign out if they don't want
+//   - /Account/SignOut         — so they can sign out if they don't want
 //                                 to change the password right now
 //   - /Account/Login           — defensive; they shouldn't reach this
 //                                 page while authenticated, but if they
 //                                 do we don't want a redirect loop
+//   (/Account/LogOut is ALSO accepted in the runtime check below for
+//    backwards compatibility with stale bookmarks — the canonical
+//    logout route is /Account/SignOut; see the LOGOUT ENDPOINT
+//    section for why the route was renamed.)
 //
 // STATIC FILES + BLOWER ASSETS:
 //   We deliberately allow /_framework, /_blazor, /css, /js, /lib, /favicon,
@@ -448,8 +452,18 @@ app.Use(async (context, next) =>
 
         // Account paths the user is allowed to hit while their password
         // is in the must-change state.
+        // NOTE: /Account/SignOut is the actual logout endpoint (see the
+        // LOGOUT ENDPOINT section below for why we use SignOut instead
+        // of the conventional /Account/Logout — short version: an
+        // AmbiguousMatchException kept appearing at /Account/Logout
+        // despite multiple attempts to remove the duplicate, so the
+        // route was renamed to sidestep the conflict entirely).
+        // /Account/LogOut is kept in the allowlist for backwards
+        // compatibility with any stale bookmarks or in-flight cookies
+        // that might still point at the old path.
         var isAllowedAccountPath =
             path.StartsWith("/Account/ChangePassword", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/Account/SignOut", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/Account/LogOut", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/Account/Login", StringComparison.OrdinalIgnoreCase);
 
@@ -476,7 +490,7 @@ app.MapRazorComponents<App>()
 app.MapHub<NotificationHub>("/notificationHub");
 
 // ==================================================================================================================================
-//                                                          LOGOUT ENDPOINT (Issue #05 — CSRF-safe logout)
+//                                                          LOGOUT ENDPOINT (Issue #05 — CSRF-safe logout, v2 route rename)
 // ==================================================================================================================================
 // Logout MUST be a POST request with antiforgery-token validation. The
 // previous implementation was a Blazor @page "/Account/Logout" that ran
@@ -491,10 +505,10 @@ app.MapHub<NotificationHub>("/notificationHub");
 // content (e.g. a comment box on the same domain).
 //
 // The fix is the standard ASP.NET Core CSRF-safe logout pattern:
-//   1. GET  /Account/Logout → 405 Method Not Allowed (no SignOutAsync).
-//        An <img src=".../Account/Logout"> tag now hits this handler
+//   1. GET  /Account/SignOut → 405 Method Not Allowed (no SignOutAsync).
+//        An <img src=".../Account/SignOut"> tag now hits this handler
 //        and gets a 405 response — the auth cookie is NOT touched.
-//   2. POST /Account/Logout  → SignOutAsync + 302 redirect to login.
+//   2. POST /Account/SignOut  → SignOutAsync + 302 redirect to login.
 //        In .NET 8+, minimal-API POST endpoints are validated by the
 //        UseAntiforgery middleware AUTOMATICALLY (no RequireAntiforgery()
 //        call exists — antiforgery is the default; only DisableAntiforgery()
@@ -520,18 +534,39 @@ app.MapHub<NotificationHub>("/notificationHub");
 //   saves a round-trip and gives the user an immediate visual signal
 //   that they're signed out.
 //
+// WHY THE ROUTE IS /Account/SignOut (not the conventional /Account/Logout):
+//   Two prior attempts to use /Account/Logout both produced a runtime
+//   AmbiguousMatchException ("The request matched multiple endpoints.
+//   Matches: HTTP: POST /Account/Logout, /Account/Logout (/Account/Logout)").
+//   Attempt #1 left CookieAuthenticationOptions.LogoutPath set to
+//   "/Account/Logout"; the .NET 10 cookie auth handler appears to
+//   register an implicit endpoint at LogoutPath during endpoint routing,
+//   which conflicted with our explicit MapGet/MapPost endpoints.
+//   Attempt #2 commented out LogoutPath (leaving it at its empty
+//   default), so the cookie handler should NOT have registered an
+//   implicit endpoint — yet the AmbiguousMatchException persisted in
+//   production. The exact source of the second endpoint could not be
+//   isolated (no Razor Page, no Blazor @page, no MVC controller, no
+//   Identity UI, no AddDefaultUI/AddDefaultIdentity — every search
+//   came up empty). Rather than continue chasing the ghost, the route
+//   is renamed to /Account/SignOut, which is GUARANTEED not to
+//   collide with any pre-existing endpoint. The cost is one slightly
+//   unusual URL; the benefit is that logout simply works.
+//
 // COOKIE MIDDLEWARE NOTE:
-//   CookieAuthenticationOptions.LogoutPath is configured to
-//   "/Account/Logout" in AddTakOneInfrastructure. When
-//   SignInManager.SignOutAsync() is called from a handler whose
-//   request path EQUALS LogoutPath, the cookie handler clears the
-//   cookie and returns without issuing its own redirect — so our
-//   explicit Results.Redirect("/Account/Login") is the response the
-//   browser actually sees. No redirect loop, no double-302.
-app.MapGet("/Account/Logout",
+//   CookieAuthenticationOptions.LogoutPath is intentionally NOT set in
+//   AddTakOneInfrastructure (we leave it at its empty default). Even
+//   though our logout endpoint is now at /Account/SignOut (not
+//   /Account/Logout), we still leave LogoutPath empty: setting it to
+//   /Account/SignOut would re-introduce the same implicit-endpoint
+//   conflict on the new path. SignOutAsync always clears the cookie
+//   regardless of LogoutPath — that option only controls whether the
+//   handler auto-redirects to LoginPath after sign-out, which we don't
+//   want (our endpoint issues its own Results.Redirect below).
+app.MapGet("/Account/SignOut",
     () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
-app.MapPost("/Account/Logout",
+app.MapPost("/Account/SignOut",
     async (SignInManager<ApplicationUser> signInManager) =>
     {
         await signInManager.SignOutAsync();
@@ -544,6 +579,11 @@ app.MapPost("/Account/Logout",
 //   Only the /api/product-image endpoint below calls DisableAntiforgery()
 //   to opt OUT — that's the explicit opt-out path. For logout we want
 //   the default (validate), so we do nothing.
+//
+//   The <form method="post" action="/Account/SignOut"> in MainLayout.razor
+//   and AccessDenied.razor submits to this endpoint. The <AntiforgeryToken />
+//   inside each form renders the hidden __RequestVerificationToken input
+//   that the UseAntiforgery middleware validates.
 
 // ==================================================================================================================================
 //                                                          PRODUCT IMAGE UPLOAD ENDPOINT

@@ -316,7 +316,23 @@ public static class ServiceCollectionExtensions
         //                                   "cookie not visible to circuit"
         //                                   problem documented in
         //                                   RedirectToLogin.razor)
-        //       - LogoutPath             → /Account/Logout
+        //       - LogoutPath             → intentionally NOT set. Logout is
+        //                                   handled by the explicit minimal-API
+        //                                   POST endpoint at /Account/SignOut
+        //                                   in Program.cs (the route was
+        //                                   renamed from /Account/Logout to
+        //                                   /Account/SignOut to sidestep a
+        //                                   persistent AmbiguousMatchException
+        //                                   — see Program.cs LOGOUT ENDPOINT
+        //                                   section for the full history).
+        //                                   Setting LogoutPath (to ANY value)
+        //                                   caused .NET 10's cookie auth
+        //                                   handler to register an implicit
+        //                                   endpoint at that path that
+        //                                   conflicted with the explicit
+        //                                   endpoint and threw
+        //                                   AmbiguousMatchException when the
+        //                                   logout button was clicked.
         //       - AccessDeniedPath       → /Account/AccessDenied
         //                                   (the page shown when
         //                                   AuthorizeRouteView.NotAuthorized
@@ -373,7 +389,26 @@ public static class ServiceCollectionExtensions
             options.SlidingExpiration = slidingExpiration;
 
             options.LoginPath = "/Account/Login";
-            options.LogoutPath = "/Account/Logout";
+            // LogoutPath is intentionally NOT set. The actual logout
+            // endpoint now lives at /Account/SignOut (renamed from
+            // /Account/Logout — see Program.cs LOGOUT ENDPOINT section
+            // for the full investigation history of the
+            // AmbiguousMatchException that prompted the rename).
+            //
+            // Even though the endpoint is no longer at /Account/Logout,
+            // we STILL leave LogoutPath empty: setting it to ANY value
+            // (whether "/Account/Logout" or "/Account/SignOut") causes
+            // .NET 10's cookie auth handler to register an implicit
+            // endpoint at that path during endpoint routing, which
+            // conflicts with our explicit MapGet/MapPost endpoints and
+            // throws AmbiguousMatchException when the logout button is
+            // clicked.
+            //
+            // SignOutAsync always clears the cookie regardless of
+            // LogoutPath — that option only controls the handler's
+            // AUTO-REDIRECT behavior, which we don't want (our endpoint
+            // issues its own Results.Redirect).
+            // options.LogoutPath = "/Account/SignOut";
             options.AccessDeniedPath = "/Account/AccessDenied";
 
             // ReturnUrlParameter — the query string key that the cookie

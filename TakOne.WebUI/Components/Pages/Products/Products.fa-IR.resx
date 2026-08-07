@@ -279,4 +279,10 @@
   <data name="ThemeSwitchToLight" xml:space="preserve">
     <value>تغییر به تم روشن</value>
   </data>
+  <data name="SupportTitle" xml:space="preserve">
+    <value>پشتیبانی فنی</value>
+  </data>
+  <data name="SupportHours" xml:space="preserve">
+    <value>ساعات پاسخگویی: ۸ تا ۱۷</value>
+  </data>
 </root>

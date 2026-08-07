@@ -1,0 +1,230 @@
+﻿﻿ /* =============================================================================
+   sidebar.css — Sidebar styling for MainLayout + ShopLayout
+
+   Matches the HTML reference design (tak-makaron-admin-dashboard.html)
+   sidebar exactly: dark green background, rounded nav-items with hover/active
+   states, section headers, and a support card at the bottom.
+
+   ROUNDED EDGES: only tak-light and tak-dark themes get rounded corners.
+   For other themes (standard, material, etc.), everything is sharp. This is
+   achieved via var(--tm-radius, 0) — the --tm-radius variable is only defined
+   in tak-light.css and tak-dark.css; for other themes it's undefined and the
+   fallback 0 (sharp) is used. This is simpler than data-theme-family
+   attribute selectors for every element.
+
+   LOADED GLOBALLY via App.razor — applies to ALL pages since every page uses
+   either MainLayout or ShopLayout, both of which render SidebarContent.
+   ========================================================================== */
+/* =============================================================================
+   1. RADZEN SIDEBAR OVERRIDES — make .rz-sidebar a flex column container
+   ==========================================================================
+   RadzenSidebar renders as <div class="rz-sidebar">. We need it to be a flex
+   column so the brand block sits at top, the nav fills the middle (and
+   scrolls if needed), and the support card sticks to the bottom.
+
+   The background color is already set by the theme files via
+   --rz-sidebar-background-color. We don't override it here — the theme
+   files handle the dark green background for both tak-light and tak-dark. */
+.rz-sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+/* The SidebarContent component is a direct child of .rz-sidebar. Make it
+   fill the full height and lay out as a flex column. */
+.rz-sidebar > * {
+    flex-shrink: 0;
+}
+
+/* The nav section should be the only flex-growing child — it fills the
+   space between the brand block and the support card, and scrolls if the
+   nav items overflow. */
+.rz-sidebar .tm-nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* =============================================================================
+   2. NAV CONTAINER — .tm-nav
+   ========================================================================== */
+.tm-nav {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* =============================================================================
+   3. SECTION HEADERS — small uppercase labels grouping nav items
+   ==========================================================================
+   Matches the HTML reference's <p class="text-[10px] text-tm-gray/70
+   uppercase tracking-wider px-3 mb-2"> styling. */
+.tm-nav-section-header {
+    font-size: 0.625rem; /* 10px */
+    font-weight: 600;
+    color: var(--tm-gray, var(--rz-text-secondary-color));
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 12px 12px 4px;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* =============================================================================
+   4. NAV ITEMS — the clickable <a> elements
+   ==========================================================================
+   Matches the HTML reference's .nav-item styling:
+     - Flex row, centered, 0.75rem gap
+     - 0.625rem 0.875rem padding
+     - Rounded corners (only on Tak themes via --tm-radius)
+     - Resting: muted gray text
+     - Hover: subtle white bg, brighter text
+     - Active: green gradient bg, bright text, gold left-border bar
+   */
+.tm-nav-item {
+    display: flex !important;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--tm-radius, 0); /* rounded on Tak themes, sharp on others */
+    color: var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    transition: background 0.2s ease, color 0.2s ease;
+    position: relative;
+    cursor: pointer;
+    text-decoration: none;
+    line-height: 1.4;
+    /* Prevent the flex item from stretching to fill the cross-axis width
+       unexpectedly — it should take the nav's full content width. */
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    text-align: start;
+    font-family: inherit;
+}
+
+    /* Hover state — subtle white overlay + brighter text */
+    .tm-nav-item:hover {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--tm-text, var(--rz-text-color, #E8EDE9));
+    }
+
+    /* Active state — green gradient background + bright text */
+    .tm-nav-item.active {
+        background: linear-gradient(90deg, rgba(42, 157, 126, 0.18) 0%, rgba(42, 157, 126, 0.04) 100%);
+        color: var(--tm-text, var(--rz-text-color, #E8EDE9));
+    }
+
+        /* Active left-border bar — gold, on the right side in RTL (right: 0) */
+        .tm-nav-item.active::before {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 60%;
+            background: var(--tm-gold, var(--rz-secondary, #D4AF37));
+            border-radius: 4px 0 0 4px;
+        }
+
+        /* Active icon color — gold */
+        .tm-nav-item.active .rzi,
+        .tm-nav-item.active i,
+        .tm-nav-item.active .rz-icon {
+            color: var(--tm-gold, var(--rz-secondary, #D4AF37)) !important;
+        }
+
+    /* =============================================================================
+   5. NAV ITEM ICONS — style the RadzenIcon <i> elements inside nav items
+   ==========================================================================
+   RadzenIcon renders as <i class="rzi"> or <i class="rz-icon">. We need
+   to set the size and resting color. The active-state color override is
+   in the .tm-nav-item.active rule above. */
+    .tm-nav-item .rzi,
+    .tm-nav-item i,
+    .tm-nav-item .rz-icon {
+        font-size: 1.25rem !important; /* 20px — matches HTML's w-5 h-5 */
+        width: 1.25rem;
+        height: 1.25rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: inherit;
+    }
+
+/* =============================================================================
+   6. SUPPORT CARD — bottom of sidebar
+   ==========================================================================
+   Matches the HTML reference's support card: green gradient background,
+   gold title, white hours text, and the phone number (55555) as plain text
+   (replacing the HTML's "تماس با ما" button per user spec). */
+.tm-support-card {
+    position: relative;
+    background: linear-gradient(135deg, var(--tm-green, var(--rz-primary, #2A9D7E)) 0%, var(--tm-green-dark, var(--rz-primary-darker, #0A2A1F)) 100%);
+    border-radius: var(--tm-radius, 0); /* rounded on Tak themes, sharp on others */
+    padding: 16px;
+    margin: 8px 12px 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.tm-support-title {
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 700;
+    color: var(--tm-gold-bright, var(--rz-secondary-darker, #E8C547));
+    margin: 0 0 4px 0;
+    line-height: 1.4;
+}
+
+.tm-support-hours {
+    font-size: 0.6875rem; /* 11px */
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0 0 8px 0;
+    line-height: 1.6;
+}
+
+.tm-support-phone {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--tm-gold, var(--rz-secondary, #D4AF37));
+    margin: 0;
+    text-align: center;
+    letter-spacing: 0.1em;
+    /* The phone number is displayed as Persian digits (۵۵۵۵۵) in the markup.
+       This styling makes it prominent without being a button — per user spec:
+       "should have the number 55555 instead of the تماس با ما button, just
+       a number and not a button." */
+}
+
+/* =============================================================================
+   7. SCROLLBAR STYLING — match the HTML reference's thin dark scrollbar
+   ========================================================================== */
+.tm-nav::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tm-nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tm-nav::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+    .tm-nav::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+
+/* Firefox scrollbar */
+.tm-nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}

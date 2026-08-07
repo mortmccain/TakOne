@@ -119,6 +119,93 @@
     flex-shrink: 0;
 }
 
+/* =============================================================================
+   SIDEBAR BRAND BLOCK — Tak Makaron logo + portal title/subtitle
+   ==========================================================================
+   Lives at the top of the sidebar (above RadzenPanelMenu) on BOTH layouts:
+     - ShopLayout.razor (used by /Products)
+     - MainLayout.razor (used by every other page)
+   MOVED HERE from the Products page top bar per the user's request —
+   the brand now sits above the navigation menu, matching the layout
+   shown in the reference screenshot the user provided. The user later
+   asked for the brand to appear on ALL pages' sidebars, not just
+   /Products — so the same .tm-sidebar-brand markup is rendered in
+   MainLayout.razor too.
+
+   The block reuses the .tm-portal-icon / .tm-portal-text / .tm-portal-title /
+   .tm-portal-subtitle classes (defined below — they are NOT scoped under
+   .tm-shop-page, so they apply in the sidebar context too). This wrapper
+   only adds the sidebar-specific layout: horizontal flex, padding, and a
+   bottom border to visually separate the brand from the RadzenPanelMenu.
+
+   The .tm-portal-icon button inside is still a refresh trigger — clicking
+   it force-reloads the current page (see ShopLayout.RefreshCurrentPage /
+   MainLayout.RefreshCurrentPage).
+
+   WHY !important ON THE FLEX PROPERTIES:
+   The user reported the icon was stacking ON TOP of the text instead of
+   BESIDE it. Radzen's base CSS applies `button { display: inline-flex }`
+   globally, and there are several other places where Radzen or theme
+   styles can interfere with a naive `display: flex` on a wrapper. To
+   guarantee the icon (button) and text (div) sit side-by-side regardless
+   of what Radzen or any theme does, the flex-direction, flex-grow, and
+   flex-shrink values are pinned with !important. This is defensive but
+   necessary — the sidebar is a Radzen-controlled container and we can't
+   risk a specificity battle. */
+.tm-sidebar-brand {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 16px 16px 14px !important;
+    border-bottom: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.08));
+    margin-bottom: 8px;
+    flex-shrink: 0;
+    /* The sidebar (.rz-sidebar) is a fixed-position block container —
+       our brand block is a normal block child that takes the sidebar's
+       full content width. width:100% is belt-and-braces against any
+       theme that sets an explicit width on direct sidebar children. */
+    width: 100%;
+    box-sizing: border-box;
+}
+
+    /* The icon must NOT grow or shrink — it stays at its fixed 44x44.
+       Without flex:0 0 auto, a flex item with width:44px but default
+       flex-shrink:1 can be squeezed by a sibling that wants more space,
+       which (combined with flex-wrap) can push it to its own row —
+       exactly the "icon on top of text" bug the user reported. */
+    .tm-sidebar-brand > .tm-portal-icon {
+        flex: 0 0 auto !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+        width: 44px !important;
+        height: 44px !important;
+    }
+
+    /* The text block takes the remaining space (1fr equivalent in flex).
+       min-width:0 is CRITICAL — without it, the text block's intrinsic
+       minimum width is the longest unbreakable word in the title or
+       subtitle, which can exceed the available 240px-sidebar-minus-icon
+       space and force the flex items to wrap or overflow. */
+    .tm-sidebar-brand > .tm-portal-text {
+        flex: 1 1 auto !important;
+        flex-grow: 1 !important;
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
+    }
+
+    .tm-sidebar-brand .tm-portal-title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tm-sidebar-brand .tm-portal-subtitle {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
 .tm-portal-icon {
     width: 44px;
     height: 44px;

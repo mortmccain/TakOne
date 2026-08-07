@@ -32,19 +32,29 @@
     // ---- Registry of custom Tak themes -----------------------------------
     // Each entry: "for this theme name, load <base> as the Radzen base
     // theme, then layer <override> on top."
+    //
+    // IMPORTANT — CASE SENSITIVITY:
+    //   The override path MUST match the on-disk directory casing EXACTLY.
+    //   The files live at wwwroot/css/Themes/ (capital T). On Windows /
+    //   macOS-default (case-insensitive FS) a lowercase URL still resolves.
+    //   On Linux / case-sensitive macOS, a lowercase URL 404s and the
+    //   theme override silently fails to load — the user sees the bare
+    //   Radzen base theme with no Tak palette, which presents as a
+    //   "wrong colors" / "brownish" appearance (Radzen's standard theme
+    //   has a beige/olive body tint without the Tak override on top).
+    //   Always use /css/Themes/ (capital T) here to match the disk.
     var TAK_THEMES = {
         'tak-light': {
             base: 'standard',                                  // Radzen light theme
-            override: '/css/themes/tak-light.css?v=10'          // Tak Light palette + utilities
-            // ?v=10 cache-bust: bump when tak-light.css changes
+            override: '/css/Themes/tak-light.css?v=11'         // Tak Light palette + utilities
+            // ?v=11 cache-bust: path corrected from /css/themes/ to /css/Themes/
+            //                  (case mismatch with on-disk directory was 404'ing
+            //                  the file on Linux / case-sensitive macOS).
         },
         'tak-dark': {
             base: 'standard-dark',                             // Radzen dark theme
-            override: '/css/Themes/tak-dark.css?v=2'            // Tak Dark palette + utilities
-            // ?v=2 cache-bust: Phase 6.3 — added explicit --rz-grid-* background-color
-            // overrides (the purple-tinted --rz-base-800/900 from standard-dark.css
-            // was leaking through to the admin-users data grid). Also replaced
-            // the literal purple #9C27B0 on .tm-kpi-card.tm-kpi-total with green.
+            override: '/css/Themes/tak-dark.css?v=3'           // Tak Dark palette + utilities
+            // ?v=3 cache-bust: path corrected from /css/themes/ to /css/Themes/
         }
     };
 
@@ -67,9 +77,23 @@
         // localStorage may throw in private-browsing mode — fall back to default.
     }
 
+    // ---- Early data-theme-family assignment --------------------------------
+    // Set data-theme-family on <html> IMMEDIATELY (before applyTheme runs)
+    // so CSS can apply the correct rounded/sharp edges on the very first
+    // paint. Without this, the page would render without the attribute
+    // until the MutationObserver fires (which can be up to 3 seconds in
+    // PATH B), causing a flash of wrong corner styling on initial load.
+    //
+    // The attribute is also re-set inside applyTheme() on every theme
+    // switch, so runtime changes update it correctly.
+    (function setInitialThemeFamily() {
+        var isTak = Object.prototype.hasOwnProperty.call(TAK_THEMES, _desiredTheme);
+        document.documentElement.setAttribute('data-theme-family', isTak ? 'tak' : 'standard');
+    })();
+
     // ---- Core: find the Radzen theme <link> -------------------------------
     // Looks for any <link> in <head> whose href contains "Radzen.Blazor/css/".
-    // Skips the override link (which points to /css/themes/, not Radzen).
+    // Skips the override link (which points to /css/Themes/, not Radzen).
     function findThemeLink() {
         var links = document.head.querySelectorAll(RADZEN_LINK_SELECTOR);
         for (var i = 0; i < links.length; i++) {
@@ -85,6 +109,9 @@
     // 2. Swap the Radzen <link> href (if found).
     // 3. Remove any previous Tak override <link>.
     // 4. Append the new override <link> if the theme has one.
+    // 5. Set data-theme-family on <html> so CSS can conditionally apply
+    //    Tak-only styles (e.g. rounded corners — only tak-light/tak-dark
+    //    get rounded edges; all other themes get sharp edges per user spec).
     function applyTheme(theme) {
         if (!theme) theme = 'standard-dark';
 
@@ -120,7 +147,17 @@
             document.head.appendChild(link);
         }
 
-        // 4. Persist the user's choice.
+        // 4. Set data-theme-family on <html> — "tak" for tak-light/tak-dark,
+        //    "standard" for everything else. CSS uses this attribute to
+        //    conditionally apply rounded corners (only Tak themes get them;
+        //    all other themes get sharp edges per the user's spec).
+        //    This MUST be set on every applyTheme call so switching from a
+        //    Tak theme to a non-Tak theme (or vice versa) immediately
+        //    updates the rounded/sharp edges without a page reload.
+        var family = entry ? 'tak' : 'standard';
+        document.documentElement.setAttribute('data-theme-family', family);
+
+        // 5. Persist the user's choice.
         try {
             localStorage.setItem('radzen_theme', theme);
             _desiredTheme = theme;

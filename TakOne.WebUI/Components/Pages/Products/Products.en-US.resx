@@ -279,4 +279,10 @@
   <data name="ThemeSwitchToLight" xml:space="preserve">
     <value>Switch to light theme</value>
   </data>
+  <data name="SupportTitle" xml:space="preserve">
+    <value>Technical Support</value>
+  </data>
+  <data name="SupportHours" xml:space="preserve">
+    <value>Hours: 8 AM to 5 PM</value>
+  </data>
 </root>

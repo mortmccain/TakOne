@@ -2,7 +2,10 @@
    Built to closely mirror the design at /upload/tak-makaron-pc-design.html.
 
    LAYOUT (top to bottom):
-     1. Header: portal-name + refresh icon | search bar (Ctrl+F to focus) | user icon (settings) + cart icon
+     1. Header: hamburger + language toggle | search bar (Ctrl+F to focus) | user icon (settings) + cart icon
+        (Portal brand "تک ماکارون" / "پورتال سفارش کارکنان" + its icon
+         used to live here in the top bar; they have been MOVED to the
+         top of the ShopLayout sidebar — see ShopLayout.razor.)
      2. Golden shimmer line (animated gradient, like the HTML's announcement bar)
      3. Stats bar (5 cards):
           - سفارش های این ماه (orders this month — count)
@@ -93,7 +96,9 @@
 
 <div class="tm-shop-page">
 
-    @* ── 1. HEADER: hamburger + portal name | search bar | cart + user avatar ── *@
+    @* ── 1. HEADER: hamburger + language toggle | search bar | cart + user avatar ── *@
+    @* (Portal brand icon + "تک ماکارون" / "پورتال سفارش کارکنان" used to sit here
+       too — they have been MOVED to the top of the ShopLayout sidebar.) *@
     @* The gold shimmer line sits INSIDE <header> so it sticks along with the
        header (position:sticky is on .tm-shop-header). Previously the shimmer
        was a sibling of the header and scrolled away under the sticky header.
@@ -102,7 +107,12 @@
     <header class="tm-shop-header">
         <div class="tm-shop-header-inner">
 
-            @* Right side (RTL): hamburger + portal name + refresh icon *@
+            @* Right side (RTL): hamburger + language toggle.
+               The portal brand (icon + "تک ماکارون" title +
+               "پورتال سفارش کارکنان" subtitle) used to sit here too,
+               but has been MOVED to the top of the ShopLayout sidebar
+               (see ShopLayout.razor's .tm-sidebar-brand block). The
+               hamburger and language toggle remain in the top bar. *@
             <div class="tm-portal-block">
                 @* Hamburger — toggles the ShopLayout's sidebar. Cast to
                    the concrete layout type so we can call ToggleSidebar(). *@
@@ -124,18 +134,11 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" style="stroke:#0E4D3C;fill:none;" />
                     </svg>
                 </button>
-                <button type="button"
-                        class="tm-portal-icon"
-                        title="@Loc["RefreshProductsTitle"]"
-                        @onclick="RefreshPage">
-                    @* The user said they'll set the image later. Until then,
-                       show a fallback "ت" letter (first letter of تک ماکارون). *@
-                    <span class="tm-portal-icon-fallback">ت</span>
-                </button>
-                <div class="tm-portal-text">
-                    <span class="tm-portal-title">@Loc["PortalTitle"]</span>
-                    <span class="tm-portal-subtitle">@Loc["PortalSubtitle"]</span>
-                </div>
+                @* PORTAL BRAND (icon + title "تک ماکارون" + subtitle
+                   "پورتال سفارش کارکنان") has been MOVED to the top of the
+                   ShopLayout sidebar. See ShopLayout.razor's .tm-sidebar-brand
+                   block. The hamburger and language toggle remain here in the
+                   top bar — everything else in the top bar is unchanged. *@
 
                 @* EN | FA language toggle. Plain text — no background, no popup.
                    Clicking either code immediately commits the culture cookie
@@ -1181,12 +1184,11 @@
 
     // ── Navigation helpers ──────────────────────────────────────────────
 
-    private void RefreshPage()
-    {
-        // The user said the icon "refreshes the products page (for now)".
-        // forceLoad:true gives a true HTTP refresh — clears any stale state.
-        Navigation.NavigateTo("/Products", forceLoad: true);
-    }
+    // RefreshPage() was REMOVED — its only caller (the .tm-portal-icon
+    // button in the top bar) was moved to the top of the ShopLayout
+    // sidebar (see ShopLayout.razor's .tm-sidebar-brand block). The
+    // sidebar's icon calls ShopLayout.RefreshCurrentPage, which uses
+    // Navigation.Uri (so it works for any shop page, not just /Products).
 
     private void GoToSettings()
     {

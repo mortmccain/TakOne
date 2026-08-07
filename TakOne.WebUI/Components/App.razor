@@ -22,8 +22,17 @@
     <RadzenTheme Theme="standard-dark" />
 
     <link rel="stylesheet" href="_content/Radzen.Blazor/Radzen.Blazor.css" />
-    <link rel="stylesheet" href="/css/app.css" />
-    <link rel="stylesheet" href="css/Pages/Products.css?v=9" />
+    @* BUGFIX (Issue #08 — UI): href was "app.css" (missing "css/" prefix).
+       The actual file lives at wwwroot/css/app.css. Without the prefix,
+       the browser requests /app.css → 404 → global styles (KPI card
+       shadows, layout polish) silently fail to load. The 404 is
+       indistinguishable from "file doesn't exist" in DevTools, which is
+       why this went unnoticed — the page renders, just without the
+       global overrides. CSS files in wwwroot subdirectories MUST
+       include the subdirectory in the href. *@
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/sidebar.css?v=1" />
+    <link rel="stylesheet" href="css/Pages/Products.css?v=11" />
     <link rel="stylesheet" href="TakOne.WebUI.styles.css" />
     <link rel="icon" type="image/png" href="TakLogo.png" />
 
@@ -34,7 +43,7 @@
        swaps its href to the saved theme (and layers the tak-light or
        tak-dark override on top if needed). The ?v=12 cache-bust forces the
        browser to fetch the latest theme.js (now includes tak-dark registry). *@
-    <script src="js/theme.js?v=12"></script>
+    <script src="js/theme.js?v=14"></script>
 
     @* SignalR client — VENDORED locally (Issue #07).
        Previously loaded from cdnjs with no integrity attribute. Two problems:

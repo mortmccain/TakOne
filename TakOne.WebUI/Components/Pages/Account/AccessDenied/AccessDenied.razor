@@ -9,6 +9,21 @@
      policy fails for an AUTHENTICATED user, the middleware 302-redirects
      to that path.
 
+   ROLE-AWARE REDIRECT FOR CUSTOMERS (post-restart landing page fix):
+     When the app restarts, every authenticated user's cookie still
+     works. The browser's default landing page is "/" — which is the
+     Dashboard. The Dashboard is locked to Admin/Manager/Employee/ReadOnly
+     via [Authorize(Roles="...")]. Customers therefore get redirected
+     here to /Account/AccessDenied, which feels like a "you're locked
+     out" error even though they have a perfectly good landing page
+     (/Products — the shop front).
+
+     OnInitializedAsync below checks the user's role: if they are a
+     Customer, we 302-redirect them to /Products before the access-denied
+     UI ever renders. All other roles (or edge cases we can't classify)
+     see the normal access-denied page with the "Go home" and "Sign out"
+     buttons.
+
    WHY STATIC (not Blazor circuit):
      The 302 redirect from the cookie middleware happens BEFORE Blazor
      gets involved — the browser sends a new GET to /Account/AccessDenied,
@@ -48,12 +63,19 @@
            That sent a GET to /Account/Logout, which used to trigger
            SignOutAsync — a CSRF vulnerability (an attacker could embed
            <img src=".../Account/Logout"> on a third-party page to log
-           any user out). The /Account/Logout endpoint is now POST-only
+           any user out). The logout endpoint is now POST-only
            with RequireAntiforgery(); this form submits the POST with an
            <AntiforgeryToken /> hidden field, exactly like the logout
            button in MainLayout.razor. See MainLayout.razor for the full
-           rationale and the pattern. *@
-        <form method="post" action="/Account/Logout" style="display: inline;">
+           rationale and the pattern.
+
+           WHY /Account/SignOut (not /Account/Logout): the conventional
+           /Account/Logout path produced a runtime AmbiguousMatchException
+           (the endpoint router matched two endpoints for POST /Account/
+           Logout and could not pick one). The route was renamed to
+           /Account/SignOut to sidestep the conflict. See Program.cs
+           (LOGOUT ENDPOINT section) for the full investigation history. *@
+        <form method="post" action="/Account/SignOut" style="display: inline;">
             <AntiforgeryToken />
             <RadzenButton Text="@Loc["LogoutButton"]"
                           ButtonType="ButtonType.Submit"
@@ -65,18 +87,57 @@
 </RadzenStack>
 
 @code {
+    protected override void OnInitialized()
+    {
+        // ── Role-aware redirect for Customers ──────────────────────────
+        // When the app restarts, every authenticated user's cookie still
+        // works. The default landing page "/" is the Dashboard, which is
+        // locked to Admin/Manager/Employee/ReadOnly. Customers therefore
+        // bounce here to /Account/AccessDenied — which looks like a
+        // "you're locked out" error even though they have a perfectly
+        // good landing page (/Products — the shop front).
+        //
+        // Detect the Customer role from the HttpContext's claims (this
+        // page renders statically — no Blazor circuit — so the
+        // HttpContext is the cookie-middleware-redirected GET that
+        // arrived at /Account/AccessDenied). If the user is a Customer,
+        // 302-redirect them to /Products before the access-denied UI
+        // ever renders. The user perceives a smooth "restart landed me
+        // on the shop" experience instead of an access-denied error.
+        //
+        // We use forceLoad: true so NavigationManager emits a real 302
+        // on the current HTTP response (rather than a Blazor interactive
+        // navigation, which wouldn't work here because this is static
+        // SSR with no circuit established).
+        //
+        // All other roles (Admin/Manager/Employee/ReadOnly) and any
+        // edge cases we can't classify fall through and see the normal
+        // access-denied page with the Go-home and Sign-out buttons.
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            var isCustomer = httpContext.User.IsInRole(Roles.Customer);
+            if (isCustomer)
+            {
+                Navigation.NavigateTo("/Products", forceLoad: true);
+                return;
+            }
+        }
+    }
+
     private void GoHome()
     {
         // Role-aware: if the user is authenticated, / will route them
-        // to the dashboard (or /Products for customers). If they're
-        // somehow NOT authenticated (shouldn't happen on this page),
-        // the cookie middleware will redirect them to /Account/Login.
+        // to the dashboard (or /Products for customers — see the
+        // OnInitialized redirect above). If they're somehow NOT
+        // authenticated (shouldn't happen on this page), the cookie
+        // middleware will redirect them to /Account/Login.
         Navigation.NavigateTo("/", forceLoad: true);
     }
 
     // ISSUE #05 — DoLogout() removed.
     //   The logout button is now a submit button inside a POST form
-    //   pointing at /Account/Logout (see markup above). The handler
+    //   pointing at /Account/SignOut (see markup above). The handler
     //   lives in the minimal-API endpoint in Program.cs, not here —
     //   a GET-based logout is a CSRF vulnerability (Issue #05).
 }

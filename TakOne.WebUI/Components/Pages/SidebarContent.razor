@@ -1,0 +1,177 @@
+﻿@* SidebarContent.razor — shared sidebar content for MainLayout + ShopLayout.
+   Both layouts render the SAME sidebar (brand block + nav + support card).
+   Previously this markup was duplicated in both layout files; extracting it
+   into a shared component ensures the sidebar stays in sync across layouts.
+
+   WHAT THIS COMPONENT RENDERS:
+     1. Brand block — Tak Makaron logo (refresh trigger) + "تک ماکارون" /
+        "پورتال سفارش کارکنان". Same .tm-sidebar-brand block as before.
+     2. Navigation — plain HTML <nav> with <a> elements styled to match the
+        reference HTML design (rounded nav-items, section headers, hover/active
+        states). Previously this used RadzenPanelMenu; we replaced it with
+        plain HTML for exact visual control (matching the HTML reference
+        design's .nav-item styling).
+     3. Support card — green gradient box at the bottom with "پشتیبانی فنی"
+        + "ساعات پاسخگویی: ۸ تا ۱۷" + "55555" (a plain number, not a button,
+        per user spec).
+
+   NAV ITEMS (pages stay the same as before, minus Profile which was removed
+   per user spec — "we will not have a profile page"):
+     - Section "منوی اصلی" (Main Menu):
+         Dashboard (Admin/Manager/Employee/ReadOnly)
+         Products (everyone)
+         My Orders / Sales (everyone)
+         Cart (everyone except ReadOnly)
+     - Section "بخش مدیریت" (Admin Section — Admin/Manager/Employee only):
+         Manage Products
+         Manage Categories
+         Manage Users
+     - Section "سیستم" (System):
+         Settings
+
+   ACTIVE STATE: detected by comparing Navigation.Uri against each item's
+   path. The .tm-nav-item.active class applies the HTML reference design's
+   active styling (green gradient background + gold left-border bar).
+
+   NAVIGATION: uses @onclick with Navigation.NavigateTo for client-side
+   Blazor navigation (no full HTTP reload). The href attribute is also set
+   for accessibility/SEO — @onclick:preventDefault stops the browser's
+   default full-reload navigation.
+
+   ICONS: uses <RadzenIcon Icon="..." /> for each nav item. Radzen's icon
+   font provides Material Symbols glyphs that are visually similar to the
+   Heroicons-style SVGs in the HTML reference. Using RadzenIcon (instead of
+   inline SVGs) keeps the markup concise and lets Radzen handle icon font
+   loading. *@
+
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MainLayout> Localizer
+@inject IStringLocalizer<Products> ProductsLoc
+@using TakOne.WebUI.Components.Pages.Products
+
+@* Brand block — same .tm-sidebar-brand as before. The icon is a refresh
+   trigger (clicking it force-reloads the current page). *@
+<div class="tm-sidebar-brand">
+    <button type="button"
+            class="tm-portal-icon"
+            title="@ProductsLoc["RefreshProductsTitle"]"
+            aria-label="@ProductsLoc["RefreshProductsTitle"]"
+            @onclick="RefreshCurrentPage">
+        <span class="tm-portal-icon-fallback">ت</span>
+    </button>
+    <div class="tm-portal-text">
+        <span class="tm-portal-title">@ProductsLoc["PortalTitle"]</span>
+        <span class="tm-portal-subtitle">@ProductsLoc["PortalSubtitle"]</span>
+    </div>
+</div>
+
+@* ── Navigation — plain HTML <nav> with <a> elements.
+   Replaces the previous RadzenPanelMenu. The .tm-nav / .tm-nav-item /
+   .tm-nav-section-header classes are styled in sidebar.css to match the
+   HTML reference design's sidebar exactly.
+
+   Section headers ("منوی اصلی", "بخش مدیریت", "سیستم") group the nav
+   items logically, matching the HTML reference design's section structure.
+   The Admin section is role-gated via <AuthorizeView> — only
+   Admin/Manager/Employee can see it. *@
+<nav class="tm-nav">
+    <p class="tm-nav-section-header">@Localizer["NavSection_Main"]</p>
+
+    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
+        <a href="/" class="tm-nav-item @(IsActive("/") ? "active" : "")">
+            <RadzenIcon Icon="dashboard" />
+            <span>@Localizer["Dashboard"]</span>
+        </a>
+    </AuthorizeView>
+
+    <AuthorizeView>
+        <a href="/Products" class="tm-nav-item @(IsActive("/Products") ? "active" : "")">
+            <RadzenIcon Icon="inventory_2" />
+            <span>@Localizer["Products"]</span>
+        </a>
+    </AuthorizeView>
+
+    <AuthorizeView>
+        <a href="/Sales" class="tm-nav-item @(IsActive("/Sales") ? "active" : "")">
+            <RadzenIcon Icon="receipt_long" />
+            <span>@Localizer["MyOrders"]</span>
+        </a>
+    </AuthorizeView>
+
+    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+        <a href="/Cart" class="tm-nav-item @(IsActive("/Cart") ? "active" : "")">
+            <RadzenIcon Icon="shopping_cart" />
+            <span>@Localizer["Cart"]</span>
+        </a>
+    </AuthorizeView>
+    <AuthorizeView Roles="@Roles.Customer">
+        <a href="/Cart" class="tm-nav-item @(IsActive("/Cart") ? "active" : "")">
+            <RadzenIcon Icon="shopping_cart" />
+            <span>@Localizer["Cart"]</span>
+        </a>
+    </AuthorizeView>
+
+    @* Admin section — staff only (no customers, no read-only).
+       Previously this was a collapsible RadzenPanelMenuItem with children.
+       Now it's flat nav items under a section header, matching the HTML
+       reference design's structure (which has no collapsible groups). *@
+    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+        <p class="tm-nav-section-header">@Localizer["NavSection_Admin"]</p>
+
+        <a href="/Admin/Products" class="tm-nav-item @(IsActive("/Admin/Products") ? "active" : "")">
+            <RadzenIcon Icon="inventory" />
+            <span>@Localizer["ManageProducts"]</span>
+        </a>
+        <a href="/Admin/Categories" class="tm-nav-item @(IsActive("/Admin/Categories") ? "active" : "")">
+            <RadzenIcon Icon="category" />
+            <span>@Localizer["ManageCategories"]</span>
+        </a>
+        <a href="/Admin/Users" class="tm-nav-item @(IsActive("/Admin/Users") ? "active" : "")">
+            <RadzenIcon Icon="group" />
+            <span>@Localizer["ManageUsers"]</span>
+        </a>
+    </AuthorizeView>
+
+    <p class="tm-nav-section-header">@Localizer["NavSection_System"]</p>
+    <a href="/Settings" class="tm-nav-item @(IsActive("/Settings") ? "active" : "")">
+        <RadzenIcon Icon="settings" />
+        <span>@Localizer["Settings"]</span>
+    </a>
+</nav>
+
+@* ── Support card — bottom of sidebar.
+   Per user spec: show "پشتیبانی فنی" + "ساعات پاسخگویی: ۸ تا ۱۷" + the
+   number "55555" as PLAIN TEXT (not a button — the HTML reference had a
+   "تماس با ما" button, but the user asked to replace it with just the
+   number 55555). *@
+<div class="tm-support-card">
+    <p class="tm-support-title">@ProductsLoc["SupportTitle"]</p>
+    <p class="tm-support-hours">@ProductsLoc["SupportHours"]</p>
+    <p class="tm-support-phone">۵۵۵۵۵</p>
+</div>
+
+@code {
+    /// <summary>
+    /// Force-reloads the current page. Triggered by the brand icon at the
+    /// top of the sidebar. Uses Navigation.Uri so the refresh works on ANY
+    /// page regardless of which layout renders this sidebar.
+    /// </summary>
+    private void RefreshCurrentPage()
+    {
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
+    /// <summary>
+    /// Returns true if the given path matches the current page. Used to
+    /// apply the .active class to the current page's nav item.
+    ///
+    /// Uses Navigation.ToBaseRelativePath to extract just the path portion
+    /// (e.g. "/Admin/Products") from the full URL. Exact match — no prefix
+    /// matching — so "/Products" does NOT activate when on "/Admin/Products".
+    /// </summary>
+    private bool IsActive(string path)
+    {
+        var currentPath = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).TrimStart('/');
+        return string.Equals(currentPath, path, StringComparison.OrdinalIgnoreCase);
+    }
+}
