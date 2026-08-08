@@ -1,0 +1,859 @@
+﻿@* Settings.razor — Phase 9 (user self-service Settings page)
+
+   Route: /Settings. Linked from the sidebar's "Settings" item and the top
+   bar's user-avatar click (both MainLayout.razor + Products.razor). Until
+   now the sidebar entry existed but pointed at a route that 404'd — this
+   page fills that gap.
+
+   ─────────────────────────────────────────────────────────────────────
+   WHAT THE PAGE SHOWS
+   ─────────────────────────────────────────────────────────────────────
+
+   1. ACCOUNT CARD — read-only identity fields for the signed-in user:
+        - Worker ID (login identifier)
+        - Full name
+        - Email (if present)
+        - Gender (Male / Female, localized)
+        - Group (customers) or "—" (staff) — staff users have no group
+        - Role badge(s) — Admin / Manager / Employee / ReadOnly / Customer
+        - Active / Inactive status
+
+      Source: GetUserByIdQuery with the current user's Id. The query
+      handler enforces that customers/read-only can ONLY query themselves
+      (defense-in-depth — a Customer trying to query someone else's Id
+      gets a "not found" error, same as UserDetail.razor's pattern).
+
+   2. CHANGE PASSWORD button — navigates to /Account/ChangePassword,
+      where the user can rotate their own password. We do NOT inline the
+      change-password form here because that page is a STATIC SSR page
+      (it has to re-issue the auth cookie on the same HTTP response, which
+      a Blazor circuit can't do). Linking out is the correct pattern.
+
+   3. APPEARANCE CARD — theme selector. Each available theme is rendered
+      as a card button styled EXACTLY like the gender buttons in
+      CreateUser.razor (RadzenCard with .usertype-option class, .is-selected
+      for the active one, primary-tinted background + solid primary border
+      when selected). Only one theme can be selected at a time. Clicking
+      a theme:
+        - calls window.takTheme.set(themeName) via JS interop (theme.js
+          swaps the Radzen CSS <link> + layers the Tak override <link>).
+        - updates _currentTheme so the clicked card immediately gets
+          .is-selected and all the other cards lose it.
+        - persists the choice in localStorage (theme.js does this for us).
+
+      On page load, OnAfterRenderAsync(firstRender:true) reads
+      window.takTheme.get() to find the saved theme and marks that card
+      as selected. If JS interop fails (e.g. theme.js didn't load), the
+      default `tak-light` is selected.
+
+   ─────────────────────────────────────────────────────────────────────
+   ROLE RESOLUTION
+   ─────────────────────────────────────────────────────────────────────
+   Uses AuthenticationStateProvider (NOT ICurrentUserService.IsInRole)
+   because in interactive Blazor Server mode, ICurrentUserService reads
+   from IHttpContextAccessor.HttpContext which is null over the SignalR
+   circuit. Same pattern as UserDetail.razor / ProductDetail.razor /
+   Sales.razor. The user's Id is extracted from the "UserId" claim set
+   by our custom IClaimsPrincipalFactory (with a fallback to
+   ClaimTypes.NameIdentifier).
+
+   ─────────────────────────────────────────────────────────────────────
+   THEME LIST — all themes the theme system can apply
+   ─────────────────────────────────────────────────────────────────────
+   theme.js's TAK_THEMES registry only lists the CUSTOM Tak themes
+   (tak-light, tak-dark) because those need a Radzen base + an override
+   CSS file. But theme.js's applyTheme() function ALSO accepts ANY
+   built-in Radzen theme name (standard, material, software, …) — when
+   the name isn't in TAK_THEMES it just sets the Radzen <link> directly
+   with no override. That means the user can switch to any Radzen theme
+   too, not just the two Tak ones.
+
+   We surface ALL of those themes here, grouped into two categories so
+   the user can tell at a glance which is which:
+
+     • Tak themes (2)        — tak-light, tak-dark. The project's custom
+                               palette on top of a Radzen base. These are
+                               the recommended defaults.
+     • Radzen built-in (10) — default, dark, standard, standard-dark,
+                               material, material-dark, software,
+                               software-dark, humanistic, humanistic-dark.
+                               Plain Radzen palettes with no Tak override.
+
+   Adding a NEW Tak theme requires updating theme.js's TAK_THEMES AND
+   the _availableThemes list below. Adding a NEW Radzen built-in only
+   requires updating _availableThemes below — theme.js handles any
+   unknown name by treating it as a Radzen base.
+
+   ─────────────────────────────────────────────────────────────────────
+   LOCALIZATION
+   ─────────────────────────────────────────────────────────────────────
+   All user-visible strings via IStringLocalizer<Settings> (Loc). Keys
+   defined in Settings.en-US.resx + Settings.fa-IR.resx. RTL is handled
+   at the <html dir> level by MainLayout.
+
+   ─────────────────────────────────────────────────────────────────────
+   ANTIFORGERY
+   ─────────────────────────────────────────────────────────────────────
+   Not needed — no EditForm. All buttons are RadzenButton or RadzenCard
+   with async Click handlers. The Blazor circuit's anti-forgery token is
+   established at circuit start. No form POST happens. *@
+
+@page "/Settings"
+@attribute [Authorize]
+@using System.Globalization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Settings> Loc
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
+                           Same shape as UserDetail.razor. */
+            .settings-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 1.5rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .settings-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1rem;
+                }
+            }
+
+            /* Page header — title + subtitle. */
+            .settings-header {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                margin-bottom: 0.5rem;
+            }
+
+                .settings-header .settings-title {
+                    font-size: 1.6rem;
+                    font-weight: 700;
+                    margin: 0;
+                    line-height: 1.2;
+                }
+
+            .settings-subtitle {
+                color: var(--rz-text-secondary-color);
+                margin: 0 0 1rem 0;
+                font-size: 0.9rem;
+            }
+
+            /* Account profile grid — 2-col label/value layout. Mirrors
+                           UserDetail.razor's .profile-grid so the two pages feel
+                           visually consistent. */
+            .profile-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+                gap: 0.75rem 1.5rem;
+                align-items: baseline;
+            }
+
+            @@media (max-width: 540px) {
+                .profile-grid {
+                    grid-template-columns: 1fr;
+                    gap: 0.25rem 0;
+                }
+            }
+
+            .profile-label {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.8125rem;
+                font-weight: 500;
+            }
+
+            .profile-value {
+                color: var(--rz-text-color);
+                font-size: 0.9375rem;
+                word-break: break-word;
+            }
+
+            .profile-value-mono {
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+            }
+
+            .profile-value-muted {
+                color: var(--rz-text-secondary-color);
+                font-style: italic;
+            }
+
+            .profile-roles {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.35rem;
+            }
+
+            /* Section card — title bar with icon. */
+            .section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+            }
+
+            /* Theme selector — responsive auto-fill grid of card buttons.
+                           Mirrors CreateUser.razor's .usertype-toggle pattern exactly:
+                           each theme is a RadzenCard with the .usertype-option class;
+                           the selected theme's card additionally gets .is-selected.
+                           Selected = primary-tinted background + solid primary border.
+                           Unselected = outlined with the neutral border color.
+
+                           The grid uses auto-fill + minmax(170px, 1fr) so the cards
+                           wrap onto as many rows as needed. With 12 themes total
+                           (2 Tak + 10 Radzen built-in), this gives 4-6 columns on
+                           desktop, 2-3 on tablet, 1 on mobile — no overflow, no
+                           squashed cards. Each card has the theme's display name +
+                           a small sun/moon icon to hint at light vs dark. */
+            .theme-toggle {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+                gap: 0.75rem;
+            }
+
+            /* Category header — small all-caps label above each theme
+                           group ("Tak themes", "Radzen themes"). Visually groups the
+                           2 custom Tak themes apart from the 10 built-in Radzen ones
+                           so the user understands which is which at a glance. */
+            .theme-category-header {
+                font-size: 0.75rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                color: var(--rz-text-secondary-color);
+                margin: 0.5rem 0 0.25rem 0;
+            }
+
+            /* .usertype-option is reused from CreateUser.razor. Re-declared
+                           here so this page is self-contained (CreateUser's CSS lives
+                           inside that page's scoped style block, not globally). */
+            .usertype-option {
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+            }
+
+                .usertype-option.is-selected {
+                    background-color: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.08));
+                    border-color: var(--rz-primary) !important;
+                }
+
+            /* Theme card body — icon + name + hint stacked. */
+            .theme-card-body {
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+                text-align: center;
+            }
+
+            .theme-card-name {
+                font-weight: 600;
+                margin: 0;
+            }
+
+            .theme-card-hint {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.75rem;
+                margin: 0;
+            }
+
+            /* Action row — the "Change password" button + spacer. */
+            .action-row {
+                display: flex;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+                margin-top: 0.75rem;
+            }
+
+            /* Loading + error + not-found states reuse Radzen's alert
+                           components — same pattern as ProductDetail.razor. */
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ── *@
+    <div>
+        <div class="settings-header">
+            <RadzenIcon Icon="settings" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <h1 class="settings-title">@Loc["PageHeading"]</h1>
+        </div>
+        <p class="settings-subtitle">@Loc["PageSubheading"]</p>
+    </div>
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state ── *@
+    else if (_loadError is not null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Main content ── *@
+    else if (_user is not null)
+    {
+        <div class="settings-grid">
+            @* LEFT — account + appearance cards *@
+            <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                @* ── Account card — read-only identity fields ── *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="person" Style="color: var(--rz-primary);" />
+                        <span>@Loc["AccountCardTitle"]</span>
+                    </div>
+
+                    <div class="profile-grid">
+                        <div class="profile-label">@Loc["ColWorkerId"]</div>
+                        <div class="profile-value profile-value-mono">@_user.WorkerId</div>
+
+                        <div class="profile-label">@Loc["ColFullName"]</div>
+                        <div class="profile-value">@_user.FullName</div>
+
+                        <div class="profile-label">@Loc["ColGender"]</div>
+                        <div class="profile-value">@GetGenderLabel(_user.Gender)</div>
+
+                        @if (!string.IsNullOrWhiteSpace(_user.Email))
+                        {
+                            <div class="profile-label">@Loc["ColEmail"]</div>
+                            <div class="profile-value profile-value-mono">@_user.Email</div>
+                        }
+
+                        <div class="profile-label">@Loc["ColGroup"]</div>
+                        <div class="profile-value">
+                            @if (string.IsNullOrWhiteSpace(_user.GroupName))
+                            {
+                                <span class="profile-value-muted">@Loc["GroupNone"]</span>
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="@_user.GroupName" BadgeStyle="BadgeStyle.Base" IsPill="true" />
+                            }
+                        </div>
+
+                        <div class="profile-label">@Loc["ColRoles"]</div>
+                        <div class="profile-value profile-roles">
+                            @if (_user.Roles.Count == 0)
+                            {
+                                <span class="profile-value-muted">@Loc["RolesNone"]</span>
+                            }
+                            else
+                            {
+                                @foreach (var role in _user.Roles)
+                                {
+                                    <RadzenBadge Text="@GetRoleLabel(role)"
+                                                 BadgeStyle="@(role == Roles.Admin ? BadgeStyle.Warning : (role == Roles.Customer ? BadgeStyle.Info : BadgeStyle.Success))"
+                                                 IsPill="true" />
+                                }
+                            }
+                        </div>
+
+                        <div class="profile-label">@Loc["ColStatus"]</div>
+                        <div class="profile-value">
+                            @if (_user.IsActive)
+                            {
+                                <RadzenBadge Text="@Loc["StatusActive"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="@Loc["StatusInactive"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                            }
+                        </div>
+                    </div>
+
+                    @* Change password button — links out to /Account/ChangePassword.
+                       That page is a STATIC SSR page (not interactive) because it
+                       has to re-issue the auth cookie on the same HTTP response.
+                       We can't inline its form here. forceLoad:true is REQUIRED —
+                       navigating from an interactive circuit to a static SSR page
+                       without a full HTTP reload leaves the circuit alive and the
+                       static page never renders. *@
+                    <div class="action-row">
+                        <RadzenButton Text="@Loc["ChangePassword"]"
+                                      Icon="lock_reset"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Variant="Variant.Filled"
+                                      Click="@(() => Navigation.NavigateTo("/Account/ChangePassword", forceLoad: true))" />
+                    </div>
+                </RadzenCard>
+
+                @* ── Appearance card — theme selector ──
+                   Renders one RadzenCard per available theme, styled exactly
+                   like the gender buttons in CreateUser.razor (same .usertype-option
+                   class + .is-selected modifier). Only the active theme's card
+                   has .is-selected, so only one card shows the primary-tinted
+                   background + solid primary border at a time. Clicking a card
+                   calls window.takTheme.set(themeName) via JS interop and
+                   updates _currentTheme to re-render the list.
+
+                   The themes are grouped into two categories, each rendered
+                   under a small all-caps header so the user can tell the
+                   custom Tak themes apart from the built-in Radzen ones:
+                     1. "Tak themes"        — tak-light, tak-dark
+                     2. "Radzen themes"    — default, dark, standard, …
+                   Both groups share the SAME .theme-toggle grid + .usertype-option
+                   card style — the grouping is purely visual. *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="palette" Style="color: var(--rz-primary);" />
+                        <span>@Loc["AppearanceCardTitle"]</span>
+                    </div>
+
+                    <RadzenText TextStyle="TextStyle.Body2"
+                                Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.75rem;">
+                        @Loc["ThemeHint"]
+                    </RadzenText>
+
+                    @* Render each category group with its own header. We
+                       iterate over _themeCategories so the order + grouping
+                       is data-driven (not hard-coded in markup). Adding a
+                       new category only requires editing _availableThemes +
+                       _themeCategories — the markup stays the same. *@
+                    @foreach (var category in _themeCategories)
+                    {
+                        <p class="theme-category-header">@GetCategoryHeader(category)</p>
+                        <div class="theme-toggle">
+                            @foreach (var theme in _availableThemes.Where(t => t.Category == category.Id))
+                            {
+                                var themeId = theme.Id; // closure capture for the lambda
+                                var isSelected = _currentTheme == themeId;
+                                <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                            Class="@GetToggleClass(isSelected)"
+                                            Style="@GetToggleBorderStyle(isSelected)"
+                                            @onclick="@(() => HandleSelectThemeAsync(themeId))">
+                                    <div class="theme-card-body">
+                                        <RadzenIcon Icon="@theme.Icon"
+                                                    Style="@GetToggleIconStyle(isSelected)" />
+                                        <RadzenText Text="@GetThemeName(themeId)"
+                                                    TextStyle="TextStyle.Subtitle1"
+                                                    Style="@GetToggleTextStyle(isSelected)" />
+                                        <RadzenText Text="@GetThemeHint(themeId)"
+                                                    TextStyle="TextStyle.Caption"
+                                                    Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                                    </div>
+                                </RadzenCard>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_themeToast))
+                    {
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-success, #16a34a); display: block; margin-top: 0.5rem;">
+                            @_themeToast
+                        </RadzenText>
+                    }
+                </RadzenCard>
+            </RadzenStack>
+
+            @* RIGHT — help / about card. Keeps the page from looking
+               empty on the right side, and gives the user a place to
+               read about what each section does. *@
+            <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                <RadzenCard Variant="Variant.Outlined" Style="padding: 1.25rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
+                        <span>@Loc["HelpCardTitle"]</span>
+                    </div>
+                    <RadzenText TextStyle="TextStyle.Body2"
+                                Style="color: var(--rz-text-secondary-color); line-height: 1.6;">
+                        @Loc["HelpCardText"]
+                    </RadzenText>
+                </RadzenCard>
+
+                <RadzenCard Variant="Variant.Outlined" Style="padding: 1.25rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="info" Style="color: var(--rz-primary);" />
+                        <span>@Loc["AboutCardTitle"]</span>
+                    </div>
+                    <div class="profile-grid">
+                        <div class="profile-label">@Loc["ColApp"]</div>
+                        <div class="profile-value">TakOne</div>
+                        <div class="profile-label">@Loc["ColRole"]</div>
+                        <div class="profile-value">@GetPrimaryRoleLabel()</div>
+                    </div>
+                </RadzenCard>
+            </RadzenStack>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── State ──────────────────────────────────────────────────────────
+
+    private UserDto? _user;
+    private string? _loadError;
+    private bool _isLoading = true;
+
+    /// <summary>
+    /// The currently-applied theme name. Initialized to "tak-light" (the
+    /// project default) and then synced with theme.js's saved value in
+    /// OnAfterRenderAsync(firstRender:true) — same pattern as MainLayout.razor.
+    /// Drives the .is-selected class on the theme cards.
+    /// </summary>
+    private string _currentTheme = "tak-light";
+
+    /// <summary>
+    /// Transient "theme applied" toast — shown briefly after a theme
+    /// switch so the user gets feedback that the click was registered.
+    /// Cleared on the next switch. Kept as a simple string (not a
+    /// ToastService call) so it persists alongside the card.
+    /// </summary>
+    private string? _themeToast;
+
+    /// <summary>
+    /// One entry per available theme. The Id matches the keys in theme.js's
+    /// TAK_THEMES registry (for Tak themes) OR a built-in Radzen theme name
+    /// (for Radzen themes). Adding a new theme requires updating this list;
+    /// for Tak themes you ALSO need to update theme.js's TAK_THEMES.
+    ///
+    /// The Icon is a Material Symbols name (light_mode for light themes,
+    /// dark_mode for dark themes) — rendered via RadzenIcon.
+    ///
+    /// NameKey + HintKey are resx keys (looked up via Loc[...]) — they
+    /// decouple the display strings from the theme Id so the Id can stay
+    /// stable (e.g. "tak-light") while the user-visible name can be
+    /// localized ("Tak Light" / "پوسته روشن").
+    ///
+    /// Category groups the theme under a header in the UI ("Tak themes"
+    /// vs "Radzen themes") — must match a ThemeCategory.Id in
+    /// _themeCategories below.
+    /// </summary>
+    private readonly List<ThemeOption> _availableThemes = new()
+    {
+        // ── Tak themes (custom palette on top of a Radzen base) ──
+        // These are the project's recommended defaults. The override CSS
+        // files (tak-light.css, tak-dark.css) live in wwwroot/css/Themes/.
+        new ThemeOption("tak-light",       "light_mode", IsDark: false,
+            NameKey: "ThemeName_TakLight",       HintKey: "ThemeHint_TakLight",       Category: "Tak"),
+        new ThemeOption("tak-dark",        "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_TakDark",        HintKey: "ThemeHint_TakDark",        Category: "Tak"),
+
+        // ── Radzen built-in themes (no Tak override) ──
+        // theme.js's applyTheme() handles any unknown theme name by
+        // treating it as a Radzen base — so all of these work without
+        // any registry changes in theme.js.
+        new ThemeOption("standard",        "light_mode", IsDark: false,
+            NameKey: "ThemeName_Standard",      HintKey: "ThemeHint_Standard",      Category: "Radzen"),
+        new ThemeOption("standard-dark",   "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_StandardDark",  HintKey: "ThemeHint_StandardDark",  Category: "Radzen"),
+        new ThemeOption("default",         "light_mode", IsDark: false,
+            NameKey: "ThemeName_Default",       HintKey: "ThemeHint_Default",       Category: "Radzen"),
+        new ThemeOption("dark",            "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_Dark",          HintKey: "ThemeHint_Dark",          Category: "Radzen"),
+        new ThemeOption("material",        "light_mode", IsDark: false,
+            NameKey: "ThemeName_Material",      HintKey: "ThemeHint_Material",      Category: "Radzen"),
+        new ThemeOption("material-dark",   "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_MaterialDark",  HintKey: "ThemeHint_MaterialDark",  Category: "Radzen"),
+        new ThemeOption("software",        "light_mode", IsDark: false,
+            NameKey: "ThemeName_Software",      HintKey: "ThemeHint_Software",      Category: "Radzen"),
+        new ThemeOption("software-dark",   "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_SoftwareDark",  HintKey: "ThemeHint_SoftwareDark",  Category: "Radzen"),
+        new ThemeOption("humanistic",      "light_mode", IsDark: false,
+            NameKey: "ThemeName_Humanistic",    HintKey: "ThemeHint_Humanistic",    Category: "Radzen"),
+        new ThemeOption("humanistic-dark", "dark_mode",  IsDark: true,
+            NameKey: "ThemeName_HumanisticDark",HintKey: "ThemeHint_HumanisticDark",Category: "Radzen"),
+    };
+
+    /// <summary>
+    /// One theme entry in the selector grid. See _availableThemes above
+    /// for the field-by-field rationale.
+    /// </summary>
+    private sealed record ThemeOption(
+        string Id,
+        string Icon,
+        bool IsDark,
+        string NameKey,
+        string HintKey,
+        string Category);
+
+    /// <summary>
+    /// Ordered list of theme categories — each renders as a small all-caps
+    /// header above its group of theme cards. The order here controls the
+    /// order the groups appear in the UI (Tak first, then Radzen).
+    ///
+    /// Id must match the Category field on ThemeOption entries. Header is
+    /// a resx key (looked up via Loc[...]) so the category labels are
+    /// localized too.
+    /// </summary>
+    private readonly List<ThemeCategory> _themeCategories = new()
+    {
+        new ThemeCategory(Id: "Tak",    HeaderKey: "ThemeCategory_Tak"),
+        new ThemeCategory(Id: "Radzen", HeaderKey: "ThemeCategory_Radzen"),
+    };
+
+    /// <summary>
+    /// One category group in the theme selector. See _themeCategories
+    /// above for the field-by-field rationale.
+    /// </summary>
+    private sealed record ThemeCategory(string Id, string HeaderKey);
+
+    /// <summary>
+    /// Resolves the localized header for a category. Used by the markup's
+    /// @category.Header binding so the razor file doesn't need to know
+    /// about the resx-key indirection.
+    /// </summary>
+    private string GetCategoryHeader(ThemeCategory category) => Loc[category.HeaderKey];
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Resolve the current user's Id via AuthStateProvider — NOT
+            // ICurrentUserService, which reads from HttpContext (null over
+            // the SignalR circuit in interactive Blazor Server mode).
+            // Same pattern as UserDetail.razor.
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated != true)
+            {
+                _loadError = Loc["Error_NotAuthenticated"];
+                return;
+            }
+
+            // The UserId claim is set by our custom IClaimsPrincipalFactory
+            // in Infrastructure — it's the Domain User's Guid Id. Fallback
+            // to NameIdentifier for safety.
+            var idClaim = user.FindFirst("UserId")?.Value
+                          ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (!Guid.TryParse(idClaim, out var userId))
+            {
+                _loadError = Loc["Error_NotAuthenticated"];
+                return;
+            }
+
+            var query = new GetUserByIdQuery { UserId = userId };
+            var result = await MessageBus.InvokeAsync<Result<UserDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _user = result.Value;
+            }
+            else
+            {
+                // The handler returns "User '...' was not found." for both
+                // genuinely-missing users and not-allowed-to-see — we
+                // surface a generic message to avoid leaking which.
+                _loadError = Loc["Error_GenericLoad"];
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// After the first interactive render, read the actually-applied theme
+    /// from theme.js (window.takTheme.get) and update _currentTheme so the
+    /// active theme's card shows .is-selected. Same pattern as
+    /// MainLayout.razor's OnAfterRenderAsync.
+    ///
+    /// WHY OnAfterRenderAsync (not OnInitializedAsync):
+    ///   - OnInitializedAsync runs TWICE in InteractiveServer + prerender:
+    ///     once during static prerender (no circuit yet — JS interop throws),
+    ///     and once after hydration (circuit ready — JS interop works).
+    ///   - OnAfterRenderAsync(firstRender: true) runs ONLY ONCE, after the
+    ///     circuit is established. JS interop definitely works here.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("takTheme.get");
+            if (!string.IsNullOrEmpty(saved) && saved != _currentTheme)
+            {
+                _currentTheme = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // JS interop failed (e.g. theme.js didn't load) — leave
+            // _currentTheme at its "tak-light" default. The user can
+            // still click theme cards; only the persistence would fail.
+        }
+    }
+
+    // ── Theme selection ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called when the user clicks a theme card. Calls theme.js's
+    /// takTheme.set(themeName) to swap the CSS <link> + persist to
+    /// localStorage, then updates _currentTheme so the .is-selected class
+    /// moves to the clicked card. No page reload needed — theme.js swaps
+    /// the stylesheet in-place and the whole page re-paints.
+    /// </summary>
+    private async Task HandleSelectThemeAsync(string themeId)
+    {
+        if (themeId == _currentTheme)
+        {
+            return; // no-op — clicking the already-active theme
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", themeId);
+            _currentTheme = themeId;
+            _themeToast = string.Format(CultureInfo.CurrentCulture, Loc["ThemeApplied"], GetThemeName(themeId));
+        }
+        catch
+        {
+            // JS interop failed — show an error toast so the user knows.
+            _themeToast = Loc["Error_ThemeSwitch"];
+        }
+    }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the CSS class for a theme card: "usertype-option is-selected"
+    /// for the active theme, "usertype-option" for others. Mirrors
+    /// CreateUser.razor's GetToggleClass exactly so the visual style is
+    /// identical to the gender buttons.
+    /// </summary>
+    private static string GetToggleClass(bool selected)
+    {
+        return selected ? "usertype-option is-selected" : "usertype-option";
+    }
+
+    /// <summary>
+    /// Returns the inline border style for a theme card: solid primary
+    /// border + padding when selected, neutral border + padding otherwise.
+    /// Mirrors CreateUser.razor's GetToggleBorderStyle so the border
+    /// treatment matches the gender buttons.
+    /// </summary>
+    private static string GetToggleBorderStyle(bool selected)
+    {
+        var borderColor = selected ? "var(--rz-primary)" : "var(--rz-border-color)";
+        return $"padding: 1rem; cursor: pointer; border: 2px solid {borderColor};";
+    }
+
+    /// <summary>
+    /// Returns the icon color style for a theme card: primary color when
+    /// selected, secondary text color otherwise. Mirrors CreateUser.razor's
+    /// GetToggleIconStyle.
+    /// </summary>
+    private static string GetToggleIconStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-secondary-color)";
+        return $"color: {color}; font-size: 1.75rem;";
+    }
+
+    /// <summary>
+    /// Returns the name text style for a theme card: primary color + bold
+    /// when selected, normal text color otherwise. Mirrors CreateUser.razor's
+    /// GetToggleTextStyle.
+    /// </summary>
+    private static string GetToggleTextStyle(bool selected)
+    {
+        var color = selected ? "var(--rz-primary)" : "var(--rz-text-color)";
+        return $"font-weight: 600; margin: 0; color: {color};";
+    }
+
+    /// <summary>
+    /// Returns the localized display name for a theme Id. Used in the
+    /// card body + the "Theme applied" toast. Looks up the ThemeOption
+    /// by Id and returns its localized NameKey value — falls back to the
+    /// raw Id if the theme isn't in _availableThemes (defensive; should
+    /// never happen because the cards only render known themes).
+    /// </summary>
+    private string GetThemeName(string themeId)
+    {
+        var theme = _availableThemes.FirstOrDefault(t => t.Id == themeId);
+        return theme is null ? themeId : Loc[theme.NameKey];
+    }
+
+    /// <summary>
+    /// Returns the localized short hint for a theme Id — shown as a small
+    /// caption under the theme name in the card. Same lookup pattern as
+    /// GetThemeName; falls back to empty string if the theme isn't found.
+    /// </summary>
+    private string GetThemeHint(string themeId)
+    {
+        var theme = _availableThemes.FirstOrDefault(t => t.Id == themeId);
+        return theme is null ? string.Empty : Loc[theme.HintKey];
+    }
+
+    /// <summary>
+    /// Returns the localized label for a Gender enum value. Same pattern
+    /// as UserDetail.razor's GetGenderLabel.
+    /// </summary>
+    private string GetGenderLabel(Gender gender) => gender switch
+    {
+        Gender.Male => Loc["GenderMale"],
+        Gender.Female => Loc["GenderFemale"],
+        _ => gender.ToString()
+    };
+
+    /// <summary>
+    /// Returns the localized label for a single role name. Used by the
+    /// roles badge list in the account card.
+    /// </summary>
+    private string GetRoleLabel(string role) => role switch
+    {
+        Roles.Admin => Loc["RoleAdmin"],
+        Roles.Manager => Loc["RoleManager"],
+        Roles.Employee => Loc["RoleEmployee"],
+        Roles.ReadOnly => Loc["RoleReadOnly"],
+        Roles.Customer => Loc["RoleCustomer"],
+        _ => role
+    };
+
+    /// <summary>
+    /// Returns the localized label for the user's PRIMARY role (Admin >
+    /// Manager > Employee > ReadOnly > Customer). Used in the About card
+    /// so the user sees their access level at a glance. Same priority
+    /// order as MainLayout.razor's GetRoleLabel.
+    /// </summary>
+    private string GetPrimaryRoleLabel()
+    {
+        if (_user is null) return Loc["RoleCustomer"];
+        if (_user.Roles.Contains(Roles.Admin)) return Loc["RoleAdmin"];
+        if (_user.Roles.Contains(Roles.Manager)) return Loc["RoleManager"];
+        if (_user.Roles.Contains(Roles.Employee)) return Loc["RoleEmployee"];
+        if (_user.Roles.Contains(Roles.ReadOnly)) return Loc["RoleReadOnly"];
+        if (_user.Roles.Contains(Roles.Customer)) return Loc["RoleCustomer"];
+        return Loc["RoleCustomer"];
+    }
+}

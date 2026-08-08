@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings.en-US.resx — English strings for Settings.razor.
+
+     The four <resheader> tags below are REQUIRED by the .resx reader —
+     without them, the loader rejects the file with "resx input is not valid,
+     couldn't find valid resheader tags". -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Settings — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="PageSubheading" xml:space="preserve">
+    <value>Manage your account details and personalize how TakOne looks.</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>Loading your settings…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>We couldn't load your settings. Please try again.</value>
+  </data>
+  <data name="Error_NotAuthenticated" xml:space="preserve">
+    <value>You need to be signed in to view this page.</value>
+  </data>
+  <data name="Error_ThemeSwitch" xml:space="preserve">
+    <value>We couldn't switch themes. Please reload the page and try again.</value>
+  </data>
+
+  <!-- Account card -->
+  <data name="AccountCardTitle" xml:space="preserve">
+    <value>Account</value>
+  </data>
+  <data name="ColWorkerId" xml:space="preserve">
+    <value>Worker ID</value>
+  </data>
+  <data name="ColFullName" xml:space="preserve">
+    <value>Full name</value>
+  </data>
+  <data name="ColGender" xml:space="preserve">
+    <value>Gender</value>
+  </data>
+  <data name="ColEmail" xml:space="preserve">
+    <value>Email</value>
+  </data>
+  <data name="ColGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="ColRoles" xml:space="preserve">
+    <value>Roles</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="ColApp" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="ColRole" xml:space="preserve">
+    <value>Access level</value>
+  </data>
+  <data name="GroupNone" xml:space="preserve">
+    <value>—</value>
+  </data>
+  <data name="RolesNone" xml:space="preserve">
+    <value>No roles assigned</value>
+  </data>
+  <data name="StatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
+  <data name="GenderMale" xml:space="preserve">
+    <value>Male</value>
+  </data>
+  <data name="GenderFemale" xml:space="preserve">
+    <value>Female</value>
+  </data>
+  <data name="RoleAdmin" xml:space="preserve">
+    <value>Administrator</value>
+  </data>
+  <data name="RoleManager" xml:space="preserve">
+    <value>Manager</value>
+  </data>
+  <data name="RoleEmployee" xml:space="preserve">
+    <value>Employee</value>
+  </data>
+  <data name="RoleReadOnly" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="RoleCustomer" xml:space="preserve">
+    <value>Customer</value>
+  </data>
+  <data name="ChangePassword" xml:space="preserve">
+    <value>Change password</value>
+  </data>
+
+  <!-- Appearance card -->
+  <data name="AppearanceCardTitle" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="ThemeHint" xml:space="preserve">
+    <value>Pick a theme. Your choice is remembered on this device.</value>
+  </data>
+
+  <!-- Theme category headers — small all-caps labels above each theme group -->
+  <data name="ThemeCategory_Tak" xml:space="preserve">
+    <value>Tak themes</value>
+  </data>
+  <data name="ThemeCategory_Radzen" xml:space="preserve">
+    <value>Radzen built-in themes</value>
+  </data>
+
+  <!-- Theme display names — one per theme in _availableThemes -->
+  <data name="ThemeName_TakLight" xml:space="preserve">
+    <value>Tak Light</value>
+  </data>
+  <data name="ThemeName_TakDark" xml:space="preserve">
+    <value>Tak Dark</value>
+  </data>
+  <data name="ThemeName_Standard" xml:space="preserve">
+    <value>Standard</value>
+  </data>
+  <data name="ThemeName_StandardDark" xml:space="preserve">
+    <value>Standard Dark</value>
+  </data>
+  <data name="ThemeName_Default" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="ThemeName_Dark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="ThemeName_Material" xml:space="preserve">
+    <value>Material</value>
+  </data>
+  <data name="ThemeName_MaterialDark" xml:space="preserve">
+    <value>Material Dark</value>
+  </data>
+  <data name="ThemeName_Software" xml:space="preserve">
+    <value>Software</value>
+  </data>
+  <data name="ThemeName_SoftwareDark" xml:space="preserve">
+    <value>Software Dark</value>
+  </data>
+  <data name="ThemeName_Humanistic" xml:space="preserve">
+    <value>Humanistic</value>
+  </data>
+  <data name="ThemeName_HumanisticDark" xml:space="preserve">
+    <value>Humanistic Dark</value>
+  </data>
+
+  <!-- Theme hints — short caption under each theme name -->
+  <data name="ThemeHint_TakLight" xml:space="preserve">
+    <value>Bright — recommended daytime theme</value>
+  </data>
+  <data name="ThemeHint_TakDark" xml:space="preserve">
+    <value>Dimmed — recommended nighttime theme</value>
+  </data>
+  <data name="ThemeHint_Standard" xml:space="preserve">
+    <value>Light — Radzen standard palette</value>
+  </data>
+  <data name="ThemeHint_StandardDark" xml:space="preserve">
+    <value>Dark — Radzen standard palette</value>
+  </data>
+  <data name="ThemeHint_Default" xml:space="preserve">
+    <value>Light — Radzen default palette</value>
+  </data>
+  <data name="ThemeHint_Dark" xml:space="preserve">
+    <value>Dark — Radzen default palette</value>
+  </data>
+  <data name="ThemeHint_Material" xml:space="preserve">
+    <value>Light — Material Design palette</value>
+  </data>
+  <data name="ThemeHint_MaterialDark" xml:space="preserve">
+    <value>Dark — Material Design palette</value>
+  </data>
+  <data name="ThemeHint_Software" xml:space="preserve">
+    <value>Light — soft pastel palette</value>
+  </data>
+  <data name="ThemeHint_SoftwareDark" xml:space="preserve">
+    <value>Dark — soft pastel palette</value>
+  </data>
+  <data name="ThemeHint_Humanistic" xml:space="preserve">
+    <value>Light — warm humanist palette</value>
+  </data>
+  <data name="ThemeHint_HumanisticDark" xml:space="preserve">
+    <value>Dark — warm humanist palette</value>
+  </data>
+  <data name="ThemeApplied" xml:space="preserve">
+    <value>Theme switched to "{0}".</value>
+  </data>
+
+  <!-- Help / About cards -->
+  <data name="HelpCardTitle" xml:space="preserve">
+    <value>Help</value>
+  </data>
+  <data name="HelpCardText" xml:space="preserve">
+    <value>The Account card shows the information your administrator recorded for you. To update your full name, email, or group, contact an administrator. To change your password, use the "Change password" button — you'll be taken to a secure page where you can pick a new one.</value>
+  </data>
+  <data name="AboutCardTitle" xml:space="preserve">
+    <value>About</value>
+  </data>
+</root>
