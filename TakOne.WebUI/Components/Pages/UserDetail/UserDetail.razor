@@ -89,9 +89,9 @@
      - Assign role: RadzenDropDown (TValue=string, primitive key — matches
        AdminUsers.razor's activity-filter pattern, NOT the complex-object
        binding pattern that bit us in CreateUser.razor Phase 6.2). Dropdown
-       options are filtered to remove roles the user already has, AND to
-       remove Customer (Customer is implicit — set at creation time, not
-       assignable post-creation from this UI).
+       options are filtered to remove roles the user already has. Customer
+       IS included so an Admin can demote a non-customer (e.g. an
+       ex-employee) back to Customer.
      - Remove role: small icon button per assigned role. Hidden on the
        current user's own Admin role (handler rejects this as
        defense-in-depth, but hiding the button is better UX — same pattern
@@ -156,8 +156,8 @@
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                                       Left = profile + roles + group cards (wider); right = sticky action panel.
-                                       Mirrors SaleDetail.razor's .detail-grid structure. */
+                                                   Left = profile + roles + group cards (wider); right = sticky action panel.
+                                                   Mirrors SaleDetail.razor's .detail-grid structure. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -171,7 +171,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so help + role-scope
-                                               context is visible before the user scrolls to the cards. */
+                                                           context is visible before the user scrolls to the cards. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -221,7 +221,7 @@
             }
 
             /* Scope badge (large) in the action panel header — same shape
-                                       as SaleDetail.razor's .status-badge-large. */
+                                                   as SaleDetail.razor's .status-badge-large. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -235,9 +235,9 @@
             }
 
             /* Per-scope background colors (semantic):
-                                       - Admin   → primary  (highest privilege — visually distinct)
-                                       - Manager → info     (mid privilege)
-                                       - Viewer  → base     (read-only) */
+                                                   - Admin   → primary  (highest privilege — visually distinct)
+                                                   - Manager → info     (mid privilege)
+                                                   - Viewer  → base     (read-only) */
             .scope-bg-admin {
                 background: rgba(63, 81, 181, 0.18);
                 color: #1a237e;
@@ -339,9 +339,9 @@
                 }
 
             /* Constrain the Radzen button icon container so wider Material
-               glyphs can't overflow the button's left padding or overlap the
-               button text. Lets the icon shrink to its natural glyph width
-               and keeps it vertically centered. */
+                           glyphs can't overflow the button's left padding or overlap the
+                           button text. Lets the icon shrink to its natural glyph width
+                           and keeps it vertically centered. */
             .change-group-btn .rz-button-icon {
                 width: auto;
                 min-width: 0;
@@ -351,12 +351,12 @@
             }
 
             /* ── Group change panel (Phase 6.6) ──
-                           Mirrors CreateUser.razor's group-name UI: two toggle cards
-                           (Existing / New) + a 2-column grid of existing-group buttons
-                           (Existing mode) OR a textbox (New mode). The toggle cards
-                           use the same .toggle-option / .is-selected pattern as
-                           CreateUser.razor's .usertype-option, so the visual style
-                           is identical. */
+                                       Mirrors CreateUser.razor's group-name UI: two toggle cards
+                                       (Existing / New) + a 2-column grid of existing-group buttons
+                                       (Existing mode) OR a textbox (New mode). The toggle cards
+                                       use the same .toggle-option / .is-selected pattern as
+                                       CreateUser.razor's .usertype-option, so the visual style
+                                       is identical. */
             .toggle-option {
                 transition: background-color 0.15s ease, border-color 0.15s ease;
             }
@@ -405,12 +405,12 @@
                 }
 
             /* ── Edit Full Name modal ──
-                                       Inline modal overlay + dialog. Renders above all other
-                                       content via position:fixed + z-index. Backdrop is a
-                                       semi-transparent dark layer that dims the underlying page
-                                       (matches Radzen Dialog's visual weight). The dialog itself
-                                       is a Radzen-styled card with max-width to keep it compact
-                                       on desktop and full-width (minus margins) on mobile. */
+                                                   Inline modal overlay + dialog. Renders above all other
+                                                   content via position:fixed + z-index. Backdrop is a
+                                                   semi-transparent dark layer that dims the underlying page
+                                                   (matches Radzen Dialog's visual weight). The dialog itself
+                                                   is a Radzen-styled card with max-width to keep it compact
+                                                   on desktop and full-width (minus margins) on mobile. */
             .modal-overlay {
                 position: fixed;
                 inset: 0;
@@ -540,7 +540,7 @@
             }
 
             /* On small screens, modal footer buttons stretch full-width
-                                       and stack vertically for easier thumb-tapping. */
+                                                   and stack vertically for easier thumb-tapping. */
             @@media (max-width: 576px) {
                 .modal-footer {
                     flex-direction: column-reverse;
@@ -552,7 +552,7 @@
             }
 
             /* Password row inside the Reset Password modal — textbox on
-                           the left (flex-grow), show/hide toggle button on the right. */
+                                       the left (flex-grow), show/hide toggle button on the right. */
             .modal-password-row {
                 display: flex;
                 gap: 0.5rem;
@@ -1432,8 +1432,9 @@
     /// The list of role constants available for assignment. Computed in
     /// OnInitializedAsync and recomputed after each successful role
     /// Add/Remove (because the list excludes roles the user already has).
-    /// Customer is intentionally excluded — Customer is implicit (set at
-    /// creation time, not assignable post-creation from this UI).
+    /// Customer IS included so an Admin can demote a non-customer (e.g.
+    /// an ex-employee) back to Customer. Source list is
+    /// <see cref="AllAssignableRoles"/>.
     ///
     /// WHY List&lt;string&gt; (not List&lt;RoleOption&gt;):
     ///   The previous implementation used a complex RoleOption class with
@@ -1453,12 +1454,15 @@
     private List<string> _assignableRoles = new();
 
     /// <summary>
-    /// All staff-role options (excludes Customer) used to build the
-    /// assignable-roles list. The 4 staff roles match the AllowedStaffRoles
-    /// set on CreateStaffCommandValidator.
+    /// Every role an Admin can assign to a user from this page. Includes
+    /// <see cref="Roles.Customer"/> so a non-customer user (e.g. an
+    /// ex-employee) can be demoted back to Customer. Mirrors
+    /// <see cref="AssignUserRoleCommandValidator.AllRoles"/> — keep in
+    /// sync. The dropdown filters out roles the target already has in
+    /// <see cref="RefreshAssignableRoles"/>.
     /// </summary>
-    private static readonly string[] StaffRoles =
-        { Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly };
+    private static readonly string[] AllAssignableRoles =
+        { Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly, Roles.Customer };
 
     // ── Edit Full Name modal state ────────────────────────────────────
 
@@ -1859,7 +1863,8 @@
     /// Rebuilds the assignable-roles list, excluding roles the user
     /// already has. Called after every successful Load (initial + reload
     /// after each action) so the dropdown never shows already-assigned
-    /// roles. Customer is intentionally never in this list.
+    /// roles. Customer IS included in the source list so an Admin can
+    /// demote a non-customer (e.g. an ex-employee) back to Customer.
     /// </summary>
     private void RefreshAssignableRoles()
     {
@@ -1873,7 +1878,7 @@
         // dropdown's ItemTemplate will render the localized label via
         // GetRoleLabel(roleName). See the _assignableRoles field remark
         // for why we don't use a complex RoleOption class anymore.
-        _assignableRoles = StaffRoles
+        _assignableRoles = AllAssignableRoles
             .Where(r => !_user.Roles.Contains(r))
             .ToList();
 
