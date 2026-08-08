@@ -570,17 +570,35 @@ else if (_stats is not null)
             topProducts = _stats.TopProducts,
             topCategories = _stats.TopCategories,
 
-            // Localized labels for chart legends + tooltips
-            labelThisWeek = Loc["Chart_WeeklyLegend_This"],
-            labelLastWeek = Loc["Chart_WeeklyLegend_Last"],
-            labelApproved = Loc["Status_Approved"],
-            labelShipped = Loc["Status_Shipped"],
-            labelPending = Loc["Status_Pending"],
-            labelCancelled = Loc["Status_Cancelled"],
-            labelDraft = Loc["Status_Draft"],
-            labelOrdersUnit = Loc["Status_OrdersUnit"],
-            labelSalesCount = Loc["Chart_TopProducts"],
-            labelSoldUnit = Loc["Status_SoldUnit"]
+            // Localized labels for chart legends + tooltips.
+            //
+            // CRITICAL: use `.Value` on every Loc[...] call. IStringLocalizer
+            // returns LocalizedString structs, which have an implicit
+            // conversion to string in C# — BUT System.Text.Json does NOT
+            // honor implicit conversions during JS-interop serialization.
+            // Without `.Value`, each label is serialized as a JSON OBJECT
+            // { name, value, resourceNotFound, searchedLocation } instead of
+            // a plain string. dashboard.js then concatenates that object
+            // with strings inside tooltip callbacks, producing the literal
+            // text "[object Object]" in every tooltip that uses a label
+            // (donut/line/bar). The pie chart tooltip was the only one that
+            // didn't consume any label field, which is why it was the only
+            // correct tooltip.
+            labelThisWeek = Loc["Chart_WeeklyLegend_This"].Value,
+            labelLastWeek = Loc["Chart_WeeklyLegend_Last"].Value,
+            labelApproved = Loc["Status_Approved"].Value,
+            labelShipped = Loc["Status_Shipped"].Value,
+            labelPending = Loc["Status_Pending"].Value,
+            labelCancelled = Loc["Status_Cancelled"].Value,
+            labelDraft = Loc["Status_Draft"].Value,
+            labelOrdersUnit = Loc["Status_OrdersUnit"].Value,
+            labelSalesCount = Loc["Chart_TopProducts"].Value,
+            labelSoldUnit = Loc["Status_SoldUnit"].Value,
+
+            // Empty-state label — shown on any chart whose data array is
+            // empty (e.g. a fresh install with no sales yet). Without this,
+            // dashboard.js falls back to a hard-coded Persian string.
+            labelNoData = Loc["Chart_NoData"].Value
         };
 
         try

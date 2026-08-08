@@ -123,8 +123,25 @@
 
     @* Dashboard chart initializer — wraps Chart.js with the Tak Makaron
        dark palette + Persian digit tooltips. Loaded globally; only
-       invokes when the dashboard calls window.takDashboard.render(). *@
-    <script src="js/dashboard.js?v=4"></script>
+       invokes when the dashboard calls window.takDashboard.render().
+
+       v5 cache-bust: added empty-state handling for all 4 charts so a
+       fresh install with no sales data shows a friendly "no data yet"
+       message instead of blank chart areas. Without this cache-bust the
+       browser would keep serving the old v4 JS which silently renders
+       empty Chart.js instances on canvases that have no data — looking
+       identical to a broken chart.
+
+       v6 cache-bust: fixed "[object Object]" showing in the line, donut
+       and bar chart tooltips. Root cause was on the .NET side (Loc[...]
+       returns LocalizedString structs that System.Text.Json serializes
+       as JSON objects, not strings) — that's now fixed in Dashboard.razor
+       via .Value. This JS-side bump adds an asStr() defensive helper
+       that unwraps any LocalizedString-shaped object just in case a
+       future razor change forgets `.Value` again. Without this cache-bust
+       the browser would keep serving the old v5 JS which has no asStr()
+       safety net. *@
+    <script src="js/dashboard.js?v=6"></script>
 
     @* Admin Categories page — measures node positions in the horizontal
         category tree and returns SVG bezier path data for the connector
