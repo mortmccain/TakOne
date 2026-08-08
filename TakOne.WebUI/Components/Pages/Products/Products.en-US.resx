@@ -172,6 +172,18 @@
   <data name="AddButtonText" xml:space="preserve">
     <value>Add</value>
   </data>
+  <data name="AddButtonReadOnly" xml:space="preserve">
+    <value>Read only</value>
+  </data>
+  <data name="AddButtonReadOnlyTitle" xml:space="preserve">
+    <value>Your account is read-only and cannot place orders.</value>
+  </data>
+  <data name="QuickReorderReadOnlyTitle" xml:space="preserve">
+    <value>Your account is read-only and cannot place orders.</value>
+  </data>
+  <data name="SubmitReadOnlyTitle" xml:space="preserve">
+    <value>Your account is read-only and cannot place orders.</value>
+  </data>
   <data name="PagerInfo" xml:space="preserve">
     <value>Page {0} of {1} — {2} items</value>
   </data>

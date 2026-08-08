@@ -14,9 +14,13 @@
         - Full name
         - Email (if present)
         - Gender (Male / Female, localized)
-        - Group (customers) or "—" (staff) — staff users have no group
-        - Role badge(s) — Admin / Manager / Employee / ReadOnly / Customer
         - Active / Inactive status
+
+      NOTE: Role information is deliberately NOT shown here. End users
+      don't need to see their own role label (a customer shouldn't see
+      "Customer" spelled out — it adds noise and can read as pejorative
+      in some locales). Role awareness belongs on admin-side pages
+      (UserManagement, UserDetail), not on a user's self-service page.
 
       Source: GetUserByIdQuery with the current user's Id. The query
       handler enforces that customers/read-only can ONLY query themselves
@@ -105,7 +109,6 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Wolverine
-@using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Queries.GetUserById
@@ -196,12 +199,6 @@
             .profile-value-muted {
                 color: var(--rz-text-secondary-color);
                 font-style: italic;
-            }
-
-            .profile-roles {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.35rem;
             }
 
             /* Section card — title bar with icon. */
@@ -349,35 +346,6 @@
                             <div class="profile-value profile-value-mono">@_user.Email</div>
                         }
 
-                        <div class="profile-label">@Loc["ColGroup"]</div>
-                        <div class="profile-value">
-                            @if (string.IsNullOrWhiteSpace(_user.GroupName))
-                            {
-                                <span class="profile-value-muted">@Loc["GroupNone"]</span>
-                            }
-                            else
-                            {
-                                <RadzenBadge Text="@_user.GroupName" BadgeStyle="BadgeStyle.Base" IsPill="true" />
-                            }
-                        </div>
-
-                        <div class="profile-label">@Loc["ColRoles"]</div>
-                        <div class="profile-value profile-roles">
-                            @if (_user.Roles.Count == 0)
-                            {
-                                <span class="profile-value-muted">@Loc["RolesNone"]</span>
-                            }
-                            else
-                            {
-                                @foreach (var role in _user.Roles)
-                                {
-                                    <RadzenBadge Text="@GetRoleLabel(role)"
-                                                 BadgeStyle="@(role == Roles.Admin ? BadgeStyle.Warning : (role == Roles.Customer ? BadgeStyle.Info : BadgeStyle.Success))"
-                                                 IsPill="true" />
-                                }
-                            }
-                        </div>
-
                         <div class="profile-label">@Loc["ColStatus"]</div>
                         <div class="profile-value">
                             @if (_user.IsActive)
@@ -499,8 +467,6 @@
                     <div class="profile-grid">
                         <div class="profile-label">@Loc["ColApp"]</div>
                         <div class="profile-value">TakOne</div>
-                        <div class="profile-label">@Loc["ColRole"]</div>
-                        <div class="profile-value">@GetPrimaryRoleLabel()</div>
                     </div>
                 </RadzenCard>
             </RadzenStack>
@@ -826,34 +792,4 @@
         _ => gender.ToString()
     };
 
-    /// <summary>
-    /// Returns the localized label for a single role name. Used by the
-    /// roles badge list in the account card.
-    /// </summary>
-    private string GetRoleLabel(string role) => role switch
-    {
-        Roles.Admin => Loc["RoleAdmin"],
-        Roles.Manager => Loc["RoleManager"],
-        Roles.Employee => Loc["RoleEmployee"],
-        Roles.ReadOnly => Loc["RoleReadOnly"],
-        Roles.Customer => Loc["RoleCustomer"],
-        _ => role
-    };
-
-    /// <summary>
-    /// Returns the localized label for the user's PRIMARY role (Admin >
-    /// Manager > Employee > ReadOnly > Customer). Used in the About card
-    /// so the user sees their access level at a glance. Same priority
-    /// order as MainLayout.razor's GetRoleLabel.
-    /// </summary>
-    private string GetPrimaryRoleLabel()
-    {
-        if (_user is null) return Loc["RoleCustomer"];
-        if (_user.Roles.Contains(Roles.Admin)) return Loc["RoleAdmin"];
-        if (_user.Roles.Contains(Roles.Manager)) return Loc["RoleManager"];
-        if (_user.Roles.Contains(Roles.Employee)) return Loc["RoleEmployee"];
-        if (_user.Roles.Contains(Roles.ReadOnly)) return Loc["RoleReadOnly"];
-        if (_user.Roles.Contains(Roles.Customer)) return Loc["RoleCustomer"];
-        return Loc["RoleCustomer"];
-    }
 }

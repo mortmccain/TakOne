@@ -47,13 +47,20 @@ public sealed class GetSalesPaginatedQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 1. Decide the spec. Admins/Managers/Employees see everything;
-        //    customers and read-only users see only sales they created.
+        // 1. Decide the spec. Admins/Managers/Employees/ReadOnly see
+        //    everything (staff audit view); customers see only sales they
+        //    created (my-orders view). ReadOnly is a staff role whose
+        //    entire purpose is to audit sales without modifying them, so
+        //    it MUST be in the "see all" branch — falling through to
+        //    SaleByCreatorSpecification would hide every sale created by
+        //    anyone else (and ReadOnly users by definition never create
+        //    sales), leaving them with an empty grid.
         // ------------------------------------------------------------------
         var canSeeAllSales =
             currentUser.IsInRole(Roles.Admin) ||
             currentUser.IsInRole(Roles.Manager) ||
-            currentUser.IsInRole(Roles.Employee);
+            currentUser.IsInRole(Roles.Employee) ||
+            currentUser.IsInRole(Roles.ReadOnly);
 
         // `ISpecification<Sale>` is the Ardalis interface. The repository's
         // SpecificationEvaluator translates whichever spec we hand it into

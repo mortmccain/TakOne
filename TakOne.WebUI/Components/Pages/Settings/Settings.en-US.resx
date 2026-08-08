@@ -103,26 +103,11 @@
   <data name="ColEmail" xml:space="preserve">
     <value>Email</value>
   </data>
-  <data name="ColGroup" xml:space="preserve">
-    <value>Group</value>
-  </data>
-  <data name="ColRoles" xml:space="preserve">
-    <value>Roles</value>
-  </data>
   <data name="ColStatus" xml:space="preserve">
     <value>Status</value>
   </data>
   <data name="ColApp" xml:space="preserve">
     <value>Application</value>
-  </data>
-  <data name="ColRole" xml:space="preserve">
-    <value>Access level</value>
-  </data>
-  <data name="GroupNone" xml:space="preserve">
-    <value>—</value>
-  </data>
-  <data name="RolesNone" xml:space="preserve">
-    <value>No roles assigned</value>
   </data>
   <data name="StatusActive" xml:space="preserve">
     <value>Active</value>
@@ -135,21 +120,6 @@
   </data>
   <data name="GenderFemale" xml:space="preserve">
     <value>Female</value>
-  </data>
-  <data name="RoleAdmin" xml:space="preserve">
-    <value>Administrator</value>
-  </data>
-  <data name="RoleManager" xml:space="preserve">
-    <value>Manager</value>
-  </data>
-  <data name="RoleEmployee" xml:space="preserve">
-    <value>Employee</value>
-  </data>
-  <data name="RoleReadOnly" xml:space="preserve">
-    <value>Read-only</value>
-  </data>
-  <data name="RoleCustomer" xml:space="preserve">
-    <value>Customer</value>
   </data>
   <data name="ChangePassword" xml:space="preserve">
     <value>Change password</value>
@@ -255,7 +225,7 @@
     <value>Help</value>
   </data>
   <data name="HelpCardText" xml:space="preserve">
-    <value>The Account card shows the information your administrator recorded for you. To update your full name, email, or group, contact an administrator. To change your password, use the "Change password" button — you'll be taken to a secure page where you can pick a new one.</value>
+    <value>The Account card shows the information your administrator recorded for you. To update your full name or email, contact an administrator. To change your password, use the "Change password" button — you'll be taken to a secure page where you can pick a new one.</value>
   </data>
   <data name="AboutCardTitle" xml:space="preserve">
     <value>About</value>

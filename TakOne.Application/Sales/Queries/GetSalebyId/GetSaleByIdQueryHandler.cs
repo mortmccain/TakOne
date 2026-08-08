@@ -53,10 +53,12 @@ public sealed class GetSaleByIdQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 2. Authorization. Customers/ReadOnly may only see their own sales.
-        //    Admins, Managers, and Employees can view any sale (they need to
-        //    for approval, invoicing, and support). The check is done AFTER
-        //    the load because we need sale.CreatedByUserId to decide.
+        // 2. Authorization. Customers may only see their own sales.
+        //    Admins, Managers, Employees, and ReadOnly staff can view any
+        //    sale (the first three need to for approval, invoicing, and
+        //    support; ReadOnly is an audit role whose entire purpose is
+        //    to view all sales without modifying them). The check is done
+        //    AFTER the load because we need sale.CreatedByUserId to decide.
         //
         //    On failure, return a generic "not found" message — never leak
         //    that the sale exists but the caller can't see it.
@@ -64,7 +66,8 @@ public sealed class GetSaleByIdQueryHandler
         var canViewAnySale =
             currentUser.IsInRole(Roles.Admin) ||
             currentUser.IsInRole(Roles.Manager) ||
-            currentUser.IsInRole(Roles.Employee);
+            currentUser.IsInRole(Roles.Employee) ||
+            currentUser.IsInRole(Roles.ReadOnly);
 
         if (!canViewAnySale && sale.CreatedByUserId != currentUser.UserId)
         {

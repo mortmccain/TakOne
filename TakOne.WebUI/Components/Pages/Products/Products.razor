@@ -343,8 +343,8 @@
             @* سفارش سریع — clickable button *@
             <button type="button"
                     class="tm-stat-item tm-stat-item--button"
-                    disabled="@_isReordering"
-                    title="@Loc["StatQuickReorderTitle"]"
+                    disabled="@(_isReordering || _isReadOnly)"
+                    title="@(_isReadOnly ? Loc["QuickReorderReadOnlyTitle"] : Loc["StatQuickReorderTitle"])"
                     @onclick="QuickReorderAsync">
                 <div class="tm-stat-icon tm-stat-icon-gold">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
@@ -529,19 +529,28 @@
                                     <div class="tm-qty-selector">
                                         <button type="button"
                                                 class="tm-qty-btn"
-                                                disabled="@(qty <= 1)"
+                                                disabled="@(qty <= 1 || _isReadOnly)"
                                                 @onclick="(() => DecrementQty(product.Id))">
                                             −
                                         </button>
                                         <span class="tm-qty-value tm-persian-num">@ToPersian(qty)</span>
                                         <button type="button"
                                                 class="tm-qty-btn"
-                                                disabled="@(qty >= GetQtyMaxForProduct(product))"
+                                                disabled="@(qty >= GetQtyMaxForProduct(product) || _isReadOnly)"
                                                 @onclick="(() => IncrementQty(product.Id))">
                                             +
                                         </button>
                                     </div>
-                                    @if (limitReached && !stockOut)
+                                    @if (_isReadOnly)
+                                    {
+                                        <button type="button"
+                                                class="tm-add-btn"
+                                                disabled
+                                                title="@Loc["AddButtonReadOnlyTitle"]">
+                                            @Loc["AddButtonReadOnly"]
+                                        </button>
+                                    }
+                                    else if (limitReached && !stockOut)
                                     {
                                         <button type="button"
                                                 class="tm-add-btn tm-add-btn-text-full"
@@ -663,13 +672,13 @@
                                 <div class="tm-cart-line-controls">
                                     <div class="tm-cart-line-qty">
                                         <button type="button"
-                                                disabled="@(_updatingLineId == line.Id || line.Quantity <= 1)"
+                                                disabled="@(_updatingLineId == line.Id || line.Quantity <= 1 || _isReadOnly)"
                                                 @onclick="(() => UpdateCartLineQtyAsync(line.Id, line.Quantity - 1))">
                                             −
                                         </button>
                                         <span class="tm-persian-num">@ToPersian(line.Quantity)</span>
                                         <button type="button"
-                                                disabled="@(_updatingLineId == line.Id || line.Quantity >= lineMax)"
+                                                disabled="@(_updatingLineId == line.Id || line.Quantity >= lineMax || _isReadOnly)"
                                                 @onclick="(() => UpdateCartLineQtyAsync(line.Id, line.Quantity + 1))">
                                             +
                                         </button>
@@ -698,7 +707,8 @@
                     </div>
                     <button type="button"
                             class="tm-submit-btn"
-                            disabled="@_isSubmitting"
+                            disabled="@(_isSubmitting || _isReadOnly)"
+                            title="@(_isReadOnly ? Loc["SubmitReadOnlyTitle"] : "")"
                             @onclick="SubmitCartAsync">
                         @if (_isSubmitting)
                         {
@@ -802,10 +812,29 @@
     // Null while loading; the UI shows 0/— until the first load completes.
     private CustomerShopStatsDto? _stats;
 
+    // True when the signed-in user has the ReadOnly role. ReadOnly staff
+    // are ALLOWED to browse the Products page (so they can audit prices /
+    // stock) but are NOT allowed to add anything to a cart, submit an
+    // order, or quick-reorder — all four cart-mutation commands
+    // (CreateOrAppendSale, UpdateSaleLineItem, SubmitSale,
+    // QuickReorderLastSale) carry [RequireRoles] that EXCLUDES ReadOnly,
+    // so even if the UI let them click, the backend would reject the
+    // call. We reflect that contract here by graying out the add / qty /
+    // submit / reorder buttons so the user doesn't get a confusing
+    // "authorization denied" toast for an action they could never
+    // perform. Computed once in OnInitializedAsync (cheaper than
+    // re-evaluating CurrentUser.IsInRole on every render).
+    private bool _isReadOnly;
+
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve the role once, up-front. Cheap (a ClaimsPrincipal lookup)
+        // and avoids re-evaluating on every render. See _isReadOnly's
+        // doc-comment for why we gate cart mutations on this.
+        _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly);
+
         try
         {
             await Task.WhenAll(

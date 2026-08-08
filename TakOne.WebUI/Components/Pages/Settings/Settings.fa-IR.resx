@@ -107,26 +107,11 @@
   <data name="ColEmail" xml:space="preserve">
     <value>ایمیل</value>
   </data>
-  <data name="ColGroup" xml:space="preserve">
-    <value>گروه</value>
-  </data>
-  <data name="ColRoles" xml:space="preserve">
-    <value>نقش‌ها</value>
-  </data>
   <data name="ColStatus" xml:space="preserve">
     <value>وضعیت</value>
   </data>
   <data name="ColApp" xml:space="preserve">
     <value>برنامه</value>
-  </data>
-  <data name="ColRole" xml:space="preserve">
-    <value>سطح دسترسی</value>
-  </data>
-  <data name="GroupNone" xml:space="preserve">
-    <value>—</value>
-  </data>
-  <data name="RolesNone" xml:space="preserve">
-    <value>هیچ نقشی اختصاص داده نشده</value>
   </data>
   <data name="StatusActive" xml:space="preserve">
     <value>فعال</value>
@@ -139,21 +124,6 @@
   </data>
   <data name="GenderFemale" xml:space="preserve">
     <value>زن</value>
-  </data>
-  <data name="RoleAdmin" xml:space="preserve">
-    <value>مدیر سیستم</value>
-  </data>
-  <data name="RoleManager" xml:space="preserve">
-    <value>مدیر</value>
-  </data>
-  <data name="RoleEmployee" xml:space="preserve">
-    <value>کارمند</value>
-  </data>
-  <data name="RoleReadOnly" xml:space="preserve">
-    <value>فقط‌مشاهده</value>
-  </data>
-  <data name="RoleCustomer" xml:space="preserve">
-    <value>مشتری</value>
   </data>
   <data name="ChangePassword" xml:space="preserve">
     <value>تغییر رمز عبور</value>
@@ -259,7 +229,7 @@
     <value>راهنما</value>
   </data>
   <data name="HelpCardText" xml:space="preserve">
-    <value>کارت حساب، اطلاعاتی است که مدیر سیستم برای شما ثبت کرده. برای تغییر نام، ایمیل یا گروه خود با یک مدیر تماس بگیرید. برای تغییر رمز عبور از دکمه «تغییر رمز عبور» استفاده کنید — شما را به یک صفحه امن می‌برد تا رمز جدیدی انتخاب کنید.</value>
+    <value>کارت حساب، اطلاعاتی است که مدیر سیستم برای شما ثبت کرده. برای تغییر نام یا ایمیل خود با یک مدیر تماس بگیرید. برای تغییر رمز عبور از دکمه «تغییر رمز عبور» استفاده کنید — شما را به یک صفحه امن می‌برد تا رمز جدیدی انتخاب کنید.</value>
   </data>
   <data name="AboutCardTitle" xml:space="preserve">
     <value>درباره</value>

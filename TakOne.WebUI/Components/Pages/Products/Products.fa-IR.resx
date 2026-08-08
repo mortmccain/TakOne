@@ -172,6 +172,18 @@
   <data name="AddButtonText" xml:space="preserve">
     <value>افزودن</value>
   </data>
+  <data name="AddButtonReadOnly" xml:space="preserve">
+    <value>فقط مشاهده</value>
+  </data>
+  <data name="AddButtonReadOnlyTitle" xml:space="preserve">
+    <value>حساب شما فقط قابل مشاهده است و امکان ثبت سفارش ندارد.</value>
+  </data>
+  <data name="QuickReorderReadOnlyTitle" xml:space="preserve">
+    <value>حساب شما فقط قابل مشاهده است و امکان ثبت سفارش ندارد.</value>
+  </data>
+  <data name="SubmitReadOnlyTitle" xml:space="preserve">
+    <value>حساب شما فقط قابل مشاهده است و امکان ثبت سفارش ندارد.</value>
+  </data>
   <data name="PagerInfo" xml:space="preserve">
     <value>صفحه {0} از {1} — {2} کالا</value>
   </data>
