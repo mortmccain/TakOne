@@ -537,9 +537,24 @@ else if (_stats is not null)
         }
     }
 
+    // Tracks whether we've already handed the dashboard data to dashboard.js
+    // for chart rendering. We can't use `firstRender` from OnAfterRenderAsync
+    // for this, because _stats is always null on the first render (the async
+    // DB query in OnInitializedAsync hasn't completed yet — the first render
+    // shows the loading spinner). By the time _stats is populated and the
+    // page re-renders with real data, firstRender is already false, so a
+    // `!firstRender` guard would skip the render call forever — leaving the
+    // chart areas permanently blank. This flag fires the JS interop call
+    // exactly once, on the first render where _stats is actually available.
+    private bool _chartsInitialized;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _stats is null) return;
+        // Wait until the stats have loaded AND we haven't already handed them
+        // to the chart initializer. The _chartsInitialized guard ensures we
+        // only call takDashboard.render once per full page load.
+        if (_stats is null || _chartsInitialized) return;
+        _chartsInitialized = true;
 
         // Pass the dashboard data + localized labels to dashboard.js so it
         // can initialize all 4 charts. We pass a plain anonymous object —
@@ -572,11 +587,26 @@ else if (_stats is not null)
         {
             await JS.InvokeVoidAsync("takDashboard.render", chartData);
         }
-        catch
+        catch (Exception ex)
         {
             // Non-fatal — charts just don't render, but the rest of the
-            // dashboard still works. Usually means Chart.js failed to load
-            // (network issue) or the canvas elements aren't in the DOM yet.
+            // dashboard still works. Log to the browser console so JS-side
+            // failures (missing script, ReferenceError in dashboard.js,
+            // canvas not in DOM, etc.) are visible in DevTools instead of
+            // silently swallowed. Previously this was an empty catch, which
+            // made a one-line bug in dashboard.js (referencing an undefined
+            // `toFa` identifier inside the IIFE's public-API object) invisible
+            // for an entire session — the dashboard just showed blank charts
+            // with no clue why.
+            try
+            {
+                await JS.InvokeVoidAsync("console.error",
+                    "[Dashboard] takDashboard.render failed:", ex.Message);
+            }
+            catch
+            {
+                // Console itself unavailable — nothing more we can do.
+            }
         }
     }
 

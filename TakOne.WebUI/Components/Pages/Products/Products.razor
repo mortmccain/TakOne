@@ -1378,19 +1378,17 @@
     // ── Display helpers ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Formats a MoneyDto for display: amount in current culture + currency
-    /// code. Persian culture shows Persian digits + the Persian "تومان" word
-    /// for IRR (we treat IRR as Toman for display — the project's actual
-    /// currency decision is still open per the roadmap).
+    /// Formats a MoneyDto for display. IRR is converted to Toman (amount ÷ 10)
+    /// and labelled "تومان" — matches the Dashboard convention
+    /// (GetDashboardStatsQueryHandler). Other currencies pass through unchanged.
     /// </summary>
     private static string FormatPrice(MoneyDto? price)
     {
         if (price is null || price.Amount == 0) return "—";
-        var amount = price.Amount.ToString("N0", CultureInfo.CurrentCulture);
-        // Show "تومان" for IRR (common Iranian convention); otherwise the
-        // raw currency code. Trailing "تومان" is more readable than "IRR"
-        // for Persian users.
-        var unit = price.Currency == "IRR" ? "تومان" : price.Currency;
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
+        var amount = displayAmount.ToString("N0", CultureInfo.CurrentCulture);
+        var unit = isIrr ? "تومان" : price.Currency;
         return $"{amount} {unit}";
     }
 

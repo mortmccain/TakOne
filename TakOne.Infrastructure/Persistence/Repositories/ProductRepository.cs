@@ -22,14 +22,14 @@ namespace TakOne.Infrastructure.Persistence.Repositories;
 ///   <see cref="NameExistsAsync"/>), tracking doesn't matter — they return
 ///   scalars, not entities — so we skip the decision entirely.
 ///
-/// OWNED VALUE OBJECTS AUTO-LOADED:
-///   <see cref="Product.Price"/> (Money, OwnsOne) and
+/// VALUE OBJECTS AUTO-LOADED:
+///   <see cref="Product.Price"/> (Money, ComplexProperty) and
 ///   <see cref="Product.PurchaseLimits"/> (CustomerGroupPurchaseLimit, OwnsMany)
 ///   are part of the Product aggregate's table layout. EF Core loads them
 ///   automatically whenever a Product is materialized — no <c>.Include()</c>
-///   needed. This is the difference between OWNED types (always loaded with
-///   their owner) and NAVIGATION properties (separate entity, lazy/explicit
-///   load required).
+///   needed. This is the difference between COMPLEX/OWNED types (always
+///   loaded with their owner) and NAVIGATION properties (separate entity,
+///   lazy/explicit load required).
 ///
 /// SEARCH-TERM SEMANTICS:
 ///   <c>searchTerm</c> matches <see cref="Product.Name"/> with a

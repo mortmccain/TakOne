@@ -14,58 +14,24 @@ namespace TakOne.SharedKernel.ValueObjects;
 /// <remarks>
 /// <para>
 /// <b>EF CORE MAPPING — <c>ComplexProperty</c> (value semantics):</b>
-/// </para>
-/// <para>
 /// Money is mapped as a <c>ComplexProperty</c> on three entities in this
-/// codebase (NOT <c>OwnsOne</c>):
-/// <list type="bullet">
-///   <item><c>Product.Price</c></item>
-///   <item><c>SaleLineItem.UnitPrice</c></item>
-///   <item><c>Sale.Total</c></item>
-/// </list>
-/// </para>
-/// <para>
-/// <c>ComplexProperty</c> was introduced in EF Core 9 specifically for
-/// value objects. Unlike <c>OwnsOne</c>, it has VALUE SEMANTICS: EF Core
+/// codebase (NOT <c>OwnsOne</c>): <c>Product.Price</c>,
+/// <c>SaleLineItem.UnitPrice</c>, and <c>Sale.Total</c>.
+/// <c>ComplexProperty</c> (EF Core 9+) has VALUE SEMANTICS: EF Core
 /// compares complex type instances BY VALUE (using
-/// <see cref="BaseValueObject"/>'s <c>GetEqualityComponents</c> override)
-/// instead of by reference identity. Replacing the reference — e.g.
-/// <c>Sale.Total = _lineItems.Aggregate(Money.Zero(currency), ...)</c>
-/// — works correctly: EF detects that the new instance's value differs
-/// from the original snapshot's value and generates a clean UPDATE
-/// against the parent row's columns.
+/// <see cref="BaseValueObject"/>'s <c>GetEqualityComponents</c> override),
+/// so reference replacement (e.g. <c>Total = sum + line.GrossTotal</c>)
+/// works correctly — EF detects the value change and generates a clean
+/// UPDATE. <c>OwnsOne</c> tracked by reference identity, which broke
+/// this pattern with <c>DbUpdateConcurrencyException</c>.
 /// </para>
 /// <para>
-/// <b>WHY NOT <c>OwnsOne</c>?</b> <c>OwnsOne</c> tracks owned types by
-/// REFERENCE IDENTITY. When domain code replaces the reference, the
-/// change tracker has TWO instances for the same navigation (the old
-/// tracked one and the new one), and at <c>SaveChanges</c> it generates
-/// an UPDATE whose WHERE clause matches 0 rows, producing:
-/// <c>DbUpdateConcurrencyException: expected to affect 1 row(s), but
-/// actually affected 0 row(s)</c>. <c>ComplexProperty</c> fixes this
-/// cleanly — value semantics mean reference replacement is the correct
-/// and idiomatic mutation pattern.
-/// </para>
-/// <para>
-/// <b>WHY <c>private set</c> ON THE PROPERTIES (not get-only):</b>
-/// EF Core's <c>ComplexProperty</c> materialization path needs to set
-/// the properties when reconstructing the value from the database. With
-/// get-only auto-properties, EF would have no way to populate them (it
-/// would have to use the parameterful constructor, which performs
-/// validation that the DB snapshot may not satisfy — e.g. legacy data
-/// with a non-uppercase currency code). The <c>private set</c> lets EF
-/// populate via reflection while keeping Money immutable to all
-/// application and domain code (the class is sealed; the setters are
-/// only accessible from within Money itself, and no Money method calls
-/// them after construction).
-/// </para>
-/// <para>
-/// <b>NO <c>Update()</c> METHOD:</b> A previous (rejected) fix added
-/// an <c>internal void Update(decimal, string)</c> method that mutated
-/// the instance in place. That violated value object immutability and
-/// was reverted in favor of the <c>ComplexProperty</c> migration. The
-/// correct way to "change" a Money value is to construct a new instance
-/// and assign it: <c>Total = new Total + line.GrossTotal</c>.
+/// <b>WHY <c>private set</c> ON THE PROPERTIES:</b> EF Core's
+/// <c>ComplexProperty</c> materialization needs to set the properties
+/// when reconstructing from the database. The <c>private set</c> lets
+/// EF populate via reflection while keeping Money immutable to all
+/// application and domain code (the class is sealed; no Money method
+/// calls the setters after construction).
 /// </para>
 /// </remarks>
 public sealed class Money : BaseValueObject

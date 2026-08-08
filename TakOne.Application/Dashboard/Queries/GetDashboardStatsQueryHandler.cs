@@ -187,17 +187,26 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 6. Top products by sales count (last 30 days, approved+invoiced).
-        //    Sum quantity per ProductName across all approved+invoiced sales
-        //    submitted in the last 30 days. Take top 7.
+        // 6. Top products by sales count (last 30 days).
+        //    Sum quantity per ProductName across all REVENUE-ELIGIBLE sales
+        //    (Pending + Approved + Invoiced — same definition as the revenue
+        //    line chart) submitted in the last 30 days. Take top 7.
+        //
+        //    WHY NOT Approved+Invoiced only:
+        //    The previous version excluded Pending sales here, which made the
+        //    bar chart silently render empty whenever a fresh install had
+        //    only Pending orders (no approvals yet). The line chart and the
+        //    donut already include Pending (revenueEligibleSales), so for
+        //    consistency the top-products bar must too — otherwise users
+        //    see "data on 2 charts, blank on 2 charts" and assume the
+        //    dashboard is broken.
         // ------------------------------------------------------------------
         var thirtyDaysAgo = todayUtc.AddDays(-30);
-        var recentApprovedSales = sales
-            .Where(s => (s.Status == SaleStatus.Approved || s.Status == SaleStatus.Invoiced) &&
-                        (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thirtyDaysAgo)
+        var recentRevenueEligibleSales = revenueEligibleSales
+            .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thirtyDaysAgo)
             .ToList();
 
-        var topProducts = recentApprovedSales
+        var topProducts = recentRevenueEligibleSales
             .SelectMany(s => s.LineItems)
             .GroupBy(li => li.ProductName)
             .Select(g => new TopProductDto
@@ -210,9 +219,16 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 7. Top categories by NUMBER OF APPROVED SALES (all-time in scope).
-        //    For each approved+invoiced sale, count 1 per unique category
-        //    that appears in its line items. Then take top 5 + "Others".
+        // 7. Top categories by NUMBER OF SALES (all-time in scope).
+        //    For each revenue-eligible sale (Pending + Approved + Invoiced),
+        //    count 1 per unique category that appears in its line items.
+        //    Then take top 5 + "Others".
+        //
+        //    WHY NOT Approved+Invoiced only:
+        //    Same consistency reason as top-products above — the previous
+        //    version excluded Pending sales, which made the pie chart render
+        //    empty whenever a fresh install had only Pending orders. Using
+        //    revenueEligibleSales here matches the line chart and donut.
         //
         //    This requires joining line items → products → categories. We
         //    batch-load all products by Id (single round-trip) and all
@@ -235,15 +251,15 @@ public sealed class GetDashboardStatsQueryHandler
         var productIdToCategoryId = products
             .ToDictionary(p => p.Id, p => p.CategoryId);
 
-        // For each approved+invoiced sale, find the unique set of categories
+        // For each revenue-eligible sale, find the unique set of categories
         // in its line items (via the product → category lookup).
-        var approvedOrInvoicedSales = sales
-            .Where(s => s.Status == SaleStatus.Approved || s.Status == SaleStatus.Invoiced)
-            .ToList();
+        // (Same set as revenueEligibleSales — Pending + Approved + Invoiced.
+        // See section 6 above for why Pending is now included.)
+        var categorySourceSales = revenueEligibleSales;
 
         var categorySalesCounts = new Dictionary<Guid, int>();
 
-        foreach (var sale in approvedOrInvoicedSales)
+        foreach (var sale in categorySourceSales)
         {
             var saleCategoryIds = new HashSet<Guid>();
 

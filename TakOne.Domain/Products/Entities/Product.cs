@@ -184,6 +184,26 @@ public sealed class Product : AggregateRoot
     /// <summary>
     /// Updates the product's basic descriptive fields.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>VALUE OBJECT IMMUTABILITY — REFERENCE REPLACEMENT IS CORRECT:</b>
+    /// Money is an immutable value object mapped as a
+    /// <c>ComplexProperty</c> (not <c>OwnsOne</c>) on
+    /// <c>Product.Price</c>. <c>ComplexProperty</c> has value semantics:
+    /// EF Core compares instances by value (via
+    /// <c>GetEqualityComponents</c>), not by reference identity. Replacing
+    /// the reference is the idiomatic mutation pattern — EF detects the
+    /// value change and generates a clean UPDATE against the parent row.
+    /// </para>
+    /// <para>
+    /// The previous mapping (<c>OwnsOne</c>) tracked Money by reference
+    /// identity, so replacing the reference produced the dreaded
+    /// <c>DbUpdateConcurrencyException: expected to affect 1 row(s), but
+    /// actually affected 0 row(s)</c>. The migration to
+    /// <c>ComplexProperty</c> fixes this at the EF Core mapping level —
+    /// no domain mutation hack required.
+    /// </para>
+    /// </remarks>
     public void UpdateDetails(string name, string description, Money price, string? pictureUrl)
     {
         EnsureNameValid(name);

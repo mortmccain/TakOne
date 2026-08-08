@@ -34,8 +34,15 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 /// OWNED VALUE OBJECTS:
 ///   - <c>SaleNumber</c> (OwnsOne) — flattened into Sales table. The
 ///     <c>Value</c> string property is IGNORED (computed-on-access from
-///     Year + Sequence, see SaleNumber.cs).
-///   - <c>Total</c> (OwnsOne Money) — flattened into Sales table.
+///     Year + Sequence, see SaleNumber.cs). Kept as OwnsOne (not
+///     ComplexProperty) because it requires a globally-unique (Year,
+///     Sequence) index, and ComplexProperty does not support indexes.
+///   - <c>Total</c> (ComplexProperty Money) — flattened into Sales table.
+///     Mapped as ComplexProperty (not OwnsOne) for value semantics: EF
+///     Core compares Money instances by value, not by reference identity,
+///     so Sale.RecalculateTotal's reference-replacement pattern works
+///     correctly. See the inline comment on the Total mapping below for
+///     the full rationale.
 ///
 /// CRITICAL UNIQUE INDEX:
 ///   <c>(SaleNumber_Year, SaleNumber_Sequence)</c> is GLOBALLY UNIQUE. This
@@ -159,9 +166,45 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // ------------------------------------------------------------------
         // Owned value object: Total (Money)
         //
-        // Flattened into Sales table. Same pattern as Product.Price.
+        // Mapped as a COMPLEX PROPERTY (not OwnsOne). ComplexProperty was
+        // introduced in EF Core 9 specifically for value objects. Unlike
+        // OwnsOne, it has VALUE SEMANTICS: EF Core compares complex type
+        // instances by value (via GetEqualityComponents on BaseValueObject),
+        // not by reference identity.
+        //
+        // WHY THIS MATTERS:
+        //   Sale.RecalculateTotal() does `Total = _lineItems.Aggregate(
+        //   Money.Zero(currency), (sum, item) => sum + item.GrossTotal)` —
+        //   it REPLACES the Total reference with a brand-new Money instance
+        //   (the `+` operator always returns a new instance). With OwnsOne,
+        //   this reference replacement confused the change tracker (it had
+        //   two Money instances for the same navigation: the old tracked
+        //   one and the new one), and SaveChanges generated an UPDATE whose
+        //   WHERE clause matched 0 rows:
+        //
+        //       DbUpdateConcurrencyException: expected to affect 1 row(s),
+        //       but actually affected 0 row(s)
+        //
+        //   This was the root cause of the persistent
+        //   CreateOrAppendSaleCommand failures on the APPEND path (adding
+        //   to an existing draft cart). With ComplexProperty, replacing the
+        //   reference is the idiomatic mutation pattern — EF detects the
+        //   value change and generates a clean UPDATE.
+        //
+        // SCHEMA: identical to OwnsOne. The columns Total_Amount and
+        // Total_Currency are flattened into the Sales table, with the same
+        // names, types, and constraints. The migration that switches from
+        // OwnsOne to ComplexProperty is therefore a model-only change —
+        // no DDL is generated (the table is unchanged).
+        //
+        // WHY NOT ComplexProperty for SaleNumber (above):
+        //   ComplexProperty does NOT support indexes on nested properties.
+        //   SaleNumber requires a globally-unique (Year, Sequence) index,
+        //   so it MUST stay as OwnsOne. SaleNumber is also never replaced
+        //   after construction (it's set once in Sale.Create and never
+        //   mutated), so the reference-replacement bug doesn't apply to it.
         // ------------------------------------------------------------------
-        builder.OwnsOne(s => s.Total, total =>
+        builder.ComplexProperty(s => s.Total, total =>
         {
             total.Property(m => m.Amount)
                 .HasColumnName("Total_Amount")

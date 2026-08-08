@@ -38,6 +38,13 @@ public sealed class SubCategoryConfiguration : IEntityTypeConfiguration<SubCateg
         builder.ToTable("SubCategories");
         builder.HasKey(s => s.Id);
 
+        // Id is client-generated (set in the constructor via base(Guid.NewGuid())).
+        // ValueGeneratedNever() is REQUIRED to avoid the EF Core NavigationFixer
+        // bug where new entities added to a navigation collection of a tracked
+        // (Unchanged/Modified) principal are incorrectly marked as Modified
+        // instead of Added. See SaleLineItemConfiguration for the full rationale.
+        builder.Property(s => s.Id).ValueGeneratedNever();
+
         builder.Property(s => s.CategoryId).IsRequired();
         builder.Property(s => s.Name).HasMaxLength(100).IsRequired();
         builder.Property(s => s.IsActive).IsRequired();

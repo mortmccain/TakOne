@@ -81,40 +81,40 @@
 
 <HeadContent>
     <style>
-        /* Sale number — monospace + primary color so it reads as a clickable
-           identifier. The link itself is the clickable element; the wrapper
-           just provides consistent typography. */
-        .sale-number-link {
-            font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-            font-weight: 600;
-            color: var(--rz-primary);
-            text-decoration: none;
-        }
+            /* Sale number — monospace + primary color so it reads as a clickable
+                       identifier. The link itself is the clickable element; the wrapper
+                       just provides consistent typography. */
+            .sale-number-link {
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-weight: 600;
+                color: var(--rz-primary);
+                text-decoration: none;
+            }
 
-        .sale-number-link:hover {
-            text-decoration: underline;
-        }
+                .sale-number-link:hover {
+                    text-decoration: underline;
+                }
 
-        /* Status badge — RadzenBadge with BadgeStyle handles colors; this
-           just normalizes the width so badges in a column line up. */
-        .sale-status-badge {
-            min-width: 96px;
-            display: inline-flex;
-            justify-content: center;
-        }
+            /* Status badge — RadzenBadge with BadgeStyle handles colors; this
+                       just normalizes the width so badges in a column line up. */
+            .sale-status-badge {
+                min-width: 96px;
+                display: inline-flex;
+                justify-content: center;
+            }
 
-        /* Total — right-aligned tabular numbers so columns line up. */
-        .sale-total {
-            font-variant-numeric: tabular-nums;
-            font-weight: 600;
-        }
+            /* Total — right-aligned tabular numbers so columns line up. */
+            .sale-total {
+                font-variant-numeric: tabular-nums;
+                font-weight: 600;
+            }
 
-        /* Muted timestamp for the "Created At" column. The timestamp is
-           secondary info; the sale number is the primary identifier. */
-        .sale-timestamp {
-            color: var(--rz-text-secondary-color);
-            font-size: 0.9rem;
-        }
+            /* Muted timestamp for the "Created At" column. The timestamp is
+                       secondary info; the sale number is the primary identifier. */
+            .sale-timestamp {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.9rem;
+            }
     </style>
 </HeadContent>
 
@@ -392,11 +392,11 @@
                 @for (var p = startPage; p <= endPage; p++)
                 {
                     var page = p; // closure capture for the lambda
-                    <RadzenButton Text="@(page.ToString())"
-                                  Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
-                                  ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
-                                  Disabled="@(_isLoading)"
-                                  Click="@(() => OnPageChanged(page))" />
+                                  <RadzenButton Text="@(page.ToString())"
+                                                Variant="@(page == _pageNumber ? Variant.Filled : Variant.Text)"
+                                                ButtonStyle="@(page == _pageNumber ? ButtonStyle.Primary : ButtonStyle.Base)"
+                                                Disabled="@(_isLoading)"
+                                                Click="@(() => OnPageChanged(page))" />
                 }
 
                 <RadzenButton Icon="chevron_right"
@@ -622,15 +622,16 @@
     // ── Display helpers ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Formats a MoneyDto for display: amount in current culture + currency
-    /// code. Persian culture shows Persian digits + RTL; English shows
-    /// Latin digits + LTR. The currency code is shown as-is (e.g. "IRR"
-    /// or "USD") — same convention as Products.razor and Cart.razor.
+    /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
+    /// order history shows the real Rial amount on record). Other currencies
+    /// pass through unchanged.
     /// </summary>
     private static string FormatMoney(MoneyDto? money)
     {
         if (money is null) return "—";
-        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {money.Currency}";
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var unit = isIrr ? "ریال" : money.Currency;
+        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
     }
 
     /// <summary>
@@ -641,7 +642,7 @@
     ///   - Approved  → Info      (blue, "approved, ready to invoice")
     ///   - Invoiced  → Success   (green, "complete")
     ///   - Cancelled → Danger    (red, "cancelled")
-    /// 
+    ///
     /// Unknown status strings (defensive: shouldn't happen unless the enum
     /// gains a new value without updating this mapping) fall back to Base.
     /// </summary>

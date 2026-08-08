@@ -122,8 +122,8 @@
             }
 
             /* Picture — square aspect ratio, placeholder-friendly.
-                       We use the same neutral background + border as the Products grid
-                       card so the visual language is consistent across catalog + detail. */
+                                   We use the same neutral background + border as the Products grid
+                                   card so the visual language is consistent across catalog + detail. */
             .detail-picture {
                 aspect-ratio: 1 / 1;
                 display: flex;
@@ -581,13 +581,18 @@
     // ── Display helpers ────────────────────────────────────────────────
 
     /// <summary>
-    /// Formats a MoneyDto for display: amount in current culture + currency
-    /// code. Same format as the Products grid uses — keeps the visual
-    /// language consistent across catalog + detail.
+    /// Formats a MoneyDto for display. IRR is converted to Toman (amount ÷ 10)
+    /// and labelled "تومان" — matches the Products grid convention so a
+    /// customer sees the same unit on the listing and the detail page.
+    /// Other currencies pass through unchanged.
     /// </summary>
     private static string FormatPrice(MoneyDto price)
     {
         if (price is null) return "—";
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
+        var amount = displayAmount.ToString("N0", CultureInfo.CurrentCulture);
+        var unit = isIrr ? "تومان" : price.Currency;
+        return $"{amount} {unit}";
     }
 }

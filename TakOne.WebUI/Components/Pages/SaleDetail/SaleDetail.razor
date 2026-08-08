@@ -102,7 +102,7 @@
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                       Left = line items + audit (wider); right = sticky action panel. */
+                                   Left = line items + audit (wider); right = sticky action panel. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -116,7 +116,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so the user sees status
-                           + actions before scrolling to the line-item table. */
+                                       + actions before scrolling to the line-item table. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -139,8 +139,8 @@
             }
 
             /* Status badge (large) in the action panel header.
-                       Color tokens mirror Radzen's BadgeStyle palette so the large
-                       badge and the small inline badge read as the same status. */
+                                   Color tokens mirror Radzen's BadgeStyle palette so the large
+                                   badge and the small inline badge read as the same status. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -154,14 +154,14 @@
             }
 
             /* Per-status background colors (matching Radzen BadgeStyle semantics):
-                       - Draft     → Base      (gray)
-                       - Pending   → Warning   (amber)
-                       - Approved  → Info      (blue)
-                       - Invoiced  → Success   (green)
-                       - Cancelled → Danger    (red)
-                       rgba values are picked to be readable on both light and dark
-                       Radzen themes — foreground is always the darker shade for
-                       accessibility. */
+                                   - Draft     → Base      (gray)
+                                   - Pending   → Warning   (amber)
+                                   - Approved  → Info      (blue)
+                                   - Invoiced  → Success   (green)
+                                   - Cancelled → Danger    (red)
+                                   rgba values are picked to be readable on both light and dark
+                                   Radzen themes — foreground is always the darker shade for
+                                   accessibility. */
             .status-bg-draft {
                 background: rgba(158, 158, 158, 0.18);
                 color: #616161;
@@ -188,8 +188,8 @@
             }
 
             /* Audit trail — vertical timeline of timestamps + actors.
-                       Each entry is one row; rows with no timestamp (e.g. a pending
-                       sale that hasn't been approved yet) are shown muted. */
+                                   Each entry is one row; rows with no timestamp (e.g. a pending
+                                   sale that hasn't been approved yet) are shown muted. */
             .audit-trail {
                 display: flex;
                 flex-direction: column;
@@ -232,7 +232,7 @@
             }
 
             /* Line items table — RadzenDataGrid styles are fine, just tune
-                       tabular-nums on the numeric columns. */
+                                   tabular-nums on the numeric columns. */
             .line-item-money {
                 font-variant-numeric: tabular-nums;
                 text-align: right;
@@ -317,7 +317,7 @@
                 }
 
             /* Sticky action panel on desktop. On mobile it's not sticky
-                       (would consume too much viewport height). */
+                                   (would consume too much viewport height). */
             @@media (min-width: 993px) {
                 .detail-action-panel {
                     position: sticky;
@@ -893,13 +893,16 @@
     // ── Display helpers ────────────────────────────────────────────────
 
     /// <summary>
-    /// Formats a MoneyDto for display: amount in current culture + currency
-    /// code. Same convention as Sales.razor / Products.razor / Cart.razor.
+    /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
+    /// matches Sales.razor so an order's totals read the same on the list
+    /// and the detail page). Other currencies pass through unchanged.
     /// </summary>
     private static string FormatMoney(MoneyDto? money)
     {
         if (money is null) return "—";
-        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {money.Currency}";
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var unit = isIrr ? "ریال" : money.Currency;
+        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
     }
 
     /// <summary>

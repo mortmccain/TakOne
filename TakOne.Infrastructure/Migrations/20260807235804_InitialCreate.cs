@@ -88,12 +88,12 @@ namespace TakOne.Infrastructure.Migrations
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
                     PictureUrl = table.Column<string>(type: "nvarchar(max)", maxLength: 2147483647, nullable: true),
-                    Price_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    Price_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
                     StockQuantity = table.Column<int>(type: "int", nullable: false),
                     CategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SubCategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    SubSubCategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    SubSubCategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    Price_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    Price_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -115,14 +115,14 @@ namespace TakOne.Infrastructure.Migrations
                     InvoicedByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     CancelledByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    Total_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    Total_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
                     CreatedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
                     SubmittedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     ApprovedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     InvoicedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CancelledAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CancellationReason = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                    CancellationReason = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Total_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    Total_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -300,10 +300,10 @@ namespace TakOne.Infrastructure.Migrations
                     ProductId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ProductName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Quantity = table.Column<int>(type: "int", nullable: false),
-                    UnitPrice_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    UnitPrice_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
                     LineNumber = table.Column<int>(type: "int", nullable: false),
-                    SaleId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    SaleId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    UnitPrice_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    UnitPrice_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
                 },
                 constraints: table =>
                 {

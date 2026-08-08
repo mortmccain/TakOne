@@ -46,11 +46,16 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   before creating the Product).
 ///
 /// MONEY VALUE OBJECT MAPPING:
-///   <c>OwnsOne</c> flattens the Money value object into the parent table.
-///   Columns are named <c>{NavigationName}_{PropertyName}</c> by EF convention,
-///   so <c>Product.Price</c> becomes <c>Price_Amount</c> and
-///   <c>Price_Currency</c>. Money has no identity of its own — it's a value
-///   object — so OwnsOne is the correct mapping (not a separate entity table).
+///   <c>ComplexProperty</c> flattens the Money value object into the
+///   parent table. Columns are named <c>{NavigationName}_{PropertyName}</c>
+///   by EF convention, so <c>Product.Price</c> becomes <c>Price_Amount</c>
+///   and <c>Price_Currency</c>. Money has no identity of its own — it's a
+///   value object. ComplexProperty (EF Core 9+) is the correct mapping for
+///   value objects: it has value semantics, so replacing the Price
+///   reference (e.g. <c>Product.UpdateDetails</c> does <c>Price = price</c>)
+///   works correctly. The previous OwnsOne mapping had reference-identity
+///   tracking, which caused <c>DbUpdateConcurrencyException</c> on
+///   reference replacement.
 /// </summary>
 public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 {
@@ -82,15 +87,29 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.SubSubCategoryId);
 
         // ------------------------------------------------------------------
-        // Owned value object: Price (Money)
+        // Complex value object: Price (Money)
         //
-        // OwnsOne flattens Money's two properties (Amount, Currency) into the
-        // Products table as `Price_Amount` and `Price_Currency`. The Money
-        // type itself has no Id and no identity of its own — it's a value
-        // object — so it CANNOT be a separate entity. OwnsOne is the only
-        // correct mapping.
+        // Mapped as a COMPLEX PROPERTY (not OwnsOne) for value semantics.
+        // ComplexProperty was introduced in EF Core 9 specifically for
+        // value objects: EF Core compares complex type instances by value
+        // (via GetEqualityComponents on BaseValueObject), not by reference
+        // identity. This means Product.UpdateDetails's `Price = price`
+        // reference-replacement pattern works correctly — EF detects the
+        // value change and generates a clean UPDATE.
+        //
+        // With the previous OwnsOne mapping, replacing the Price reference
+        // confused the change tracker (it had two Money instances for the
+        // same navigation: the old tracked one and the new one), and
+        // SaveChanges generated an UPDATE whose WHERE clause matched 0
+        // rows: DbUpdateConcurrencyException: expected to affect 1 row(s),
+        // but actually affected 0 row(s).
+        //
+        // ComplexProperty flattens Money's two properties (Amount, Currency)
+        // into the Products table as `Price_Amount` and `Price_Currency` —
+        // identical schema to OwnsOne. The migration is a model-only change
+        // with no DDL.
         // ------------------------------------------------------------------
-        builder.OwnsOne(p => p.Price, price =>
+        builder.ComplexProperty(p => p.Price, price =>
         {
             // decimal(18, 2) — 18 digits total, 2 after the decimal point.
             // This is the standard SQL Server money-like precision and works

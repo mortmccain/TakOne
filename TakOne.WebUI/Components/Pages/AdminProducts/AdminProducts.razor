@@ -619,10 +619,17 @@
 
     // ── Display helpers ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
+    /// admin pages show the real Rial amount stored in the database).
+    /// Other currencies pass through unchanged.
+    /// </summary>
     private static string FormatPrice(MoneyDto price)
     {
         if (price is null) return "—";
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var unit = isIrr ? "ریال" : price.Currency;
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
     }
 
     private static string GetStockClass(int stock)

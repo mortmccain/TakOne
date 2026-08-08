@@ -96,7 +96,7 @@
 <HeadContent>
     <style>
             /* Two-column layout: line items left, summary right.
-                       On tablet/mobile, summary collapses below the items. */
+                                   On tablet/mobile, summary collapses below the items. */
             .cart-layout {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -111,10 +111,10 @@
             }
 
             /* ── Line item card ──
-                       Each line item is its own RadzenCard with a grid layout:
-                         [picture] [info] [qty + actions]
-                       On mobile, the picture shrinks and the layout collapses to
-                       a vertical stack with actions wrapping below. */
+                                   Each line item is its own RadzenCard with a grid layout:
+                                     [picture] [info] [qty + actions]
+                                   On mobile, the picture shrinks and the layout collapses to
+                                   a vertical stack with actions wrapping below. */
             .cart-line {
                 display: grid;
                 grid-template-columns: 80px minmax(0, 1fr) auto;
@@ -222,8 +222,8 @@
             }
 
             /* Summary panel — sticky on desktop so it stays in view while
-                       the user scrolls long carts. On mobile it just sits at the
-                       bottom of the page (no sticky — would cover content). */
+                                   the user scrolls long carts. On mobile it just sits at the
+                                   bottom of the page (no sticky — would cover content). */
             .cart-summary {
                 position: sticky;
                 top: 1rem;
@@ -832,13 +832,15 @@
     }
 
     /// <summary>
-    /// Formats a MoneyDto for display: amount in current culture + currency
-    /// code. Same format as ProductDetail.razor and Products.razor — keeps
-    /// the visual language consistent across catalog + cart + checkout.
+    /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
+    /// the cart shows the real Rial amount the customer will be charged).
+    /// Other currencies pass through unchanged.
     /// </summary>
     private static string FormatPrice(MoneyDto price)
     {
         if (price is null) return "—";
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {price.Currency}";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var unit = isIrr ? "ریال" : price.Currency;
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
     }
 }

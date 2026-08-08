@@ -130,14 +130,25 @@
         var canvas = document.getElementById('tm-dash-revenue-chart');
         if (!canvas || typeof Chart === 'undefined') return;
 
+        var thisWeekArr = data.thisWeekRevenue || [];
+        var lastWeekArr = data.lastWeekRevenue || [];
+
+        // Empty-state: if both weeks are entirely zero, the line chart would
+        // render as a flat line at y=0 — not blank, but uninformative. We
+        // only treat it as "empty" if there are NO data points at all.
+        if (thisWeekArr.length === 0) {
+            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            return;
+        }
+
         var ctx = canvas.getContext('2d');
         var gradient = ctx.createLinearGradient(0, 0, 0, 260);
         gradient.addColorStop(0, 'rgba(42, 157, 126, 0.35)');
         gradient.addColorStop(1, 'rgba(42, 157, 126, 0)');
 
-        var thisWeekLabels = (data.thisWeekRevenue || []).map(function (d) { return d.dayLabel; });
-        var thisWeekData = (data.thisWeekRevenue || []).map(function (d) { return d.totalAmount; });
-        var lastWeekData = (data.lastWeekRevenue || []).map(function (d) { return d.totalAmount; });
+        var thisWeekLabels = thisWeekArr.map(function (d) { return d.dayLabel; });
+        var thisWeekData = thisWeekArr.map(function (d) { return d.totalAmount; });
+        var lastWeekData = lastWeekArr.map(function (d) { return d.totalAmount; });
 
         var currencyLabel = data.displayCurrency || 'تومان';
 
@@ -214,6 +225,12 @@
 
         var statusData = data.statusBreakdown || [];
 
+        // Empty-state: no statuses (no sales in scope at all).
+        if (statusData.length === 0) {
+            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            return;
+        }
+
         // Map status names to localized labels + colors
         // Order matches the HTML reference: Approved (green), Shipped/Invoiced (blue),
         // Pending (orange), Cancelled (red). Draft is omitted if count is 0.
@@ -264,29 +281,72 @@
         });
     }
 
+    // ---- Render an "empty state" message on a canvas ----------------------
+    // Used when a chart's data array is empty (e.g. no sales in scope).
+    // Without this, Chart.js renders a blank white canvas with no axes,
+    // which looks like a broken chart rather than "no data yet".
+    function renderEmptyState(canvas, message) {
+        var ctx = canvas.getContext('2d');
+        // Clear any prior drawing
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#94A3A0';
+        ctx.font = '13px "Vazirmatn", "Noto Sans SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Center the text in the canvas's CSS-rendered box (use clientWidth/
+        // clientHeight rather than the canvas attribute width/height, since
+        // the latter can be 0 before Chart.js has touched the canvas).
+        var w = canvas.clientWidth || canvas.width || 300;
+        var h = canvas.clientHeight || canvas.height || 150;
+        ctx.fillText(message, w / 2, h / 2);
+    }
+
     // ---- 3) Top Products (Horizontal Bar) ----
     function renderTopProductsChart(data) {
         var canvas = document.getElementById('tm-dash-top-products-chart');
         if (!canvas || typeof Chart === 'undefined') return;
 
         var products = data.topProducts || [];
+
+        // Empty-state: no products to plot. Show a friendly localized
+        // message instead of a blank canvas.
+        if (products.length === 0) {
+            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            return;
+        }
+
         var labels = products.map(function (p) { return p.productName; });
         var values = products.map(function (p) { return p.quantitySold; });
 
-        charts.topProducts = new Chart(canvas.getContext('2d'), {
+        // Build the gradient ONCE from the canvas's own 2D context, before
+        // passing it to Chart.js. The previous version used a scriptable
+        // function `backgroundColor: function(ctx) { ... ctx.chart.ctx ... }`
+        // which is called by Chart.js internally during its render cycle —
+        // if the scriptable context shape differs across Chart.js versions
+        // (or ctx.chart.ctx is not yet available), the function throws inside
+        // Chart.js and aborts the chart's render, leaving a blank canvas.
+        // Pre-computing the gradient here is simpler and avoids the scriptable
+        // context entirely.
+        var ctx2d = canvas.getContext('2d');
+        var gradient = null;
+        try {
+            gradient = ctx2d.createLinearGradient(0, 0, 600, 0);
+            gradient.addColorStop(0, 'rgba(42, 157, 126, 0.9)');
+            gradient.addColorStop(1, 'rgba(212, 175, 55, 0.9)');
+        } catch (e) {
+            // If gradient creation fails for any reason, fall back to a
+            // solid color so the bars are still visible.
+            gradient = 'rgba(42, 157, 126, 0.9)';
+        }
+
+        charts.topProducts = new Chart(ctx2d, {
             type: 'bar',
             data: {
                 labels: labels,
                 datasets: [{
                     label: data.labelSalesCount || 'تعداد فروش',
                     data: values,
-                    backgroundColor: function (ctx) {
-                        var c = ctx.chart.ctx;
-                        var g = c.createLinearGradient(0, 0, 600, 0);
-                        g.addColorStop(0, 'rgba(42, 157, 126, 0.9)');
-                        g.addColorStop(1, 'rgba(212, 175, 55, 0.9)');
-                        return g;
-                    },
+                    backgroundColor: gradient,
                     borderRadius: 6,
                     borderSkipped: false,
                     barThickness: 18
@@ -338,6 +398,14 @@
         if (!canvas || typeof Chart === 'undefined') return;
 
         var cats = data.topCategories || [];
+
+        // Empty-state: no categories to plot. Show a friendly localized
+        // message instead of a blank canvas.
+        if (cats.length === 0) {
+            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            return;
+        }
+
         var labels = cats.map(function (c) { return c.categoryName; });
         var values = cats.map(function (c) { return c.salesCount; });
 
@@ -377,16 +445,47 @@
     }
 
     // ---- Public API ----
+    // NOTE: only `render` is called (by Dashboard.razor via JS interop).
+    // formatAmount / formatMillions are exposed for potential external use;
+    // both reference defined functions so they're safe.
+    // (A previous version also exported `toFa: toFa` here, but `toFa` was
+    // never defined — only `toLocalDigits` is. Referencing an undefined
+    // identifier in an object literal throws ReferenceError at IIFE run
+    // time, which aborted this whole IIFE BEFORE `window.takDashboard` was
+    // assigned — so `takDashboard.render(...)` from the razor page threw
+    // "takDashboard is undefined", silently swallowed by the empty catch
+    // in OnAfterRenderAsync. The dashboard then rendered with blank chart
+    // areas and no visible error. Removing the broken reference fixes it.)
     window.takDashboard = {
         render: function (data) {
             applyChartDefaults();
             destroyCharts();
-            renderRevenueChart(data);
-            renderStatusDonut(data);
-            renderTopProductsChart(data);
-            renderCategoryPie(data);
+            // Each chart is wrapped in its own try/catch so a failure in one
+            // chart (e.g. a scriptable-context throw, a bad canvas, etc.)
+            // does NOT abort the remaining charts. Previously a throw in
+            // renderTopProductsChart would prevent renderCategoryPie from
+            // running, leaving BOTH the bar and pie blank while the line
+            // and donut (rendered first) worked fine.
+            var renderers = [
+                ['revenue', renderRevenueChart],
+                ['statusDonut', renderStatusDonut],
+                ['topProducts', renderTopProductsChart],
+                ['categoryPie', renderCategoryPie]
+            ];
+            for (var i = 0; i < renderers.length; i++) {
+                var name = renderers[i][0];
+                var fn = renderers[i][1];
+                try {
+                    fn(data);
+                } catch (e) {
+                    // Log to console so the failure is visible in DevTools
+                    // instead of silently leaving a blank chart area.
+                    if (typeof console !== 'undefined' && console.error) {
+                        console.error('[dashboard.js] render("' + name + '") failed:', e);
+                    }
+                }
+            }
         },
-        toFa: toFa,
         formatAmount: formatAmount,
         formatMillions: formatMillions
     };

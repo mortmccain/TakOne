@@ -114,25 +114,28 @@ public sealed class CreateOrAppendSaleCommandHandler
         //
         // READ-ONLY LOAD (AsNoTracking): we never mutate the Product in this
         // handler — we only read its data to snapshot into the SaleLineItem.
-        // Loading it AsNoTracking keeps the Product (and its owned Money
+        // Loading it AsNoTracking keeps the Product (and its complex Money
         // Price, and its owned PurchaseLimits collection) OUT of the change
-        // tracker entirely. This is critical because:
+        // tracker entirely. This is a defensive measure to keep the change
+        // tracker's working set small and avoid any chance of accidental
+        // Product mutations being persisted.
         //
-        //   - The SAME Money CLR type is configured as OwnsOne on THREE
-        //     different entities in this DbContext:
-        //       Product.Price#Money
-        //       SaleLineItem.UnitPrice#Money
-        //       Sale.Total#Money
-        //   - When the Product is tracked, EF Core tracks its Money Price as
-        //     Product.Price#Money. At the same time, the Sale (loaded below)
-        //     has its Money Total tracked as Sale.Total#Money, and each
-        //     existing SaleLineItem has its Money UnitPrice tracked as
-        //     SaleLineItem.UnitPrice#Money.
-        //   - The change tracker can confuse these owned instances and
-        //     generate UPDATEs that affect 0 rows (DbUpdateConcurrencyException:
-        //     "expected to affect 1 row(s), but actually affected 0 row(s)").
-        //   - AsNoTracking eliminates the Product from the tracking equation,
-        //     leaving only the Sale (which we DO want to mutate + save).
+        // HISTORICAL CONTEXT (now resolved at the EF mapping level):
+        //   Money was previously mapped as OwnsOne on three entities:
+        //     Product.Price#Money, SaleLineItem.UnitPrice#Money, Sale.Total#Money
+        //   OwnsOne tracks by reference identity, and replacing a Money
+        //   reference (e.g. Sale.RecalculateTotal's `Total = newMoney`)
+        //   produced DbUpdateConcurrencyException: "expected to affect 1
+        //   row(s), but actually affected 0 row(s)". The AsNoTracking +
+        //   defensive copy pattern below was a workaround for that bug.
+        //
+        //   Money is now mapped as ComplexProperty (EF Core 9+) on all three
+        //   entities. ComplexProperty has VALUE semantics — EF compares by
+        //   value, not reference identity — so reference replacement works
+        //   correctly. The AsNoTracking + defensive copy pattern is kept
+        //   here as DDD best practice (value objects shouldn't be shared
+        //   across aggregate boundaries), but it is no longer load-bearing
+        //   for the EF tracking behavior.
         //
         // The product load is OUTSIDE the retry loop because:
         //   - It never conflicts (AsNoTracking read).
