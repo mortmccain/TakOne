@@ -116,12 +116,40 @@ public sealed class UpdateSaleLineItemCommandHandler
 
         // ------------------------------------------------------------------
         // Delegate to the aggregate. It re-checks the purchase limit and
-        // throws DomainException on violation (caught by middleware).
+        // throws DomainException on violation. We catch that here and
+        // return a friendly Result.Failure (rather than letting the
+        // exception propagate to the Blazor caller, where it would surface
+        // as a generic "something went wrong" toast).
+        //
+        // The UI clamps the qty selector to Min(MyPurchaseLimit,
+        // Max(CurrentStock, Quantity)) — so under normal use the limit
+        // is never exceeded here. But two edge cases still trigger this:
+        //   (a) Multi-tab — user updates the same line from two tabs
+        //       simultaneously. The reload between the two calls may
+        //       already have pushed the line past the limit.
+        //   (b) Admin lowered the limit between the user's cart-load
+        //       and their Update click.
         // ------------------------------------------------------------------
-        sale.UpdateLineItemQuantity(
-            lineItemId: command.LineItemId,
-            newQuantity: command.Quantity,
-            purchaseLimit: purchaseLimit);
+        try
+        {
+            sale.UpdateLineItemQuantity(
+                lineItemId: command.LineItemId,
+                newQuantity: command.Quantity,
+                purchaseLimit: purchaseLimit);
+        }
+        catch (DomainException ex) when (ex.Message.Contains("Purchase limit", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning
+                ("UpdateSaleLineItem: purchase-limit exceeded for product {ProductId} on sale {SaleId} (customer {CustomerId}, limit {Limit}, requested {Qty}). Domain message: {Msg}",
+                lineItem.ProductId, sale.Id, sale.CustomerId, purchaseLimit, command.Quantity, ex.Message);
+
+            var limitText = purchaseLimit.HasValue
+                ? purchaseLimit.Value.ToString()
+                : "—";
+
+            return Result.Failure(
+                $"سهمیه گروه مشتری برای کالای «{lineItem.ProductName}» {limitText} عدد است و نمی‌توانید تعداد را بیشتر از این مقدار تنظیم کنید.");
+        }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

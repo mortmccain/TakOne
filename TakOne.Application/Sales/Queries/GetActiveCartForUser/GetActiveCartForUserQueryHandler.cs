@@ -83,6 +83,29 @@ public sealed class GetActiveCartForUserQueryHandler
         }
 
         // ------------------------------------------------------------------
+        // 2b. Resolve the current caller's per-product purchase limits in
+        //     the SAME pass we already made for stock. The Product aggregate
+        //     owns the per-group limit value objects; we just look them up
+        //     by the caller's GroupName (set on the User, surfaced via the
+        //     "GroupName" claim — null for staff users, who have no cap).
+        //
+        //     This mirrors what GetProductsPaginatedQueryHandler does for
+        //     the shop grid's ProductListItemDto.MyPurchaseLimit. Keeping
+        //     the cart DTO's MyPurchaseLimit semantics identical means the
+        //     UI can use the same clamping pattern on both surfaces.
+        // ------------------------------------------------------------------
+        var groupName = currentUser.GroupName;
+        var productById = products.ToDictionary(p => p.Id);
+
+        int? ResolveMyLimit(Guid productId)
+        {
+            if (string.IsNullOrWhiteSpace(groupName)) return null; // staff
+            return productById.TryGetValue(productId, out var p)
+                ? p.GetPurchaseLimitForGroup(groupName)?.Limit
+                : null;
+        }
+
+        // ------------------------------------------------------------------
         // 3. Project to CartDto. Line items are ordered by LineNumber for
         //    stable UI rendering — same convention as GetSaleByIdQueryHandler.
         // ------------------------------------------------------------------
@@ -117,7 +140,8 @@ public sealed class GetActiveCartForUserQueryHandler
                         Currency = li.GrossTotal.Currency
                     },
 
-                    CurrentStock = currentStock
+                    CurrentStock = currentStock,
+                    MyPurchaseLimit = ResolveMyLimit(li.ProductId)
                 };
             })
             .ToList();

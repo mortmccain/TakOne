@@ -130,6 +130,12 @@ public sealed class AddItemToSaleCommandHandler
         // DomainException on violation) and either creates a new line or
         // increments an existing one for the same product.
         //
+        // We wrap the call in try/catch (DomainException) to return a
+        // friendly Result.Failure with a Persian message instead of
+        // letting the exception propagate as a generic error toast.
+        // Same pattern as UpdateSaleLineItemCommandHandler + the append
+        // path of CreateOrAppendSaleCommandHandler.
+        //
         // SNAPSHOT THE PRICE — pass a NEW Money instance, NOT product.Price
         // by reference. EF Core tracks owned value objects by reference, so
         // if SaleLineItem.UnitPrice and Product.Price point to the SAME Money
@@ -138,12 +144,28 @@ public sealed class AddItemToSaleCommandHandler
         //    'SaleLineItem.UnitPrice#Money' and 'Product.Price#Money'"
         // See CreateOrAppendSaleCommandHandler for the full rationale.
         // ------------------------------------------------------------------
-        sale.AddLineItem(
-            productId: product.Id,
-            productName: product.Name,
-            quantity: command.Quantity,
-            unitPrice: new Money(product.Price.Amount, product.Price.Currency),
-            purchaseLimit: purchaseLimit);
+        try
+        {
+            sale.AddLineItem(
+                productId: product.Id,
+                productName: product.Name,
+                quantity: command.Quantity,
+                unitPrice: new Money(product.Price.Amount, product.Price.Currency),
+                purchaseLimit: purchaseLimit);
+        }
+        catch (DomainException ex) when (ex.Message.Contains("Purchase limit", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning
+                ("AddItemToSale: purchase-limit exceeded for product {ProductId} on sale {SaleId} (customer {CustomerId}, limit {Limit}, requested {Qty}). Domain message: {Msg}",
+                product.Id, sale.Id, sale.CustomerId, purchaseLimit, command.Quantity, ex.Message);
+
+            var limitText = purchaseLimit.HasValue
+                ? purchaseLimit.Value.ToString()
+                : "—";
+
+            return Result.Failure(
+                $"سهمیه گروه مشتری برای کالای «{product.Name}» {limitText} عدد است و بیشتر از این مقدار نمی‌توانید به سبد اضافه کنید.");
+        }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

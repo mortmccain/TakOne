@@ -198,7 +198,6 @@ namespace TakOne.Infrastructure.Migrations
             modelBuilder.Entity("TakOne.Domain.Categories.Entities.SubCategory", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CategoryId")

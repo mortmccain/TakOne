@@ -571,9 +571,19 @@
                 @* Customer purchase panel: quantity selector + Add to cart button.
                    Available to ALL authenticated users (every role can buy).
                    Min=1, Max = the per-group limit if one applies to the current
-                   user, otherwise unlimited. The MyPurchaseLimit field on the DTO
-                   is null when no limit applies (e.g. for staff users who aren't
-                   in any customer group). *@
+                   user, otherwise a large number (bounded only by stock — staff
+                   see no stock number, so the selector's Max here is effectively
+                   unlimited).
+
+                   NOTE: _myPurchaseLimit is now populated from
+                   _product.MyPurchaseLimit (set by GetProductByIdQueryHandler
+                   via Product.GetPurchaseLimitForGroup(currentUser.GroupName)).
+                   Before this fix, _myPurchaseLimit was hardcoded to null
+                   because ProductDto didn't expose the field — so the
+                   selector's Max was always 999999, letting customers SELECT
+                   past their group's limit and only get stopped by a backend
+                   DomainException (surfaced as a generic error toast). The
+                   UI now clamps to the limit like the Products grid does. *@
                 <div class="purchase-row">
                     <RadzenNumeric @bind-Value="_quantity"
                                    Min="1"
@@ -980,7 +990,12 @@
             {
                 _editName = _product.Name;
                 _editDescription = _product.Description;
-                _myPurchaseLimit = null; // ProductDto doesn't expose MyPurchaseLimit — see below.
+                // _myPurchaseLimit is now populated from the DTO (set by
+                // GetProductByIdQueryHandler). Before this fix, it was
+                // hardcoded to null because ProductDto didn't expose the
+                // field — see the purchase-row comment above for the full
+                // rationale on why this matters.
+                _myPurchaseLimit = _product.MyPurchaseLimit;
 
                 var categoryTask = LoadCategoryHierarchyAsync();
                 var groupsTask = _canEdit ? LoadGroupNamesAsync() : Task.CompletedTask;

@@ -120,32 +120,11 @@ public sealed class CreateOrAppendSaleCommandHandler
         // tracker's working set small and avoid any chance of accidental
         // Product mutations being persisted.
         //
-        // HISTORICAL CONTEXT (now resolved at the EF mapping level):
-        //   Money was previously mapped as OwnsOne on three entities:
-        //     Product.Price#Money, SaleLineItem.UnitPrice#Money, Sale.Total#Money
-        //   OwnsOne tracks by reference identity, and replacing a Money
-        //   reference (e.g. Sale.RecalculateTotal's `Total = newMoney`)
-        //   produced DbUpdateConcurrencyException: "expected to affect 1
-        //   row(s), but actually affected 0 row(s)". The AsNoTracking +
-        //   defensive copy pattern below was a workaround for that bug.
-        //
-        //   Money is now mapped as ComplexProperty (EF Core 9+) on all three
-        //   entities. ComplexProperty has VALUE semantics — EF compares by
-        //   value, not reference identity — so reference replacement works
-        //   correctly. The AsNoTracking + defensive copy pattern is kept
-        //   here as DDD best practice (value objects shouldn't be shared
-        //   across aggregate boundaries), but it is no longer load-bearing
-        //   for the EF tracking behavior.
-        //
         // The product load is OUTSIDE the retry loop because:
         //   - It never conflicts (AsNoTracking read).
         //   - It never changes between retries (Products don't mutate while
         //     the user is adding to cart).
         //   - Re-loading it would just add latency.
-        //
-        // The new Money(amount, currency) snapshot below still applies —
-        // it guarantees the SaleLineItem's UnitPrice is a fresh instance,
-        // not a reference to the (now-untracked) Product.Price.
         // ------------------------------------------------------------------
         var product = await productRepository.GetByIdReadOnlyAsync(command.ProductId, cancellationToken);
         if (product is null)
@@ -203,62 +182,112 @@ public sealed class CreateOrAppendSaleCommandHandler
         //    failures (stock check, purchase limit) are RETURNED as
         //    Result.Failure, not thrown — they don't trigger retry.
         // ------------------------------------------------------------------
-        return await unitOfWork.ExecuteWithRetryAsync(
-            operation: async ct =>
-            {
-                // --------------------------------------------------------------
-                // 4a. Find the user's active draft (if any). Returns a TRACKED
-                //     Sale with LineItems already eager-loaded — we can call
-                //     AddLineItem directly on it without a re-query.
-                //
-                //     This re-runs on EVERY retry attempt. After a losing
-                //     race, the retry sees the winning invocation's
-                //     committed INSERT as an existing line for this product,
-                //     and Sale.AddLineItem takes the "increment existing
-                //     line's quantity" branch instead of attempting another
-                //     duplicate INSERT.
-                // --------------------------------------------------------------
-                var sale = await saleRepository.GetActiveDraftForUserAsync(currentUser.UserId, ct);
-
-                // --------------------------------------------------------------
-                // 4b. Stock check. The aggregate's AddLineItem either
-                //     creates a new line OR increments an existing one for
-                //     this product. So the "resulting" quantity we need to
-                //     validate against stock is:
-                //       existing-line-quantity + command.Quantity
-                //     (NOT just command.Quantity). If no sale exists yet,
-                //     existing is 0.
-                //
-                //     This re-runs on EVERY retry attempt — the existing
-                //     line quantity can change between attempts when a
-                //     concurrent invocation wins the race.
-                // --------------------------------------------------------------
-                var existingLineQuantity = sale?.LineItems
-                    .Where(li => li.ProductId == command.ProductId)
-                    .Sum(li => li.Quantity) ?? 0;
-
-                var resultingQuantity = existingLineQuantity + command.Quantity;
-
-                if (resultingQuantity > product.StockQuantity)
+        try
+        {
+            return await unitOfWork.ExecuteWithRetryAsync(
+                operation: async ct =>
                 {
-                    logger.LogWarning
-                        ("CreateOrAppendSale: stock check failed for product {ProductId}. " + "Requested {Qty}, existing in cart {ExistingQty}, stock {StockQty}.",
-                        product.Id, command.Quantity, existingLineQuantity, product.StockQuantity);
+                    // --------------------------------------------------------------
+                    // 4a. Find the user's active draft (if any). Returns a TRACKED
+                    //     Sale with LineItems already eager-loaded — we can call
+                    //     AddLineItem directly on it without a re-query.
+                    //
+                    //     This re-runs on EVERY retry attempt. After a losing
+                    //     race, the retry sees the winning invocation's
+                    //     committed INSERT as an existing line for this product,
+                    //     and Sale.AddLineItem takes the "increment existing
+                    //     line's quantity" branch instead of attempting another
+                    //     duplicate INSERT.
+                    // --------------------------------------------------------------
+                    var sale = await saleRepository.GetActiveDraftForUserAsync(currentUser.UserId, ct);
 
-                    return Result<Guid>.Failure
-                        ($"Adding {command.Quantity} unit(s) of '{product.Name}' would bring your cart total to " +
-                        $"{resultingQuantity}, but only {product.StockQuantity} are currently in stock.");
-                }
+                    // --------------------------------------------------------------
+                    // 4b. Stock check. The aggregate's AddLineItem either
+                    //     creates a new line OR increments an existing one for
+                    //     this product. So the "resulting" quantity we need to
+                    //     validate against stock is:
+                    //       existing-line-quantity + command.Quantity
+                    //     (NOT just command.Quantity). If no sale exists yet,
+                    //     existing is 0.
+                    //
+                    //     This re-runs on EVERY retry attempt — the existing
+                    //     line quantity can change between attempts when a
+                    //     concurrent invocation wins the race.
+                    // --------------------------------------------------------------
+                    var existingLineQuantity = sale?.LineItems
+                        .Where(li => li.ProductId == command.ProductId)
+                        .Sum(li => li.Quantity) ?? 0;
 
-                // --------------------------------------------------------------
-                // 4c. APPEND path — sale exists, add the line.
-                //
-                //     The aggregate enforces the purchase limit (throws
-                //     DomainException on violation) and either creates a new
-                //     line or increments an existing one for the same product.
-                // --------------------------------------------------------------
-                if (sale is not null)
-                {
+                    var resultingQuantity = existingLineQuantity + command.Quantity;
+
+                    if (resultingQuantity > product.StockQuantity)
+                    {
+                        logger.LogWarning
+                            ("CreateOrAppendSale: stock check failed for product {ProductId}. " + "Requested {Qty}, existing in cart {ExistingQty}, stock {StockQty}.",
+                            product.Id, command.Quantity, existingLineQuantity, product.StockQuantity);
+
+                        return Result<Guid>.Failure
+                            ($"Adding {command.Quantity} unit(s) of '{product.Name}' would bring your cart total to " +
+                            $"{resultingQuantity}, but only {product.StockQuantity} are currently in stock.");
+                    }
+
+                    // --------------------------------------------------------------
+                    // 4c. APPEND path — sale exists, add the line.
+                    //
+                    //     The aggregate enforces the purchase limit (throws
+                    //     DomainException on violation) and either creates a new
+                    //     line or increments an existing one for the same product.
+                    // --------------------------------------------------------------
+                    if (sale is not null)
+                    {
+                        sale.AddLineItem
+                            (
+                            productId: product.Id,
+                            productName: product.Name,
+                            quantity: command.Quantity,
+                            unitPrice: unitPrice,
+                            purchaseLimit: purchaseLimit
+                            );
+
+                        await unitOfWork.SaveChangesAsync(ct);
+
+                        logger.LogInformation
+                            ("CreateOrAppendSale: appended {Qty} of product {ProductId} to existing draft {SaleId}. Resulting line total: {Total}.",
+                            command.Quantity, product.Id, sale.Id, resultingQuantity);
+
+                        return Result<Guid>.Success(sale.Id);
+                    }
+
+                    // --------------------------------------------------------------
+                    // 4d. CREATE path — no active draft, start a fresh one.
+                    //
+                    //     This path can ALSO race: two concurrent invocations
+                    //     both see `sale == null`, both call SaleNumberGenerator
+                    //     (which has its own concurrency guard via the
+                    //     (SaleNumber_Year, SaleNumber_Sequence) unique index),
+                    //     both create a new Sale, and both SaveChanges. The
+                    //     loser's SaveChanges fails with a unique-constraint
+                    //     violation on the SaleNumber index — and the retry
+                    //     loop catches it.
+                    //
+                    //     On retry, the losing invocation re-runs
+                    //     GetActiveDraftForUserAsync — which now sees the winning
+                    //     invocation's committed Sale (the most-recent Draft for
+                    //     this user) and falls through to the APPEND path (4c)
+                    //     above. So the user ends up with ONE draft Sale
+                    //     containing the line, not two orphan drafts.
+                    // --------------------------------------------------------------
+                    var saleNumber = await saleNumberGenerator.NextAsync(ct);
+
+                    sale = Sale.Create
+                        (
+                        customerId: currentUser.UserId,
+                        customerName: currentUser.FullName,
+                        saleNumber: saleNumber,
+                        createdByUserId: currentUser.UserId,
+                        createdByName: currentUser.FullName
+                        );
+
                     sale.AddLineItem
                         (
                         productId: product.Id,
@@ -268,64 +297,54 @@ public sealed class CreateOrAppendSaleCommandHandler
                         purchaseLimit: purchaseLimit
                         );
 
+                    await saleRepository.AddAsync(sale, ct);
                     await unitOfWork.SaveChangesAsync(ct);
 
                     logger.LogInformation
-                        ("CreateOrAppendSale: appended {Qty} of product {ProductId} to existing draft {SaleId}. Resulting line total: {Total}.",
-                        command.Quantity, product.Id, sale.Id, resultingQuantity);
+                        ("CreateOrAppendSale: created new draft {SaleId} ({SaleNumber}) for user {UserId} with {Qty} of product {ProductId}.",
+                        sale.Id, sale.SaleNumber, currentUser.UserId, command.Quantity, product.Id);
 
                     return Result<Guid>.Success(sale.Id);
-                }
+                },
+                maxAttempts: MaxAttempts,
+                cancellationToken: cancellationToken);
+        }
+        // ------------------------------------------------------------------
+        // 5. Translate DomainException (thrown by Sale.AddLineItem's
+        //    EnsurePurchaseLimitRespected when the resulting line quantity
+        //    exceeds the buyer's per-group limit) into a friendly
+        //    Result.Failure with a Persian message.
+        //
+        //    WHY THIS CATCH IS NEEDED:
+        //      The UI clamps the qty selector to the limit, so under normal
+        //      use the limit is never exceeded. But two edge cases still
+        //      trigger the aggregate's defense-in-depth check:
+        //        (a) Multi-tab user — adds 5/5 in tab A, then clicks +1 in
+        //            tab B (which doesn't know about tab A's add yet). Tab
+        //            B's CreateOrAppendSaleCommand reloads the draft,
+        //            computes resultingQuantity = 6, throws.
+        //        (b) Admin lowered the limit between the user's page load
+        //            and their click — same effect.
+        //
+        //    The retry loop in ExecuteWithRetryAsync does NOT catch
+        //    DomainException (only DbUpdateConcurrencyException + unique-
+        //    constraint DbUpdateException), so the exception would propagate
+        //    out of the handler and surface in the UI as a generic error
+        //    toast ("Error_GenericAdd"). Catching it here lets us return a
+        //    clear, actionable message naming the limit and the product.
+        // ------------------------------------------------------------------
+        catch (DomainException ex) when (ex.Message.Contains("Purchase limit", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning
+                ("CreateOrAppendSale: purchase-limit exceeded for product {ProductId} (user {UserId}, limit {Limit}, requested {Qty}). Domain message: {Msg}",
+                product.Id, currentUser.UserId, purchaseLimit, command.Quantity, ex.Message);
 
-                // --------------------------------------------------------------
-                // 4d. CREATE path — no active draft, start a fresh one.
-                //
-                //     This path can ALSO race: two concurrent invocations
-                //     both see `sale == null`, both call SaleNumberGenerator
-                //     (which has its own concurrency guard via the
-                //     (SaleNumber_Year, SaleNumber_Sequence) unique index),
-                //     both create a new Sale, and both SaveChanges. The
-                //     loser's SaveChanges fails with a unique-constraint
-                //     violation on the SaleNumber index — and the retry
-                //     loop catches it.
-                //
-                //     On retry, the losing invocation re-runs
-                //     GetActiveDraftForUserAsync — which now sees the winning
-                //     invocation's committed Sale (the most-recent Draft for
-                //     this user) and falls through to the APPEND path (4c)
-                //     above. So the user ends up with ONE draft Sale
-                //     containing the line, not two orphan drafts.
-                // --------------------------------------------------------------
-                var saleNumber = await saleNumberGenerator.NextAsync(ct);
+            var limitText = purchaseLimit.HasValue
+                ? purchaseLimit.Value.ToString()
+                : "—";
 
-                sale = Sale.Create
-                    (
-                    customerId: currentUser.UserId,
-                    customerName: currentUser.FullName,
-                    saleNumber: saleNumber,
-                    createdByUserId: currentUser.UserId,
-                    createdByName: currentUser.FullName
-                    );
-
-                sale.AddLineItem
-                    (
-                    productId: product.Id,
-                    productName: product.Name,
-                    quantity: command.Quantity,
-                    unitPrice: unitPrice,
-                    purchaseLimit: purchaseLimit
-                    );
-
-                await saleRepository.AddAsync(sale, ct);
-                await unitOfWork.SaveChangesAsync(ct);
-
-                logger.LogInformation
-                    ("CreateOrAppendSale: created new draft {SaleId} ({SaleNumber}) for user {UserId} with {Qty} of product {ProductId}.",
-                    sale.Id, sale.SaleNumber, currentUser.UserId, command.Quantity, product.Id);
-
-                return Result<Guid>.Success(sale.Id);
-            },
-            maxAttempts: MaxAttempts,
-            cancellationToken: cancellationToken);
+            return Result<Guid>.Failure(
+                $"سهمیه گروه شما برای کالای «{product.Name}» {limitText} عدد است و بیشتر از این مقدار نمی‌توانید به سبد اضافه کنید.");
+        }
     }
 }

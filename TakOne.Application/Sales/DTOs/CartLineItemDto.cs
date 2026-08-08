@@ -60,4 +60,22 @@ public sealed class CartLineItemDto
     /// See the class-level XML doc for how the /Cart UI uses this field.
     /// </summary>
     public int CurrentStock { get; init; }
+
+    /// <summary>
+    /// The per-product purchase limit that applies to the CURRENT caller's
+    /// customer group for this line's Product, or <c>null</c> if:
+    ///   - the caller is staff (no GroupName → no per-product cap), or
+    ///   - the caller's group has no specific limit set on this product.
+    ///
+    /// Populated by <see cref="GetActiveCartForUserQueryHandler"/> from the
+    /// live Product aggregate (same load that fills <see cref="CurrentStock"/>).
+    ///
+    /// The cart UI uses this to clamp the per-line quantity selector's Max
+    /// to <c>Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c> so the user
+    /// CANNOT select a quantity above their group's limit (the backend
+    /// <see cref="UpdateSaleLineItemCommandHandler"/> would reject it with a
+    /// DomainException, but blocking the selection in the UI is the
+    /// correct UX — no "I clicked +6 and got a generic error" surprise).
+    /// </summary>
+    public int? MyPurchaseLimit { get; init; }
 }

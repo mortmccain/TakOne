@@ -98,7 +98,16 @@ public sealed class GetProductByIdQueryHandler
                     }
                     )
                     .ToList()
-                : new List<ProductPurchaseLimitDto>()
+                : new List<ProductPurchaseLimitDto>(),
+
+            // MyPurchaseLimit — the CURRENT caller's own per-group limit on
+            // this product. Null for staff (no GroupName → no cap) and for
+            // customers whose group has no specific limit set on this product.
+            // The ProductDetail page uses this to clamp the quantity selector
+            // so the customer cannot even SELECT more than their group allows.
+            MyPurchaseLimit = !string.IsNullOrWhiteSpace(currentUser.GroupName)
+                ? product.GetPurchaseLimitForGroup(currentUser.GroupName)?.Limit
+                : null
         };
 
         return Result<ProductDto>.Success(dto);

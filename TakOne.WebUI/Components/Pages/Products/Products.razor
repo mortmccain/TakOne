@@ -648,7 +648,7 @@
                 <div class="tm-cart-items">
                     @foreach (var line in _cart.LineItems)
                     {
-                        var lineMax = Math.Max(line.CurrentStock, line.Quantity);
+                        var lineMax = GetCartLineMax(line);
                         <div class="tm-cart-line">
                             <div class="tm-cart-line-img">
                                 @* PictureUrl not in CartLineItemDto — show placeholder icon *@
@@ -1155,6 +1155,26 @@
     }
 
     // ── Mini-cart line qty update ───────────────────────────────────────
+
+    /// <summary>
+    /// Upper bound for the +/- buttons on a mini-cart line. Same formula
+    /// as the cart page's <c>GetLineMax</c>:
+    ///   <c>Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c>.
+    ///
+    /// Before this fix, the mini-cart used <c>Max(CurrentStock, Quantity)</c>
+    /// and IGNORED the per-group purchase limit — so a customer could click
+    /// + past their group's limit and only get stopped by a backend
+    /// DomainException (surfaced as a generic error toast). Now the + button
+    /// greys out at the limit, matching the products-grid qty selector's
+    /// behavior.
+    /// </summary>
+    private static int GetCartLineMax(CartLineItemDto line)
+    {
+        var byStock = Math.Max(line.CurrentStock, line.Quantity);
+        return line.MyPurchaseLimit.HasValue
+            ? Math.Min(line.MyPurchaseLimit.Value, byStock)
+            : byStock;
+    }
 
     private async Task UpdateCartLineQtyAsync(Guid lineItemId, int newQty)
     {

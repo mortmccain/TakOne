@@ -13,7 +13,7 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260807235804_InitialCreate")]
+    [Migration("20260808040012_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -201,7 +201,6 @@ namespace TakOne.Infrastructure.Migrations
             modelBuilder.Entity("TakOne.Domain.Categories.Entities.SubCategory", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("CategoryId")
