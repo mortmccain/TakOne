@@ -239,7 +239,7 @@
     <value>پرفروش‌ترین محصولات</value>
   </data>
   <data name="Chart_TopProducts_Sub" xml:space="preserve">
-    <value>تعداد فروش • ۳۰ روز گذشته</value>
+    <value>مبلغ فروش • ۳۰ روز گذشته</value>
   </data>
   <data name="Chart_CategoryPie" xml:space="preserve">
     <value>سهم دسته‌بندی‌ها</value>
@@ -249,6 +249,9 @@
   </data>
   <data name="Chart_ViewAll" xml:space="preserve">
     <value>مشاهده همه</value>
+  </data>
+  <data name="Chart_NoData" xml:space="preserve">
+    <value>هنوز داده‌ای موجود نیست</value>
   </data>
 
   <!-- NEW chart status labels (for donut legend + tooltips) -->
@@ -272,9 +275,6 @@
   </data>
   <data name="Status_OrdersUnit" xml:space="preserve">
     <value>سفارش</value>
-  </data>
-  <data name="Status_SoldUnit" xml:space="preserve">
-    <value>عدد فروخته شده</value>
   </data>
 
   <!-- Recent orders table -->

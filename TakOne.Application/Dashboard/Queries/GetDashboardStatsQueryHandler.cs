@@ -187,10 +187,15 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 6. Top products by sales count (last 30 days).
-        //    Sum quantity per ProductName across all REVENUE-ELIGIBLE sales
-        //    (Pending + Approved + Invoiced — same definition as the revenue
-        //    line chart) submitted in the last 30 days. Take top 7.
+        // 6. Top products by TOTAL SALES AMOUNT (last 30 days).
+        //    Sum GrossTotal.Amount per ProductName across all REVENUE-ELIGIBLE
+        //    sales (Pending + Approved + Invoiced — same definition as the
+        //    revenue line chart) submitted in the last 30 days. Take top 7.
+        //
+        //    The bar chart's X-axis plots TotalAmount (in display currency —
+        //    Toman when original is IRR). QuantitySold is kept alongside for
+        //    potential tooltip enrichment, but is no longer the sort key or
+        //    the plotted value.
         //
         //    WHY NOT Approved+Invoiced only:
         //    The previous version excluded Pending sales here, which made the
@@ -212,9 +217,15 @@ public sealed class GetDashboardStatsQueryHandler
             .Select(g => new TopProductDto
             {
                 ProductName = g.Key,
-                QuantitySold = g.Sum(li => li.Quantity)
+                QuantitySold = g.Sum(li => li.Quantity),
+                // Sum GrossTotal per line, already converted IRR→Toman via
+                // ToDisplay (matches the weekly trend + totals everywhere
+                // else on the dashboard). GrossTotal today equals Quantity ×
+                // UnitPrice (no discount/tax yet); when the domain gains
+                // discount/tax logic, this will pick it up automatically.
+                TotalAmount = g.Sum(li => ToDisplay(li.GrossTotal.Amount))
             })
-            .OrderByDescending(p => p.QuantitySold)
+            .OrderByDescending(p => p.TotalAmount)
             .Take(7)
             .ToList();
 

@@ -812,28 +812,44 @@
     // Null while loading; the UI shows 0/— until the first load completes.
     private CustomerShopStatsDto? _stats;
 
-    // True when the signed-in user has the ReadOnly role. ReadOnly staff
-    // are ALLOWED to browse the Products page (so they can audit prices /
-    // stock) but are NOT allowed to add anything to a cart, submit an
-    // order, or quick-reorder — all four cart-mutation commands
-    // (CreateOrAppendSale, UpdateSaleLineItem, SubmitSale,
-    // QuickReorderLastSale) carry [RequireRoles] that EXCLUDES ReadOnly,
-    // so even if the UI let them click, the backend would reject the
-    // call. We reflect that contract here by graying out the add / qty /
-    // submit / reorder buttons so the user doesn't get a confusing
-    // "authorization denied" toast for an action they could never
-    // perform. Computed once in OnInitializedAsync (cheaper than
-    // re-evaluating CurrentUser.IsInRole on every render).
+    // True when the signed-in user is a PURE read-only viewer — i.e. they
+    // have the ReadOnly role AND do NOT also hold any role that the
+    // shopping commands accept (Customer / Employee / Manager / Admin).
+    //
+    // WHY THE "AND NOT" CLAUSE IS NEEDED:
+    //   The four cart-mutation commands (CreateOrAppendSale,
+    //   UpdateSaleLineItem, SubmitSale, QuickReorderLastSale) carry
+    //   [RequireRoles(Customer, Employee, Manager, Admin)] — ReadOnly is
+    //   deliberately EXCLUDED. So a pure ReadOnly user can never shop, and
+    //   we gray out the add/qty/submit/reorder buttons to match.
+    //
+    //   But a user can hold MULTIPLE roles. Since Customer was added to
+    //   the UserDetail assign-role dropdown, an admin can give a ReadOnly
+    //   user the Customer role too (e.g. to "convert" them into a buyer).
+    //   That user now satisfies BOTH [RequireRoles] checks for shopping
+    //   (they have Customer) — the backend will let them buy. The UI must
+    //   match: if we ONLY checked IsInRole(ReadOnly), we'd gray out their
+    //   add buttons even though the backend would accept the call. So we
+    //   treat them as a shopper (not read-only) whenever they hold any of
+    //   the four shopping-allowed roles.
+    //
+    // Computed once in OnInitializedAsync (cheaper than re-evaluating
+    // CurrentUser.IsInRole on every render).
     private bool _isReadOnly;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
-        // Resolve the role once, up-front. Cheap (a ClaimsPrincipal lookup)
-        // and avoids re-evaluating on every render. See _isReadOnly's
-        // doc-comment for why we gate cart mutations on this.
-        _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly);
+        // Resolve the role once, up-front. A user is treated as read-only
+        // for shopping ONLY when they have ReadOnly and don't also hold any
+        // of the four shopping-allowed roles (Customer / Employee / Manager
+        // / Admin). See _isReadOnly's doc-comment for the full rationale.
+        var canShop = CurrentUser.IsInRole(Roles.Customer)
+                      || CurrentUser.IsInRole(Roles.Employee)
+                      || CurrentUser.IsInRole(Roles.Manager)
+                      || CurrentUser.IsInRole(Roles.Admin);
+        _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly) && !canShop;
 
         try
         {

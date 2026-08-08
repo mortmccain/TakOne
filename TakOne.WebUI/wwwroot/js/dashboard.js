@@ -19,7 +19,7 @@
        thisWeekRevenue: [{ dayLabel, totalAmount }, ...],
        lastWeekRevenue: [{ dayLabel, totalAmount }, ...],
        statusBreakdown: [{ status, count }, ...],
-       topProducts: [{ productName, quantitySold }, ...],
+       topProducts: [{ productName, quantitySold, totalAmount }, ...],
        topCategories: [{ categoryName, salesCount }, ...],
        weeklyTotal: { avg, max, growthPct }
      }
@@ -42,11 +42,67 @@
 (function () {
     'use strict';
 
-    // Chart.js global defaults — dark Tak Makaron palette
+    // ---- Theme detection (tak-light vs tak-dark) ----
+    // theme.js sets the `data-theme-name` attribute on <html> to the
+    // active theme string ("tak-light", "tak-dark", "standard-dark",
+    // etc.) on every theme switch. We read it here at render time so
+    // chart text colors can adapt to the active theme.
+    //
+    // WHY THIS EXISTS:
+    //   Previously the Top Products bar chart had its Y-axis labels
+    //   (product names) hard-coded to #1F2937 (dark gray) — readable
+    //   on tak-light's white card background but INVISIBLE on tak-dark's
+    //   dark card background. The same problem affected grid lines
+    //   (rgba(255,255,255,0.04) is invisible on white) and donut/pie
+    //   slice borders (#152019 blends into a white card). All of these
+    //   now flow through theme-aware helpers below.
+    //
+    // FALLBACK: if the attribute isn't set yet (very early paint before
+    // theme.js has run), fall back to localStorage — same source theme.js
+    // reads from.
+    function isDarkTheme() {
+        var name = (document.documentElement.getAttribute('data-theme-name') || '').toLowerCase();
+        if (!name) {
+            try {
+                name = (localStorage.getItem('radzen_theme') || '').toLowerCase();
+            } catch (e) {
+                name = '';
+            }
+        }
+        // 'tak-dark', 'standard-dark', 'dark', etc. all contain 'dark'.
+        // Default to light when unknown — the page default is tak-light.
+        return name.indexOf('dark') !== -1;
+    }
+
+    // ---- Theme-aware chart color tokens ----
+    // Centralized so every chart picks up the right palette for the
+    // active theme. Add new tokens here, not inline in chart code.
+    //
+    // DARK (tak-dark / standard-dark):
+    //   - tickColor: #94A3A0 — light slate (existing, readable on dark)
+    //   - gridLine : rgba(255,255,255,0.04) — faint white (existing)
+    //   - sliceBorder: #152019 — near-black separator (existing)
+    //   - emptyState: #94A3A0 — light slate (existing)
+    //
+    // LIGHT (tak-light / standard / material):
+    //   - tickColor: #1F2937 — slate-900 (readable on white card)
+    //   - gridLine : rgba(15,23,42,0.06) — faint slate (visible on white)
+    //   - sliceBorder: #FFFFFF — white separator (visible on light card)
+    //   - emptyState: #475569 — slate-600 (readable on white)
+    function axisTickColor() { return isDarkTheme() ? '#94A3A0' : '#1F2937'; }
+    function gridLineColor() { return isDarkTheme() ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.06)'; }
+    function sliceBorderColor() { return isDarkTheme() ? '#152019' : '#FFFFFF'; }
+    function emptyStateColor() { return isDarkTheme() ? '#94A3A0' : '#475569'; }
+
+    // Chart.js global defaults — theme-aware.
+    // applyChartDefaults() runs on every render (including re-renders
+    // triggered by the theme MutationObserver below), so the defaults
+    // always match the current theme.
     function applyChartDefaults() {
         if (typeof Chart === 'undefined') return;
-        Chart.defaults.color = '#94A3A0';
-        Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
+        var dark = isDarkTheme();
+        Chart.defaults.color = dark ? '#94A3A0' : '#475569';
+        Chart.defaults.borderColor = dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.06)';
         Chart.defaults.font.family = "'Vazirmatn', 'Noto Sans SC', sans-serif";
         Chart.defaults.font.size = 11;
     }
@@ -70,6 +126,25 @@
         return s.replace(/[0-9]/g, function (d) {
             return '۰۱۲۳۴۵۶۷۸۹'[d];
         });
+    }
+
+    // ---- Coerce a localized-label field to a string -----------------------
+    // The razor page passes localized labels (labelThisWeek, labelPending,
+    // etc.) via JS interop. If the .NET side forgot to extract `.Value` from
+    // IStringLocalizer["..."], System.Text.Json serializes the LocalizedString
+    // STRUCT (with { name, value, resourceNotFound, searchedLocation } fields)
+    // instead of the underlying string. Concatenating that struct with strings
+    // in a tooltip callback then produces the literal "[object Object]" text
+    // in the rendered tooltip.
+    //
+    // Defensive helper: if we receive an object that looks like a
+    // LocalizedString (has a `value` string property), unwrap it. Otherwise
+    // return the value as-is. This way the dashboard keeps working even if a
+    // future razor change forgets `.Value` on a new label.
+    function asStr(v, fallback) {
+        if (typeof v === 'string') return v;
+        if (v && typeof v === 'object' && typeof v.value === 'string') return v.value;
+        return fallback != null ? fallback : '';
     }
 
     // ---- Format amount with grouping (culture-aware) ----
@@ -98,6 +173,12 @@
     }
 
     // ---- Common tooltip style for all charts ----
+    // Tooltips stay dark Tak-green on BOTH themes. Rationale: tooltips
+    // are floating popups that don't share the card background, so a
+    // dark popup is readable on both light and dark themes. Keeping the
+    // brand color (dark Tak green + gold border) consistent across
+    // themes is also a deliberate brand decision — the popup is the
+    // one place the Tak Makaron accent always shows through.
     function commonTooltip() {
         return {
             backgroundColor: '#0A2A1F',
@@ -115,6 +196,14 @@
 
     // ---- Chart instances (so we can destroy before re-render) ----
     var charts = {};
+
+    // Last data handed to render(). Kept so the theme MutationObserver
+    // (set up at the bottom of this IIFE) can re-render all charts with
+    // the new theme's colors without needing the razor page to re-call
+    // takDashboard.render — the razor page only invokes render() once
+    // (on first stats load), so without this cache a runtime theme
+    // switch would leave charts stuck on the old theme's colors.
+    var _lastData = null;
 
     function destroyCharts() {
         Object.keys(charts).forEach(function (key) {
@@ -137,7 +226,7 @@
         // render as a flat line at y=0 — not blank, but uninformative. We
         // only treat it as "empty" if there are NO data points at all.
         if (thisWeekArr.length === 0) {
-            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            renderEmptyState(canvas, asStr(data.labelNoData, 'هنوز داده‌ای موجود نیست'));
             return;
         }
 
@@ -150,7 +239,11 @@
         var thisWeekData = thisWeekArr.map(function (d) { return d.totalAmount; });
         var lastWeekData = lastWeekArr.map(function (d) { return d.totalAmount; });
 
-        var currencyLabel = data.displayCurrency || 'تومان';
+        // asStr() unwraps LocalizedString structs in case the razor page
+        // forgets `.Value` on a label field — see the asStr() comment above.
+        var currencyLabel = asStr(data.displayCurrency, 'تومان');
+        var labelThisWeek = asStr(data.labelThisWeek, 'این هفته');
+        var labelLastWeek = asStr(data.labelLastWeek, 'هفته قبل');
 
         charts.revenue = new Chart(ctx, {
             type: 'line',
@@ -158,7 +251,7 @@
                 labels: thisWeekLabels,
                 datasets: [
                     {
-                        label: data.labelThisWeek || 'این هفته',
+                        label: labelThisWeek,
                         data: thisWeekData,
                         borderColor: '#2A9D7E',
                         backgroundColor: gradient,
@@ -172,7 +265,7 @@
                         pointHoverRadius: 6
                     },
                     {
-                        label: data.labelLastWeek || 'هفته قبل',
+                        label: labelLastWeek,
                         data: lastWeekData,
                         borderColor: 'rgba(212, 175, 55, 0.55)',
                         borderWidth: 2,
@@ -193,18 +286,22 @@
                     tooltip: Object.assign({}, commonTooltip(), {
                         callbacks: {
                             label: function (ctx) {
-                                return ' ' + ctx.dataset.label + ': ' +
+                                // asStr() guards against `ctx.dataset.label`
+                                // being a LocalizedString struct (it would be
+                                // if the dataset label came from data.label*
+                                // without .Value extraction on the razor side).
+                                return ' ' + asStr(ctx.dataset.label, '') + ': ' +
                                     formatMillions(ctx.parsed.y, data.isToman, currencyLabel);
                             }
                         }
                     })
                 },
                 scales: {
-                    x: { grid: { display: false }, ticks: { color: '#94A3A0' } },
+                    x: { grid: { display: false }, ticks: { color: axisTickColor() } },
                     y: {
-                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        grid: { color: gridLineColor() },
                         ticks: {
-                            color: '#94A3A0',
+                            color: axisTickColor(),
                             callback: function (v) {
                                 var millions = v / 1000000;
                                 if (millions === 0) return toLocalDigits('0');
@@ -227,19 +324,22 @@
 
         // Empty-state: no statuses (no sales in scope at all).
         if (statusData.length === 0) {
-            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            renderEmptyState(canvas, asStr(data.labelNoData, 'هنوز داده‌ای موجود نیست'));
             return;
         }
 
         // Map status names to localized labels + colors
         // Order matches the HTML reference: Approved (green), Shipped/Invoiced (blue),
         // Pending (orange), Cancelled (red). Draft is omitted if count is 0.
+        // asStr() unwraps LocalizedString structs in case the razor page
+        // forgets `.Value` on a label field.
+        var labelOrdersUnit = asStr(data.labelOrdersUnit, 'سفارش');
         var colorMap = {
-            'Approved': { color: '#2A9D7E', label: data.labelApproved || 'تأیید شده' },
-            'Invoiced': { color: '#5BA8E8', label: data.labelShipped || 'ارسال شده' },
-            'Pending': { color: '#E8A14A', label: data.labelPending || 'در انتظار' },
-            'Cancelled': { color: '#EF6B6B', label: data.labelCancelled || 'لغو شده' },
-            'Draft': { color: '#94A3A0', label: data.labelDraft || 'پیش‌نویس' }
+            'Approved': { color: '#2A9D7E', label: asStr(data.labelApproved, 'تأیید شده') },
+            'Invoiced': { color: '#5BA8E8', label: asStr(data.labelShipped, 'ارسال شده') },
+            'Pending': { color: '#E8A14A', label: asStr(data.labelPending, 'در انتظار') },
+            'Cancelled': { color: '#EF6B6B', label: asStr(data.labelCancelled, 'لغو شده') },
+            'Draft': { color: '#94A3A0', label: asStr(data.labelDraft, 'پیش‌نویس') }
         };
 
         var labels = statusData.map(function (s) {
@@ -257,7 +357,7 @@
                 datasets: [{
                     data: values,
                     backgroundColor: colors,
-                    borderColor: '#152019',
+                    borderColor: sliceBorderColor(),
                     borderWidth: 3,
                     hoverOffset: 6
                 }]
@@ -271,8 +371,11 @@
                     tooltip: Object.assign({}, commonTooltip(), {
                         callbacks: {
                             label: function (ctx) {
-                                return ' ' + ctx.label + ': ' + toLocalDigits(ctx.parsed) +
-                                    ' ' + (data.labelOrdersUnit || 'سفارش');
+                                // ctx.label may be a LocalizedString struct if
+                                // the labels array was built from data.label*
+                                // without .Value extraction — asStr() unwraps it.
+                                return ' ' + asStr(ctx.label, '') + ': ' + toLocalDigits(ctx.parsed) +
+                                    ' ' + labelOrdersUnit;
                             }
                         }
                     })
@@ -289,7 +392,10 @@
         var ctx = canvas.getContext('2d');
         // Clear any prior drawing
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#94A3A0';
+        // Theme-aware fill — must be readable on both tak-light (white
+        // card) and tak-dark (dark card). Previously hard-coded #94A3A0
+        // which was faint on white.
+        ctx.fillStyle = emptyStateColor();
         ctx.font = '13px "Vazirmatn", "Noto Sans SC", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -301,7 +407,13 @@
         ctx.fillText(message, w / 2, h / 2);
     }
 
-    // ---- 3) Top Products (Horizontal Bar) ----
+    // ---- 3) Top Products (Horizontal Bar — by TOTAL SALES AMOUNT) ----
+    // X-axis plots revenue per product (not quantity). Ticks are formatted
+    // as money (no decimals): "۲٫۴M" for millions, "۱۴٬۰۰۰" for thousands.
+    // Y-axis labels (product names) flow through axisTickColor() — dark
+    // slate on tak-light's white card, light slate on tak-dark's dark
+    // card. Previously hard-coded to a single color, which was invisible
+    // on one theme or the other.
     function renderTopProductsChart(data) {
         var canvas = document.getElementById('tm-dash-top-products-chart');
         if (!canvas || typeof Chart === 'undefined') return;
@@ -311,12 +423,14 @@
         // Empty-state: no products to plot. Show a friendly localized
         // message instead of a blank canvas.
         if (products.length === 0) {
-            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            renderEmptyState(canvas, asStr(data.labelNoData, 'هنوز داده‌ای موجود نیست'));
             return;
         }
 
         var labels = products.map(function (p) { return p.productName; });
-        var values = products.map(function (p) { return p.quantitySold; });
+        // Plot TotalAmount (revenue) instead of QuantitySold. The server
+        // already converted IRR→Toman, so values are in display currency.
+        var values = products.map(function (p) { return p.totalAmount; });
 
         // Build the gradient ONCE from the canvas's own 2D context, before
         // passing it to Chart.js. The previous version used a scriptable
@@ -339,12 +453,37 @@
             gradient = 'rgba(42, 157, 126, 0.9)';
         }
 
+        var currencyLabel = asStr(data.displayCurrency, 'تومان');
+
+        // ---- X-axis tick formatter ----------------------------------------
+        // Chart.js auto-picks "nice" tick values, which on a quantity axis
+        // produced fractional ticks like 2.5, 7.5 (the user's reported
+        // "decimal numbers on the x axis"). Now that we plot money, we also
+        // format each tick as a rounded money value:
+        //   0           → "0"
+        //   < 1,000,000 → grouped thousands ("۱۴٬۰۰۰")
+        //   ≥ 1,000,000 → "X.XM" ("۲٫۴M")
+        // All non-zero values are integers (no decimals on the axis).
+        function formatAxisMoney(v) {
+            var n = Number(v) || 0;
+            if (n === 0) return toLocalDigits('0');
+            var abs = Math.abs(n);
+            if (abs >= 1000000) {
+                var m = (n / 1000000).toFixed(1);
+                // Drop trailing ".0" so "2.0M" becomes "2M" — cleaner axis.
+                if (/\.0$/.test(m)) m = m.slice(0, -2);
+                return toLocalDigits(m) + 'M';
+            }
+            // Grouped thousands, no decimals.
+            return toLocalDigits(Math.round(n).toLocaleString('en-US'));
+        }
+
         charts.topProducts = new Chart(ctx2d, {
             type: 'bar',
             data: {
                 labels: labels,
                 datasets: [{
-                    label: data.labelSalesCount || 'تعداد فروش',
+                    label: asStr(data.labelSalesCount, 'تعداد فروش'),
                     data: values,
                     backgroundColor: gradient,
                     borderRadius: 6,
@@ -361,21 +500,34 @@
                     tooltip: Object.assign({}, commonTooltip(), {
                         callbacks: {
                             label: function (ctx) {
-                                return ' ' + toLocalDigits(ctx.parsed.x) + ' ' +
-                                    (data.labelSoldUnit || 'عدد فروخته شده');
+                                // Show full grouped amount + currency label
+                                // (more space in tooltip than on the axis).
+                                return ' ' + formatAmount(ctx.parsed.x, data.isToman) +
+                                    ' ' + currencyLabel;
                             }
                         }
                     })
                 },
                 scales: {
                     x: {
-                        grid: { color: 'rgba(255,255,255,0.04)' },
-                        ticks: { color: '#94A3A0', callback: function (v) { return toLocalDigits(v); } },
+                        grid: { color: gridLineColor() },
+                        ticks: {
+                            color: axisTickColor(),
+                            // Format every auto-picked tick as money — no
+                            // more "2.5" / "7.5" decimals on the axis.
+                            callback: function (v) { return formatAxisMoney(v); }
+                        },
                         beginAtZero: true
                     },
                     y: {
                         grid: { display: false },
-                        ticks: { color: '#E8EDE9', font: { weight: '500' } }
+                        // Product names — theme-aware. Was hard-coded to
+                        // #1F2937 (dark slate) which was readable on the
+                        // tak-light (white) card but INVISIBLE on tak-dark's
+                        // dark card. Now picks #1F2937 on light, #94A3A0
+                        // (light slate) on dark — readable on both. The
+                        // medium font weight is preserved for emphasis.
+                        ticks: { color: axisTickColor(), font: { weight: '500' } }
                     }
                 }
             }
@@ -402,7 +554,7 @@
         // Empty-state: no categories to plot. Show a friendly localized
         // message instead of a blank canvas.
         if (cats.length === 0) {
-            renderEmptyState(canvas, data.labelNoData || 'هنوز داده‌ای موجود نیست');
+            renderEmptyState(canvas, asStr(data.labelNoData, 'هنوز داده‌ای موجود نیست'));
             return;
         }
 
@@ -419,7 +571,7 @@
                 datasets: [{
                     data: values,
                     backgroundColor: categoryColors.slice(0, labels.length),
-                    borderColor: '#152019',
+                    borderColor: sliceBorderColor(),
                     borderWidth: 3,
                     hoverOffset: 8
                 }]
@@ -434,7 +586,11 @@
                             label: function (ctx) {
                                 var pct = total > 0 ? Math.round(ctx.parsed * 100 / total) : 0;
                                 var pctSymbol = isFa() ? '٪' : '%';
-                                return ' ' + ctx.label + ': ' + toLocalDigits(ctx.parsed) +
+                                // asStr() guards against ctx.label being a
+                                // LocalizedString struct (it isn't, since
+                                // category names come from the database, but
+                                // the helper is harmless and consistent).
+                                return ' ' + asStr(ctx.label, '') + ': ' + toLocalDigits(ctx.parsed) +
                                     ' (' + toLocalDigits(pct) + pctSymbol + ')';
                             }
                         }
@@ -444,49 +600,81 @@
         });
     }
 
-    // ---- Public API ----
-    // NOTE: only `render` is called (by Dashboard.razor via JS interop).
-    // formatAmount / formatMillions are exposed for potential external use;
-    // both reference defined functions so they're safe.
-    // (A previous version also exported `toFa: toFa` here, but `toFa` was
-    // never defined — only `toLocalDigits` is. Referencing an undefined
-    // identifier in an object literal throws ReferenceError at IIFE run
-    // time, which aborted this whole IIFE BEFORE `window.takDashboard` was
-    // assigned — so `takDashboard.render(...)` from the razor page threw
-    // "takDashboard is undefined", silently swallowed by the empty catch
-    // in OnAfterRenderAsync. The dashboard then rendered with blank chart
-    // areas and no visible error. Removing the broken reference fixes it.)
-    window.takDashboard = {
-        render: function (data) {
-            applyChartDefaults();
-            destroyCharts();
-            // Each chart is wrapped in its own try/catch so a failure in one
-            // chart (e.g. a scriptable-context throw, a bad canvas, etc.)
-            // does NOT abort the remaining charts. Previously a throw in
-            // renderTopProductsChart would prevent renderCategoryPie from
-            // running, leaving BOTH the bar and pie blank while the line
-            // and donut (rendered first) worked fine.
-            var renderers = [
-                ['revenue', renderRevenueChart],
-                ['statusDonut', renderStatusDonut],
-                ['topProducts', renderTopProductsChart],
-                ['categoryPie', renderCategoryPie]
-            ];
-            for (var i = 0; i < renderers.length; i++) {
-                var name = renderers[i][0];
-                var fn = renderers[i][1];
-                try {
-                    fn(data);
-                } catch (e) {
-                    // Log to console so the failure is visible in DevTools
-                    // instead of silently leaving a blank chart area.
-                    if (typeof console !== 'undefined' && console.error) {
-                        console.error('[dashboard.js] render("' + name + '") failed:', e);
-                    }
+    // ---- Render all 4 charts from a data payload -----------------------
+    // Shared by the public render() API (window.takDashboard.render) and
+    // the theme MutationObserver below. The observer needs to re-render
+    // when the user switches themes at runtime, but the razor page only
+    // calls render() once (on first stats load) — so the observer reads
+    // _lastData (cached by render()) and calls renderAll() directly.
+    function renderAll(data) {
+        applyChartDefaults();
+        destroyCharts();
+        // Each chart is wrapped in its own try/catch so a failure in one
+        // chart (e.g. a scriptable-context throw, a bad canvas, etc.)
+        // does NOT abort the remaining charts. Previously a throw in
+        // renderTopProductsChart would prevent renderCategoryPie from
+        // running, leaving BOTH the bar and pie blank while the line
+        // and donut (rendered first) worked fine.
+        var renderers = [
+            ['revenue', renderRevenueChart],
+            ['statusDonut', renderStatusDonut],
+            ['topProducts', renderTopProductsChart],
+            ['categoryPie', renderCategoryPie]
+        ];
+        for (var i = 0; i < renderers.length; i++) {
+            var name = renderers[i][0];
+            var fn = renderers[i][1];
+            try {
+                fn(data);
+            } catch (e) {
+                // Log to console so the failure is visible in DevTools
+                // instead of silently leaving a blank chart area.
+                if (typeof console !== 'undefined' && console.error) {
+                    console.error('[dashboard.js] render("' + name + '") failed:', e);
                 }
             }
+        }
+    }
+
+    window.takDashboard = {
+        render: function (data) {
+            _lastData = data;
+            renderAll(data);
         },
         formatAmount: formatAmount,
         formatMillions: formatMillions
     };
+
+    // ---- Runtime theme switch → re-render charts -------------------------
+    // The dashboard only invokes takDashboard.render() ONCE (on first
+    // stats load). After that, if the user clicks the sun/moon toggle in
+    // the header, theme.js swaps the CSS but the chart colors stay stuck
+    // on the old theme — axis labels become invisible on the new theme.
+    //
+    // We watch <html> for changes to the `data-theme-name` attribute
+    // (which theme.js sets on every switch) and re-render all 4 charts
+    // with the new theme's colors. Without this, switching from light
+    // to dark would leave product names dark-on-dark; switching dark
+    // to light would leave them light-on-light.
+    //
+    // _lastData is null until the first render() call, so the observer
+    // is a no-op until the dashboard has actually loaded data.
+    if (typeof MutationObserver !== 'undefined') {
+        var themeObserver = new MutationObserver(function (mutations) {
+            if (!_lastData) return;
+            for (var i = 0; i < mutations.length; i++) {
+                if (mutations[i].attributeName === 'data-theme-name') {
+                    try {
+                        renderAll(_lastData);
+                    } catch (e) {
+                        if (typeof console !== 'undefined' && console.error) {
+                            console.error('[dashboard.js] theme re-render failed:', e);
+                        }
+                    }
+                    return;
+                }
+            }
+        });
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme-name'] });
+    }
 })();

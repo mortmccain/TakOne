@@ -236,7 +236,7 @@
     <value>Top-selling products</value>
   </data>
   <data name="Chart_TopProducts_Sub" xml:space="preserve">
-    <value>Sales count · last 30 days</value>
+    <value>Sales amount · last 30 days</value>
   </data>
   <data name="Chart_CategoryPie" xml:space="preserve">
     <value>Category share</value>
@@ -246,6 +246,9 @@
   </data>
   <data name="Chart_ViewAll" xml:space="preserve">
     <value>View all</value>
+  </data>
+  <data name="Chart_NoData" xml:space="preserve">
+    <value>No data yet</value>
   </data>
 
   <!-- NEW chart status labels (for donut legend + tooltips) -->
@@ -269,9 +272,6 @@
   </data>
   <data name="Status_OrdersUnit" xml:space="preserve">
     <value>orders</value>
-  </data>
-  <data name="Status_SoldUnit" xml:space="preserve">
-    <value>units sold</value>
   </data>
 
   <!-- Recent orders table -->
