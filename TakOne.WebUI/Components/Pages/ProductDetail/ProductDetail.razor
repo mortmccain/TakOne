@@ -1,106 +1,139 @@
-﻿@* ProductDetail.razor — Phase 3.2
+﻿@* ProductDetail.razor — Phase 3.2 (rewritten for staff edit + customer view)
 
-   Customer-facing product detail page at route `/Products/{Id:guid}`.
-   Reached from the Products grid (Phase 3.1) by clicking a product card.
-   All authenticated users can view this page — it's the "shop window".
+   Product detail page at route `/Products/{Id:guid}`. Reached from the
+   Products grid by clicking a product card. ALL authenticated users can
+   view this page — the role determines what they see + can do.
 
-   LAYOUT (responsive):
-     Desktop / tablet (≥768px): two columns
-       Left  (5/12): product picture placeholder (square aspect ratio)
-       Right (7/12): product info + purchase panel
-     Mobile (<768px): single column, picture on top, info below
+   ─────────────────────────────────────────────────────────────────────
+   TWO VIEWS BASED ON ROLE
+   ─────────────────────────────────────────────────────────────────────
 
-   SECTIONS (top to bottom on the right column):
-     1. Breadcrumb: Products → [Category Name] → [Product Name]
-        (Category Name is fetched via GetCategoryByIdWithHierarchyQuery;
-        if the lookup fails for any reason, we just show "Products → [Name]"
-        without the category — non-fatal.)
-     2. Product name (h4)
-     3. Price (large, primary color) + currency
-     4. Stock badge: green "In stock (N)", orange "Low stock (N)",
-        red "Out of stock"
-     5. Description (paragraph, may wrap multiple lines)
-     6. Purchase limits panel — ONLY shown to Admin/Manager (the
-        GetProductByIdQuery handler strips purchase limits for other roles
-        as a defense-in-depth measure). Lists per-group limits.
-     7. Quantity selector (RadzenNumeric, min=1, max=StockQuantity)
-     8. Add to Cart button — disabled if StockQuantity == 0 or while
-        submitting. On success: success toast + clear quantity back to 1.
+   CUSTOMER VIEW (Customer role, and anyone not in Admin/Manager/Employee):
+     - Breadcrumb: Products → [Category / Sub / SubSub] → [Product Name]
+     - Product picture (or placeholder)
+     - Product name (read-only)
+     - Price (read-only)
+     - Description (read-only)
+     - Category hierarchy label (Category › SubCategory › SubSubCategory)
+     - Quantity selector (1 to MyPurchaseLimit, if a limit applies)
+     - Add to Cart button
+     - NO stock number is shown.
+     - NO groups, NO purchase limits, NO internal audit details.
 
-   DATA LOADING:
-     - OnInitializedAsync: load the product via GetProductByIdQuery
-       (Wolverine IMessageBus.InvokeAsync<Result<ProductDto>>).
-     - If the product loads successfully, fire a secondary query for the
-       category (for the breadcrumb). The category load is non-fatal —
-       if it fails, we just show "Products → [Product]" without the
-       category crumb.
+   STAFF VIEW (Admin, Manager, Employee — authorized by [RequireRoles]
+   on the command handlers themselves; the page just checks role via
+   AuthenticationStateProvider to decide what UI to render):
+     Everything in the customer view EXCEPT the staff sees additional
+     edit affordances below the read-only display:
+       1. Change Photo button → opens the same dropzone + preview card UI
+          used on CreateProduct.razor. Same JPEG/PNG/WebP + 5 MB rules.
+          On save: (a) upload new file via IFileStorage.SaveAsync,
+                   (b) delete the OLD file via IFileStorage.DeleteAsync
+                       (hard delete — orphaned images are cleaned up),
+                   (c) dispatch UpdateProductDetailsCommand with the new
+                       PictureUrl + the existing Name/Description/Price
+                       (UpdateProductDetails is the only command that
+                       can change PictureUrl).
+       2. Edit Name + Description → two text inputs + Save button.
+          Dispatches UpdateProductDetailsCommand with the new values
+          (PictureUrl is passed as the existing value — unchanged).
+       3. Per-group purchase limits editor:
+          - Loads ALL existing group names via GetAllGroupNamesQuery
+            (every existing group must have a limit OR be explicitly
+            set to "no limit" by leaving the field empty + clicking
+            "Remove limit").
+          - For each existing limit on this product, shows a row with
+            the group name (read-only) + the current limit (editable
+            RadzenNumeric) + a Save button per row.
+          - For each existing group that has NO limit set on this
+            product, shows a row with the group name + an empty limit
+            input + a "Set limit" button.
+          - "Add custom group" button below the list lets staff set a
+            limit for a group name that doesn't have any users yet
+            (forward-looking). Mirrors CreateProduct's pattern.
 
-   ADD-TO-CART FLOW:
-     - Dispatch CreateOrAppendSaleCommand(ProductId, Quantity) via
-       Wolverine IMessageBus.InvokeAsync<Result<Guid>>.
-     - The handler:
-         a. Loads the product (already loaded by the page, but the handler
-            re-loads for atomicity — it's a separate scope).
-         b. Finds the user's active Draft Sale (GetActiveDraftForUserAsync).
-         c. Either creates a fresh draft with this line, or appends to the
-            existing one. The Sale aggregate handles the increment-existing-
-            line case (same ProductId on the sale) automatically.
-         d. Returns Result<Guid> with the Sale Id.
-     - On success: ToastService.Success with localized message, then reset
-       quantity selector to 1. We DON'T navigate to /Cart (Phase 4.1 hasn't
-       built that page yet — the user can keep browsing and add more items).
-     - On failure: ToastService.Error with the result.Error message (the
-       handler returns user-friendly messages like "Adding 5 units would
-       bring your cart total to 15, but only 10 are currently in stock.").
+   ─────────────────────────────────────────────────────────────────────
+   ROLE CHECK
+   ─────────────────────────────────────────────────────────────────────
+   Uses AuthenticationStateProvider (NOT ICurrentUserService.IsInRole)
+   because in interactive Blazor Server mode, ICurrentUserService reads
+   from IHttpContextAccessor.HttpContext which is null over the SignalR
+   circuit. Same pattern as Sales.razor + SaleDetail.razor.
 
-   LOCALIZATION:
-     All user-visible strings go through IStringLocalizer<ProductDetail> (Loc).
-     Keys are defined in ProductDetail.fa-IR.resx (Persian, RTL) and
-     ProductDetail.en-US.resx (English, LTR). RTL/LTR is handled at the
-     <html dir="rtl"|"ltr"> level by MainLayout — individual pages don't
-     need to do anything special.
+   The backend command handlers ALSO enforce [RequireRoles] as
+   defense-in-depth — even if a non-staff user could see the buttons,
+   the handler would reject the dispatch.
 
-   IMAGE STRATEGY:
-     Phase 3.2 uses a PLACEHOLDER only — a Material icon (inventory_2)
-     centered on a neutral background. The ProductDto has a PictureUrl
-     field, but it's typically null in dev (no upload UI exists yet —
-     Phase 7.1 will add one). If PictureUrl is set, we render an <img>;
-     otherwise we show the placeholder. This keeps the page forward-
-     compatible with future image support without us having to revisit
-     it later.
+   ─────────────────────────────────────────────────────────────────────
+   IMAGE UPLOAD FLOW (mirrors CreateProduct.razor — same rules)
+   ─────────────────────────────────────────────────────────────────────
+   - Dropzone + InputFile with accept="image/jpeg,image/png,image/webp".
+   - Validates content type + 5 MB max size client-side.
+   - Buffers the bytes IMMEDIATELY in OnInputFileChange (not at submit
+     time) to avoid the JSException that occurs when the JS-side
+     _blazorFilesById registry is cleared by Hot Reload / circuit
+     reconnect / runtime housekeeping.
+   - Generates a downscaled data: URL preview (400×400 max) via
+     IBrowserFile.RequestImageFileAsync.
+   - On "Save photo": stream bytes to IFileStorage.SaveAsync → get URL,
+     then IFileStorage.DeleteAsync(oldPictureUrl) to hard-delete the
+     previous file, then dispatch UpdateProductDetailsCommand with
+     new PictureUrl + existing Name/Description/Price.
 
-   ANTI-FORGERY:
-     Not needed — this page doesn't use EditForm. The Add to Cart button
-     is a regular RadzenButton with a Click handler that calls into
-     Wolverine. The Blazor circuit already has its anti-forgery token
-     established at circuit-start time. No form POST happens.
+   ─────────────────────────────────────────────────────────────────────
+   LOCALIZATION
+   ─────────────────────────────────────────────────────────────────────
+   All user-visible strings via IStringLocalizer<ProductDetail> (Loc).
+   Keys in ProductDetail.fa-IR.resx + ProductDetail.en-US.resx.
+   RTL handled at the <html dir> level by MainLayout.
+
+   ─────────────────────────────────────────────────────────────────────
+   TIMEZONE (Tehran, not UTC)
+   ─────────────────────────────────────────────────────────────────────
+   No timestamps displayed on this page currently. If timestamps are
+   added in the future, use the same inline +3:30 offset arithmetic
+   used in Sales.razor / SaleDetail.razor. Server runs in UTC; using
+   .LocalDateTime would show UTC times instead of Tehran times.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All buttons are regular RadzenButtons
+     with async Click handlers that dispatch commands via Wolverine.
+     The Blazor circuit's anti-forgery token is established at circuit
+     start. No form POST happens.
 
    ROUTE PARAMETER:
-     `Id` is a Guid bound from the URL via [Parameter]. Blazor's @page
-     constraint `{Id:guid}` validates the URL segment is parseable as a
-     Guid before this component even loads — a malformed URL gets a 404
-     from the router, not a runtime exception here. *@
+     `Id` is a Guid bound from the URL via [Parameter]. The @page
+     constraint `{Id:guid}` validates the URL segment is parseable as
+     a Guid before this component even loads — a malformed URL gets a
+     404 from the router, not a runtime exception here. *@
 
 @page "/Products/{Id:guid}"
 @attribute [Authorize]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using Wolverine
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductById
+@using TakOne.Application.Products.Commands.UpdateProductDetails
+@using TakOne.Application.Products.Commands.SetProductPurchaseLimit
+@using TakOne.Application.Products.Commands.RemoveProductPurchaseLimit
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
 @using TakOne.Application.Sales.Commands.CreateOrAppendSale
+@using TakOne.Application.Users.Queries.GetAllGroupNames
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
-@inject ICurrentUserService CurrentUser
+@inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject IStringLocalizer<ProductDetail> Loc
 @inject ToastService Toast
+@inject IFileStorage FileStorage
 
 <PageTitle>@(_product is null ? Loc["PageTitle"] : $"{_product.Name} — TakOne")</PageTitle>
 
@@ -121,10 +154,9 @@
                 }
             }
 
-            /* Picture — square aspect ratio, placeholder-friendly.
-                                   We use the same neutral background + border as the Products grid
-                                   card so the visual language is consistent across catalog + detail. */
+            /* Picture — square aspect ratio, placeholder-friendly. */
             .detail-picture {
+                position: relative;
                 aspect-ratio: 1 / 1;
                 display: flex;
                 align-items: center;
@@ -146,6 +178,15 @@
                     font-size: 8rem;
                     color: var(--rz-text-secondary-color);
                 }
+
+            /* "Change photo" button — overlaid on the picture bottom-right
+                           corner. Only shown to staff. Uses RadzenButton underneath
+                           but is positioned via a wrapper. */
+            .change-photo-overlay {
+                position: absolute;
+                inset-inline-end: 0.5rem;
+                bottom: 0.5rem;
+            }
 
             /* Purchase panel — the right column */
             .detail-info {
@@ -174,60 +215,18 @@
                 white-space: pre-wrap; /* preserves newlines in description */
             }
 
-            .stock-badge {
-                display: inline-flex;
+            /* Category hierarchy chip — small inline label */
+            .category-hierarchy {
+                display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 0.4rem;
-                padding: 0.35rem 0.75rem;
-                border-radius: 9999px;
-                font-size: 0.85rem;
-                font-weight: 600;
+                font-size: 0.875rem;
+                color: var(--rz-text-secondary-color);
             }
 
-            .stock-in {
-                background: rgba(76, 175, 80, 0.15);
-                color: #4caf50;
-            }
-
-            .stock-low {
-                background: rgba(255, 152, 0, 0.15);
-                color: #ff9800;
-            }
-
-            .stock-out {
-                background: rgba(244, 67, 54, 0.15);
-                color: #f44336;
-            }
-
-            /* Purchase limits panel — only admin/manager see this. */
-            .limits-panel {
-                border: 1px dashed var(--rz-base-border-color);
-                border-radius: var(--rz-border-radius);
-                padding: 1rem;
-                background: var(--rz-base-background-color);
-            }
-
-            .limits-list {
-                display: flex;
-                flex-direction: column;
-                gap: 0.4rem;
-                margin: 0;
-                padding: 0;
-                list-style: none;
-            }
-
-                .limits-list li {
-                    display: flex;
-                    justify-content: space-between;
-                    font-size: 0.9rem;
-                }
-
-                .limits-list .group-name {
-                    color: var(--rz-text-secondary-color);
-                }
-
-                .limits-list .limit-value {
-                    font-weight: 600;
+                .category-hierarchy .crumb-sep {
+                    opacity: 0.5;
                 }
 
             /* Quantity selector + Add-to-cart button row */
@@ -285,14 +284,183 @@
                 .breadcrumb .crumb-sep {
                     opacity: 0.5;
                 }
+
+            /* ── STAFF EDIT SECTION ────────────────────────────────────── */
+            .staff-section {
+                border-top: 1px dashed var(--rz-base-border-color);
+                padding-top: 1.5rem;
+                margin-top: 1.5rem;
+            }
+
+            .staff-section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+                color: var(--rz-text-secondary-color);
+            }
+
+            .edit-row {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+            }
+
+            .edit-actions {
+                display: flex;
+                gap: 0.5rem;
+                justify-content: flex-end;
+            }
+
+            /* Picture upload section — dropzone + preview card.
+                           Mirrors CreateProduct.razor's picture-dropzone styles so the
+                           two pages share a consistent upload UI. */
+            .upload-section {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+
+            .field-label {
+                display: block;
+                font-size: 0.875rem;
+                font-weight: 500;
+                color: var(--rz-text-secondary-color);
+                margin-bottom: 0.25rem;
+            }
+
+            .picture-dropzone {
+                display: block;
+                cursor: pointer;
+                border: 2px dashed var(--rz-border-color);
+                border-radius: 8px;
+                background: var(--rz-base-background-color);
+                padding: 2rem 1.5rem;
+                text-align: center;
+                transition: border-color 0.15s ease, background-color 0.15s ease;
+            }
+
+                .picture-dropzone:hover {
+                    border-color: var(--rz-primary);
+                    background-color: var(--rz-primary-lighter, rgba(0, 100, 250, 0.04));
+                }
+
+                .picture-dropzone:focus-within {
+                    border-color: var(--rz-primary);
+                    box-shadow: 0 0 0 3px rgba(0, 100, 250, 0.15);
+                    outline: none;
+                }
+
+            .picture-dropzone-input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .picture-dropzone-body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 0.75rem;
+                pointer-events: none;
+            }
+
+            .picture-dropzone-text {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+            .picture-dropzone-title {
+                font-weight: 600;
+                color: var(--rz-text-color);
+                font-size: 0.95rem;
+            }
+
+            .picture-dropzone-hint {
+                font-size: 0.8rem;
+                color: var(--rz-text-secondary-color);
+            }
+
+            .upload-card {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                padding: 1rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                background: var(--rz-base-background-color);
+            }
+
+            .upload-preview {
+                width: 96px;
+                height: 96px;
+                object-fit: cover;
+                border-radius: 6px;
+                border: 1px solid var(--rz-border-color);
+                flex-shrink: 0;
+            }
+
+            .upload-preview-placeholder {
+                width: 96px;
+                height: 96px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 6px;
+                border: 1px dashed var(--rz-border-color);
+                color: var(--rz-text-secondary-color);
+                font-size: 2rem;
+                flex-shrink: 0;
+            }
+
+            .upload-info {
+                flex: 1 1 auto;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+                .upload-info .file-name {
+                    font-weight: 500;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    color: var(--rz-text-color);
+                }
+
+                .upload-info .file-size {
+                    color: var(--rz-text-secondary-color);
+                    font-size: 0.85rem;
+                }
+
+            /* Purchase-limits editor — same row shape as CreateProduct */
+            .limit-row {
+                display: flex;
+                align-items: end;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+                margin-bottom: 0.5rem;
+            }
+
+                .limit-row > * {
+                    flex: 0 0 auto;
+                }
     </style>
 </HeadContent>
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
     @* ── Back button ──
-       Always visible. Returns to /Products (preserves any ?category=... filter
-       the user had set there if they use browser back, but we use NavigateTo
-       so the back-stack stays clean). *@
+       Always visible. Returns to /Products. *@
     <RadzenButton Text="@Loc["BackToCatalog"]"
                   Icon="arrow_back"
                   ButtonStyle="ButtonStyle.Light"
@@ -334,7 +502,7 @@
     else
     {
         <div class="detail-grid">
-            @* LEFT — picture (or placeholder) *@
+            @* LEFT — picture (or placeholder) + staff-only "Change photo" button *@
             <div class="detail-picture">
                 @if (!string.IsNullOrWhiteSpace(_product.PictureUrl))
                 {
@@ -344,17 +512,33 @@
                 {
                     <RadzenIcon Icon="inventory_2" />
                 }
+
+                @* Staff-only "Change photo" overlay button — opens the same dropzone
+                   UI used on CreateProduct.razor. Only rendered for staff (Admin /
+                   Manager / Employee) — same role check as the rest of the staff
+                   edit section below. *@
+                @if (_canEdit)
+                {
+                    <div class="change-photo-overlay">
+                        <RadzenButton Text="@Loc["ChangePhoto"]"
+                                      Icon="photo_camera"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Filled"
+                                      Size="ButtonSize.Small"
+                                      Click="@(() => _isPhotoEditorOpen = true)" />
+                    </div>
+                }
             </div>
 
-            @* RIGHT — info + purchase panel *@
+            @* RIGHT — info + purchase panel + staff-only edit section *@
             <div class="detail-info">
                 @* Breadcrumb: Products → [Category Name] → [Product Name] *@
                 <nav class="breadcrumb" aria-label="breadcrumb">
                     <a href="/Products">@Loc["BreadcrumbProducts"]</a>
-                    @if (!string.IsNullOrWhiteSpace(_categoryName))
+                    @if (!string.IsNullOrWhiteSpace(_categoryHierarchy))
                     {
                         <span class="crumb-sep">/</span>
-                        <span>@_categoryName</span>
+                        <span>@_categoryHierarchy</span>
                     }
                     <span class="crumb-sep">/</span>
                     <span class="crumb-current">@_product.Name</span>
@@ -366,118 +550,466 @@
                 @* Price *@
                 <div class="detail-price">@FormatPrice(_product.Price)</div>
 
-                @* Stock badge *@
-                @if (_product.StockQuantity == 0)
-                {
-                    <span class="stock-badge stock-out">
-                        <RadzenIcon Icon="error_outline" />
-                        @Loc["StockOut"]
-                    </span>
-                }
-                else if (_product.StockQuantity <= 10)
-                {
-                    <span class="stock-badge stock-low">
-                        <RadzenIcon Icon="warning_amber" />
-                        @string.Format(CultureInfo.CurrentCulture, Loc["StockLow"], _product.StockQuantity)
-                    </span>
-                }
-                else
-                {
-                    <span class="stock-badge stock-in">
-                        <RadzenIcon Icon="check_circle" />
-                        @string.Format(CultureInfo.CurrentCulture, Loc["StockIn"], _product.StockQuantity)
-                    </span>
-                }
-
                 @* Description *@
                 @if (!string.IsNullOrWhiteSpace(_product.Description))
                 {
                     <p class="detail-description">@_product.Description</p>
                 }
 
-                @* Purchase limits panel — admin/manager only.
-                   The handler already strips limits for other roles, so the
-                   PurchaseLimits collection will be empty for customers.
-                   We additionally gate the UI on role check for clarity. *@
-                @if (_product.PurchaseLimits.Count > 0
-                     && (CurrentUser.IsInRole(Roles.Admin) || CurrentUser.IsInRole(Roles.Manager)))
+                @* Category hierarchy chip — shown to everyone (customer + staff).
+                   Displays Category › SubCategory › SubSubCategory as a small
+                   inline label so the customer can verify the categorization
+                   without leaving the page. *@
+                @if (!string.IsNullOrWhiteSpace(_categoryHierarchy))
                 {
-                    <div class="limits-panel">
-                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 0.5rem;">
-                            <RadzenIcon Icon="rule" />
-                            <RadzenText Text="@Loc["PurchaseLimitsTitle"]" TextStyle="TextStyle.Body1" Style="font-weight: 600; margin: 0;" />
-                        </RadzenStack>
-                        <ul class="limits-list">
-                            @foreach (var limit in _product.PurchaseLimits)
-                            {
-                                <li>
-                                    <span class="group-name">@limit.GroupName</span>
-                                    <span class="limit-value">@string.Format(CultureInfo.CurrentCulture, Loc["PurchaseLimitValue"], limit.Limit)</span>
-                                </li>
-                            }
-                        </ul>
+                    <div class="category-hierarchy">
+                        <RadzenIcon Icon="category" Style="font-size: 1rem;" />
+                        <span>@_categoryHierarchy</span>
                     </div>
                 }
 
-                @* Purchase panel: quantity selector + Add to cart button.
-                   Disabled if out of stock OR currently submitting. *@
+                @* Customer purchase panel: quantity selector + Add to cart button.
+                   Available to ALL authenticated users (every role can buy).
+                   Min=1, Max = the per-group limit if one applies to the current
+                   user, otherwise unlimited. The MyPurchaseLimit field on the DTO
+                   is null when no limit applies (e.g. for staff users who aren't
+                   in any customer group). *@
                 <div class="purchase-row">
                     <RadzenNumeric @bind-Value="_quantity"
                                    Min="1"
-                                   Max="@_product.StockQuantity"
+                                   Max="@(_myPurchaseLimit ?? 999999)"
                                    Step="1"
                                    Style="width: 100px;"
-                                   class="qty-input"
-                                   Disabled="@(_product.StockQuantity == 0 || _isSubmitting)" />
+                                   class="qty-input" />
                     <RadzenButton Text="@Loc["AddToCart"]"
                                   Icon="add_shopping_cart"
                                   ButtonStyle="ButtonStyle.Primary"
                                   Variant="Variant.Filled"
                                   class="add-to-cart-btn"
-                                  Disabled="@(_product.StockQuantity == 0 || _isSubmitting)"
+                                  Disabled="@(_isSubmitting)"
                                   Click="@HandleAddToCartAsync" />
                 </div>
+
+                @if (_myPurchaseLimit.HasValue)
+                {
+                    <RadzenText TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color);">
+                        @string.Format(CultureInfo.CurrentCulture, Loc["MyPurchaseLimitHint"], _myPurchaseLimit.Value)
+                    </RadzenText>
+                }
+
+                @* ── STAFF EDIT SECTION ──
+                   Only shown to Admin / Manager / Employee. Contains:
+                     1. Inline edit of Name + Description with Save button.
+                     2. Per-group purchase limits editor.
+                   The photo editor opens as a separate modal-like card above
+                   (controlled by _isPhotoEditorOpen). All edits dispatch
+                   Wolverine commands; the backend [RequireRoles] attribute
+                   is the authoritative gate — the UI check just hides the
+                   affordance for non-staff. *@
+                @if (_canEdit)
+                {
+                    <div class="staff-section">
+                        <div class="staff-section-title">
+                            <RadzenIcon Icon="edit" />
+                            <span>@Loc["StaffEditTitle"]</span>
+                        </div>
+
+                        @* Inline edit: Name + Description + Save button.
+                           Editable copies are held in _editName / _editDescription
+                           so the user can type freely without committing on each
+                           keystroke. Save dispatches UpdateProductDetailsCommand
+                           with the new values + the EXISTING picture URL + price
+                           (we don't touch those here). *@
+                        <div class="edit-row">
+                            <RadzenFormField Text="@Loc["FieldName"]" Style="width: 100%;">
+                                <RadzenTextBox @bind-Value="_editName"
+                                               TValue="string"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+                        </div>
+                        <div class="edit-row">
+                            <RadzenFormField Text="@Loc["FieldDescription"]" Style="width: 100%;">
+                                <RadzenTextArea @bind-Value="_editDescription"
+                                                TValue="string"
+                                                Rows="3"
+                                                Style="width: 100%;" />
+                            </RadzenFormField>
+                        </div>
+                        <div class="edit-actions">
+                            <RadzenButton Text="@Loc["SaveDetails"]"
+                                          Icon="save"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Disabled="@(_isSavingDetails || string.IsNullOrWhiteSpace(_editName))"
+                                          Click="@HandleSaveDetailsAsync" />
+                        </div>
+
+                        @* ── Per-group purchase limits editor ──
+                           Shows ALL existing group names with their current
+                           limits (or an empty input if no limit is set).
+                           Each row has:
+                             - Group name (read-only)
+                             - Limit input (RadzenNumeric, min=1, max=1_000_000)
+                             - "Save" button → SetProductPurchaseLimitCommand
+                             - "Remove" button (only when a limit exists) →
+                               RemoveProductPurchaseLimitCommand
+                           Plus an "Add custom group" button below for groups
+                           that don't exist yet (forward-looking). *@
+                        <div class="staff-section-title" style="margin-top: 1.5rem;">
+                            <RadzenIcon Icon="rule" />
+                            <span>@Loc["PurchaseLimitsTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); margin-bottom: 0.75rem;">
+                            @Loc["PurchaseLimitsHint"]
+                        </RadzenText>
+
+                        @if (_isLoadingGroups)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["LoadingGroups"]
+                            </RadzenText>
+                        }
+                        else if (_limitRows.Count == 0)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["NoLimitRows"]
+                            </RadzenText>
+                        }
+                        else
+                        {
+                            @foreach (var row in _limitRows)
+                            {
+                                <div class="limit-row">
+                                    <RadzenFormField Text="@Loc["FieldLimitGroup"]"
+                                                     Style="flex: 1 1 200px; min-width: 160px;">
+                                        @if (row.IsExistingGroup)
+                                        {
+                                            <RadzenText TextStyle="TextStyle.Body1"
+                                                        Style="display: block; padding: 0.5rem 0; font-weight: 600;">
+                                                @row.GroupName
+                                            </RadzenText>
+                                        }
+                                        else
+                                        {
+                                            <RadzenTextBox @bind-Value="row.GroupName"
+                                                           TValue="string"
+                                                           Placeholder="@Loc["LimitGroupPlaceholder"]"
+                                                           Style="width: 100%;" />
+                                        }
+                                    </RadzenFormField>
+                                    <RadzenFormField Text="@Loc["FieldLimitValue"]"
+                                                     Style="flex: 0 1 140px; min-width: 100px;">
+                                        <RadzenNumeric @bind-Value="row.Limit"
+                                                       TValue="int?"
+                                                       Min="1"
+                                                       Max="1000000"
+                                                       Placeholder="@Loc["LimitValuePlaceholder"]"
+                                                       Style="width: 100%;" />
+                                    </RadzenFormField>
+                                    <RadzenButton Text="@Loc["SaveLimit"]"
+                                                  Icon="save"
+                                                  ButtonStyle="ButtonStyle.Primary"
+                                                  Variant="Variant.Outlined"
+                                                  Size="ButtonSize.Small"
+                                                  Disabled="@(!row.Limit.HasValue || string.IsNullOrWhiteSpace(row.GroupName) || row.IsSaving)"
+                                                  Click="@(() => HandleSaveLimitAsync(row))" />
+                                    @if (!row.IsCustom)
+                                    {
+                                        <RadzenButton Text="@Loc["RemoveLimit"]"
+                                                      Icon="delete"
+                                                      ButtonStyle="ButtonStyle.Danger"
+                                                      Variant="Variant.Text"
+                                                      Size="ButtonSize.Small"
+                                                      Disabled="@(!row.HasExistingLimit || row.IsSaving)"
+                                                      Click="@(() => HandleRemoveLimitAsync(row))" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenButton Icon="delete"
+                                                      ButtonStyle="ButtonStyle.Danger"
+                                                      Variant="Variant.Text"
+                                                      Size="ButtonSize.Small"
+                                                      Click="@(() => _limitRows.Remove(row))"
+                                                      AriaLabel="@Loc["RemoveLimit"]" />
+                                    }
+                                </div>
+                            }
+                        }
+
+                        <div style="margin-top: 0.75rem;">
+                            <RadzenButton Text="@Loc["AddCustomGroupRow"]"
+                                          Icon="group_add"
+                                          ButtonStyle="ButtonStyle.Secondary"
+                                          Variant="Variant.Outlined"
+                                          Size="ButtonSize.Small"
+                                          Disabled="@_isLoadingGroups"
+                                          Click="@AddCustomLimitRow" />
+                        </div>
+                    </div>
+                }
             </div>
         </div>
+    }
+
+    @* ── Photo editor (modal-like card) ──
+       Opens when staff clicks "Change Photo" on the picture. Mirrors the
+       CreateProduct.razor picture dropzone + preview card UI. The user
+       picks a file, sees a preview, then clicks "Save photo" to:
+         1. Upload the new file via IFileStorage.SaveAsync.
+         2. Hard-delete the OLD file via IFileStorage.DeleteAsync.
+         3. Dispatch UpdateProductDetailsCommand with the new PictureUrl.
+       Cancel closes the editor without saving. Same validation rules as
+       CreateProduct: JPEG/PNG/WebP only, 5 MB max. *@
+    @if (_isPhotoEditorOpen && _product is not null)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem; margin-top: 1rem; border-top: 2px solid var(--rz-primary);">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 1rem;">
+                <RadzenIcon Icon="photo_camera" Style="color: var(--rz-primary);" />
+                <RadzenText Text="@Loc["ChangePhotoTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin: 0;" />
+                <RadzenButton Icon="close"
+                              ButtonStyle="ButtonStyle.Light"
+                              Variant="Variant.Text"
+                              Size="ButtonSize.Small"
+                              Style="margin-inline-start: auto;"
+                              Click="@(() => _isPhotoEditorOpen = false)"
+                              AriaLabel="@Loc["ClosePhotoEditor"]" />
+            </RadzenStack>
+
+            <div class="upload-section">
+                @if (_selectedFile is null)
+                {
+                    <label class="picture-dropzone">
+                        <InputFile OnChange="@OnInputFileChange"
+                                   accept="image/jpeg,image/png,image/webp"
+                                   class="picture-dropzone-input" />
+                        <div class="picture-dropzone-body">
+                            <RadzenIcon Icon="cloud_upload"
+                                        Style="font-size: 2.5rem; color: var(--rz-primary);" />
+                            <div class="picture-dropzone-text">
+                                <span class="picture-dropzone-title">@Loc["UploadDropzoneTitle"]</span>
+                                <span class="picture-dropzone-hint">@Loc["UploadDropzoneHint"]</span>
+                            </div>
+                        </div>
+                    </label>
+                }
+                else
+                {
+                    <div class="upload-card">
+                        @if (!string.IsNullOrEmpty(_previewDataUrl))
+                        {
+                            <img src="@_previewDataUrl" alt="preview" class="upload-preview" />
+                        }
+                        else
+                        {
+                            <div class="upload-preview-placeholder">
+                                <RadzenIcon Icon="image" />
+                            </div>
+                        }
+                        <div class="upload-info">
+                            <div class="file-name">@_selectedFile.Name</div>
+                            <div class="file-size">@FormatBytes(_selectedFile.Size)</div>
+                        </div>
+                        <RadzenButton Text="@Loc["RemoveImage"]"
+                                      Icon="delete"
+                                      ButtonStyle="ButtonStyle.Danger"
+                                      Variant="Variant.Outlined"
+                                      Click="@RemoveSelectedImage" />
+                    </div>
+                    <RadzenText TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color); display: block;">
+                        @Loc["PictureHint"]
+                    </RadzenText>
+                }
+
+                @if (!string.IsNullOrEmpty(_uploadError))
+                {
+                    <RadzenAlert Title="@Loc["UploadErrorTitle"]"
+                                 Text="@_uploadError"
+                                 AlertStyle="AlertStyle.Danger"
+                                 Variant="Variant.Filled"
+                                 ShowIcon="true" />
+                }
+
+                <div class="edit-actions">
+                    <RadzenButton Text="@Loc["CancelPhotoEditor"]"
+                                  Icon="close"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Outlined"
+                                  Disabled="@(_isSavingPhoto)"
+                                  Click="@(() => _isPhotoEditorOpen = false)" />
+                    <RadzenButton Text="@Loc["SavePhoto"]"
+                                  Icon="save"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Disabled="@(_selectedFile is null || _selectedFileBytes is null || _isSavingPhoto)"
+                                  Click="@HandleSavePhotoAsync" />
+                </div>
+            </div>
+        </RadzenCard>
     }
 </RadzenStack>
 
 @code {
     // ── Route parameter ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Product Id from the URL. The @page constraint `{Id:guid}` ensures
-    /// only valid Guid strings reach this parameter; malformed URLs hit
-    /// the router's NotFound template instead.
-    /// </summary>
     [Parameter]
     public Guid Id { get; set; }
 
     // ── State ──────────────────────────────────────────────────────────
 
     private ProductDto? _product;
-    private string? _categoryName;
+    private string? _categoryHierarchy;
     private string? _loadError;
     private bool _isLoading = true;
     private int _quantity = 1;
     private bool _isSubmitting;
 
+    /// <summary>
+    /// True if the current user is in Admin/Manager/Employee role. Computed
+    /// once in OnInitializedAsync via AuthenticationStateProvider (NOT
+    /// ICurrentUserService.IsInRole — see the file header for why).
+    /// Gates the entire staff-edit section + the Change Photo button.
+    /// </summary>
+    private bool _canEdit;
+
+    /// <summary>
+    /// The current user's per-product purchase limit, if any. Null means
+    /// no limit applies (staff user, or customer in a group with no limit
+    /// set on this product). Used to clamp the quantity selector's Max.
+    /// </summary>
+    private int? _myPurchaseLimit;
+
+    // ── Editable copies for the Name/Description inline editor ──
+
+    private string _editName = string.Empty;
+    private string _editDescription = string.Empty;
+    private bool _isSavingDetails;
+
+    // ── Photo editor state ──
+    //
+    // Mirrors CreateProduct.razor's pattern. The file is buffered in
+    // memory immediately in OnInputFileChange (NOT at submit time) to
+    // avoid the JSException that occurs when the JS-side _blazorFilesById
+    // registry is cleared by Hot Reload / circuit reconnect / runtime
+    // housekeeping.
+
+    private bool _isPhotoEditorOpen;
+    private IBrowserFile? _selectedFile;
+    private byte[]? _selectedFileBytes;
+    private string? _previewDataUrl;
+    private string? _uploadError;
+    private bool _isSavingPhoto;
+
+    private const long MaxFileSize = 5 * 1024 * 1024; // 5 MB
+
+    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg", "image/png", "image/webp"
+    };
+
+    // ── Purchase-limit editor state ──
+
+    /// <summary>
+    /// One row per group, existing or custom. Loaded once on page init
+    /// by combining GetAllGroupNamesQuery (every existing group) with
+    /// the product's existing limits (so each row shows its current
+    /// value, or an empty input if no limit is set yet).
+    /// </summary>
+    private List<LimitRow> _limitRows = new();
+    private bool _isLoadingGroups = true;
+
+    /// <summary>
+    /// One row in the per-group purchase-limit editor. Each row maps to
+    /// either a SetProductPurchaseLimitCommand (when "Save" is clicked
+    /// with a non-empty limit) or a RemoveProductPurchaseLimitCommand
+    /// (when "Remove" is clicked — only available for existing-group
+    /// rows that currently have a limit).
+    /// </summary>
+    private sealed class LimitRow
+    {
+        public string GroupName { get; set; } = string.Empty;
+        public int? Limit { get; set; }
+
+        /// <summary>
+        /// True for rows seeded from GetAllGroupNamesQuery (every existing
+        /// group must always be shown — name is read-only, row can't be
+        /// deleted, but the limit can be set/changed/removed).
+        /// False for rows added via "Add custom group" (name is editable,
+        /// row can be deleted via the trash icon).
+        /// </summary>
+        public bool IsExistingGroup { get; set; }
+
+        /// <summary>
+        /// True for custom (new) rows added via the "Add custom group"
+        /// button. False for existing-group rows.
+        /// </summary>
+        public bool IsCustom => !IsExistingGroup;
+
+        /// <summary>
+        /// True if this group currently has a limit set on this product
+        /// (loaded from _product.PurchaseLimits at init time). Drives the
+        /// enabled state of the "Remove" button.
+        /// </summary>
+        public bool HasExistingLimit { get; set; }
+
+        /// <summary>
+        /// True while a Save or Remove command is in flight for this row.
+        /// Disables both buttons to prevent double-clicks.
+        /// </summary>
+        public bool IsSaving { get; set; }
+    }
+
     // ── Lifecycle ──────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve role + (if staff) limit-editor data alongside the product
+        // load. All three are independent reads.
         try
         {
+            await ResolveRoleAsync();
             await LoadProductAsync();
-            // Fire-and-forget the category lookup — it's non-fatal. We
-            // could parallelize, but the category lookup depends on
-            // _product.CategoryId being populated, so it has to come
-            // after the product load anyway.
-            await LoadCategoryNameAsync();
+
+            // After product loads, fire the category lookup + (for staff)
+            // the group-names lookup in parallel.
+            if (_product is not null)
+            {
+                _editName = _product.Name;
+                _editDescription = _product.Description;
+                _myPurchaseLimit = null; // ProductDto doesn't expose MyPurchaseLimit — see below.
+
+                var categoryTask = LoadCategoryHierarchyAsync();
+                var groupsTask = _canEdit ? LoadGroupNamesAsync() : Task.CompletedTask;
+                await Task.WhenAll(categoryTask, groupsTask);
+            }
         }
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private async Task ResolveRoleAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _canEdit = user.IsInRole(Roles.Admin)
+                       || user.IsInRole(Roles.Manager)
+                       || user.IsInRole(Roles.Employee);
+        }
+        catch
+        {
+            // Safe fallback — if role resolution fails, treat as non-staff.
+            // The backend handlers ALSO enforce [RequireRoles] as
+            // defense-in-depth, so even if a non-staff user could see the
+            // buttons, the dispatch would be rejected.
+            _canEdit = false;
         }
     }
 
@@ -494,13 +1026,16 @@
         }
         else
         {
-            // result.Error contains the handler's user-friendly message
-            // (e.g. "Product '{Id}' was not found.")
             _loadError = result.Error ?? Loc["Error_GenericLoad"];
         }
     }
 
-    private async Task LoadCategoryNameAsync()
+    /// <summary>
+    /// Loads the full category hierarchy (Category › SubCategory › SubSubCategory)
+    /// for the product's CategoryId. Non-fatal — if the lookup fails, the
+    /// breadcrumb just shows "Products / [Product]" without the category.
+    /// </summary>
+    private async Task LoadCategoryHierarchyAsync()
     {
         if (_product is null || _product.CategoryId == Guid.Empty)
         {
@@ -514,14 +1049,97 @@
 
             if (result.IsSuccess)
             {
-                _categoryName = result.Value.Name;
+                var cat = result.Value;
+                var parts = new List<string> { cat.Name };
+
+                if (_product.SubCategoryId.HasValue)
+                {
+                    var sub = cat.SubCategories.FirstOrDefault(s => s.Id == _product.SubCategoryId.Value);
+                    if (sub is not null)
+                    {
+                        parts.Add(sub.Name);
+
+                        if (_product.SubSubCategoryId.HasValue)
+                        {
+                            var subsub = sub.SubSubCategories.FirstOrDefault(ss => ss.Id == _product.SubSubCategoryId.Value);
+                            if (subsub is not null)
+                            {
+                                parts.Add(subsub.Name);
+                            }
+                        }
+                    }
+                }
+
+                _categoryHierarchy = string.Join(" › ", parts);
             }
-            // Non-fatal: if category fails to load, breadcrumb just shows
-            // "Products / [Product]" without the category crumb.
+            // Non-fatal.
         }
         catch
         {
-            // Swallow — category is purely a UI nicety for the breadcrumb.
+            // Swallow — breadcrumb is purely a UI nicety.
+        }
+    }
+
+    /// <summary>
+    /// Loads all existing customer group names + seeds one LimitRow per
+    /// group (existing-group rows). For each row that matches an existing
+    /// limit on this product, pre-populates the Limit + sets HasExistingLimit
+    /// so the Remove button is enabled.
+    /// </summary>
+    private async Task LoadGroupNamesAsync()
+    {
+        _isLoadingGroups = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<string>>>(
+                new GetAllGroupNamesQuery());
+
+            var groupNames = (result.IsSuccess && result.Value is not null)
+                ? result.Value
+                : new List<string>();
+
+            // Build a lookup of existing limits on this product for quick
+            // matching by group name (case-sensitive, matching the domain).
+            var existingLimits = _product?.PurchaseLimits ?? new List<ProductPurchaseLimitDto>();
+            var existingByGroup = existingLimits.ToDictionary(l => l.GroupName, l => l.Limit, StringComparer.Ordinal);
+
+            foreach (var name in groupNames)
+            {
+                var hasLimit = existingByGroup.TryGetValue(name, out var limit);
+                _limitRows.Add(new LimitRow
+                {
+                    GroupName = name,
+                    Limit = hasLimit ? limit : null,
+                    IsExistingGroup = true,
+                    HasExistingLimit = hasLimit
+                });
+            }
+
+            // Also add custom rows for any product limit whose group name
+            // doesn't exist in GetAllGroupNamesQuery's result (e.g. the
+            // group was deleted but the limit remains, or the limit was
+            // set for a forward-looking group name that has no users yet).
+            foreach (var limit in existingLimits)
+            {
+                if (!groupNames.Contains(limit.GroupName, StringComparer.Ordinal))
+                {
+                    _limitRows.Add(new LimitRow
+                    {
+                        GroupName = limit.GroupName,
+                        Limit = limit.Limit,
+                        IsExistingGroup = true, // treat as existing — limit is set
+                        HasExistingLimit = true
+                    });
+                }
+            }
+        }
+        catch
+        {
+            // Silent failure — the limits editor just shows empty.
+        }
+        finally
+        {
+            _isLoadingGroups = false;
         }
     }
 
@@ -535,7 +1153,6 @@
         }
 
         _isSubmitting = true;
-
         try
         {
             var command = new CreateOrAppendSaleCommand(_product.Id, _quantity);
@@ -543,22 +1160,13 @@
 
             if (result.IsSuccess)
             {
-                // Success toast. We don't navigate to /Cart yet (Phase 4.1
-                // will add that page) — the user can keep browsing.
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["AddedToCart"], _quantity, _product.Name),
                     summary: Loc["AddedToCartTitle"]);
-
-                // Reset quantity back to 1 so the user can add a different
-                // product (or the same one again) without first clearing
-                // the field.
                 _quantity = 1;
             }
             else
             {
-                // result.Error contains a user-friendly message from the
-                // handler (e.g. "Adding 5 units of 'Widget' would bring
-                // your cart total to 15, but only 10 are currently in stock.")
                 await Toast.Error(
                     result.Error ?? Loc["Error_GenericAdd"],
                     summary: Loc["ErrorTitle"]);
@@ -566,15 +1174,389 @@
         }
         catch
         {
-            // Defensive: any unexpected exception (Wolverine timeout, etc.)
-            // gets a generic message. Don't leak exception details.
-            await Toast.Error(
-                Loc["Error_GenericAdd"],
-                summary: Loc["ErrorTitle"]);
+            await Toast.Error(Loc["Error_GenericAdd"], summary: Loc["ErrorTitle"]);
         }
         finally
         {
             _isSubmitting = false;
+        }
+    }
+
+    // ── Save Name + Description ────────────────────────────────────────
+
+    /// <summary>
+    /// Saves the editable Name + Description fields. Dispatches
+    /// UpdateProductDetailsCommand with the new values + the EXISTING
+    /// PictureUrl + Price (this command is the only one that can change
+    /// PictureUrl, but we don't touch it here — picture changes go through
+    /// the dedicated photo editor).
+    /// </summary>
+    private async Task HandleSaveDetailsAsync()
+    {
+        if (_product is null || string.IsNullOrWhiteSpace(_editName))
+        {
+            return;
+        }
+
+        _isSavingDetails = true;
+        try
+        {
+            var command = new UpdateProductDetailsCommand(
+                ProductId: _product.Id,
+                Name: _editName.Trim(),
+                Description: _editDescription.Trim(),
+                PictureUrl: _product.PictureUrl,
+                Price: _product.Price);
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                // Reflect the change locally so the read-only display updates
+                // without a full reload. ProductDto is a class (not a record),
+                // so we can't use `with` — create a new instance copying the
+                // fields, overwriting Name + Description with the new values.
+                _product = new ProductDto
+                {
+                    Id = _product.Id,
+                    Name = _editName.Trim(),
+                    Description = _editDescription.Trim(),
+                    PictureUrl = _product.PictureUrl,
+                    Price = _product.Price,
+                    StockQuantity = _product.StockQuantity,
+                    CategoryId = _product.CategoryId,
+                    SubCategoryId = _product.SubCategoryId,
+                    SubSubCategoryId = _product.SubSubCategoryId,
+                    PurchaseLimits = _product.PurchaseLimits
+                };
+                await Toast.Success(Loc["DetailsSaved"], summary: Loc["DetailsSavedTitle"]);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSavingDetails = false;
+        }
+    }
+
+    // ── Save Photo (upload new + delete old) ───────────────────────────
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+
+        if (e.FileCount == 0)
+        {
+            return;
+        }
+
+        var file = e.File;
+
+        if (!AllowedContentTypes.Contains(file.ContentType))
+        {
+            _uploadError = Loc["UploadInvalidType"];
+            ClearSelectedFile();
+            return;
+        }
+
+        if (file.Size > MaxFileSize)
+        {
+            _uploadError = Loc["UploadInvalidSize"];
+            ClearSelectedFile();
+            return;
+        }
+
+        _selectedFile = file;
+
+        try
+        {
+            await using var readStream = file.OpenReadStream(maxAllowedSize: MaxFileSize);
+            using var ms = new MemoryStream();
+            await readStream.CopyToAsync(ms);
+            _selectedFileBytes = ms.ToArray();
+        }
+        catch
+        {
+            _uploadError = Loc["UploadErrorGeneric"];
+            ClearSelectedFile();
+            return;
+        }
+
+        _previewDataUrl = await GeneratePreviewDataUrlAsync(file);
+    }
+
+    private async Task<string?> GeneratePreviewDataUrlAsync(IBrowserFile file)
+    {
+        try
+        {
+            var resized = await file.RequestImageFileAsync(file.ContentType, 400, 400);
+            await using var stream = resized.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+            return $"data:{file.ContentType};base64,{base64}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void ClearSelectedFile()
+    {
+        _selectedFile = null;
+        _selectedFileBytes = null;
+        _previewDataUrl = null;
+    }
+
+    private void RemoveSelectedImage()
+    {
+        ClearSelectedFile();
+        _uploadError = null;
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        double size = bytes;
+        int unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.#} {units[unit]}";
+    }
+
+    /// <summary>
+    /// Saves the selected photo:
+    ///   1. Upload the new file via IFileStorage.SaveAsync → get new URL.
+    ///   2. Hard-delete the OLD file via IFileStorage.DeleteAsync (the
+    ///      previous PictureUrl). This is the "delete old + replace new"
+    ///      behavior the user requested. DeleteAsync is best-effort and
+    ///      idempotent — if the old file is already gone or the URL is
+    ///      external, it silently no-ops.
+    ///   3. Dispatch UpdateProductDetailsCommand with the new PictureUrl +
+    ///      the existing Name/Description/Price (we don't touch those here).
+    ///   4. Reflect the new PictureUrl locally + close the photo editor.
+    /// </summary>
+    private async Task HandleSavePhotoAsync()
+    {
+        if (_product is null || _selectedFile is null || _selectedFileBytes is null)
+        {
+            return;
+        }
+
+        _isSavingPhoto = true;
+        try
+        {
+            // Phase 1: upload new file.
+            string? newUrl;
+            try
+            {
+                using var stream = new MemoryStream(_selectedFileBytes, writable: false);
+                newUrl = await FileStorage.SaveAsync(
+                    stream,
+                    _selectedFile.Name,
+                    _selectedFile.ContentType,
+                    CancellationToken.None);
+            }
+            catch (System.IO.InvalidDataException ex)
+            {
+                _uploadError = ex.Message;
+                return;
+            }
+            catch (Exception)
+            {
+                _uploadError = Loc["UploadErrorGeneric"];
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(newUrl))
+            {
+                _uploadError = Loc["UploadErrorResponseFormat"];
+                return;
+            }
+
+            // Phase 2: hard-delete the OLD file (if any). Best-effort —
+            // DeleteAsync logs but doesn't throw on failure. Done BEFORE
+            // updating the DB so we don't end up with a stale DB pointer
+            // to a file that's been deleted (if DeleteAsync failed we'd
+            // still have the new URL, so the worst case is an orphaned
+            // old file — which is what we're trying to avoid, but it's
+            // a non-fatal orphan).
+            var oldUrl = _product.PictureUrl;
+            if (!string.Equals(oldUrl, newUrl, StringComparison.Ordinal))
+            {
+                try { await FileStorage.DeleteAsync(oldUrl, CancellationToken.None); }
+                catch { /* best-effort — DeleteAsync already logs */ }
+            }
+
+            // Phase 3: dispatch UpdateProductDetailsCommand with the new URL.
+            var command = new UpdateProductDetailsCommand(
+                ProductId: _product.Id,
+                Name: _product.Name,
+                Description: _product.Description,
+                PictureUrl: newUrl,
+                Price: _product.Price);
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                // Reflect the new PictureUrl locally. ProductDto is a class,
+                // so we create a new instance copying the existing fields and
+                // overwriting PictureUrl with the new URL.
+                _product = new ProductDto
+                {
+                    Id = _product.Id,
+                    Name = _product.Name,
+                    Description = _product.Description,
+                    PictureUrl = newUrl,
+                    Price = _product.Price,
+                    StockQuantity = _product.StockQuantity,
+                    CategoryId = _product.CategoryId,
+                    SubCategoryId = _product.SubCategoryId,
+                    SubSubCategoryId = _product.SubSubCategoryId,
+                    PurchaseLimits = _product.PurchaseLimits
+                };
+                ClearSelectedFile();
+                _isPhotoEditorOpen = false;
+                await Toast.Success(Loc["PhotoSaved"], summary: Loc["PhotoSavedTitle"]);
+            }
+            else
+            {
+                // The DB update failed — the new file is already on disk.
+                // Log a warning but don't auto-clean it up (it'll be an
+                // orphan, but that's better than a race where we delete a
+                // file that was somehow concurrently referenced).
+                _uploadError = result.Error ?? Loc["Error_GenericSave"];
+            }
+        }
+        catch
+        {
+            _uploadError = Loc["Error_GenericSave"];
+        }
+        finally
+        {
+            _isSavingPhoto = false;
+        }
+    }
+
+    // ── Purchase-limit editor handlers ─────────────────────────────────
+
+    /// <summary>
+    /// Adds a new custom (empty) row to the limits editor. The user types
+    /// a group name that doesn't exist yet (forward-looking — a limit can
+    /// be set for a group before any users are in it). Custom rows can be
+    /// removed via the trash icon; existing-group rows cannot.
+    /// </summary>
+    private void AddCustomLimitRow()
+    {
+        _limitRows.Add(new LimitRow
+        {
+            GroupName = string.Empty,
+            Limit = null,
+            IsExistingGroup = false
+        });
+    }
+
+    /// <summary>
+    /// Saves a single limit row. Dispatches SetProductPurchaseLimitCommand
+    /// (which adds or replaces the limit for the given group). On success,
+    /// marks the row as HasExistingLimit=true so the Remove button becomes
+    /// available.
+    /// </summary>
+    private async Task HandleSaveLimitAsync(LimitRow row)
+    {
+        if (_product is null || string.IsNullOrWhiteSpace(row.GroupName) || !row.Limit.HasValue)
+        {
+            return;
+        }
+
+        row.IsSaving = true;
+        try
+        {
+            var command = new SetProductPurchaseLimitCommand(
+                ProductId: _product.Id,
+                GroupName: row.GroupName.Trim(),
+                Limit: row.Limit.Value);
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                row.HasExistingLimit = true;
+                row.IsExistingGroup = true; // once saved, treat as existing — name becomes read-only
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["LimitSaved"], row.GroupName, row.Limit.Value),
+                    summary: Loc["LimitSavedTitle"]);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            row.IsSaving = false;
+        }
+    }
+
+    /// <summary>
+    /// Removes a single limit row. Dispatches RemoveProductPurchaseLimitCommand
+    /// (which is idempotent — succeeds even if no limit exists for the group).
+    /// On success, clears the limit value + sets HasExistingLimit=false so the
+    /// Remove button greys out (but the row stays so the user can re-set the
+    /// limit if they change their mind).
+    /// </summary>
+    private async Task HandleRemoveLimitAsync(LimitRow row)
+    {
+        if (_product is null || string.IsNullOrWhiteSpace(row.GroupName))
+        {
+            return;
+        }
+
+        row.IsSaving = true;
+        try
+        {
+            var command = new RemoveProductPurchaseLimitCommand(
+                ProductId: _product.Id,
+                GroupName: row.GroupName.Trim());
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                row.Limit = null;
+                row.HasExistingLimit = false;
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["LimitRemoved"], row.GroupName),
+                    summary: Loc["LimitRemovedTitle"]);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            row.IsSaving = false;
         }
     }
 

@@ -905,15 +905,45 @@
         return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
     }
 
+    // ── Tehran timezone ─────────────────────────────────────────────────
+    //
+    // Tehran abolished DST in 2022, so a fixed UTC+03:30 offset is
+    // functionally equivalent to the IANA "Asia/Tehran" zone for all
+    // dates from 2022 onward. We do the offset arithmetic inline in
+    // FormatTimestamp instead of using a static TimeZoneInfo field —
+    // this avoids (a) platform-specific timezone-lookup failures that
+    // were causing the field to be null on some Windows deployments,
+    // and (b) Blazor Server hot-reload limitations where static field
+    // initializers don't get re-evaluated after a code change.
+
     /// <summary>
-    /// Formats a UTC timestamp for display. NOTE: .LocalDateTime converts
-    /// to the SERVER's local time zone (NOT the user's). For a Tehran-based
-    /// deployment this is correct in practice; see worklog phase 4.2
-    /// soft-issue #2 for the broader pattern.
+    /// Formats a UTC timestamp for display in Tehran time, culture-aware.
+    ///
+    /// WHY NOT .LocalDateTime:
+    ///   .LocalDateTime converts to the SERVER's local timezone, which is
+    ///   UTC on this deployment. The user explicitly asked for Tehran
+    ///   time, so we add a fixed +3:30 offset (Tehran abolished DST in
+    ///   2022) and format the result.
+    ///
+    /// WHY NOT TimeZoneInfo.ConvertTime:
+    ///   We previously used a static TimeZoneInfo field, but it was coming
+    ///   back null on some Windows deployments (TryFindSystemTimeZoneById
+    ///   edge cases + Blazor hot-reload doesn't refresh static field
+    ///   initializers). Inline arithmetic is bulletproof — no timezone
+    ///   lookup, no static state.
+    ///
+    /// Format string "g" = short date + short time (culture-dependent).
+    /// For fa-IR with the PersianCalendar configured, this renders as
+    /// e.g. "۱۴۰۳/۰۵/۱۲ ۱۵:۳۰" (Jalali date + Persian-digit time).
+    /// For en-US it renders as e.g. "8/2/2024 3:30 PM".
     /// </summary>
     private static string FormatTimestamp(DateTimeOffset utc)
     {
-        return utc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+        // Tehran = UTC + 3:30 (no DST since 2022). AddHours shifts the
+        // datetime but keeps the +00:00 offset; .DateTime extracts the
+        // shifted DateTime without any further timezone conversion.
+        var tehran = utc.AddHours(3.5);
+        return tehran.DateTime.ToString("g", CultureInfo.CurrentCulture);
     }
 
     /// <summary>

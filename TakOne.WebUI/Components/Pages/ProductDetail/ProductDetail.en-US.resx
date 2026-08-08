@@ -83,20 +83,8 @@
   <data name="BreadcrumbProducts" xml:space="preserve">
     <value>Products</value>
   </data>
-  <data name="StockIn" xml:space="preserve">
-    <value>In stock ({0} units)</value>
-  </data>
-  <data name="StockLow" xml:space="preserve">
-    <value>Low stock — only {0} left</value>
-  </data>
-  <data name="StockOut" xml:space="preserve">
-    <value>Out of stock</value>
-  </data>
   <data name="PurchaseLimitsTitle" xml:space="preserve">
     <value>Per-group purchase limits</value>
-  </data>
-  <data name="PurchaseLimitValue" xml:space="preserve">
-    <value>Max {0} per order</value>
   </data>
   <data name="AddToCart" xml:space="preserve">
     <value>Add to cart</value>
@@ -112,5 +100,119 @@
   </data>
   <data name="Error_GenericAdd" xml:space="preserve">
     <value>We couldn't add this item to your cart. Please try again.</value>
+  </data>
+  <data name="MyPurchaseLimitHint" xml:space="preserve">
+    <value>Max {0} per order for your group.</value>
+  </data>
+  <data name="StaffEditTitle" xml:space="preserve">
+    <value>Staff edit</value>
+  </data>
+  <data name="FieldName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="FieldDescription" xml:space="preserve">
+    <value>Description</value>
+  </data>
+  <data name="FieldLimitGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="FieldLimitValue" xml:space="preserve">
+    <value>Limit</value>
+  </data>
+  <data name="LimitGroupPlaceholder" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="LimitValuePlaceholder" xml:space="preserve">
+    <value>Max units</value>
+  </data>
+  <data name="SaveDetails" xml:space="preserve">
+    <value>Save details</value>
+  </data>
+  <data name="SaveLimit" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="RemoveLimit" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="AddCustomGroupRow" xml:space="preserve">
+    <value>Add custom group</value>
+  </data>
+  <data name="PurchaseLimitsHint" xml:space="preserve">
+    <value>Set a max-units-per-order limit for each customer group. Leave empty to remove.</value>
+  </data>
+  <data name="LoadingGroups" xml:space="preserve">
+    <value>Loading groups…</value>
+  </data>
+  <data name="NoLimitRows" xml:space="preserve">
+    <value>No customer groups exist yet.</value>
+  </data>
+  <data name="DetailsSaved" xml:space="preserve">
+    <value>Product details updated.</value>
+  </data>
+  <data name="DetailsSavedTitle" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="LimitSaved" xml:space="preserve">
+    <value>Limit for "{0}" set to {1}.</value>
+  </data>
+  <data name="LimitSavedTitle" xml:space="preserve">
+    <value>Limit saved</value>
+  </data>
+  <data name="LimitRemoved" xml:space="preserve">
+    <value>Limit for "{0}" removed.</value>
+  </data>
+  <data name="LimitRemovedTitle" xml:space="preserve">
+    <value>Limit removed</value>
+  </data>
+  <data name="Error_GenericSave" xml:space="preserve">
+    <value>We couldn't save your changes. Please try again.</value>
+  </data>
+  <data name="ChangePhoto" xml:space="preserve">
+    <value>Change photo</value>
+  </data>
+  <data name="ChangePhotoTitle" xml:space="preserve">
+    <value>Change product photo</value>
+  </data>
+  <data name="ClosePhotoEditor" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="CancelPhotoEditor" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SavePhoto" xml:space="preserve">
+    <value>Save photo</value>
+  </data>
+  <data name="PhotoSaved" xml:space="preserve">
+    <value>Photo updated. The old image was deleted.</value>
+  </data>
+  <data name="PhotoSavedTitle" xml:space="preserve">
+    <value>Photo saved</value>
+  </data>
+  <data name="UploadDropzoneTitle" xml:space="preserve">
+    <value>Click to choose an image</value>
+  </data>
+  <data name="UploadDropzoneHint" xml:space="preserve">
+    <value>JPEG, PNG, or WebP — max 5 MB</value>
+  </data>
+  <data name="UploadInvalidType" xml:space="preserve">
+    <value>Only JPEG, PNG, and WebP images are allowed.</value>
+  </data>
+  <data name="UploadInvalidSize" xml:space="preserve">
+    <value>Image must be 5 MB or smaller.</value>
+  </data>
+  <data name="UploadErrorGeneric" xml:space="preserve">
+    <value>We couldn't read that image. Please try a different file.</value>
+  </data>
+  <data name="UploadErrorTitle" xml:space="preserve">
+    <value>Upload failed</value>
+  </data>
+  <data name="UploadErrorResponseFormat" xml:space="preserve">
+    <value>The storage service didn't return a URL. Please try again.</value>
+  </data>
+  <data name="PictureHint" xml:space="preserve">
+    <value>The new image will replace the current one. The old file will be deleted.</value>
+  </data>
+  <data name="RemoveImage" xml:space="preserve">
+    <value>Remove</value>
   </data>
 </root>

@@ -139,6 +139,13 @@
     <value>پاک کردن فیلترها</value>
   </data>
 
+  <!-- RadzenDataGrid empty text (shown when the grid has data but the
+       per-column filters match zero rows). Distinct from EmptyTitle,
+       which is shown when the backend returns zero sales total. -->
+  <data name="EmptyText" xml:space="preserve">
+    <value>هیچ سفارشی با فیلترهای شما مطابقت ندارد</value>
+  </data>
+
   <!-- Table columns -->
   <data name="ColSaleNumber" xml:space="preserve">
     <value>شماره فروش</value>
@@ -163,6 +170,9 @@
   </data>
   <data name="ViewButton" xml:space="preserve">
     <value>مشاهده</value>
+  </data>
+  <data name="ActionViewDetail" xml:space="preserve">
+    <value>مشاهده جزئیات سفارش</value>
   </data>
 
   <!-- Pager -->

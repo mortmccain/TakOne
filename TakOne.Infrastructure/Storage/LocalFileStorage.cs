@@ -256,6 +256,123 @@ internal sealed class LocalFileStorage : IFileStorage
     }
 
     /// <summary>
+    /// Hard-deletes a previously-stored file by its public URL. See
+    /// <see cref="IFileStorage.DeleteAsync"/> for the contract.
+    ///
+    /// IMPLEMENTATION NOTES:
+    ///   - Resolves the URL against <c>_rootPath</c>. Only URLs that start
+    ///     with <c>/uploads/products/</c> are accepted (the only prefix
+    ///     <see cref="SaveAsync"/> ever returns). Anything else is silently
+    ///     ignored (external URLs, malformed input, paths that don't fall
+    ///     under our managed root).
+    ///   - After resolving to an absolute path, we verify the canonical
+    ///     path is still under <c>_rootPath</c> — defends against any
+    ///     symlink or path-traversal trick that could escape the root.
+    ///   - File.Delete is idempotent (no-op if file doesn't exist) —
+    ///     matches the contract.
+    ///   - I/O failures (file locked, permission denied) are logged as
+    ///     warnings but don't throw — the caller's contract is "best-effort
+    ///     delete; don't block the replacement operation".
+    /// </summary>
+    public Task DeleteAsync(string? url, CancellationToken cancellationToken = default)
+    {
+        // Silently ignore null/empty/external URLs — these aren't ours to manage.
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return Task.CompletedTask;
+        }
+
+        // External URLs (http://, https://) — silently ignore. We only manage
+        // files we ourselves saved (root-relative URLs).
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        // Only accept URLs that match the prefix SaveAsync returns. This
+        // guards against arbitrary path-traversal attempts.
+        const string expectedPrefix = "/uploads/products/";
+        if (!url.StartsWith(expectedPrefix, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "DeleteAsync: rejecting URL '{Url}' — doesn't start with expected prefix '{Prefix}'.",
+                url, expectedPrefix);
+            return Task.CompletedTask;
+        }
+
+        // Strip the prefix and the leading slash to get the relative path
+        // within the products folder. We don't accept subdirectories — the
+        // filename is the only thing SaveAsync ever returns.
+        var relativePath = url.Substring(expectedPrefix.Length);
+
+        // Reject anything that looks like it's trying to escape (../, absolute
+        // paths, etc.). The canonical-path check below is the authoritative
+        // guard, but this early reject gives cleaner log messages.
+        if (relativePath.Contains("..", StringComparison.Ordinal)
+            || relativePath.Contains('/', StringComparison.Ordinal)
+            || relativePath.Contains('\\', StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(relativePath))
+        {
+            _logger.LogWarning(
+                "DeleteAsync: rejecting URL '{Url}' — relative path contains forbidden characters.",
+                url);
+            return Task.CompletedTask;
+        }
+
+        var absolutePath = Path.Combine(_productImagesPath, relativePath);
+
+        // CANONICAL PATH CHECK — defends against any symlink/traversal trick
+        // that could resolve to a path outside _rootPath. We resolve both
+        // paths to their canonical forms and verify the file's parent is
+        // still under _productImagesPath.
+        var canonicalProductsPath = Path.GetFullPath(_productImagesPath);
+        string canonicalFilePath;
+        try
+        {
+            canonicalFilePath = Path.GetFullPath(absolutePath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or System.Security.SecurityException or PathTooLongException or NotSupportedException)
+        {
+            _logger.LogWarning(
+                "DeleteAsync: cannot canonicalize path '{Path}': {Error}",
+                absolutePath, ex.Message);
+            return Task.CompletedTask;
+        }
+
+        if (!canonicalFilePath.StartsWith(canonicalProductsPath + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "DeleteAsync: rejecting URL '{Url}' — canonical path '{Canonical}' is outside products folder '{Products}'.",
+                url, canonicalFilePath, canonicalProductsPath);
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            if (File.Exists(canonicalFilePath))
+            {
+                File.Delete(canonicalFilePath);
+                _logger.LogInformation(
+                    "Deleted upload at {Path} (URL was {Url})",
+                    canonicalFilePath, url);
+            }
+            // else: idempotent no-op. Don't log — could be noisy if a
+            // product had its picture replaced twice in quick succession
+            // and the first delete already removed the file.
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Log but don't throw — the contract is best-effort.
+            _logger.LogWarning(
+                "DeleteAsync: failed to delete '{Path}': {Error}",
+                canonicalFilePath, ex.Message);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Sniff the actual content type from the first few bytes of the stream.
     /// Returns null if the bytes don't match any supported image type.
     ///

@@ -93,4 +93,39 @@ public interface IFileStorage
         string suggestedFileName,
         string contentType,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Hard-deletes a previously-stored file by its public URL.
+    ///
+    /// Used when a product picture is being REPLACED — the old file at
+    /// <c>product.PictureUrl</c> is deleted before (or after) the new file
+    /// is saved, so the upload directory doesn't accumulate orphaned image
+    /// files over time.
+    ///
+    /// SAFETY:
+    ///   - Idempotent: returns silently if the file doesn't exist (the
+    ///     product may have had its picture deleted in a prior operation,
+    ///     or the URL may point to an external host we don't manage).
+    ///   - Path-traversal safe: implementations MUST reject any URL that
+    ///     would resolve to a path outside the configured storage root.
+    ///     Only root-relative URLs returned by <see cref="SaveAsync"/>
+    ///     (e.g. <c>/uploads/products/abc.jpg</c>) are accepted.
+    ///   - External URLs (http/https) are silently ignored — we don't
+    ///     manage files on third-party CDNs.
+    ///
+    /// ERROR SEMANTICS:
+    ///   Implementations should log a warning but NOT throw on I/O
+    ///   failures (file locked, permission denied, etc.). The caller's
+    ///   interest is "the old file is gone if possible" — a failed delete
+    ///   shouldn't block the replacement operation.
+    /// </summary>
+    /// <param name="url">
+    /// The public URL previously returned by <see cref="SaveAsync"/>.
+    /// External URLs (http/https) are silently ignored. Null or empty
+    /// values are silently ignored.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token.
+    /// </param>
+    Task DeleteAsync(string? url, CancellationToken cancellationToken = default);
 }

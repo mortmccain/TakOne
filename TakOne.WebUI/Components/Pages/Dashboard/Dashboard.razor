@@ -475,6 +475,16 @@ else if (_stats is not null)
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
+    // ── Tehran timezone ─────────────────────────────────────────────────
+    //
+    // Tehran abolished DST in 2022, so a fixed UTC+03:30 offset is
+    // functionally equivalent to the IANA "Asia/Tehran" zone for all
+    // dates from 2022 onward. The FormatRelativeTime fallback below
+    // does the offset arithmetic inline instead of using a static
+    // TimeZoneInfo field — the field was coming back null on some
+    // Windows deployments, and Blazor hot-reload doesn't refresh
+    // static field initializers. Inline arithmetic is bulletproof.
+
     [CascadingParameter]
     private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
 
@@ -1021,9 +1031,12 @@ else if (_stats is not null)
 
         // Fallback for items older than a week: show the absolute Jalali
         // (fa-IR) or Gregorian (en-US) date, with culture-native digits.
-        // Convert from UTC to local time first so the displayed date matches
-        // what the user expects, then reuse FormatDate for calendar + digit
-        // correctness.
-        return FormatDate(submittedAtUtc.Value.ToLocalTime());
+        // Convert from UTC to Tehran time (UTC + 3:30, no DST since 2022)
+        // by adding the offset inline. We previously used a static
+        // TimeZoneInfo field, but it was coming back null on some Windows
+        // deployments, and Blazor hot-reload doesn't refresh static field
+        // initializers. Inline arithmetic is bulletproof.
+        // (submittedAtUtc is a DateTime here, so AddHours returns DateTime.)
+        return FormatDate(submittedAtUtc.Value.AddHours(3.5));
     }
 }

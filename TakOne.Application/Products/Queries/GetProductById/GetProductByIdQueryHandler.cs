@@ -56,13 +56,16 @@ public sealed class GetProductByIdQueryHandler
         // 2. Determine whether the caller may see purchase limits. Customers
         //    see ONLY their own limit (if any); to keep this endpoint simple
         //    and avoid leaking other groups' limits, we strip the entire
-        //    collection for non-admin/manager callers. A separate endpoint
-        //    (e.g. GetMyPurchaseLimitForProduct) can return the single
-        //    relevant limit for the current customer.
+        //    collection for non-staff callers. Staff roles (Admin, Manager,
+        //    Employee) all need to see + edit limits on the ProductDetail
+        //    page, so all three are granted visibility here. ReadOnly is
+        //    intentionally excluded — they can view but not edit, and the
+        //    limits are an internal staff detail that doesn't help them.
         // ------------------------------------------------------------------
         var canSeeAllLimits =
             currentUser.IsInRole(Roles.Admin) ||
-            currentUser.IsInRole(Roles.Manager);
+            currentUser.IsInRole(Roles.Manager) ||
+            currentUser.IsInRole(Roles.Employee);
 
         var dto = new ProductDto
         {

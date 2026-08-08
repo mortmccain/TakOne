@@ -139,6 +139,13 @@
     <value>Clear filters</value>
   </data>
 
+  <!-- RadzenDataGrid empty text (shown when the grid has data but the
+       per-column filters match zero rows). Distinct from EmptyTitle,
+       which is shown when the backend returns zero sales total. -->
+  <data name="EmptyText" xml:space="preserve">
+    <value>No orders match your filters</value>
+  </data>
+
   <!-- Table columns -->
   <data name="ColSaleNumber" xml:space="preserve">
     <value>Sale #</value>
@@ -163,6 +170,9 @@
   </data>
   <data name="ViewButton" xml:space="preserve">
     <value>View</value>
+  </data>
+  <data name="ActionViewDetail" xml:space="preserve">
+    <value>View order details</value>
   </data>
 
   <!-- Pager -->
