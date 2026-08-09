@@ -369,6 +369,10 @@ FodyWeavers.xsd
 *.p12
 secrets.json
 
+# --- Docker deployment artifacts ---
+# .env is already ignored above. Exception so the template is committed:
+!.env.example
+
 # Logs and temporary files
 *.log
 logs/

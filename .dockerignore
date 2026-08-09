@@ -1,0 +1,53 @@
+# =============================================================================
+# .dockerignore — keeps the Docker build context small + fast.
+#
+# When you run `docker build .`, Docker sends EVERYTHING in this folder
+# to the Docker daemon. Without this file, that means it sends bin/,
+# obj/, .git/, node_modules/ etc — gigabytes of junk that:
+#   1. Makes the build slow (Docker has to tar+upload all that to itself)
+#   2. Busts the Docker build cache (any change to bin/obj makes Docker
+#      think the source changed and it re-runs restore/build)
+#   3. Bloats the final image
+#
+# Anything listed here is INVISIBLE to the Dockerfile.
+# =============================================================================
+
+# --- Build output (the biggest space waster) ---
+**/bin/
+**/obj/
+
+# --- Git + IDE ---
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# --- Local secrets + env (NEVER bake these into an image) ---
+.env
+.env.*
+!.env.example
+appsettings.*.Development.json
+*.userprops
+
+# --- Logs + temp ---
+*.log
+logs/
+tmp/
+temp/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Docker artifacts themselves (no recursion) ---
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# --- Docs + non-source stuff that the runtime doesn't need ---
+*.md
+docs/
+.gitattributes
