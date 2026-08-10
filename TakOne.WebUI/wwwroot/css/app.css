@@ -78,3 +78,44 @@
     /* Shadows are symmetric, so no RTL flip needed. This rule exists
        purely as documentation that we considered RTL. */
 }
+
+/* -----------------------------------------------------------------------------
+   Radzen Dialog — theme-aware corner radius
+   -----------------------------------------------------------------------------
+   Tak light/dark themes define --tm-radius (12px) and --tm-radius-sm (8px).
+   Other Radzen themes (standard, material, humanistic, etc.) do NOT define
+   these variables, so the fallback `0` applies — giving those themes the
+   sharp edges that match their visual language.
+
+   This rule targets the Radzen dialog wrapper classes (rz-dialog, rz-dialog-content,
+   rz-dialog-titlebar) so the cancel-confirmation popup (and any other dialog
+   opened via DialogService.OpenAsync) inherits the correct corner radius
+   automatically based on the active theme.
+
+   The pattern matches sidebar.css: var(--tm-radius, 0) —Tak themes get rounded,
+   other themes get sharp. No JS, no C# conditional, pure CSS variable fallback. */
+.rz-dialog,
+.rz-dialog-content,
+.rz-dialog-titlebar {
+    border-radius: var(--tm-radius, 0) !important;
+}
+
+    /* Dialog body content also uses the small radius for inner surfaces (textareas,
+   buttons) so the rounded look is consistent inside the dialog, not just on
+   the outer frame. */
+    .rz-dialog .rz-textbox,
+    .rz-dialog .rz-textarea,
+    .rz-dialog .rz-button {
+        border-radius: var(--tm-radius-sm, 0) !important;
+    }
+
+/* -----------------------------------------------------------------------------
+   CancelConfirmationDialog — warning heading color
+   -----------------------------------------------------------------------------
+   The dialog's "⚠️ Irreversible action" heading uses Radzen's danger color
+   so it reads as a warning across all themes. Scoped to the dialog's own
+   wrapper class (.cancel-confirmation-dialog) so it doesn't leak. */
+.cancel-confirmation-dialog__warning {
+    color: var(--rz-danger);
+    font-weight: 600;
+}

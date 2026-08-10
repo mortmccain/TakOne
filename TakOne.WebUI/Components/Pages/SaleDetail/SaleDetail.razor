@@ -90,19 +90,22 @@
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.CancelConfirmationDialog
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<SaleDetail> Loc
 @inject ToastService Toast
 @inject IJSRuntime JS
 @inject AuthenticationStateProvider AuthStateProvider
+@inject Radzen.DialogService DialogService
+@inject Microsoft.Extensions.Logging.ILogger<SaleDetail> Logger
 
 <PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{_sale.SaleNumber} — {Loc["PageTitle"]}")</PageTitle>
 
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                                   Left = line items + audit (wider); right = sticky action panel. */
+                                               Left = line items + audit (wider); right = sticky action panel. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -116,7 +119,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so the user sees status
-                                       + actions before scrolling to the line-item table. */
+                                                   + actions before scrolling to the line-item table. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -139,8 +142,8 @@
             }
 
             /* Status badge (large) in the action panel header.
-                                   Color tokens mirror Radzen's BadgeStyle palette so the large
-                                   badge and the small inline badge read as the same status. */
+                                               Color tokens mirror Radzen's BadgeStyle palette so the large
+                                               badge and the small inline badge read as the same status. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -154,14 +157,14 @@
             }
 
             /* Per-status background colors (matching Radzen BadgeStyle semantics):
-                                   - Draft     → Base      (gray)
-                                   - Pending   → Warning   (amber)
-                                   - Approved  → Info      (blue)
-                                   - Invoiced  → Success   (green)
-                                   - Cancelled → Danger    (red)
-                                   rgba values are picked to be readable on both light and dark
-                                   Radzen themes — foreground is always the darker shade for
-                                   accessibility. */
+                                               - Draft     → Base      (gray)
+                                               - Pending   → Warning   (amber)
+                                               - Approved  → Info      (blue)
+                                               - Invoiced  → Success   (green)
+                                               - Cancelled → Danger    (red)
+                                               rgba values are picked to be readable on both light and dark
+                                               Radzen themes — foreground is always the darker shade for
+                                               accessibility. */
             .status-bg-draft {
                 background: rgba(158, 158, 158, 0.18);
                 color: #616161;
@@ -188,8 +191,8 @@
             }
 
             /* Audit trail — vertical timeline of timestamps + actors.
-                                   Each entry is one row; rows with no timestamp (e.g. a pending
-                                   sale that hasn't been approved yet) are shown muted. */
+                                               Each entry is one row; rows with no timestamp (e.g. a pending
+                                               sale that hasn't been approved yet) are shown muted. */
             .audit-trail {
                 display: flex;
                 flex-direction: column;
@@ -232,7 +235,7 @@
             }
 
             /* Line items table — RadzenDataGrid styles are fine, just tune
-                                   tabular-nums on the numeric columns. */
+                                               tabular-nums on the numeric columns. */
             .line-item-money {
                 font-variant-numeric: tabular-nums;
                 text-align: right;
@@ -285,6 +288,28 @@
                 font-style: italic;
             }
 
+            /* Inline cancel form — appears in the action panel when the user
+                           clicks "Cancel order". Left-border accent in --rz-danger makes
+                           the form read as a warning surface, matching the ERP pattern. */
+            .cancel-form {
+                border: 1px solid var(--rz-base-border-color, var(--rz-danger));
+                border-left: 4px solid var(--rz-danger);
+                border-radius: var(--tm-radius, 0); /* Tak themes get rounded, others sharp — matches sidebar.css pattern */
+                padding: 1rem;
+                background: var(--rz-component-background-color, var(--rz-base-background-color));
+            }
+
+                .cancel-form textarea {
+                    width: 100%;
+                    padding: 0.5rem;
+                    font-family: inherit;
+                    font-size: 0.875rem;
+                    border-radius: var(--tm-radius-sm, 0);
+                    border: 1px solid var(--rz-base-border-color);
+                    resize: vertical;
+                    min-height: 80px;
+                }
+
             /* Breadcrumb — same styles as ProductDetail.razor for consistency. */
             .breadcrumb {
                 display: flex;
@@ -317,7 +342,7 @@
                 }
 
             /* Sticky action panel on desktop. On mobile it's not sticky
-                                   (would consume too much viewport height). */
+                                               (would consume too much viewport height). */
             @@media (min-width: 993px) {
                 .detail-action-panel {
                     position: sticky;
@@ -583,14 +608,60 @@
 
                                 @* Cancel — enabled when sale is Pending or Approved
                                    (NOT Draft — use delete-draft via /Cart; NOT Invoiced —
-                                   credit note flow instead). *@
-                                <RadzenButton Text="@Loc["ActionCancel"]"
-                                              Icon="cancel"
-                                              ButtonStyle="ButtonStyle.Danger"
-                                              Variant="Variant.Outlined"
-                                              Disabled="@(!_canCancel || _isBusy)"
-                                              Click="@HandleCancelAsync" />
+                                   credit note flow instead).
+                                   First click opens the inline cancel form (below);
+                                   the form's "Confirm Cancellation" button then opens
+                                   the 3-second countdown dialog. Two-step UX matches
+                                   the ERP app's flow. *@
+                                @if (!_showCancelForm)
+                                {
+                                    <RadzenButton Text="@Loc["ActionCancel"]"
+                                                  Icon="cancel"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  Variant="Variant.Outlined"
+                                                  Disabled="@(!_canCancel || _isBusy)"
+                                                  Click="@ShowCancelForm" />
+                                }
                             </div>
+
+                            @* Inline cancel form — replaces the Cancel button when
+                               _showCancelForm is true. User enters a reason, then
+                               clicks Confirm to open the 3-second countdown dialog.
+                               Discard closes the form without action. *@
+                            @if (_showCancelForm)
+                            {
+                                <div class="cancel-form">
+                                    <RadzenStack Gap="0.75rem">
+                                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                            <RadzenIcon Icon="warning" Style="color: var(--rz-danger); font-size: 1.25rem;" />
+                                            <RadzenText TextStyle="TextStyle.Subtitle1">
+                                                @Loc["CancelFormHeading"]
+                                                <strong>@_sale.SaleNumber</strong>
+                                            </RadzenText>
+                                        </RadzenStack>
+                                        <div>
+                                            <RadzenLabel Text="@Loc["CancelFormReasonLabel"]" />
+                                            <textarea @bind="_cancellationReason"
+                                                      @bind:event="oninput"
+                                                      rows="3"
+                                                      placeholder="@Loc["CancelFormReasonPlaceholder"]" />
+                                        </div>
+                                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                                            <RadzenButton Text="@(_isBusy ? Loc["CancelFormCancelling"] : Loc["CancelFormConfirm"])"
+                                                          Icon="cancel"
+                                                          ButtonStyle="ButtonStyle.Danger"
+                                                          Variant="Variant.Filled"
+                                                          Click="@ShowCancelConfirmation"
+                                                          Disabled="@(string.IsNullOrWhiteSpace(_cancellationReason) || _isBusy)" />
+                                            <RadzenButton Text="@Loc["CancelFormDiscard"]"
+                                                          ButtonStyle="ButtonStyle.Secondary"
+                                                          Variant="Variant.Outlined"
+                                                          Click="@HideCancelForm"
+                                                          Disabled="@_isBusy" />
+                                        </RadzenStack>
+                                    </RadzenStack>
+                                </div>
+                            }
 
                             @* Inline error banner for action failures (e.g.
                                "Not enough stock to approve sale. Product 'X'
@@ -806,28 +877,172 @@
             () => MessageBus.InvokeAsync<Result>(new MarkAsInvoicedCommand(_sale.Id)));
     }
 
-    private async Task HandleCancelAsync()
+    // ── Cancel flow (two-step, matches ERP pattern) ───────────────────
+    //
+    // Step 1: User clicks "Cancel order" → ShowCancelForm() flips
+    //         _showCancelForm to true, which renders the inline cancel form
+    //         (textarea + Discard/Confirm buttons) in the action panel.
+    // Step 2: User enters a reason and clicks "Confirm Cancellation" →
+    //         ShowCancelConfirmation() opens the CancelConfirmationDialog
+    //         component as a Radzen dialog. That dialog has a 3-second
+    //         countdown on its "Yes, I'm sure" button (prevents reflex
+    //         clicks on an irreversible action).
+    // Step 3: If the dialog returns true → ExecuteCancellation() dispatches
+    //         CancelSaleCommand via Wolverine, shows success/error toast,
+    //         and reloads the sale to refresh the audit trail.
+    //
+    // The old implementation used JS prompt() — simple but jarring, no
+    // countdown, no second-chance. Replaced per UX request to match the
+    // ERP app's flow exactly.
+
+    /// <summary>
+    /// True when the inline cancel form is open in the action panel.
+    /// Mutated by ShowCancelForm / HideCancelForm.
+    /// </summary>
+    private bool _showCancelForm;
+
+    /// <summary>
+    /// Bound to the textarea in the inline cancel form. Trimmed and
+    /// length-validated (3-500 chars) before dispatch.
+    /// </summary>
+    private string _cancellationReason = string.Empty;
+
+    /// <summary>
+    /// Step 1 — opens the inline cancel form. Called when the user clicks
+    /// the "Cancel order" button. Does NOT dispatch any command — just
+    /// flips UI state so the form appears.
+    /// </summary>
+    private void ShowCancelForm()
     {
         if (_sale is null || _isBusy) return;
         if (!_canCancel) return;
 
-        // Use the browser's native prompt() for the cancellation reason —
-        // same UX pattern as AdminProducts.razor's restock flow. Simplest
-        // approach for a staff tool; no custom dialog component required.
-        // The reason is validated client-side (3-500 chars) before
-        // dispatching; the FluentValidation validator on the command also
-        // validates server-side (defense-in-depth).
-        var reason = await JS.InvokeAsync<string?>("prompt", Loc["CancelPromptMessage"], "");
+        _showCancelForm = true;
+        _actionError = string.Empty;
+    }
 
-        // User clicked Cancel on the prompt, or entered empty/whitespace.
-        // Silent abort — no error toast (the user explicitly chose not to
-        // cancel; we don't want to scold them).
-        if (string.IsNullOrWhiteSpace(reason))
+    /// <summary>
+    /// Closes the inline cancel form and clears the entered reason. Called
+    /// when the user clicks "Discard" in the form, or after a successful
+    /// cancellation (so the form doesn't stay open over a now-cancelled sale).
+    /// </summary>
+    private void HideCancelForm()
+    {
+        _showCancelForm = false;
+        _cancellationReason = string.Empty;
+    }
+
+    /// <summary>
+    /// Step 2 — opens the 3-second countdown confirmation dialog. Called
+    /// when the user clicks "Confirm Cancellation" in the inline form.
+    /// The dialog returns true if the user confirmed, false/null if they
+    /// closed it or clicked "No, go back".
+    ///
+    /// We DON'T validate the reason length here — the textarea's Disabled
+    /// binding already prevents the Confirm button from being clickable
+    /// when the reason is empty. Length validation (3-500) happens in
+    /// ExecuteCancellation as defense-in-depth.
+    ///
+    /// ROBUSTNESS NOTES:
+    ///   - Every early-return path surfaces a visible toast so the user
+    ///     is never left wondering "why did nothing happen?". Previous
+    ///     implementation silently returned on busy/null/empty state,
+    ///     which made the button appear dead if any of those conditions
+    ///     fired (e.g. a stale _isBusy from a failed prior action).
+    ///   - The dialog open call is wrapped in try/catch so that any
+    ///     Radzen dialog infrastructure error (e.g. JS interop failure
+    ///     after a circuit reconnect) surfaces as a toast instead of a
+    ///     silently swallowed exception.
+    ///   - We assign the dialog result to `object?` (not `dynamic`) and
+    ///     use `is true` pattern matching. This is the cleanest way to
+    ///     handle `DialogService.Close(object)` which passes back a
+    ///     boxed bool (or null if the dialog was dismissed via X / Esc).
+    ///     `is true` returns true ONLY for a boxed `true` bool — it
+    ///     correctly returns false for `false`, `null`, or any other
+    ///     type, which is exactly the "user confirmed" semantics we want.
+    /// </summary>
+    private async Task ShowCancelConfirmation()
+    {
+        // Guard 1: sale must be loaded. Should never trigger because the
+        // inline form is only rendered when _sale is non-null, but
+        // defense-in-depth never hurts.
+        if (_sale is null)
         {
+            await Toast.Warning(Loc["CancelGuard_NoSale"], summary: Loc["ErrorTitle"]);
             return;
         }
 
-        reason = reason.Trim();
+        // Guard 2: don't allow stacking a confirmation on top of an
+        // in-flight action. Visible toast so the user understands why
+        // nothing is happening — a silent return here was the previous
+        // behavior and made the button feel dead.
+        if (_isBusy)
+        {
+            await Toast.Warning(Loc["CancelGuard_Busy"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // Guard 3: reason is required. Should never trigger because the
+        // Confirm button is Disabled when the reason is whitespace, but
+        // a race between the bind and the click could in principle let
+        // this fire — surface it instead of swallowing.
+        if (string.IsNullOrWhiteSpace(_cancellationReason))
+        {
+            await Toast.Warning(Loc["CancelFormReasonLabel"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // Open the dialog. Wrap in try/catch so any Radzen/JS-interop
+        // failure becomes a visible error toast instead of a silent
+        // circuit-level swallow.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<CancelConfirmationDialog>(
+                Loc["CancelDialogTitle"],
+                new Dictionary<string, object?> { { "SaleNumber", _sale.SaleNumber } },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,  // force the user to click a button — no accidental close
+                    ShowClose = true,                   // keep the X button so the user has an obvious escape
+                });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "ShowCancelConfirmation: failed to open CancelConfirmationDialog for sale {SaleId}.",
+                _sale.Id);
+            _actionError = Loc["CancelGuard_DialogError"];
+            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // `confirmed` is `object?` (boxed bool from DialogService.Close(true|false),
+        // or null if the user dismissed via X / Esc / overlay). Convert to a clean
+        // bool — anything that isn't exactly `true` is treated as "user aborted".
+        var isConfirmed = confirmed is true;
+
+        if (isConfirmed)
+        {
+            await ExecuteCancellation();
+        }
+        // If the user aborted (No, X, Esc), we leave the inline form open
+        // so they can adjust the reason and try again without re-entering it.
+    }
+
+    /// <summary>
+    /// Step 3 — actually dispatches CancelSaleCommand. Only reached after
+    /// the user confirmed in the countdown dialog. Reuses ExecuteActionAsync
+    /// for the busy-state / error / success / reload flow.
+    /// </summary>
+    private async Task ExecuteCancellation()
+    {
+        if (_sale is null || _isBusy) return;
+
+        var reason = _cancellationReason.Trim();
 
         // Client-side validation: 3-500 chars (matches CancelSaleCommandValidator).
         if (reason.Length < 3 || reason.Length > 500)
@@ -839,6 +1054,15 @@
         await ExecuteActionAsync(
             Loc["ActionCancel"],
             () => MessageBus.InvokeAsync<Result>(new CancelSaleCommand(_sale.Id, reason)));
+
+        // If the action succeeded, ExecuteActionAsync already reloaded the
+        // sale. Hide the inline form so the user sees the cancelled state
+        // without the form still being open. (On failure we keep the form
+        // open so they can retry without re-entering the reason.)
+        if (_sale?.Status == nameof(SaleStatus.Cancelled))
+        {
+            HideCancelForm();
+        }
     }
 
     /// <summary>

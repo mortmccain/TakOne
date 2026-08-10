@@ -1,4 +1,4 @@
-﻿﻿@* ShopLayout.razor — full-screen shop layout (no default top bar)
+﻿@* ShopLayout.razor — full-screen shop layout (no default top bar)
    Used by /Products (and potentially /Cart in the future) to get a
    full-screen shop experience without the MainLayout top bar.
 
@@ -43,6 +43,18 @@
         </RadzenContent>
     </RadzenBody>
 </RadzenLayout>
+
+@* ── RADZEN HOST COMPONENTS ────────────────────────────────────────────
+   Same set as MainLayout.razor — required for DialogService /
+   NotificationService / TooltipService to actually render their UI.
+   See the long comment in MainLayout.razor for the full rationale
+   (the cancel-confirmation-button-was-dead bug these fixed). Adding
+   them here too so toasts/dialogs work on /Products (ShopLayout) as
+   well as on /Sales/{id} and every other MainLayout page.
+*@
+<RadzenDialog />
+<RadzenNotification />
+<RadzenTooltip />
 
 <ReconnectModal />
 

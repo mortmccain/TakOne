@@ -107,6 +107,18 @@ public class ApplicationDbContext
     public DbSet<SaleLineItem> SaleLineItems { get; set; } = null!;
 
     /// <summary>
+    /// SaleSequenceCounter entity — one row per Persian year, holding the
+    /// NEXT sequence number to allocate for that year. This is the
+    /// AUTHORITATIVE source of truth for SaleNumber sequence allocation,
+    /// replacing the old "Count(sales in year) + 1" / "MAX(Sequence) + 1"
+    /// algorithms which had hard-delete reuse and year-boundary invisibility
+    /// bugs. See <see cref="SaleSequenceCounter"/> for the full rationale.
+    ///
+    /// Maps to the <c>SaleSequenceCounters</c> table.
+    /// </summary>
+    public DbSet<SaleSequenceCounter> SaleSequenceCounters { get; set; } = null!;
+
+    /// <summary>
     /// ASP.NET Core Data Protection key ring. One row per key. The
     /// <c>DataProtectionKey</c> entity (from
     /// <c>Microsoft.AspNetCore.DataProtection.EntityFrameworkCore</c>)

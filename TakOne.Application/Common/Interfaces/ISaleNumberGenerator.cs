@@ -5,23 +5,25 @@ namespace TakOne.Application.Common.Interfaces;
 /// <summary>
 /// Generates a globally-unique <see cref="SaleNumber"/> for a new Sale.
 ///
-/// IMPLEMENTATION CONTRACT (fulfilled by Infrastructure, step 7d):
+/// IMPLEMENTATION CONTRACT (fulfilled by Infrastructure's
+/// <c>SaleNumberGenerator</c>):
 ///   1. Take the current UTC time and convert it to a Persian (Jalali) year
 ///      via <c>System.Globalization.PersianCalendar.GetYear(...)</c>.
-///   2. Compute the Gregorian DateTime that corresponds to the start of that
-///      Persian year (the Persian New Year, around March 20/21).
-///   3. Count ALL existing sales whose <c>CreatedAtUtc</c> falls on or after
-///      that Persian-year-start DateTime — across ALL customers. This is the
-///      global sequence counter, not a per-customer one.
-///   4. Return <c>SaleNumber.Create(persianYear, count + 1)</c>.
+///   2. Atomically allocate the next sequence number for that Persian year
+///      from the <c>SaleSequenceCounters</c> table (one row per year) using
+///      a serializable transaction with UPDLOCK, HOLDLOCK. This is the
+///      AUTHORITATIVE source of truth — independent of the Sales table, so
+///      hard-deletes of Draft sales can never cause sequence reuse or
+///      collisions. See <c>SaleSequenceCounter</c> for the full rationale.
+///   3. Return <c>SaleNumber.Create(persianYear, allocatedSequence)</c>.
 ///
 /// CONCURRENCY:
-///   Two concurrent requests can both observe the same "current count" and
-///   both return the same sequence number. The Infrastructure layer's unique
-///   index on <c>(SaleNumber_Year, SaleNumber_Sequence)</c> causes the loser's
-///   <c>SaveChangesAsync</c> to fail with a unique-constraint violation. The
-///   handler is expected to retry (Polly policy) — to be added in a future
-///   hardening pass.
+///   The serializable + UPDLOCK + HOLDLOCK pattern serializes sequence
+///   allocation within a Persian year at the row level. Two concurrent
+///   <see cref="NextAsync"/> calls for the same year will block each other
+///   for the duration of the short counter transaction (a few milliseconds)
+///   and receive DISTINCT sequence numbers. No retry loop, no
+///   unique-constraint violations, no burned sequence numbers from races.
 ///
 /// WHY THE SIGNATURE TAKES NO PARAMETERS:
 ///   The SaleNumber prefix is fixed at <c>"INT"</c> (see <see cref="SaleNumber.Prefix"/>),

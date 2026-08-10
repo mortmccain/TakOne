@@ -179,14 +179,22 @@
                    The user avatar shows the user's initial + role label
                    and navigates to /Settings on click. *@
                 <div class="tm-actions-block">
-                    <button type="button"
-                            class="tm-icon-button"
-                            title="@ProductsLoc["CartTitle"]"
-                            @onclick="GoToCart">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                        </svg>
-                    </button>
+                    @* Cart icon — visible to everyone EXCEPT ReadOnly.
+                       ReadOnly users cannot buy (CreateOrAppendSaleCommand
+                       is gated to Admin/Manager/Employee/Customer via
+                       [RequireRoles]), so showing them a cart icon would
+                       be misleading UX. Matches the sidebar Cart nav link
+                       in SidebarContent.razor which also excludes ReadOnly. *@
+                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.Customer)">
+                        <button type="button"
+                                class="tm-icon-button"
+                                title="@ProductsLoc["CartTitle"]"
+                                @onclick="GoToCart">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+                            </svg>
+                        </button>
+                    </AuthorizeView>
 
                     @* Theme quick-toggle — switches between tak-light and
                        tak-dark. The ICON itself changes with the theme:
@@ -296,6 +304,48 @@
         </RadzenContent>
     </RadzenBody>
 </RadzenLayout>
+
+@* ── RADZEN HOST COMPONENTS ────────────────────────────────────────────
+   These three are REQUIRED for the corresponding Radzen services to
+   actually render anything on screen. They are stateless "render sinks"
+   that subscribe to their respective services (DialogService,
+   NotificationService) and project the current open dialogs / pending
+   notifications into the DOM.
+
+   WITHOUT THEM (the bug we fixed here):
+     - DialogService.OpenAsync<T>(...) is callable (the service is
+       registered by AddRadzenComponents() in Program.cs) but the
+       TaskCompletionSource it returns is NEVER resolved, because no
+       RadzenDialog is listening for the OnOpen event to render the
+       dialog UI. The await hangs forever — the calling button appears
+       dead with no exception, no log, no toast. This was the root cause
+       of "the confirm cancellation button does absolutely nothing and
+       no errors on why it did nothing" on the SaleDetail page.
+     - NotificationService.Notify(...) (wrapped by our ToastService)
+       silently drops every toast. The user never sees success/warning/
+       error feedback from any action handler's `await Toast.Error(...)`
+       call. This is why the cancel-confirmation guards' toasts also
+       failed to appear.
+     - TooltipService.OpenTooltip(...) silently does nothing — every
+       Tooltip="..." parameter on Radzen components is a no-op. (We
+       don't currently use Tooltip= anywhere, but registering the host
+       is one line and means future Radzen Tooltip parameters work
+       without a second debugging session.)
+
+   They are SIBLINGS of <RadzenLayout> (not children) because they
+   render fixed-position overlays on top of the entire viewport — they
+   must not be clipped by the layout's overflow or stacking context.
+   The Radzen docs prescribe this exact placement.
+
+   We add them to BOTH MainLayout and ShopLayout (the two top-level
+   layouts) so dialogs and toasts work regardless of which layout the
+   current page uses. LoginLayout is a special full-screen chrome with
+   no Radzen components and no need for dialogs/toasts, so it's left
+   untouched.
+*@
+<RadzenDialog />
+<RadzenNotification />
+<RadzenTooltip />
 
 <ReconnectModal />
 

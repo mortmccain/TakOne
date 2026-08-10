@@ -1,0 +1,118 @@
+﻿@* CancelConfirmationDialog.razor — second-step confirmation modal for sale cancellation.
+
+   PORTED FROM ERP (Components/CancelConfirmationDialog.razor) WITH TAKONE ADAPTATIONS:
+     - Same 3-second countdown UX: the "Yes, I'm sure" button is disabled for 3
+       seconds after the dialog opens, then becomes clickable. This prevents
+       reflex / accidental confirmations on an irreversible action.
+     - Same layout: warning header, body text mentioning the sale number,
+       two-button footer (No go back / Yes I'm sure).
+     - Same DialogService.OpenAsync<CancelConfirmationDialog> contract — the
+       parent (SaleDetail.razor) opens this with a `SaleNumber` parameter and
+       receives a `bool` result (true = confirmed, false/null = aborted).
+
+   DIFFERENCES FROM ERP:
+     - Localized via IStringLocalizer<CancelConfirmationDialog> (ERP used
+       hard-coded English strings). Both en-US and fa-IR resx files sit next
+       to this razor file.
+     - Border-radius uses var(--tm-radius, 0) — Tak light/dark themes get the
+       rounded pill feel (12px), other themes (standard, material, etc.) get
+       sharp 0px corners. Matches the existing sidebar.css pattern.
+
+   LIFECYCLE & ROBUSTNESS:
+     - OnInitializedAsync starts a 3-iteration countdown loop with 1s sleep
+       between iterations. Each iteration updates `countdown` and calls
+       StateHasChanged so the button text re-renders.
+     - A CancellationTokenSource is created up-front; if the user closes the
+       dialog before the countdown finishes (e.g. clicks "No, go back"), the
+       Dispose() method cancels the CTS so the Task.Delay doesn't keep
+       ticking in the background.
+     - We catch BOTH OperationCanceledException (raised when the CTS is
+       cancelled) AND ObjectDisposedException (raised if Dispose runs so
+       fast that the next Task.Delay tries to access a disposed CTS). The
+       previous implementation only caught the former, which could let a
+       race between Dispose and the loop escape as an unhandled exception
+       and silently kill the dialog (Blazor would surface this as a circuit
+       error in dev, but in production it can vanish without a trace).
+     - The dialog is single-purpose — no Command dispatch here. The parent
+       decides what to do based on the bool return value.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<CancelConfirmationDialog> Loc
+@implements IDisposable
+
+<div class="cancel-confirmation-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="cancel-confirmation-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@SaleNumber</strong>.
+            @Loc["BodyPermanent"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@ButtonText"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Disabled="@(countdown > 0)"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string SaleNumber { get; set; } = string.Empty;
+
+    private int countdown = 3;
+    private CancellationTokenSource? _cts;
+
+    // Button text shows the countdown while it's ticking, then becomes the
+    // plain "Yes, I'm sure" once the button is enabled. The format string
+    // is localized so fa-IR can render the digits in Persian if it wants to.
+    private string ButtonText =>
+        countdown > 0
+            ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Loc["ButtonYesCounting"], countdown)
+            : Loc["ButtonYesReady"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        try
+        {
+            for (int i = 3; i > 0; i--)
+            {
+                countdown = i;
+                await InvokeAsync(StateHasChanged);
+                // Capture the token locally so that even if Dispose races
+                // ahead and nulls out _cts, we still have a valid reference
+                // to pass to Task.Delay. (Dispose also calls Cancel first,
+                // so a disposed-token race here surfaces as
+                // OperationCanceledException, which we catch below.)
+                var token = _cts.Token;
+                await Task.Delay(1000, token);
+            }
+            countdown = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* user closed dialog before countdown finished */ }
+        catch (ObjectDisposedException) { /* Dispose ran between iterations — same story */ }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch (ObjectDisposedException) { /* already disposed — fine */ }
+        _cts?.Dispose();
+        _cts = null;
+    }
+}

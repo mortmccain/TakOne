@@ -284,12 +284,20 @@ else if (_stats is not null)
                         <h3 class="tm-dash-card-title">@Loc["Chart_TopProducts"]</h3>
                         <p class="tm-dash-card-subtitle">@Loc["Chart_TopProducts_Sub"]</p>
                     </div>
-                    <a href="/Admin/Products" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
-                        @Loc["Chart_ViewAll"]
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </a>
+                    @* "View All" link to /Admin/Products — hidden from ReadOnly
+                       users because /Admin/Products is gated to
+                       Admin/Manager/Employee. Showing ReadOnly a link they
+                       can't follow would be misleading UX. The chart itself
+                       stays visible to ReadOnly (they can see top-selling
+                       products, just not navigate to the admin product list). *@
+                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <a href="/Admin/Products" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
+                            @Loc["Chart_ViewAll"]
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </a>
+                    </AuthorizeView>
                 </div>
                 <div class="tm-dash-chart-canvas-wrap tall" style="height:288px;">
                     <canvas id="tm-dash-top-products-chart"></canvas>
