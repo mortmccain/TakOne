@@ -210,7 +210,7 @@ public sealed class QuickReorderLastSaleCommandHandler
                     currentUser.UserId, lastSale.Id);
 
                 return Result<Guid>.Failure
-                    ("هیچ کالایی برای افزودن به سبد وجود نداشت — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+                    ("QuickReorderNothingToAdd");
             }
 
             // Case C — existing draft. If it's empty, hard-delete the ghost.
@@ -226,7 +226,7 @@ public sealed class QuickReorderLastSaleCommandHandler
                     currentUser.UserId, lastSale.Id, draft.Id);
 
                 return Result<Guid>.Failure
-                    ("هیچ کالایی برای افزودن به سبد وجود نداشت — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+                    ("QuickReorderNothingToAdd");
             }
 
             // Existing draft with line items, nothing new to add —
@@ -241,7 +241,7 @@ public sealed class QuickReorderLastSaleCommandHandler
                 currentUser.UserId, lastSale.Id, draft.Id, addedCount, skippedCount);
 
             return Result<Guid>.Failure
-                ("هیچ کالای جدیدی به سبد شما اضافه نشد — موجودی یا سهمیه تمام کالاها به پایان رسیده است.");
+                ("QuickReorderNothingNewAdded");
         }
 
         // Case A (or Case C with additions) — normal persist.

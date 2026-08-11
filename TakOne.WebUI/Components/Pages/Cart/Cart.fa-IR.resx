@@ -203,4 +203,13 @@
   <data name="Submitted" xml:space="preserve">
     <value>سفارش شما ثبت شد و اکنون در انتظار تأیید است.</value>
   </data>
+  <data name="QuantityLabel" xml:space="preserve">
+    <value>تعداد</value>
+  </data>
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>سقف خرید برای «{0}» {1} عدد است. نمی‌توانید بیشتر از این مقدار به سبد اضافه کنید.</value>
+  </data>
+  <data name="LimitIssueWarning" xml:space="preserve">
+    <value>تعداد یکی از اقلام از سقف خرید مجاز بیشتر است. لطفاً قبل از ثبت، تعداد را کاهش دهید.</value>
+  </data>
 </root>

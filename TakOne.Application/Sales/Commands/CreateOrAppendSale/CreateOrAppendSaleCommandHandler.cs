@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
@@ -89,6 +90,7 @@ public sealed class CreateOrAppendSaleCommandHandler
         IProductRepository productRepository,
         ISaleRepository saleRepository,
         ISaleNumberGenerator saleNumberGenerator,
+        IUserRepository userRepository,
         IUnitOfWork unitOfWork,
         ILogger<CreateOrAppendSaleCommandHandler> logger,
         CancellationToken cancellationToken
@@ -144,6 +146,18 @@ public sealed class CreateOrAppendSaleCommandHandler
         //    via AssignUserToGroup command). We look up the matching
         //    CustomerGroupPurchaseLimit on this product.
         //
+        //    WHY LOAD FROM DB (not from currentUser.GroupName claim):
+        //      The GroupName claim is a snapshot from login time and goes
+        //      stale when an admin assigns the user to a group after
+        //      they're already logged in. The stale claim caused a real
+        //      bug: customer's GroupName was null in the claim (because
+        //      they were assigned to the group post-login), so the limit
+        //      was null, so the Add-to-cart button never grayed out and
+        //      CreateOrAppendSale didn't enforce the limit — but
+        //      UpdateSaleLineItem (which loads the customer from DB) DID
+        //      enforce it, creating an asymmetry where the mini-cart +/-
+        //      buttons errored but the Add button didn't.
+        //
         //    This is OUTSIDE the retry loop because:
         //      - It depends only on the product (read above, immutable for
         //        the handler's lifetime) and the user's GroupName (also
@@ -151,9 +165,10 @@ public sealed class CreateOrAppendSaleCommandHandler
         //      - Re-querying it on each retry would be wasted work.
         // ------------------------------------------------------------------
         int? purchaseLimit = null;
-        if (!string.IsNullOrWhiteSpace(currentUser.GroupName))
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        if (freshUser is not null && !string.IsNullOrWhiteSpace(freshUser.GroupName))
         {
-            var limitVo = product.GetPurchaseLimitForGroup(currentUser.GroupName);
+            var limitVo = product.GetPurchaseLimitForGroup(freshUser.GroupName);
             purchaseLimit = limitVo?.Limit;
         }
 
@@ -339,12 +354,21 @@ public sealed class CreateOrAppendSaleCommandHandler
                 ("CreateOrAppendSale: purchase-limit exceeded for product {ProductId} (user {UserId}, limit {Limit}, requested {Qty}). Domain message: {Msg}",
                 product.Id, currentUser.UserId, purchaseLimit, command.Quantity, ex.Message);
 
-            var limitText = purchaseLimit.HasValue
-                ? purchaseLimit.Value.ToString()
-                : "—";
+            // Use the culture-neutral error format. The UI layer
+            // (Products.razor / SaleDetail.razor) intercepts this with
+            // PurchaseLimitErrors.TryParse and substitutes a localized
+            // message that does NOT mention "groups".
+            if (purchaseLimit.HasValue)
+            {
+                return Result<Guid>.Failure(
+                    PurchaseLimitErrors.Format(product.Name, purchaseLimit.Value));
+            }
 
+            // Defensive — the catch only fires when purchaseLimit was
+            // set, but if it's somehow null, fall back to a generic
+            // English message.
             return Result<Guid>.Failure(
-                $"سهمیه گروه شما برای کالای «{product.Name}» {limitText} عدد است و بیشتر از این مقدار نمی‌توانید به سبد اضافه کنید.");
+                $"Purchase limit exceeded for '{product.Name}'.");
         }
     }
 }

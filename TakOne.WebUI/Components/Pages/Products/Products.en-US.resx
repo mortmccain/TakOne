@@ -303,4 +303,13 @@
   <data name="LogoutAriaLabel" xml:space="preserve">
     <value>Sign out</value>
   </data>
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>The purchase limit for &apos;{0}&apos; is {1} units per customer. You cannot add more than this amount.</value>
+  </data>
+  <data name="ToastReorderNothingToAdd" xml:space="preserve">
+    <value>No items could be added to your cart — stock or purchase limits have been exhausted for all items.</value>
+  </data>
+  <data name="ToastReorderNothingNewAdded" xml:space="preserve">
+    <value>No new items were added to your cart — stock or purchase limits have been exhausted for all items.</value>
+  </data>
 </root>

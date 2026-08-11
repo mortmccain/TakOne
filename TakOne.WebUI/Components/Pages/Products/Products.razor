@@ -63,6 +63,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Errors
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductsPaginated
@@ -1193,7 +1194,7 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["ToastAddFailed"]);
+                await Toast.Error(LocalizeError(result.Error) ?? Loc["ToastAddFailed"]);
             }
         }
         catch (Exception)
@@ -1245,7 +1246,7 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["ToastUpdateFailed"]);
+                await Toast.Error(LocalizeError(result.Error) ?? Loc["ToastUpdateFailed"]);
             }
         }
         catch (Exception)
@@ -1278,7 +1279,7 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["ToastSubmitFailed"]);
+                await Toast.Error(LocalizeError(result.Error) ?? Loc["ToastSubmitFailed"]);
             }
         }
         catch (Exception)
@@ -1311,7 +1312,7 @@
             }
             else
             {
-                await Toast.Warning(result.Error ?? Loc["ToastReorderNoOrders"]);
+                await Toast.Warning(LocalizeReorderError(result.Error) ?? Loc["ToastReorderNoOrders"]);
             }
         }
         catch (Exception)
@@ -1484,5 +1485,47 @@
     private static string ToPersian(decimal value)
     {
         return value.ToString("N0", CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>
+    /// Translates a backend <c>Result.Error</c> string into a user-facing,
+    /// culture-aware message. Returns null if the error doesn't match a
+    /// known pattern (the caller should fall back to a generic localized
+    /// "something went wrong" message).
+    ///
+    /// Currently handles:
+    ///   - <c>PurchaseLimitExceeded:{name}|{limit}</c> — produced by
+    ///     CreateOrAppendSale / UpdateSaleLineItem / SubmitSale handlers.
+    ///     Localized via the PurchaseLimitExceeded resx key, which does
+    ///     NOT mention "groups" (the original Persian error leaked the
+    ///     internal group concept to customers).
+    /// </summary>
+    private string? LocalizeError(string? error)
+    {
+        if (PurchaseLimitErrors.TryParse(error, out var productName, out var limit))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["PurchaseLimitExceeded"],
+                productName,
+                limit);
+        }
+        return error;
+    }
+
+    /// <summary>
+    /// Translates QuickReorderLastSaleCommand's stable error codes
+    /// ("QuickReorderNothingToAdd", "QuickReorderNothingNewAdded") into
+    /// culture-aware messages. Returns null for any other error so the
+    /// caller falls back to a generic message.
+    /// </summary>
+    private string? LocalizeReorderError(string? error)
+    {
+        return error switch
+        {
+            "QuickReorderNothingToAdd" => Loc["ToastReorderNothingToAdd"],
+            "QuickReorderNothingNewAdded" => Loc["ToastReorderNothingNewAdded"],
+            _ => error
+        };
     }
 }

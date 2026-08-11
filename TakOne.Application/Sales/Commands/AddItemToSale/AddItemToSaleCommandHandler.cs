@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
@@ -159,12 +160,21 @@ public sealed class AddItemToSaleCommandHandler
                 ("AddItemToSale: purchase-limit exceeded for product {ProductId} on sale {SaleId} (customer {CustomerId}, limit {Limit}, requested {Qty}). Domain message: {Msg}",
                 product.Id, sale.Id, sale.CustomerId, purchaseLimit, command.Quantity, ex.Message);
 
-            var limitText = purchaseLimit.HasValue
-                ? purchaseLimit.Value.ToString()
-                : "—";
+            // Use the culture-neutral error format. The UI layer
+            // (SaleDetail.razor) intercepts this with
+            // PurchaseLimitErrors.TryParse and substitutes a localized
+            // message that does NOT mention "groups".
+            if (purchaseLimit.HasValue)
+            {
+                return Result.Failure(
+                    PurchaseLimitErrors.Format(product.Name, purchaseLimit.Value));
+            }
 
+            // Defensive — the catch only fires when purchaseLimit was
+            // set, but if it's somehow null, fall back to a generic
+            // English message.
             return Result.Failure(
-                $"سهمیه گروه مشتری برای کالای «{product.Name}» {limitText} عدد است و بیشتر از این مقدار نمی‌توانید به سبد اضافه کنید.");
+                $"Purchase limit exceeded for '{product.Name}'.");
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

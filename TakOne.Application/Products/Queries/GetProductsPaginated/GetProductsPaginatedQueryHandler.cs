@@ -35,6 +35,7 @@ public sealed class GetProductsPaginatedQueryHandler
         ICurrentUserService currentUser,
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
+        IUserRepository userRepository,
         ILogger<GetProductsPaginatedQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -156,13 +157,30 @@ public sealed class GetProductsPaginatedQueryHandler
         //    includeInactive=true from the AdminProducts page.)
         //
         //    MY PURCHASE LIMIT:
-        //    The current user's per-product limit is resolved here via
-        //    Product.GetPurchaseLimitForGroup(currentUser.GroupName). For
-        //    staff (no GroupName) the limit is null — they have no cap.
+        //    The current user's per-product limit is resolved here. We
+        //    load the user's GroupName FRESH from the database (not from
+        //    the GroupName claim on the auth cookie) because the claim is
+        //    a snapshot from login time and goes stale when an admin
+        //    assigns the user to a group after they're already logged in.
+        //    Reading from the DB guarantees the limit reflects the user's
+        //    CURRENT group, so the Add button grays out correctly even
+        //    without a re-login.
+        //
+        //    Same fix applied to GetActiveCartForUserQueryHandler and
+        //    CreateOrAppendSaleCommandHandler — all three used to read
+        //    currentUser.GroupName (claim) and were inconsistent with
+        //    UpdateSaleLineItemCommandHandler / AddItemToSaleCommandHandler
+        //    which already loaded the customer from the DB.
         // ------------------------------------------------------------------
         var searchTerm = query.SearchTerm?.Trim();
         var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
-        var groupName = currentUser.GroupName;
+
+        // Load the current user's GroupName FRESH from the DB. Single
+        // round-trip; cached in `groupName` for the per-product lookup
+        // below. If the user is staff (no GroupName in the DB either),
+        // groupName is null and no per-product cap applies.
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        var groupName = freshUser?.GroupName;
 
         var dtos = paginated.Items
             .Where(p => includeInactive || p.StockQuantity > 0)

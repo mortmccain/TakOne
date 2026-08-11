@@ -199,4 +199,13 @@
   <data name="Submitted" xml:space="preserve">
     <value>Your order has been submitted and is now pending approval.</value>
   </data>
+  <data name="QuantityLabel" xml:space="preserve">
+    <value>Quantity</value>
+  </data>
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>The purchase limit for &apos;{0}&apos; is {1} units per customer. You cannot add more than this amount.</value>
+  </data>
+  <data name="LimitIssueWarning" xml:space="preserve">
+    <value>One or more items exceed the per-customer purchase limit. Reduce the quantity before submitting.</value>
+  </data>
 </root>

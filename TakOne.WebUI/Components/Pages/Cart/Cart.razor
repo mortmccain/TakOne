@@ -77,6 +77,7 @@
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
+@using TakOne.Application.Common.Errors
 @using TakOne.Application.Sales.DTOs
 @using TakOne.Application.Sales.Queries.GetActiveCartForUser
 @using TakOne.Application.Sales.Commands.UpdateSaleLineItem
@@ -96,7 +97,7 @@
 <HeadContent>
     <style>
             /* Two-column layout: line items left, summary right.
-                       On tablet/mobile, summary collapses below the items. */
+                                   On tablet/mobile, summary collapses below the items. */
             .cart-layout {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -111,10 +112,10 @@
             }
 
             /* ── Line item card ──
-                       Each line item is its own RadzenCard with a grid layout:
-                         [picture] [info] [qty + actions]
-                       On mobile, the picture shrinks and the layout collapses to
-                       a vertical stack with actions wrapping below. */
+                                   Each line item is its own RadzenCard with a grid layout:
+                                     [picture] [info] [qty + actions]
+                                   On mobile, the picture shrinks and the layout collapses to
+                                   a vertical stack with actions wrapping below. */
             .cart-line {
                 display: grid;
                 grid-template-columns: 80px minmax(0, 1fr) auto;
@@ -190,8 +191,19 @@
                 flex-wrap: wrap;
             }
 
+            /* Qty selector — a plain <input type="number" class="rz-textbox qty-input">
+                           rather than a RadzenNumeric. WHY: RadzenNumeric's internal JS
+                           mishandles caret position in RTL (fa-IR) mode — the cursor looks
+                           like it's at the end of the value, but typing inserts the
+                           character at the BEGINNING (turning a "1" + typed "0" into "01"
+                           instead of "10"). A native input with dir="ltr" bypasses
+                           Radzen's JS entirely and handles caret position AND character
+                           insertion correctly in both LTR and RTL page contexts. Same fix
+                           as CreateProduct.razor's PriceAmount / InitialStockQuantity
+                           fields. We lose the spinner arrows but gain correct behavior. */
             .cart-line .qty-input {
                 width: 90px;
+                text-align: left;
             }
 
             /* Stock badge — same visual language as ProductDetail.razor */
@@ -222,8 +234,8 @@
             }
 
             /* Summary panel — sticky on desktop so it stays in view while
-                       the user scrolls long carts. On mobile it just sits at the
-                       bottom of the page (no sticky — would cover content). */
+                                   the user scrolls long carts. On mobile it just sits at the
+                                   bottom of the page (no sticky — would cover content). */
             .cart-summary {
                 position: sticky;
                 top: 1rem;
@@ -340,12 +352,13 @@
     <div class="cart-header">
         <RadzenIcon Icon="shopping_cart" class="cart-header-icon" />
         <h1 class="cart-header-title">@Loc["PageHeading"]</h1>
-        @if (_cart is not null && _cart.TotalItemCount > 0)
+        @if (_cart is not null && _cart.LineItems.Count > 0)
         {
+            var liveItemCount = ComputeTotalItemCount();
             <span class="cart-count-badge">
                 @string.Format(CultureInfo.CurrentCulture,
-                    _cart.TotalItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
-                    _cart.TotalItemCount)
+                    liveItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
+                    liveItemCount)
             </span>
         }
     </div>
@@ -414,7 +427,7 @@
                                 <div class="cart-line-unit-price">
                                     @string.Format(CultureInfo.CurrentCulture, Loc["UnitPriceLabel"], FormatPrice(line.UnitPrice))
                                 </div>
-                                <div class="cart-line-total">@FormatPrice(line.LineTotal)</div>
+                                <div class="cart-line-total">@FormatPrice(ComputeLineTotal(line))</div>
                                 @if (line.CurrentStock == 0)
                                 {
                                     <span class="stock-badge stock-out">
@@ -438,24 +451,55 @@
                                 }
                             </div>
 
-                            @* Actions: qty selector + update + remove *@
+                            @* Actions: qty selector + remove.
+                               NO Update button — qty changes are saved on blur
+                               via OnQtyCommitAsync. The displayed line total +
+                               cart total + item count update LIVE on every
+                               keystroke (via @oninput + ComputeLineTotal /
+                               ComputeCartTotal / ComputeTotalItemCount) so the
+                               user sees the new price without clicking anything. *@
                             <div class="cart-line-actions">
-                                <RadzenNumeric TValue="int"
-                                               Value="@GetPendingQty(line.Id)"
-                                               Min="1"
-                                               Max="@GetLineMax(line)"
-                                               Step="1"
-                                               Style="width: 90px;"
-                                               class="qty-input"
-                                               Disabled="@_isBusy"
-                                               ValueChanged="@(v => SetPendingQty(line.Id, v))" />
-                                <RadzenButton Icon="save"
-                                              ButtonStyle="ButtonStyle.Secondary"
-                                              Variant="Variant.Outlined"
-                                              Title="@Loc["UpdateButton"]"
-                                              aria-label="@Loc["UpdateButton"]"
-                                              Disabled="@(_isBusy || GetPendingQty(line.Id) == line.Quantity)"
-                                              Click="@(() => HandleUpdateLineAsync(line.Id))" />
+                                @* Plain HTML <input type="number"> instead of RadzenNumeric.
+                                   Same RTL caret-position fix as CreateProduct.razor's
+                                   PriceAmount / InitialStockQuantity fields and
+                                   RestockProductDialog.razor's Quantity input.
+                                   RadzenNumeric's internal JS mishandles caret position
+                                   in fa-IR mode — the cursor looks correct but typed
+                                   characters insert at the BEGINNING ("1" + "0" → "01").
+                                   The native input with dir="ltr" handles caret AND
+                                   insertion correctly. We lose the spinner arrows but
+                                   gain correct behavior.
+
+                                   LIVE PRICE UPDATES:
+                                   @oninput fires on every keystroke → OnQtyInput parses +
+                                   clamps + stores in _pendingQuantities → UI re-renders
+                                   with updated line total + cart total. NO backend call.
+
+                                   BACKEND SAVE ON BLUR:
+                                   @onchange fires when the user tabs / clicks away (or
+                                   presses Enter) → OnQtyCommitAsync parses + clamps +
+                                   stores, then if the resulting qty differs from the
+                                   server's line.Quantity, dispatches
+                                   UpdateSaleLineItemCommand. On failure, the cart is
+                                   reloaded which reverts the displayed qty. So the DB
+                                   is touched at most once per editing session, never on
+                                   every keystroke.
+
+                                   Upper-bound clamping that RadzenNumeric's Max attribute
+                                   used to provide is now done in OnQtyInput /
+                                   OnQtyCommitAsync (the native input's max attribute only
+                                   constrains the spinner, not what the user can type). *@
+                                <input type="number"
+                                       class="rz-textbox qty-input"
+                                       dir="ltr"
+                                       step="1"
+                                       min="1"
+                                       max="@GetLineMax(line)"
+                                       value="@GetPendingQty(line.Id)"
+                                       disabled="@_isBusy"
+                                       @oninput="@(e => OnQtyInput(line, e.Value))"
+                                       @onchange="@(e => OnQtyCommitAsync(line, e.Value))"
+                                       aria-label="@Loc["QuantityLabel"]" />
                                 <RadzenButton Icon="delete"
                                               ButtonStyle="ButtonStyle.Danger"
                                               Variant="Variant.Text"
@@ -468,12 +512,18 @@
                     </RadzenCard>
                 }
 
-                @* Continue shopping link — sits below the line items list,
-                   on the left column (matches Amazon's cart pattern). *@
+                @* Continue Shopping — sits below the line items list (left column,
+                   matches Amazon's cart pattern). Style (ButtonStyle.Secondary +
+                   Variant.Outlined) matches the Sales page's Continue Shopping
+                   button so the two pages share a consistent visual language.
+                   align-self: flex-start shrinks the button to fit its content —
+                   by default RadzenStack (flex column) stretches children to full
+                   width, which made this button span the entire left column. *@
                 <RadzenButton Text="@Loc["ContinueShoppingButton"]"
                               Icon="arrow_back"
-                              ButtonStyle="ButtonStyle.Light"
-                              Variant="Variant.Text"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Style="align-self: flex-start;"
                               Disabled="@_isBusy"
                               Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
             </RadzenStack>
@@ -486,9 +536,12 @@
                     <div class="cart-summary-row">
                         <span class="label">@Loc["TotalItems"]</span>
                         <span class="value">
+                            @{
+                                var liveItemCount = ComputeTotalItemCount();
+                            }
                             @string.Format(CultureInfo.CurrentCulture,
-                                _cart.TotalItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
-                                _cart.TotalItemCount)
+                                liveItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
+                                liveItemCount)
                         </span>
                     </div>
 
@@ -503,12 +556,20 @@
 
                     <div class="cart-summary-row total-row">
                         <span class="label">@Loc["TotalAmount"]</span>
-                        <span class="value">@FormatPrice(_cart.Total)</span>
+                        <span class="value">@FormatPrice(ComputeCartTotal())</span>
                     </div>
 
                     @if (HasStockIssue())
                     {
                         <RadzenAlert Text="@Loc["StockIssueWarning"]"
+                                     AlertStyle="AlertStyle.Warning"
+                                     Variant="Variant.Filled"
+                                     ShowIcon="true"
+                                     Style="margin-top: 1rem;" />
+                    }
+                    @if (HasLimitIssue())
+                    {
+                        <RadzenAlert Text="@Loc["LimitIssueWarning"]"
                                      AlertStyle="AlertStyle.Warning"
                                      Variant="Variant.Filled"
                                      ShowIcon="true"
@@ -542,11 +603,15 @@
                                           ButtonStyle="ButtonStyle.Primary"
                                           Variant="Variant.Filled"
                                           Style="width: 100%;"
-                                          Disabled="@(_isBusy || HasStockIssue())"
+                                          Disabled="@(_isBusy || HasStockIssue() || HasLimitIssue())"
                                           Click="@HandleSubmitCartAsync" />
+                            @* Clear Cart — matches the UserDetail page's Deactivate
+                               button style (ButtonStyle.Danger + Variant.Outlined) so
+                               destructive secondary actions share a consistent visual
+                               language across the app. Icon stays as delete_sweep. *@
                             <RadzenButton Text="@Loc["ClearCartButton"]"
                                           Icon="delete_sweep"
-                                          ButtonStyle="ButtonStyle.Light"
+                                          ButtonStyle="ButtonStyle.Danger"
                                           Variant="Variant.Outlined"
                                           Style="width: 100%;"
                                           Disabled="@_isBusy"
@@ -669,7 +734,7 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericUpdate"],
+                    LocalizeError(result.Error) ?? Loc["Error_GenericUpdate"],
                     summary: Loc["ErrorTitle"]);
                 // Reload to revert the pending qty back to the server's truth.
                 await LoadCartAsync();
@@ -704,7 +769,7 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericRemove"],
+                    LocalizeError(result.Error) ?? Loc["Error_GenericRemove"],
                     summary: Loc["ErrorTitle"]);
             }
         }
@@ -737,7 +802,7 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericClear"],
+                    LocalizeError(result.Error) ?? Loc["Error_GenericClear"],
                     summary: Loc["ErrorTitle"]);
             }
         }
@@ -756,11 +821,16 @@
         if (_cart is null || _isBusy) return;
 
         // Defense-in-depth: even though the Submit button is disabled when
-        // HasStockIssue is true, the user could (via dev tools) re-enable it.
-        // Re-check before dispatching.
+        // HasStockIssue / HasLimitIssue is true, the user could (via dev
+        // tools) re-enable it. Re-check before dispatching.
         if (HasStockIssue())
         {
             await Toast.Error(Loc["StockIssueWarning"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+        if (HasLimitIssue())
+        {
+            await Toast.Error(Loc["LimitIssueWarning"], summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -781,7 +851,7 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericSubmit"],
+                    LocalizeError(result.Error) ?? Loc["Error_GenericSubmit"],
                     summary: Loc["ErrorTitle"]);
                 // Reload — the sale's state may have changed underneath us.
                 await LoadCartAsync();
@@ -833,30 +903,183 @@
 
     private void SetPendingQty(Guid lineItemId, int value)
     {
-        // Clamp to [1, ...] defensively. RadzenNumeric's Min/Max should
-        // already enforce the upper bound, but a programmatic Set could
-        // violate it — better to clamp than to allow an over-limit pending
-        // value that the Update click would then send to the backend.
+        // Clamp to [1, ...] defensively. The upper bound (GetLineMax) is
+        // enforced by OnQtyInput / OnQtyCommitAsync for the native
+        // <input type="number"> qty selector (which has no built-in clamping
+        // like RadzenNumeric's Max attribute used to provide). A programmatic
+        // Set could still violate the upper bound, but the backend
+        // UpdateSaleLineItemCommand rejects over-stock values as
+        // defense-in-depth.
         if (value < 1) value = 1;
         _pendingQuantities[lineItemId] = value;
+    }
+
+    /// <summary>
+    /// @oninput handler for the qty selector. Fires on every keystroke.
+    /// Parses the typed value, clamps it to the line's max, stores it in
+    /// _pendingQuantities. NO backend call — the UI re-renders with the
+    /// updated line total + cart total + item count from ComputeLineTotal /
+    /// ComputeCartTotal / ComputeTotalItemCount (all read from
+    /// _pendingQuantities), so the user sees the new price in real time
+    /// without us touching the DB. The actual save happens on blur via
+    /// OnQtyCommitAsync.
+    ///
+    /// CLAMPING IS VISIBLE TO THE USER:
+    ///   Because the input's `value` attribute is one-way bound to
+    ///   GetPendingQty(line.Id), Blazor's re-render after OnQtyInput runs
+    ///   will overwrite whatever the user typed with the clamped value.
+    ///   So if the user types "9" in a field where max is 5, the field
+    ///   visually snaps back to "5" on the very next render. That's the
+    ///   correct UX — the user can't even momentarily enter an invalid qty.
+    ///
+    /// INVALID INPUT:
+    ///   HTML5 number inputs reject most non-numeric characters, so the only
+    ///   realistic invalid case is the user clearing the field entirely. In
+    ///   that case parse fails and we do nothing — _pendingQuantities stays
+    ///   at the last valid value, the displayed total stays at the last
+    ///   valid value, and the next @onchange (blur) will revert the field's
+    ///   displayed value via the bound `value` attribute.
+    /// </summary>
+    private void OnQtyInput(CartLineItemDto line, object? rawValue)
+    {
+        if (rawValue is string s && int.TryParse(s, CultureInfo.CurrentCulture, out var parsed))
+        {
+            var max = GetLineMax(line);
+            if (parsed > max) parsed = max;
+            SetPendingQty(line.Id, parsed);
+        }
+        // else: invalid (empty / non-numeric) — leave _pendingQuantities
+        // unchanged. The displayed line total + cart total stay at the last
+        // valid value (since ComputeLineTotal / ComputeCartTotal read from
+        // _pendingQuantities, not from the input's raw text).
+    }
+
+    /// <summary>
+    /// @onchange handler for the qty selector. Fires when the user tabs /
+    /// clicks away from the input (or presses Enter). Same parse + clamp +
+    /// store as OnQtyInput, then if the resulting pending qty differs from
+    /// the server's line.Quantity, dispatches UpdateSaleLineItemCommand to
+    /// persist the change. On success or failure, the cart is reloaded —
+    /// on success this confirms the new qty; on failure this reverts the
+    /// displayed qty back to the server's truth.
+    ///
+    /// WHY @onchange AND NOT @oninput FOR THE SAVE:
+    ///   @oninput fires on every keystroke. Saving on every keystroke would
+    ///   spam the backend (one DB write per character typed — "1" → save,
+    ///   "10" → save, "100" → save). @onchange fires once when the user is
+    ///   done editing (blur / Enter), so we get at most one save per editing
+    ///   session. The user explicitly asked for "no real-time DB writes" —
+    ///   this is exactly that contract.
+    ///
+    /// WHY WE STILL RE-PARSE INSTEAD OF REUSING OnQtyInput's RESULT:
+    ///   @onchange and @oninput both fire on the same keystroke that triggers
+    ///   the change event (the blur happens after the last input). But the
+    ///   raw value @onchange sees is the input's value AT THE TIME OF THE
+    ///   CHANGE EVENT, which is the same as the last @oninput. Re-parsing is
+    ///   cheap and keeps the two handlers independent — either can fire
+    ///   without the other in edge cases (e.g. programmatic value changes).
+    /// </summary>
+    private async Task OnQtyCommitAsync(CartLineItemDto line, object? rawValue)
+    {
+        // Same parse + clamp as OnQtyInput.
+        if (rawValue is string s && int.TryParse(s, CultureInfo.CurrentCulture, out var parsed))
+        {
+            var max = GetLineMax(line);
+            if (parsed > max) parsed = max;
+            SetPendingQty(line.Id, parsed);
+        }
+
+        // Only save if the pending qty actually differs from the server's
+        // truth. This skips the backend call entirely when the user focused
+        // the field and tabbed away without changing anything.
+        if (GetPendingQty(line.Id) == line.Quantity) return;
+
+        await HandleUpdateLineAsync(line.Id);
     }
 
     // ── Display helpers ────────────────────────────────────────────────
 
     /// <summary>
+    /// Computes the live line total for a cart line, using the user's
+    /// pending qty (what they've typed into the qty selector but might not
+    /// have committed to the backend yet). Returns UnitPrice × pendingQty
+    /// as a new MoneyDto so FormatPrice can render it.
+    ///
+    /// WHY THIS EXISTS:
+    ///   The user wanted real-time price updates as they type, without
+    ///   having to click an Update button. line.LineTotal is the SERVER's
+    ///   value (based on line.Quantity), which only updates after a backend
+    ///   save + reload. Computing from _pendingQuantities gives instant
+    ///   feedback on every keystroke.
+    /// </summary>
+    private MoneyDto ComputeLineTotal(CartLineItemDto line)
+    {
+        var qty = GetPendingQty(line.Id);
+        return new MoneyDto
+        {
+            Amount = line.UnitPrice.Amount * qty,
+            Currency = line.UnitPrice.Currency
+        };
+    }
+
+    /// <summary>
+    /// Computes the live cart grand total by summing ComputeLineTotal across
+    /// all line items. Uses the line's UnitPrice currency (assumes all lines
+    /// share a currency — the backend enforces single-currency carts).
+    /// </summary>
+    private MoneyDto ComputeCartTotal()
+    {
+        if (_cart is null || _cart.LineItems.Count == 0)
+            return new MoneyDto();
+
+        var total = 0m;
+        var currency = _cart.LineItems[0].UnitPrice.Currency;
+        foreach (var line in _cart.LineItems)
+        {
+            total += ComputeLineTotal(line).Amount;
+        }
+        return new MoneyDto { Amount = total, Currency = currency };
+    }
+
+    /// <summary>
+    /// Computes the live total item count (sum of pending qtys) for the
+    /// cart header badge + summary "Total items" row. Uses _pendingQuantities
+    /// so the count updates in real time as the user types.
+    /// </summary>
+    private int ComputeTotalItemCount()
+    {
+        if (_cart is null) return 0;
+        var sum = 0;
+        foreach (var line in _cart.LineItems)
+        {
+            sum += GetPendingQty(line.Id);
+        }
+        return sum;
+    }
+
+    /// <summary>
     /// True if any line item has a stock issue — either the product is out
-    /// of stock, OR the line's quantity exceeds current stock. Used to:
+    /// of stock, OR the PENDING qty (what the user has typed but might not
+    /// have committed yet) exceeds current stock. Used to:
     ///   - disable the Submit button (defense-in-depth: the backend
     ///     UpdateSaleLineItem/SubmitSale would reject anyway, but disabling
     ///     gives a cleaner UX)
     ///   - show a warning alert above the action buttons
+    ///
+    /// WHY PENDING QTY (not line.Quantity):
+    ///   Before this fix, HasStockIssue used line.Quantity (the server's
+    ///   truth), so the Submit button stayed enabled while the user was
+    ///   typing an over-stock qty — they'd only see the error on Submit.
+    ///   Using the pending qty means the Submit button disables the moment
+    ///   the user types an over-stock value, giving instant feedback.
     /// </summary>
     private bool HasStockIssue()
     {
         if (_cart is null) return false;
         foreach (var line in _cart.LineItems)
         {
-            if (line.CurrentStock == 0 || line.Quantity > line.CurrentStock)
+            var pendingQty = GetPendingQty(line.Id);
+            if (line.CurrentStock == 0 || pendingQty > line.CurrentStock)
                 return true;
         }
         return false;
@@ -873,5 +1096,53 @@
         var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
         var unit = isIrr ? "ریال" : price.Currency;
         return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
+    }
+
+    /// <summary>
+    /// Translates a backend <c>Result.Error</c> string into a user-facing,
+    /// culture-aware message. Returns null if the error doesn't match a
+    /// known pattern (the caller should fall back to a generic localized
+    /// "something went wrong" message).
+    ///
+    /// Currently handles:
+    ///   - <c>PurchaseLimitExceeded:{name}|{limit}</c> — produced by
+    ///     UpdateSaleLineItem / AddItemToSale / CreateOrAppendSale /
+    ///     SubmitSale handlers. Localized via the PurchaseLimitExceeded
+    ///     resx key, which does NOT mention "groups" (the original
+    ///     Persian error leaked the internal group concept to customers).
+    /// </summary>
+    private string? LocalizeError(string? error)
+    {
+        if (PurchaseLimitErrors.TryParse(error, out var productName, out var limit))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["PurchaseLimitExceeded"],
+                productName,
+                limit);
+        }
+        return error;
+    }
+
+    /// <summary>
+    /// True if any line item's PENDING quantity exceeds the line's
+    /// per-product purchase limit (MyPurchaseLimit). Used to disable the
+    /// Submit button + show a warning alert — defense-in-depth on top of
+    /// the backend's Submit-time limit check (SubmitSaleCommandHandler).
+    ///
+    /// Lines where MyPurchaseLimit is null (staff, or no limit set for
+    /// this customer's group on this product) are skipped.
+    /// </summary>
+    private bool HasLimitIssue()
+    {
+        if (_cart is null) return false;
+        foreach (var line in _cart.LineItems)
+        {
+            if (!line.MyPurchaseLimit.HasValue) continue;
+            var pendingQty = GetPendingQty(line.Id);
+            if (pendingQty > line.MyPurchaseLimit.Value)
+                return true;
+        }
+        return false;
     }
 }

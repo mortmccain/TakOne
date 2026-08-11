@@ -19,6 +19,7 @@ public sealed class GetActiveCartForUserQueryHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        IUserRepository userRepository,
         ILogger<GetActiveCartForUserQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -86,15 +87,25 @@ public sealed class GetActiveCartForUserQueryHandler
         // 2b. Resolve the current caller's per-product purchase limits in
         //     the SAME pass we already made for stock. The Product aggregate
         //     owns the per-group limit value objects; we just look them up
-        //     by the caller's GroupName (set on the User, surfaced via the
-        //     "GroupName" claim — null for staff users, who have no cap).
+        //     by the caller's GroupName.
         //
-        //     This mirrors what GetProductsPaginatedQueryHandler does for
-        //     the shop grid's ProductListItemDto.MyPurchaseLimit. Keeping
-        //     the cart DTO's MyPurchaseLimit semantics identical means the
-        //     UI can use the same clamping pattern on both surfaces.
+        //     WHY LOAD FROM DB (not from the auth-cookie claim):
+        //       The GroupName claim is a snapshot from login time and goes
+        //       stale when an admin assigns the user to a group after
+        //       they're already logged in. Reading from the DB guarantees
+        //       the limit reflects the user's CURRENT group, so the cart's
+        //       MyPurchaseLimit (used by the qty selector's clamping) is
+        //       always correct without requiring a re-login.
+        //
+        //       This matches the fix in GetProductsPaginatedQueryHandler
+        //       and CreateOrAppendSaleCommandHandler. The three handlers
+        //       that previously read currentUser.GroupName (claim) are now
+        //       consistent with UpdateSaleLineItemCommandHandler and
+        //       AddItemToSaleCommandHandler, which already loaded the
+        //       customer from the DB.
         // ------------------------------------------------------------------
-        var groupName = currentUser.GroupName;
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        var groupName = freshUser?.GroupName;
         var productById = products.ToDictionary(p => p.Id);
 
         int? ResolveMyLimit(Guid productId)

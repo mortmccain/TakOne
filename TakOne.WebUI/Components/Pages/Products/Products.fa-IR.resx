@@ -303,4 +303,13 @@
   <data name="LogoutAriaLabel" xml:space="preserve">
     <value>خروج</value>
   </data>
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>سقف خرید برای «{0}» {1} عدد است. نمی‌توانید بیشتر از این مقدار به سبد اضافه کنید.</value>
+  </data>
+  <data name="ToastReorderNothingToAdd" xml:space="preserve">
+    <value>هیچ کالایی برای افزودن به سبد وجود نداشت — موجودی یا سقف خرید تمام کالاها به پایان رسیده است.</value>
+  </data>
+  <data name="ToastReorderNothingNewAdded" xml:space="preserve">
+    <value>هیچ کالای جدیدی به سبد شما اضافه نشد — موجودی یا سقف خرید تمام کالاها به پایان رسیده است.</value>
+  </data>
 </root>
