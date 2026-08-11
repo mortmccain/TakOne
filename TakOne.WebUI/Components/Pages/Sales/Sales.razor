@@ -83,13 +83,14 @@
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Sales> Loc
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
 <HeadContent>
     <style>
             /* Page header — mirrors AdminUsers.razor's .admin-header layout
-                       so the two pages read as members of the same family. */
+                                   so the two pages read as members of the same family. */
             .admin-header {
                 display: flex;
                 align-items: center;
@@ -99,8 +100,8 @@
             }
 
             /* Sale number — monospace + primary color so it reads as a clickable
-                       identifier. The link itself is the clickable element; the wrapper
-                       just provides consistent typography. */
+                                   identifier. The link itself is the clickable element; the wrapper
+                                   just provides consistent typography. */
             .sale-number-link {
                 font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
                 font-weight: 600;
@@ -113,7 +114,7 @@
                 }
 
             /* Status badge — RadzenBadge with BadgeStyle handles colors; this
-                       just normalizes the width so badges in a column line up. */
+                                   just normalizes the width so badges in a column line up. */
             .sale-status-badge {
                 min-width: 96px;
                 display: inline-flex;
@@ -127,7 +128,7 @@
             }
 
             /* Muted timestamp for the "Created At" column. The timestamp is
-                       secondary info; the sale number is the primary identifier. */
+                                   secondary info; the sale number is the primary identifier. */
             .sale-timestamp {
                 color: var(--rz-text-secondary-color);
                 font-size: 0.9rem;
@@ -252,6 +253,7 @@
                             PageSize="20"
                             PagerHorizontalAlign="HorizontalAlign.Center"
                             EmptyText="@Loc["EmptyText"]"
+                            AllowColumnReorder="false"
                             Style="width: 100%;">
                 <Columns>
 
@@ -346,34 +348,51 @@
                        For a customer browsing their own orders this column
                        would be themselves on every row, which is noise.
                        Hiding it for non-staff keeps the table compact on
-                       mobile. The AuthorizeView wraps the whole column so
-                       its filter row is also hidden for non-staff. *@
-                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
-                        <RadzenDataGridColumn TItem="SaleListItemDto"
-                                              Property="CustomerName"
-                                              Title="@Loc["ColCustomer"]"
-                                              Width="*">
-                            <Template Context="sale">
-                                <RadzenText Text="@sale.CustomerName" Style="font-weight: 500;" />
-                            </Template>
-                        </RadzenDataGridColumn>
-                    </AuthorizeView>
+                       mobile.
+
+                       IMPORTANT — WHY Visible= (not <AuthorizeView>):
+                       Earlier these two columns were wrapped in
+                       <AuthorizeView Roles="...">. That worked for
+                       visibility, but it broke column ORDER: Blazor's
+                       AuthorizeView is a component (not a directive), so
+                       when RadzenDataGrid walks its <Columns> RenderFragment
+                       to collect columns, the ones nested inside an
+                       AuthorizeView's child content get appended to the
+                       grid's column list AFTER all the unwrapped columns.
+                       The runtime order then became
+                       SaleNumber, Status, Total, CreatedAt, Actions,
+                       Customer, CreatedBy — i.e. Created By appeared AFTER
+                       Actions, which was wrong. Switching to Visible="@_isStaff"
+                       keeps the columns in source order (Actions last) AND
+                       preserves role-gating, because Visible is a parameter
+                       on the column itself rather than a wrapper component
+                       that re-orders the RenderFragment. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Property="CustomerName"
+                                          Title="@Loc["ColCustomer"]"
+                                          Width="*"
+                                          Visible="@_isStaff">
+                        <Template Context="sale">
+                            <RadzenText Text="@sale.CustomerName" Style="font-weight: 500;" />
+                        </Template>
+                    </RadzenDataGridColumn>
 
                     @* ── Created by — staff-only audit column, text filter ──
                        Shows which staff member keyed the sale in (often the
                        customer themselves for self-service sales, but could
-                       be an employee acting on behalf of a customer). *@
-                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.ReadOnly)">
-                        <RadzenDataGridColumn TItem="SaleListItemDto"
-                                              Property="CreatedByName"
-                                              Title="@Loc["ColCreatedBy"]"
-                                              Width="*">
-                            <Template Context="sale">
-                                <RadzenText Text="@sale.CreatedByName"
-                                            Style="color: var(--rz-text-secondary-color);" />
-                            </Template>
-                        </RadzenDataGridColumn>
-                    </AuthorizeView>
+                       be an employee acting on behalf of a customer).
+                       See the Customer column's comment for why we use
+                       Visible=@_isStaff instead of <AuthorizeView>. *@
+                    <RadzenDataGridColumn TItem="SaleListItemDto"
+                                          Property="CreatedByName"
+                                          Title="@Loc["ColCreatedBy"]"
+                                          Width="*"
+                                          Visible="@_isStaff">
+                        <Template Context="sale">
+                            <RadzenText Text="@sale.CreatedByName"
+                                        Style="color: var(--rz-text-secondary-color);" />
+                        </Template>
+                    </RadzenDataGridColumn>
 
                     @* ── Created at — Tehran time, date filter ──
                        The underlying Property is CreatedAtUtc (DateTimeOffset).
@@ -460,6 +479,38 @@
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
+    /// <summary>
+    /// True if the current user is in Admin / Manager / Employee / ReadOnly
+    /// role (i.e. "staff" — sees all sales + the Customer and Created By
+    /// audit columns). Customers (and any non-staff role) see only their own
+    /// sales and a narrower column set.
+    ///
+    /// WHY THIS EXISTS (and why we don't use &lt;AuthorizeView&gt; for the
+    /// staff-only columns anymore):
+    ///   The Customer and Created By columns used to be wrapped in
+    ///   &lt;AuthorizeView Roles="..."&gt;. That worked for visibility, but
+    ///   it broke column ORDER. AuthorizeView is a Blazor COMPONENT (not a
+    ///   directive like @if), so when RadzenDataGrid walks its &lt;Columns&gt;
+    ///   RenderFragment to collect column instances, the columns nested
+    ///   inside an AuthorizeView's child content are added to the grid's
+    ///   column list AFTER all the unwrapped columns. The runtime order
+    ///   became SaleNumber, Status, Total, CreatedAt, Actions, Customer,
+    ///   CreatedBy — i.e. Created By appeared AFTER Actions, which was
+    ///   wrong.
+    ///   Switching to Visible="@_isStaff" on the column itself fixes this
+    ///   because Visible is a parameter on the column (which is already in
+    ///   the grid's column collection at the right position), not a wrapper
+    ///   component that re-orders the RenderFragment.
+    ///
+    /// WHY AuthStateProvider (not ICurrentUserService):
+    ///   Same reason as SaleDetail.razor — ICurrentUserService resolves
+    ///   from IHttpContextAccessor.HttpContext, which is only populated
+    ///   during the initial prerender request and is null over the SignalR
+    ///   circuit. AuthStateProvider is the canonical source of role info
+    ///   for interactive Blazor Server components.
+    /// </summary>
+    private bool _isStaff;
+
     // ── Tehran timezone ─────────────────────────────────────────────────
     //
     // Tehran abolished DST in 2022, so a fixed UTC+03:30 offset is
@@ -475,6 +526,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve _isStaff synchronously before the first render so the
+        // Customer and Created By columns don't flicker (Visible is bound
+        // to _isStaff; if we set it after the first render, the grid would
+        // briefly show all 7 columns to a customer before collapsing to 5).
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _isStaff = user.IsInRole(Roles.Admin)
+                   || user.IsInRole(Roles.Manager)
+                   || user.IsInRole(Roles.Employee)
+                   || user.IsInRole(Roles.ReadOnly);
+
         try
         {
             await LoadSalesAsync();

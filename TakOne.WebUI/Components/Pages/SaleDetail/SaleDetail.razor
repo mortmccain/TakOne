@@ -362,11 +362,14 @@
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
     @* ── Back button ──
        Returns to /Sales (preserves any filter state via browser back,
-       but we use NavigateTo so the back-stack stays clean). *@
+       but we use NavigateTo so the back-stack stays clean).
+       Styled to match the "Continue shopping" button on Sales.razor
+       (Secondary + Outlined) for visual consistency between the two
+       pages that link to each other. *@
     <RadzenButton Text="@Loc["BackToList"]"
                   Icon="arrow_back"
-                  ButtonStyle="ButtonStyle.Light"
-                  Variant="Variant.Text"
+                  ButtonStyle="ButtonStyle.Secondary"
+                  Variant="Variant.Outlined"
                   Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
 
     @* ── Loading state ── *@
@@ -679,11 +682,13 @@
                         }
 
                         @* Back-to-list secondary action — always visible,
-                           full-width, lower visual weight than staff actions. *@
+                           full-width. Styled to match the "Continue shopping"
+                           button on Sales.razor (Secondary + Outlined) for
+                           visual consistency between the two pages. *@
                         <RadzenButton Text="@Loc["BackToList"]"
                                       Icon="list"
-                                      ButtonStyle="ButtonStyle.Light"
-                                      Variant="Variant.Text"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
                                       Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
                     </RadzenStack>
                 </RadzenCard>
