@@ -91,9 +91,19 @@ public sealed class DashboardStatsDto
     /// (leftmost in RTL): "تعداد فروش های این ماه". Note: this counts
     /// sales that are currently in Approved status AND were submitted this
     /// month — Invoiced sales that moved past Approved are NOT counted
-    /// (they're "completed", not "approved this month").
+    /// here (they're in <see cref="ThisMonthInvoicedSalesCount"/>).
     /// </summary>
     public int ThisMonthApprovedSalesCount { get; set; }
+
+    /// <summary>
+    /// Count of INVOICED sales submitted in the current month. Invoiced
+    /// means the goods were handed over / an invoice was issued — the
+    /// final stage of a sale before it leaves the pipeline. The KPI card
+    /// "تعداد فروش های این ماه" shows the SUM of this field plus
+    /// <see cref="ThisMonthApprovedSalesCount"/> (per user spec: "approved
+    /// + invoiced"), with the label staying as "تعداد فروش های این ماه".
+    /// </summary>
+    public int ThisMonthInvoicedSalesCount { get; set; }
 
 
     // ───────────────────────────────────────────────────────────────

@@ -180,8 +180,8 @@
                 }
 
             /* "Change photo" button — overlaid on the picture bottom-right
-                           corner. Only shown to staff. Uses RadzenButton underneath
-                           but is positioned via a wrapper. */
+                                       corner. Only shown to staff. Uses RadzenButton underneath
+                                       but is positioned via a wrapper. */
             .change-photo-overlay {
                 position: absolute;
                 inset-inline-end: 0.5rem;
@@ -315,8 +315,8 @@
             }
 
             /* Picture upload section — dropzone + preview card.
-                           Mirrors CreateProduct.razor's picture-dropzone styles so the
-                           two pages share a consistent upload UI. */
+                                       Mirrors CreateProduct.razor's picture-dropzone styles so the
+                                       two pages share a consistent upload UI. */
             .upload-section {
                 display: flex;
                 flex-direction: column;
@@ -455,17 +455,54 @@
                 .limit-row > * {
                     flex: 0 0 auto;
                 }
+
+            /* Back button row — mirrors the detail-grid columns so the
+                           button stays aligned with the START of the info column
+                           (right above the breadcrumb) in both LTR and RTL modes.
+                           The button cell uses flex + justify-content: flex-start so
+                           the button sizes to its content instead of stretching to
+                           the full cell width. */
+            .back-button-row {
+                display: grid;
+                grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+                gap: 2rem;
+            }
+
+            .back-button-cell {
+                display: flex;
+                justify-content: flex-start;
+            }
+
+            @@media (max-width: 768px) {
+                .back-button-row {
+                    grid-template-columns: 1fr;
+                }
+
+                .back-button-spacer {
+                    display: none;
+                }
+            }
     </style>
 </HeadContent>
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
     @* ── Back button ──
-       Always visible. Returns to /Products. *@
-    <RadzenButton Text="@Loc["BackToCatalog"]"
-                  Icon="arrow_back"
-                  ButtonStyle="ButtonStyle.Light"
-                  Variant="Variant.Text"
-                  Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+       Always visible. Returns to /Products. Wrapped in a grid that
+       mirrors the detail-grid layout (5fr picture | 7fr info) so the
+       button stays aligned with the START of the info column — right
+       above the breadcrumb text — in both LTR and RTL modes. The
+       button itself is sized to its content (justify-content: flex-start
+       in .back-button-cell prevents it from stretching to the cell width). *@
+    <div class="back-button-row">
+        <div class="back-button-spacer" aria-hidden="true"></div>
+        <div class="back-button-cell">
+            <RadzenButton Text="@Loc["BackToCatalog"]"
+                          Icon="arrow_back"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+        </div>
+    </div>
 
     @* ── Loading state ── *@
     @if (_isLoading)
@@ -585,12 +622,26 @@
                    DomainException (surfaced as a generic error toast). The
                    UI now clamps to the limit like the Products grid does. *@
                 <div class="purchase-row">
-                    <RadzenNumeric @bind-Value="_quantity"
-                                   Min="1"
-                                   Max="@(_myPurchaseLimit ?? 999999)"
-                                   Step="1"
-                                   Style="width: 100px;"
-                                   class="qty-input" />
+                    @* Native <input type="number" dir="ltr"> instead of RadzenNumeric.
+                       WHY: RadzenNumeric's internal JS mishandles caret positioning
+                       in RTL (fa-IR) mode — the cursor LOOKS like it's at the right
+                       place but typed digits go BEHIND the existing value (turning
+                       "1" + typed "0" into "01" instead of "10"). A native input
+                       with dir="ltr" bypasses Radzen's JS; the browser's native input
+                       handling respects dir="ltr" for both caret AND insertion. We
+                       lose the spinner arrows but gain correct RTL behavior. The
+                       .rz-textbox class keeps the visual style consistent with other
+                       Radzen form fields on the page. The qty-input class preserves
+                       the 100px width on desktop / 100% on mobile. *@
+                    <input type="number"
+                           class="rz-textbox qty-input"
+                           dir="ltr"
+                           step="1"
+                           min="1"
+                           max="@(_myPurchaseLimit ?? 999999)"
+                           @bind="_quantity"
+                           @bind:culture="CultureInfo.CurrentCulture"
+                           style="width: 100px; text-align: left;" />
                     <RadzenButton Text="@Loc["AddToCart"]"
                                   Icon="add_shopping_cart"
                                   ButtonStyle="ButtonStyle.Primary"
@@ -713,12 +764,21 @@
                                     </RadzenFormField>
                                     <RadzenFormField Text="@Loc["FieldLimitValue"]"
                                                      Style="flex: 0 1 140px; min-width: 100px;">
-                                        <RadzenNumeric @bind-Value="row.Limit"
-                                                       TValue="int?"
-                                                       Min="1"
-                                                       Max="1000000"
-                                                       Placeholder="@Loc["LimitValuePlaceholder"]"
-                                                       Style="width: 100%;" />
+                                        @* Same RTL-caret fix as the qty-input above —
+                                           native <input type="number"> with dir="ltr"
+                                           bypasses RadzenNumeric's JS, which mishandles
+                                           caret position in fa-IR mode. row.Limit is int?,
+                                           so an empty input binds back to null correctly. *@
+                                        <input type="number"
+                                               class="rz-textbox"
+                                               dir="ltr"
+                                               step="1"
+                                               min="1"
+                                               max="1000000"
+                                               placeholder="@Loc["LimitValuePlaceholder"]"
+                                               @bind="row.Limit"
+                                               @bind:culture="CultureInfo.CurrentCulture"
+                                               style="width: 100%; text-align: left;" />
                                     </RadzenFormField>
                                     <RadzenButton Text="@Loc["SaveLimit"]"
                                                   Icon="save"

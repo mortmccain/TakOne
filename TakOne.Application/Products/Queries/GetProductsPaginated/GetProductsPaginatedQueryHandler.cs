@@ -13,6 +13,17 @@ namespace TakOne.Application.Products.Queries.GetProductsPaginated;
 /// The repository's <c>GetPaginatedAsync</c> accepts the same filter
 /// arguments as this query, so most of the work is just clamping
 /// parameters and projecting to the DTO.
+///
+/// CATEGORY HIERARCHY ENRICHMENT:
+///   After loading the page of products, the handler makes a SINGLE call
+///   to <see cref="ICategoryRepository.GetAllAsync"/> (active AND inactive
+///   categories, full hierarchy) and resolves each product's
+///   CategoryId / SubCategoryId / SubSubCategoryId against that tree.
+///   This is done in-memory because the Category aggregate is a separate
+///   aggregate from Product — we don't want to introduce a SQL JOIN across
+///   aggregate boundaries (the Product table only stores Guid FKs, no
+///   navigation properties). One round-trip for the category tree is
+///   cheaper than one round-trip per product for its category names.
 /// </summary>
 public sealed class GetProductsPaginatedQueryHandler
 {
@@ -23,6 +34,7 @@ public sealed class GetProductsPaginatedQueryHandler
         GetProductsPaginatedQuery query,
         ICurrentUserService currentUser,
         IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
         ILogger<GetProductsPaginatedQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -52,6 +64,12 @@ public sealed class GetProductsPaginatedQueryHandler
         //    may see inactive products; everyone else silently gets active
         //    only. We don't log this as a warning — a customer's UI setting
         //    the flag is a UX bug, not an attack; just clamp silently.
+        //
+        //    NOTE: "Inactive" here currently means "stock is zero" because
+        //    the Product aggregate does NOT have an IsActive flag (deactivation
+        //    is implemented as SetStock(0) per the business rule documented
+        //    on DeactivateProductCommand). When the domain gains a real
+        //    IsActive flag, this filter should switch to that flag.
         // ------------------------------------------------------------------
         var includeInactive = query.IncludeInactive;
 
@@ -67,16 +85,8 @@ public sealed class GetProductsPaginatedQueryHandler
             }
         }
 
-        // The repository does NOT have an "includeInactive" parameter in
-        // the current interface; for now, the inactive filter is applied
-        // in the projection step. If performance becomes a concern, we'll
-        // extend the repository contract.
-        //
-        // Note: includeInactive=false will silently exclude inactive rows
-        // in the projection below.
-
         // ------------------------------------------------------------------
-        // 3. Load the page.
+        // 3. Load the page of products.
         // ------------------------------------------------------------------
         var paginated = await productRepository.GetPaginatedAsync
             (
@@ -90,48 +100,134 @@ public sealed class GetProductsPaginatedQueryHandler
             );
 
         // ------------------------------------------------------------------
-        // 4. Project to DTO. Apply the inactive filter and search-term
-        //    filter here (the repository applies its own search-term filter
-        //    too; the in-memory filter is a defense-in-depth in case the
-        //    implementation differs).
+        // 4. Load the category tree ONCE — active AND inactive, with full
+        //    SubCategory → SubSubCategory hierarchy. We need inactive
+        //    categories too because a product may reference a deactivated
+        //    category (the FK is just a Guid, soft-delete doesn't break
+        //    referential integrity). The UI needs to surface the
+        //    "(deactivated)" hint to the admin so they can decide whether
+        //    to re-categorize.
+        //
+        //    Single round-trip — GetAllAsync eager-loads the hierarchy.
+        // ------------------------------------------------------------------
+        List<Domain.Categories.Entities.Category>? categories = null;
+        try
+        {
+            categories = await categoryRepository.GetAllAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal — if the category load fails we still return the
+            // products with empty category-name fields. The UI renders an
+            // em-dash for empty category names, which is acceptable.
+            logger.LogWarning(ex,
+                "GetProductsPaginated: failed to load category tree for enrichment. "
+                + "Products will be returned without category names.");
+            categories = new List<Domain.Categories.Entities.Category>();
+        }
+
+        // Build flat lookup maps for O(1) resolution.
+        // Top-level: CategoryId → (Name, IsActive)
+        // Mid:       SubCategoryId → (Name, IsActive)
+        // Leaf:      SubSubCategoryId → (Name, IsActive)
+        var categoryById = categories.ToDictionary(c => c.Id);
+        var subCategoryById = new Dictionary<Guid, (string Name, bool IsActive)>();
+        var subSubCategoryById = new Dictionary<Guid, (string Name, bool IsActive)>();
+
+        foreach (var cat in categories)
+        {
+            foreach (var sub in cat.SubCategories)
+            {
+                subCategoryById[sub.Id] = (sub.Name, sub.IsActive);
+                foreach (var subSub in sub.SubSubCategories)
+                {
+                    subSubCategoryById[subSub.Id] = (subSub.Name, subSub.IsActive);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 5. Project to DTO.
+        //
+        //    STOCK-BASED "INACTIVE" FILTER:
+        //    Until the domain gains a real IsActive flag, "inactive" means
+        //    StockQuantity == 0. If includeInactive=false, hide zero-stock
+        //    products from non-staff callers. (Staff callers always pass
+        //    includeInactive=true from the AdminProducts page.)
         //
         //    MY PURCHASE LIMIT:
         //    The current user's per-product limit is resolved here via
         //    Product.GetPurchaseLimitForGroup(currentUser.GroupName). For
         //    staff (no GroupName) the limit is null — they have no cap.
-        //    For customers with no specific limit set on this product,
-        //    GetPurchaseLimitForGroup returns null too.
         // ------------------------------------------------------------------
         var searchTerm = query.SearchTerm?.Trim();
         var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
         var groupName = currentUser.GroupName;
 
         var dtos = paginated.Items
-            .Where(p => includeInactive || /* isActive check goes here when added to domain */ true)
+            .Where(p => includeInactive || p.StockQuantity > 0)
             .Where(p => !hasSearch ||
                         p.Name.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase))
-            .Select(p => new ProductListItemDto
+            .Select(p =>
             {
-                Id = p.Id,
-                Name = p.Name,
-                Description = p.Description ?? string.Empty,
-                PictureUrl = p.PictureUrl,
+                // Resolve category names + active flags. Lookups use
+                // TryGetValue so a missing category (e.g. hard-deleted —
+                // should not happen since Category uses soft-delete) yields
+                // empty name + IsActive=false, which the UI will render as
+                // a red "(deactivated)" em-dash.
+                var catResolved = categoryById.TryGetValue(p.CategoryId, out var cat)
+                                  && cat is not null;
+                var catName = catResolved ? cat!.Name : string.Empty;
+                var catActive = catResolved && cat!.IsActive;
 
-                Price = new MoneyDto
+                string subName = string.Empty;
+                var subActive = true;
+                if (p.SubCategoryId is not null
+                    && subCategoryById.TryGetValue(p.SubCategoryId.Value, out var sub))
                 {
-                    Amount = p.Price.Amount,
-                    Currency = p.Price.Currency
-                },
+                    subName = sub.Name;
+                    subActive = sub.IsActive;
+                }
 
-                StockQuantity = p.StockQuantity,
+                string subSubName = string.Empty;
+                var subSubActive = true;
+                if (p.SubSubCategoryId is not null
+                    && subSubCategoryById.TryGetValue(p.SubSubCategoryId.Value, out var subSub))
+                {
+                    subSubName = subSub.Name;
+                    subSubActive = subSub.IsActive;
+                }
 
-                CategoryId = p.CategoryId,
-                SubCategoryId = p.SubCategoryId,
-                SubSubCategoryId = p.SubSubCategoryId,
+                return new ProductListItemDto
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Description = p.Description ?? string.Empty,
+                    PictureUrl = p.PictureUrl,
 
-                MyPurchaseLimit = !string.IsNullOrWhiteSpace(groupName)
-                    ? p.GetPurchaseLimitForGroup(groupName)?.Limit
-                    : null
+                    Price = new MoneyDto
+                    {
+                        Amount = p.Price.Amount,
+                        Currency = p.Price.Currency
+                    },
+
+                    StockQuantity = p.StockQuantity,
+
+                    CategoryId = p.CategoryId,
+                    SubCategoryId = p.SubCategoryId,
+                    SubSubCategoryId = p.SubSubCategoryId,
+
+                    CategoryName = catName,
+                    CategoryIsActive = catActive,
+                    SubCategoryName = subName,
+                    SubCategoryIsActive = subActive,
+                    SubSubCategoryName = subSubName,
+                    SubSubCategoryIsActive = subSubActive,
+
+                    MyPurchaseLimit = !string.IsNullOrWhiteSpace(groupName)
+                        ? p.GetPurchaseLimitForGroup(groupName)?.Limit
+                        : null
+                };
             })
             .ToList();
 

@@ -1,0 +1,94 @@
+﻿@* DeactivateProductDialog.razor — confirmation dialog for product deactivation.
+
+   OPENED BY:
+     AdminProducts.razor's HandleDeactivateAsync, via
+     DialogService.OpenAsync<DeactivateProductDialog>(...). The parent
+     passes two parameters: ProductName (string) and CurrentStock (int).
+     The dialog returns true if the user confirmed, false/null otherwise
+     (matching the CancelConfirmationDialog.razor contract used by the
+     sale-cancel flow).
+
+   WHY A CUSTOM DIALOG (not JS confirm()):
+     The user's spec asks for a popup that EXPLAINS the implication of
+     deactivating: the stock becomes 0, the previous stock value is lost,
+     and if the user still has physical inventory they should write down
+     the current stock number themselves before confirming. JS confirm()
+     is too sparse — we need:
+       1. The product name (so the user knows which product they're
+          deactivating without scrolling back to the grid).
+       2. The current stock value (so the user can copy it down before
+          confirming).
+       3. Two paragraphs of warning text.
+       4. A Confirm button (Danger) and a Cancel button (Secondary).
+
+   LAYOUT:
+     - Warning heading (red, with warning icon)
+     - Body: two paragraphs (the implication + the warning to keep track
+       of the stock number)
+     - Current-stock display (so the user can copy it down)
+     - Footer: Cancel + Confirm Deactivation buttons
+
+   THEME-AWARE RADIUS:
+     Inherits the .rz-dialog radius rules from app.css — Tak light/dark
+     themes get rounded corners, other themes get sharp corners. No
+     extra CSS needed here.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<Components.DeactivateProductDialog.DeactivateProductDialog> Loc
+
+<div style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenIcon Icon="warning" Style="color: var(--rz-danger); font-size: 1.5rem;" />
+            <RadzenText TextStyle="TextStyle.H6" Style="color: var(--rz-danger); margin: 0;">
+                @Loc["WarningHeading"]
+            </RadzenText>
+        </RadzenStack>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@ProductName</strong>.
+            @Loc["BodyStockLoss"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyKeepTrack"]</RadzenText>
+
+        @* Current-stock display — formatted with N0 so 12345 shows as
+           "12,345" (or "۱۲٬۳۴۵" in fa-IR). The user can copy this down
+           before confirming. We render it in a bordered box so it stands
+           out visually — it's the one piece of data they need to write
+           down. *@
+        <div style="border: 1px solid var(--rz-base-border-color);
+            border-left: 4px solid var(--rz-warning);
+            border-radius: var(--tm-radius, 0);
+            padding: 0.75rem 1rem;
+            background: var(--rz-component-background-color, var(--rz-base-background-color));">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                    @Loc["CurrentStockLabel"]
+                </RadzenText>
+                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; font-variant-numeric: tabular-nums;">
+                    @string.Format(System.Globalization.CultureInfo.CurrentCulture, "{0:N0}", CurrentStock)
+                </RadzenText>
+            </RadzenStack>
+        </div>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonCancel"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="@Loc["ButtonConfirm"]"
+                          Icon="block"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Variant="Variant.Filled"
+                          Click="@(() => DialogService.Close(true))" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string ProductName { get; set; } = string.Empty;
+    [Parameter] public int CurrentStock { get; set; }
+}

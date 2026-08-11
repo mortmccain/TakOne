@@ -96,7 +96,6 @@ else if (_stats is not null)
                         <span class="tm-dash-greeting-pulse"></span>
                         @Loc["ActivePanel"]
                     </span>
-                    <span class="tm-dash-greeting-date">@FormatDate(DateTime.Now)</span>
                 </div>
                 <h2 class="tm-dash-greeting-title">
                     @GreetingLabel @_stats.CurrentUserName
@@ -112,6 +111,12 @@ else if (_stats is not null)
                     }
                 </p>
             </div>
+            @* Date moved to the OPPOSITE side of the greeting row
+               (away from the Active Panel badge) so it has room to be
+               bigger and more prominent. The .tm-dash-greeting container
+               is already display:flex + justify-content:space-between,
+               so as a sibling of the left div it sits at the row's end. *@
+            <span class="tm-dash-greeting-date">@FormatDate(DateTime.Now)</span>
         </div>
 
         @* ════════════════════════════════════════
@@ -193,7 +198,7 @@ else if (_stats is not null)
                     </div>
                 </div>
                 <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyApprovedSales"]</p>
-                <p class="tm-dash-kpi-value">@FormatDigits(_stats.ThisMonthApprovedSalesCount)</p>
+                <p class="tm-dash-kpi-value">@FormatDigits(_stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount)</p>
                 <p class="tm-dash-kpi-footer">@Loc["Kpi_MonthlyApprovedSalesFooter"]</p>
             </div>
         </div>
@@ -375,7 +380,7 @@ else if (_stats is not null)
                                 @foreach (var order in _stats.RecentOrders)
                                 {
                                     <tr>
-                                        <td class="tm-dash-sale-number">#@order.SaleNumber</td>
+                                        <td class="tm-dash-sale-number">#@FormatDigits(order.SaleNumber)</td>
                                         <td>
                                             <div class="tm-dash-customer-cell">
                                                 <div class="tm-dash-avatar-sm"
@@ -431,7 +436,10 @@ else if (_stats is not null)
                                 </div>
                                 <div class="tm-dash-employee-info">
                                     <p class="tm-dash-employee-name">@emp.FullName</p>
-                                    <p class="tm-dash-employee-group">@(string.IsNullOrEmpty(emp.GroupName) ? "—" : emp.GroupName)</p>
+                                    @if (!string.IsNullOrEmpty(emp.GroupName))
+                                    {
+                                        <p class="tm-dash-employee-group">@emp.GroupName</p>
+                                    }
                                 </div>
                                 <div class="tm-dash-employee-amount">
                                     <p class="tm-dash-employee-amount-value rank-@emp.Rank">@FormatMoneyShort(emp.TotalAmount)</p>
@@ -755,23 +763,36 @@ else if (_stats is not null)
     /// components from <see cref="PersianCalendar"/> explicitly, then format
     /// each component with the current culture so the NativeDigits
     /// (۰-۹ for fa-IR, 0-9 for en-US) kick in automatically.
+    ///
+    /// WHY WE THEN RUN ToCultureDigits:
+    /// In practice, .NET's int.ToString("0", fa-IR) does NOT substitute
+    /// NativeDigits (the NativeDigits array is informational only in modern
+    /// .NET). So we build the string with InvariantCulture digits first,
+    /// then run ToCultureDigits to swap them for Persian digits in fa mode.
     /// </remarks>
     private string FormatDate(DateTime date)
     {
         var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
         if (!isFa)
         {
-            return date.ToString("dddd, yyyy/MM/dd", CultureInfo.CurrentCulture);
+            // Per user spec, the day-name and the date are separated by " | "
+            // (not a comma) so the date reads as a distinct visual chunk.
+            return date.ToString("dddd | yyyy/MM/dd", CultureInfo.CurrentCulture);
         }
 
-        // fa-IR: build the Jalali date string piece by piece so both the
-        // calendar AND the digits are correct.
+        // fa-IR: build the Jalali date string piece by piece using invariant
+        // (ASCII) digits first, then run ToCultureDigits to swap them for
+        // Persian digits. This is the only reliable way to get Persian
+        // digits out of .NET — NumberFormatInfo.NativeDigits is
+        // informational-only and not honored by ToString.
+        // Per user spec, the day-name and the date are separated by " | "
+        // (not a comma) so the date reads as a distinct visual chunk.
         var pc = new PersianCalendar();
         var dayName = date.ToString("dddd", CultureInfo.CurrentCulture);
-        var year = pc.GetYear(date).ToString("0000", CultureInfo.CurrentCulture);
-        var month = pc.GetMonth(date).ToString("00", CultureInfo.CurrentCulture);
-        var day = pc.GetDayOfMonth(date).ToString("00", CultureInfo.CurrentCulture);
-        return $"{dayName}, {year}/{month}/{day}";
+        var year = pc.GetYear(date).ToString("0000", CultureInfo.InvariantCulture);
+        var month = pc.GetMonth(date).ToString("00", CultureInfo.InvariantCulture);
+        var day = pc.GetDayOfMonth(date).ToString("00", CultureInfo.InvariantCulture);
+        return ToCultureDigits($"{dayName} | {year}/{month}/{day}");
     }
 
     /// <summary>
@@ -784,7 +805,13 @@ else if (_stats is not null)
     private string FormatMoney(decimal amount)
     {
         var rounded = Math.Round(amount, 0);
-        return rounded.ToString("N0", CultureInfo.CurrentCulture);
+        // Use InvariantCulture to get ASCII digits + a stable format, then
+        // run ToCultureDigits to swap to Persian digits in fa mode. We can't
+        // rely on CurrentCulture alone because .NET's NumberFormatInfo
+        // NativeDigits array is informational-only and not honored by
+        // ToString in modern .NET.
+        var s = rounded.ToString("N0", CultureInfo.InvariantCulture);
+        return ToCultureDigits(s);
     }
 
     /// <summary>
@@ -796,15 +823,61 @@ else if (_stats is not null)
     {
         if (amount >= 1_000_000m)
         {
-            var millions = (amount / 1_000_000m).ToString("0.0", CultureInfo.CurrentCulture);
-            return millions + "M";
+            var millions = (amount / 1_000_000m).ToString("0.0", CultureInfo.InvariantCulture);
+            return ToCultureDigits(millions) + "M";
         }
         if (amount >= 1_000m)
         {
-            var thousands = (amount / 1_000m).ToString("0.0", CultureInfo.CurrentCulture);
-            return thousands + "K";
+            var thousands = (amount / 1_000m).ToString("0.0", CultureInfo.InvariantCulture);
+            return ToCultureDigits(thousands) + "K";
         }
-        return Math.Round(amount, 0).ToString("N0", CultureInfo.CurrentCulture);
+        return ToCultureDigits(Math.Round(amount, 0).ToString("N0", CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Converts any digit characters in the input string to match the
+    /// current UI culture's preferred digit script:
+    ///   - fa-IR mode → all digits become Persian (۰-۹). ASCII digits '0'-'9'
+    ///     AND any existing Persian digits stay/become Persian.
+    ///   - en-US (and any other) mode → all digits become ASCII (0-9).
+    ///     Persian digits ۰-۹ are converted back to ASCII so strings stored
+    ///     in Persian (e.g. SaleNumber.Value, which is hardcoded to Persian
+    ///     in the domain layer) display as ASCII in English mode.
+    ///
+    /// WHY THIS EXISTS:
+    /// .NET's NumberFormatInfo.NativeDigits is informational-only in modern
+    /// .NET — int.ToString("0", new CultureInfo("fa-IR")) returns ASCII "5",
+    /// NOT "۵". The only reliable way to get Persian digits out of .NET is
+    /// to format with InvariantCulture first, then manually swap '0'-'9'
+    /// for '۰'-'۹'. This helper centralizes that swap.
+    ///
+    /// Non-digit characters (letters, punctuation, separators) are passed
+    /// through unchanged.
+    /// </summary>
+    private string ToCultureDigits(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return string.Empty;
+
+        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (c >= '0' && c <= '9')
+            {
+                // ASCII digit → Persian (in fa mode) or keep as ASCII (otherwise).
+                sb.Append(isFa ? (char)('۰' + (c - '0')) : c);
+            }
+            else if (c >= '۰' && c <= '۹')
+            {
+                // Persian digit → keep as Persian (in fa mode) or convert to ASCII (otherwise).
+                sb.Append(isFa ? c : (char)('0' + (c - '۰')));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 
     /// <summary>
@@ -818,10 +891,11 @@ else if (_stats is not null)
     /// English mode. The previous version was hard-coded to always convert
     /// to Persian digits, which broke the English mode.
     ///
-    /// HOW: .NET 10's fa-IR culture has NumberFormat.NativeDigits = ۰..۹.
-    /// int.ToString("0", CultureInfo.CurrentCulture) uses those native
-    /// digits. For string inputs (e.g. "0.0"), we parse and re-format so
-    /// the native digits + culture decimal separator are applied.
+    /// HOW: we format the numeric value with InvariantCulture (which gives
+    /// us ASCII digits + a stable decimal separator), then run ToCultureDigits
+    /// to swap to Persian digits in fa mode. .NET's NativeDigits array is
+    /// informational-only, so we can't rely on CurrentCulture to do the
+    /// substitution for us.
     /// </summary>
     private string FormatDigits(string? value)
     {
@@ -834,18 +908,19 @@ else if (_stats is not null)
             // Preserve the original precision (e.g. "0.0" stays one decimal).
             var decimals = value.Contains('.') ? value.Length - value.IndexOf('.') - 1 : 0;
             var fmt = decimals > 0 ? "0." + new string('0', decimals) : "0";
-            return n.ToString(fmt, CultureInfo.CurrentCulture);
+            return ToCultureDigits(n.ToString(fmt, CultureInfo.InvariantCulture));
         }
 
-        // Fallback: leave as-is (shouldn't happen for the inputs we pass).
-        return value;
+        // Fallback: just run ToCultureDigits on the raw string — handles
+        // strings like "INT-۱۴۰۵-۰۰۴۲" that aren't pure numbers (SaleNumber).
+        return ToCultureDigits(value);
     }
 
     /// <summary>
     /// Formats an integer using the current UI culture's native digits.
     /// </summary>
     private string FormatDigits(int value) =>
-        value.ToString("0", CultureInfo.CurrentCulture);
+        ToCultureDigits(value.ToString("0", CultureInfo.InvariantCulture));
 
     /// <summary>
     /// Formats a percentage value (already calculated) using the current UI
@@ -855,7 +930,7 @@ else if (_stats is not null)
     private string FormatPercent(decimal pct, int decimals = 1)
     {
         var fmt = decimals > 0 ? "0." + new string('0', decimals) : "0";
-        var s = pct.ToString(fmt, CultureInfo.CurrentCulture);
+        var s = ToCultureDigits(pct.ToString(fmt, CultureInfo.InvariantCulture));
         // In fa-IR, ٪ (U+066A ARABIC PERCENT SIGN) is the conventional
         // percent symbol. In en-US, % is standard.
         var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";

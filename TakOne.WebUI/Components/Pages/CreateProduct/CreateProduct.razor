@@ -118,8 +118,25 @@
                 }
 
                 .price-row .price-currency {
-                    flex: 0 0 120px;
+                    flex: 0 0 180px;
                 }
+
+            /* RTL fallback for any RadzenNumeric that might appear on
+                               this page in the future. The price-amount and initial-stock
+                               fields now use native <input type="number" dir="ltr"> which
+                               doesn't need this rule (the dir attribute on a native input
+                               is respected by the browser for both caret AND insertion
+                               position). But if a future RadzenNumeric is added, this
+                               rule at least forces LTR direction on the inner input.
+                               NOTE: this CSS alone is NOT enough to fix the RadzenNumeric
+                               RTL caret bug — Radzen's JS mishandles caret position even
+                               with direction:ltr applied. The real fix is to use a native
+                               input with dir="ltr", as the price-amount and initial-stock
+                               fields do. This rule is kept as defense-in-depth. */
+            .create-grid .rz-numeric .rz-textbox {
+                direction: ltr;
+                text-align: left;
+            }
 
             .category-row {
                 display: flex;
@@ -160,7 +177,7 @@
             }
 
             /* Dropzone — a label element wrapping a visually-hidden InputFile.
-                                       Clicking anywhere on the label triggers the file picker. */
+                                                   Clicking anywhere on the label triggers the file picker. */
             .picture-dropzone {
                 display: block;
                 cursor: pointer;
@@ -202,7 +219,7 @@
                 align-items: center;
                 gap: 0.75rem;
                 /* Let the label receive the click; otherwise the inner
-                                           elements would steal it from the file input. */
+                                                       elements would steal it from the file input. */
                 pointer-events: none;
             }
 
@@ -303,12 +320,17 @@
 </HeadContent>
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
-    @* ── Breadcrumb + back button ── *@
+    @* ── Breadcrumb + back button ──
+       Matches the "Continue shopping" button on the Sales page: same
+       ButtonStyle.Secondary + Variant.Outlined combo. The user asked
+       for visual parity between these two "go back to a list page"
+       actions, and using the same style on both makes them feel like
+       members of the same family. *@
     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
         <RadzenButton Text="@Loc["BackToManageProducts"]"
                       Icon="arrow_back"
-                      ButtonStyle="ButtonStyle.Light"
-                      Variant="Variant.Text"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
                       Click="@(() => Navigation.NavigateTo("/Admin/Products", forceLoad: false))" />
     </RadzenStack>
 
@@ -409,16 +431,41 @@
                         <div>
                             <div class="price-row">
                                 <RadzenFormField Text="@Loc["FieldPriceAmount"]" Class="price-amount">
-                                    <RadzenNumeric TValue="decimal"
-                                                   @bind-Value="_model.PriceAmount"
-                                                   Min="0.01m"
-                                                   Step="1"
-                                                   Style="width: 100%;" />
+                                    @* Plain HTML <input type="number"> instead of RadzenNumeric.
+                                       WHY: RadzenNumeric's internal JS mishandles caret
+                                       positioning in RTL (fa-IR) mode — even though CSS
+                                       direction:ltr makes the cursor LOOK like it's at the
+                                       end of the value, typing inserts the character at the
+                                       BEGINNING, turning a "1" + typed "0" into "01" instead
+                                       of "10". The fix is to bypass Radzen's JS entirely
+                                       with a native <input type="number"> and an explicit
+                                       dir="ltr" attribute. The browser's native input
+                                       handling respects dir="ltr" correctly for both caret
+                                       position AND character insertion. We lose the spinner
+                                       arrows but gain correct behavior. The .rz-textbox
+                                       class keeps the visual style consistent with other
+                                       Radzen form fields on the page.
+                                       Binding notes:
+                                       - @bind uses onchange (fires on blur / Enter) — same
+                                         as RadzenNumeric's default, so the UX is unchanged.
+                                       - @bind:culture ensures the decimal is parsed using
+                                         the current culture's number format (so fa-IR's
+                                         "۱۰" and en-US's "10" both parse correctly). *@
+                                    <input type="number"
+                                           class="rz-textbox"
+                                           dir="ltr"
+                                           step="1"
+                                           min="0.01"
+                                           @bind="_model.PriceAmount"
+                                           @bind:culture="CultureInfo.CurrentCulture"
+                                           style="width: 100%; text-align: left;" />
                                 </RadzenFormField>
                                 <RadzenFormField Text="@Loc["FieldPriceCurrency"]" Class="price-currency">
                                     <RadzenDropDown TValue="string"
                                                     @bind-Value="_model.PriceCurrency"
                                                     Data="_currencyOptions"
+                                                    TextProperty="DisplayName"
+                                                    ValueProperty="Code"
                                                     AllowFiltering="true"
                                                     AllowCustomValue="true"
                                                     Placeholder="@Loc["CurrencyPlaceholder"]"
@@ -432,11 +479,19 @@
                         @* Initial stock *@
                         <div>
                             <RadzenFormField Text="@Loc["FieldInitialStock"]" Style="width: 100%;">
-                                <RadzenNumeric TValue="int"
-                                               @bind-Value="_model.InitialStockQuantity"
-                                               Min="0"
-                                               Step="1"
-                                               Style="width: 100%;" />
+                                @* Same RTL-caret fix as the PriceAmount input above —
+                                   see that comment for the full explanation. Native
+                                   <input type="number"> with dir="ltr" bypasses the
+                                   RadzenNumeric JS that mishandles caret position in
+                                   fa-IR mode. *@
+                                <input type="number"
+                                       class="rz-textbox"
+                                       dir="ltr"
+                                       step="1"
+                                       min="0"
+                                       @bind="_model.InitialStockQuantity"
+                                       @bind:culture="CultureInfo.CurrentCulture"
+                                       style="width: 100%; text-align: left;" />
                             </RadzenFormField>
                             <ValidationMessage For="@(() => _model.InitialStockQuantity)" />
                         </div>
@@ -695,7 +750,10 @@
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public decimal PriceAmount { get; set; } = 1m;
-        public string PriceCurrency { get; set; } = "USD";
+        // Default currency is IRR (Iranian Rial) — the user's primary
+        // market is Iran, so the default should match. Staff creating
+        // products in USD/EUR/etc. can switch the dropdown.
+        public string PriceCurrency { get; set; } = "IRR";
         public int InitialStockQuantity { get; set; } = 0;
         public Guid? CategoryId { get; set; }
         public Guid? SubCategoryId { get; set; }
@@ -828,14 +886,55 @@
     };
 
     /// <summary>
-    /// The most common ISO 4217 currency codes. The user can type a
-    /// custom 3-letter code via the dropdown's AllowCustomValue=true.
-    /// IRR (Iranian Rial) is included because the user's locale is fa-IR.
+    /// The most common ISO 4217 currency codes. The user can also
+    /// type a custom 3-letter code via the dropdown's
+    /// AllowCustomValue=true (e.g. "BTC", "CHF").
+    ///
+    /// DISPLAY FORMAT (per the user's spec):
+    ///   - In fa-IR (Persian) UI:  "IRR (ریال)"
+    ///   - In en-US (English) UI:  "IRR (Rial)"
+    /// Only the matching language's name is shown — the code is
+    /// always Latin (ISO 4217) so it's recognizable in both UIs.
     /// </summary>
-    private readonly List<string> _currencyOptions = new()
+    private readonly List<CurrencyOption> _currencyOptions = new()
     {
-      "IRR" , "EUR", "GBP", "USD", "JPY", "CNY", "AED", "TRY", "CAD", "AUD"
+        new() { Code = "IRR", EnglishName = "Rial",           PersianName = "ریال" },
+        new() { Code = "USD", EnglishName = "US dollar",      PersianName = "دلار" },
+        new() { Code = "EUR", EnglishName = "Euro",           PersianName = "یورو" },
+        new() { Code = "GBP", EnglishName = "Pound sterling", PersianName = "پوند" },
+        new() { Code = "JPY", EnglishName = "Japanese yen",   PersianName = "ین ژاپن" },
+        new() { Code = "CNY", EnglishName = "Chinese yuan",   PersianName = "یوآن چین" },
+        new() { Code = "AED", EnglishName = "UAE dirham",     PersianName = "درهم امارات" },
+        new() { Code = "TRY", EnglishName = "Turkish lira",   PersianName = "لیر ترکیه" },
+        new() { Code = "CAD", EnglishName = "Canadian dollar", PersianName = "دلار کانادا" },
+        new() { Code = "AUD", EnglishName = "Australian dollar", PersianName = "دلار استرالیا" }
     };
+
+    /// <summary>
+    /// One row in the currency dropdown. The RadzenDropDown binds to
+    /// Code (ValueProperty) and displays DisplayName (TextProperty).
+    /// </summary>
+    private sealed class CurrencyOption
+    {
+        public string Code { get; init; } = string.Empty;
+        public string EnglishName { get; init; } = string.Empty;
+        public string PersianName { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Culture-aware display string. Reads CurrentUICulture on
+        /// every access (called during render) so it picks up
+        /// language switches without us needing to rebuild the list:
+        ///   - fa-IR → "IRR (ریال)"
+        ///   - en-US → "IRR (Rial)"
+        /// The ISO code is always Latin so it's recognizable in
+        /// either UI; only the parenthesized name switches language.
+        /// </summary>
+        public string DisplayName =>
+            System.Globalization.CultureInfo.CurrentUICulture.Name
+                .StartsWith("fa", StringComparison.OrdinalIgnoreCase)
+                ? $"{Code} ({PersianName})"
+                : $"{Code} ({EnglishName})";
+    }
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 

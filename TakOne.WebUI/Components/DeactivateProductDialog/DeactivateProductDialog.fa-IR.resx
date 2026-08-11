@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DeactivateProductDialog.fa-IR.resx — Persian (Farsi) strings for the
+     DeactivateProductDialog.razor confirmation dialog. RTL handled at
+     the html dir level by MainLayout. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="WarningHeading" xml:space="preserve">
+    <value>غیرفعال‌سازی محصول</value>
+  </data>
+  <data name="BodyIntro" xml:space="preserve">
+    <value>شما در حال غیرفعال‌سازی </value>
+  </data>
+  <data name="BodyStockLoss" xml:space="preserve">
+    <value> هستید. غیرفعال‌سازی محصول به‌معنای صفر شدن موجودی آن است. این محصول دیگر در فروشگاه نمایش داده نمی‌شود و مشتریان نمی‌توانند آن را به سبد خرید اضافه کنند.</value>
+  </data>
+  <data name="BodyKeepTrack" xml:space="preserve">
+    <value>سیستم مقدار قبلی موجودی را به‌خاطر نمی‌سپارد. اگر هنوز در انبار فیزیکی موجودی دارید اما می‌خواهید این محصول غیرفعال شود، عدد فعلی موجودی را در زیر یادداشت کنید تا بعداً از طریق «افزایش موجودی» آن را بازگردانید.</value>
+  </data>
+  <data name="CurrentStockLabel" xml:space="preserve">
+    <value>موجودی فعلی:</value>
+  </data>
+  <data name="ButtonCancel" xml:space="preserve">
+    <value>صرف‌نظر</value>
+  </data>
+  <data name="ButtonConfirm" xml:space="preserve">
+    <value>تأیید غیرفعال‌سازی</value>
+  </data>
+</root>

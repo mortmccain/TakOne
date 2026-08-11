@@ -370,6 +370,7 @@
                   Icon="arrow_back"
                   ButtonStyle="ButtonStyle.Secondary"
                   Variant="Variant.Outlined"
+                  Style="align-self: flex-start;"
                   Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
 
     @* ── Loading state ── *@
@@ -682,13 +683,15 @@
                         }
 
                         @* Back-to-list secondary action — always visible,
-                           full-width. Styled to match the "Continue shopping"
-                           button on Sales.razor (Secondary + Outlined) for
-                           visual consistency between the two pages. *@
+                           sized to its content (not full-width). Styled to
+                           match the "Continue shopping" button on Sales.razor
+                           (Secondary + Outlined) for visual consistency
+                           between the two pages. *@
                         <RadzenButton Text="@Loc["BackToList"]"
                                       Icon="list"
                                       ButtonStyle="ButtonStyle.Secondary"
                                       Variant="Variant.Outlined"
+                                      Style="align-self: flex-start;"
                                       Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
                     </RadzenStack>
                 </RadzenCard>

@@ -73,31 +73,6 @@
     <value>ایجاد اولین محصول</value>
   </data>
 
-  <data name="SearchLabel" xml:space="preserve">
-    <value>جستجو</value>
-  </data>
-  <data name="SearchPlaceholder" xml:space="preserve">
-    <value>جستجو بر اساس نام…</value>
-  </data>
-  <data name="CategoryLabel" xml:space="preserve">
-    <value>دسته‌بندی</value>
-  </data>
-  <data name="AllCategories" xml:space="preserve">
-    <value>همه دسته‌بندی‌ها</value>
-  </data>
-  <data name="StockLabel" xml:space="preserve">
-    <value>موجودی</value>
-  </data>
-  <data name="StockAll" xml:space="preserve">
-    <value>همه</value>
-  </data>
-  <data name="StockInStock" xml:space="preserve">
-    <value>موجود</value>
-  </data>
-  <data name="StockOutOfStock" xml:space="preserve">
-    <value>ناموجود</value>
-  </data>
-
   <data name="LoadingText" xml:space="preserve">
     <value>در حال بارگذاری محصولات…</value>
   </data>
@@ -117,7 +92,11 @@
   <data name="EmptyMessage" xml:space="preserve">
     <value>هنوز محصولی در فهرست وجود ندارد. برای شروع فروش، اولین محصول را ایجاد کنید.</value>
   </data>
+  <data name="EmptyText" xml:space="preserve">
+    <value>محصولی یافت نشد.</value>
+  </data>
 
+  <!-- Column titles -->
   <data name="ColName" xml:space="preserve">
     <value>نام</value>
   </data>
@@ -130,20 +109,65 @@
   <data name="ColCategory" xml:space="preserve">
     <value>دسته‌بندی</value>
   </data>
+  <data name="ColSubCategory" xml:space="preserve">
+    <value>زیر‌دسته</value>
+  </data>
+  <data name="ColSubSubCategory" xml:space="preserve">
+    <value>زیر-زیر‌دسته</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
   <data name="ColActions" xml:space="preserve">
     <value>عملیات</value>
   </data>
+
+  <!-- Category display helpers -->
   <data name="UnknownCategory" xml:space="preserve">
     <value>—</value>
   </data>
+  <data name="NoSubCategory" xml:space="preserve">
+    <value>—</value>
+  </data>
+  <data name="NoSubSubCategory" xml:space="preserve">
+    <value>—</value>
+  </data>
+  <data name="DeactivatedSuffix" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
 
+  <!-- Status filter dropdown -->
+  <data name="StatusAll" xml:space="preserve">
+    <value>همه</value>
+  </data>
+  <data name="StatusInStock" xml:space="preserve">
+    <value>موجود</value>
+  </data>
+  <data name="StatusOutOfStock" xml:space="preserve">
+    <value>ناموجود</value>
+  </data>
+  <data name="StatusInStockBadge" xml:space="preserve">
+    <value>موجود</value>
+  </data>
+  <data name="StatusOutOfStockBadge" xml:space="preserve">
+    <value>ناموجود</value>
+  </data>
+
+  <!-- Action buttons -->
   <data name="ActionView" xml:space="preserve">
     <value>مشاهده جزئیات</value>
   </data>
   <data name="ActionRestock" xml:space="preserve">
     <value>افزایش موجودی</value>
   </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی</value>
+  </data>
 
+  <!-- Restock flow -->
+  <data name="RestockDialogTitle" xml:space="preserve">
+    <value>افزایش موجودی</value>
+  </data>
   <data name="RestockPrompt" xml:space="preserve">
     <value>افزایش موجودی برای «{0}» (فعلی: {1}). تعداد مورد افزودن را وارد کنید:</value>
   </data>
@@ -159,8 +183,27 @@
   <data name="RestockError" xml:space="preserve">
     <value>به‌روزرسانی موجودی ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
+  <data name="RestockDialogError" xml:space="preserve">
+    <value>باز کردن پنجرهٔ افزایش موجودی ممکن نشد. دوباره تلاش کنید؛ اگر مشکل پابرجا بود، صفحه را تازه‌سازی کنید.</value>
+  </data>
 
-  <data name="PageInfoFormat" xml:space="preserve">
-    <value>صفحه {0} از {1} ({2} مورد)</value>
+  <!-- Deactivate flow -->
+  <data name="DeactivateDialogTitle" xml:space="preserve">
+    <value>تأیید غیرفعال‌سازی</value>
+  </data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve">
+    <value>محصول غیرفعال شد</value>
+  </data>
+  <data name="DeactivateSuccess" xml:space="preserve">
+    <value>«{0}» غیرفعال شد. موجودی آن اکنون صفر است.</value>
+  </data>
+  <data name="DeactivateError" xml:space="preserve">
+    <value>غیرفعال‌سازی محصول ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="DeactivateDialogError" xml:space="preserve">
+    <value>باز کردن پنجرهٔ تأیید ممکن نشد. دوباره تلاش کنید؛ اگر مشکل پابرجا بود، صفحه را تازه‌سازی کنید.</value>
+  </data>
+  <data name="AlreadyDeactivated" xml:space="preserve">
+    <value>این محصول از قبل غیرفعال است (موجودی صفر). برای فعال‌سازی از «افزایش موجودی» استفاده کنید.</value>
   </data>
 </root>

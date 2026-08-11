@@ -1,0 +1,177 @@
+﻿@* RestockProductDialog.razor — popup dialog for product restock (add to stock).
+
+   OPENED BY:
+     AdminProducts.razor's HandleRestockAsync, via
+     DialogService.OpenAsync<RestockProductDialog>(...). The parent
+     passes two parameters: ProductName (string) and CurrentStock (int).
+     The dialog returns the entered quantity (int, > 0) if the user
+     confirmed, or null/false otherwise (matching the dialog contract
+     used by DeactivateProductDialog.razor + CancelConfirmationDialog.razor).
+
+   WHY A CUSTOM DIALOG (not JS prompt()):
+     The previous implementation used `JS.InvokeAsync<string?>("prompt", ...)`
+     which pops up the browser's native prompt() — ugly, unstyled, not
+     themeable, not localizable properly, and behaves differently across
+     browsers. The user explicitly asked for a "proper popup" matching
+     the rest of the app's UX. We need:
+       1. The product name (so the user knows which product they're
+          restocking without scrolling back to the grid).
+       2. The current stock value (so the user can see how much is
+          already there before deciding how much to add).
+       3. A numeric input bound to an int? — RadzenNumeric gives us
+          spinner arrows, Min validation, and proper number parsing
+          (no need to int.TryParse a string).
+       4. Inline validation if the user clicks Confirm with an empty
+          or non-positive value.
+       5. A Confirm button (Success — green, + icon) and a Cancel
+          button (Secondary outlined).
+
+   LAYOUT:
+     - Heading (success/green, with add_circle icon)
+     - Body intro line (mentions product name + current stock implication)
+     - Current-stock display (bordered box, success accent — so the
+       user can see how much is already there before adding more)
+     - Numeric input for the quantity to add (Min=1, Step=1)
+     - Inline validation error (shown only after the user clicks
+       Confirm with an invalid value)
+     - Footer: Cancel + Confirm buttons
+
+   THEME-AWARE RADIUS:
+     Inherits the .rz-dialog radius rules from app.css — Tak light/dark
+     themes get rounded corners, other themes get sharp corners. No
+     extra CSS needed here.
+
+   RETURN CONTRACT:
+     DialogService.Close(int) → returns the quantity.
+     DialogService.Close(null) / Close(false) → user cancelled.
+     The parent treats anything that isn't a positive int as "aborted".
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<RestockProductDialog> Loc
+
+<div style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        @* ── Heading (success/green, + icon) ── *@
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenIcon Icon="add_circle" Style="color: var(--rz-success); font-size: 1.5rem;" />
+            <RadzenText TextStyle="TextStyle.H6" Style="color: var(--rz-success); margin: 0;">
+                @Loc["Heading"]
+            </RadzenText>
+        </RadzenStack>
+
+        @* ── Body — mentions the product name + current stock implication ── *@
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@ProductName</strong>.
+            @Loc["BodyHint"]
+        </RadzenText>
+
+        @* ── Current-stock display — bordered box, success accent ──
+           Rendered with N0 so 12345 shows as "12,345" (or "۱۲٬۳۴۵" in
+           fa-IR). Lets the user see how much is already there before
+           deciding how much to add. The success-green left border
+           visually distinguishes this from the DeactivateProductDialog
+           (which uses the warning-amber accent for the same box). *@
+        <div style="border: 1px solid var(--rz-base-border-color);
+            border-left: 4px solid var(--rz-success);
+            border-radius: var(--tm-radius, 0);
+            padding: 0.75rem 1rem;
+            background: var(--rz-component-background-color, var(--rz-base-background-color));">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                    @Loc["CurrentStockLabel"]
+                </RadzenText>
+                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; font-variant-numeric: tabular-nums;">
+                    @string.Format(System.Globalization.CultureInfo.CurrentCulture, "{0:N0}", CurrentStock)
+                </RadzenText>
+            </RadzenStack>
+        </div>
+
+        @* ── Numeric input — plain HTML <input type="number"> ──
+           We use a native input instead of RadzenNumeric because
+           RadzenNumeric's internal JS mishandles caret position in
+           RTL (fa-IR) mode — the cursor LOOKS like it's at the end
+           of the value, but typing inserts the character at the
+           BEGINNING (turning "1" + typed "0" into "01" instead of
+           "10"). The native input with dir="ltr" handles caret
+           position AND character insertion correctly in both LTR
+           and RTL page contexts. See CreateProduct.razor's
+           PriceAmount field for the longer explanation.
+           We use int? so we can detect "user left this blank" and
+           show the inline validation error. min="1" enforces
+           positivity. step="1" gives clean integer stepping. *@
+        <RadzenFormField Text="@Loc["QuantityLabel"]" Style="width: 100%;">
+            <input type="number"
+                   class="rz-textbox"
+                   dir="ltr"
+                   step="1"
+                   min="1"
+                   @bind="_quantity"
+                   @bind:culture="System.Globalization.CultureInfo.CurrentCulture"
+                   style="width: 100%; text-align: left;" />
+        </RadzenFormField>
+
+        @* ── Inline validation — only shown after the user tries to
+           confirm with an empty/invalid value. We don't validate on
+           every keystroke to avoid screaming at the user before
+           they've had a chance to type anything. *@
+        @if (_showValidationError)
+        {
+            <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-danger);">
+                @Loc["QuantityRequired"]
+            </RadzenText>
+        }
+
+        @* ── Footer — Cancel (Secondary outlined) + Confirm (Success filled) ── *@
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonCancel"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Click="@(() => DialogService.Close(null))" />
+            <RadzenButton Text="@Loc["ButtonConfirm"]"
+                          Icon="add_circle"
+                          ButtonStyle="ButtonStyle.Success"
+                          Variant="Variant.Filled"
+                          Click="@OnConfirm" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string ProductName { get; set; } = string.Empty;
+    [Parameter] public int CurrentStock { get; set; }
+
+    /// <summary>
+    /// The quantity entered by the user. Null = not entered yet. We
+    /// default to 10 (the previous JS prompt default) so the spinner
+    /// has a sensible starting value and the user can just click
+    /// Confirm if they want to add 10.
+    /// </summary>
+    private int? _quantity = 10;
+
+    /// <summary>
+    /// True only after the user clicks Confirm with an invalid value.
+    /// Stays false until then so we don't shame the user on first
+    /// render.
+    /// </summary>
+    private bool _showValidationError;
+
+    /// <summary>
+    /// Confirm handler — validates the quantity locally before closing
+    /// the dialog. If invalid (null or <= 0), we surface the inline
+    /// error and DON'T close — the user can fix the value and try
+    /// again. If valid, we close with the int value, which the parent
+    /// (AdminProducts.razor's HandleRestockAsync) reads as the
+    /// quantity to add.
+    /// </summary>
+    private void OnConfirm()
+    {
+        if (_quantity is null || _quantity <= 0)
+        {
+            _showValidationError = true;
+            return;
+        }
+        DialogService.Close(_quantity.Value);
+    }
+}

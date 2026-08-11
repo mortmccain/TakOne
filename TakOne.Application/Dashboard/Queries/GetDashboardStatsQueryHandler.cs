@@ -416,6 +416,9 @@ public sealed class GetDashboardStatsQueryHandler
             ThisMonthApprovedSalesCount = submittedSales
                 .Count(s => s.Status == SaleStatus.Approved &&
                             (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thisMonthStartUtc),
+            ThisMonthInvoicedSalesCount = submittedSales
+                .Count(s => s.Status == SaleStatus.Invoiced &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= thisMonthStartUtc),
 
             // ── NEW KPI footer data (replaces hard-coded placeholders) ─
             ThisMonthActiveEmployeeCount = thisMonthActiveEmployeeCount,
