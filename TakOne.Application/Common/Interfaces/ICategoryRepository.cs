@@ -94,5 +94,32 @@ public interface ICategoryRepository
         Guid subSubCategoryId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns <c>true</c> if ALL of the supplied category levels are
+    /// currently <c>IsActive == true</c>. A <c>null</c> level is treated
+    /// as "not set" and skipped (e.g. a product that has no SubSubCategory
+    /// passes the check as long as its Category and SubCategory are
+    /// active).
+    ///
+    /// BUSINESS RULE:
+    ///   When any level of a product's category hierarchy is deactivated,
+    ///   the product becomes unbuyable but its StockQuantity is preserved
+    ///   (deactivation is NOT the same as zeroing stock). This method is
+    ///   the application-layer check that enforces that rule on every
+    ///   add-to-cart / submit path.
+    ///
+    /// PERFORMANCE:
+    ///   Single round-trip — three lightweight <c>AnyAsync</c> checks
+    ///   against the SubCategories / SubSubCategories tables, short-
+    ///   circuited at the first inactive level. Cheaper than loading
+    ///   the full Category aggregate via <see cref="GetByIdWithHierarchyAsync"/>
+    ///   just to inspect three boolean flags.
+    /// </summary>
+    Task<bool> IsProductCategoryHierarchyActiveAsync(
+        Guid categoryId,
+        Guid? subCategoryId,
+        Guid? subSubCategoryId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(Category category, CancellationToken cancellationToken = default);
 }

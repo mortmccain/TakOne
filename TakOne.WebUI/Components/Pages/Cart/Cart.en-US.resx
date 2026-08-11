@@ -208,4 +208,7 @@
   <data name="LimitIssueWarning" xml:space="preserve">
     <value>One or more items exceed the per-customer purchase limit. Reduce the quantity before submitting.</value>
   </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>&apos;{0}&apos; is currently unavailable for purchase. Please remove it from your cart or try again later.</value>
+  </data>
 </root>

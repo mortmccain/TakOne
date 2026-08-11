@@ -91,6 +91,7 @@ public sealed class CreateOrAppendSaleCommandHandler
         ISaleRepository saleRepository,
         ISaleNumberGenerator saleNumberGenerator,
         IUserRepository userRepository,
+        ICategoryRepository categoryRepository,
         IUnitOfWork unitOfWork,
         ILogger<CreateOrAppendSaleCommandHandler> logger,
         CancellationToken cancellationToken
@@ -136,6 +137,50 @@ public sealed class CreateOrAppendSaleCommandHandler
                 command.ProductId, currentUser.UserId);
 
             return Result<Guid>.Failure($"Product '{command.ProductId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // 1b. CATEGORY-DEACTIVATION CHECK.
+        //
+        //     Business rule: if the product's Category / SubCategory /
+        //     SubSubCategory has been deactivated, the product is NOT
+        //     buyable. Its StockQuantity is preserved in the database —
+        //     deactivation only suppresses visibility (enforced in
+        //     GetProductsPaginatedQueryHandler) and buyability (enforced
+        //     here). The customer-facing Products page already hides such
+        //     products, but the backend must still defend against:
+        //       - Direct API calls (bypassing the UI filter).
+        //       - Race: customer's browser had the product card open when
+        //         an admin deactivated the category.
+        //       - Mini-cart +1 button on a stale cart that still contains
+        //         the product.
+        //
+        //     We use the new ICategoryRepository.IsProductCategoryHierarchyActiveAsync
+        //     helper — three short-circuited AnyAsync calls on the
+        //     Categories / SubCategories / SubSubCategories tables. This
+        //     is cheaper than loading the full Category aggregate and
+        //     walking its tree.
+        //
+        //     The error uses CategoryDeactivatedErrors.Format so the UI
+        //     can localize it without exposing the internal "category
+        //     hierarchy" concept to the customer.
+        // ------------------------------------------------------------------
+        var hierarchyActive = await categoryRepository.IsProductCategoryHierarchyActiveAsync
+            (
+            product.CategoryId,
+            product.SubCategoryId,
+            product.SubSubCategoryId,
+            cancellationToken
+            );
+
+        if (!hierarchyActive)
+        {
+            logger.LogWarning
+                ("CreateOrAppendSale: product {ProductId} ('{ProductName}') is under a deactivated category (Category={CategoryId}, Sub={SubCategoryId}, SubSub={SubSubCategoryId}). Rejecting add-to-cart for user {UserId}.",
+                product.Id, product.Name, product.CategoryId, product.SubCategoryId, product.SubSubCategoryId, currentUser.UserId);
+
+            return Result<Guid>.Failure(
+                CategoryDeactivatedErrors.Format(product.Name));
         }
 
         // ------------------------------------------------------------------

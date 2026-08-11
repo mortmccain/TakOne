@@ -212,4 +212,7 @@
   <data name="LimitIssueWarning" xml:space="preserve">
     <value>تعداد یکی از اقلام از سقف خرید مجاز بیشتر است. لطفاً قبل از ثبت، تعداد را کاهش دهید.</value>
   </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>کالای «{0}» در حال حاضر قابل خرید نیست. لطفاً آن را از سبد خود حذف کنید یا بعداً دوباره تلاش کنید.</value>
+  </data>
 </root>

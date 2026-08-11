@@ -151,6 +151,30 @@
   <data name="ClearFiltersButton" xml:space="preserve">
     <value>پاک کردن فیلترها</value>
   </data>
+  <data name="ActiveFiltersLabel" xml:space="preserve">
+    <value>فیلترهای فعال</value>
+  </data>
+  <data name="ClearSearchTooltip" xml:space="preserve">
+    <value>پاک کردن جستجو</value>
+  </data>
+  <data name="ClearSearchAria" xml:space="preserve">
+    <value>پاک کردن جستجوی «{0}»</value>
+  </data>
+  <data name="ClearCategoryTooltip" xml:space="preserve">
+    <value>پاک کردن فیلتر دسته‌بندی</value>
+  </data>
+  <data name="ClearCategoryAria" xml:space="preserve">
+    <value>پاک کردن فیلتر دسته‌بندی «{0}»</value>
+  </data>
+  <data name="ClearAllFiltersTooltip" xml:space="preserve">
+    <value>پاک کردن همه فیلترها</value>
+  </data>
+  <data name="ClearAllFiltersAria" xml:space="preserve">
+    <value>پاک کردن همه فیلترهای فعال</value>
+  </data>
+  <data name="ClearAllFiltersButton" xml:space="preserve">
+    <value>پاک کردن همه</value>
+  </data>
   <data name="StockOut" xml:space="preserve">
     <value>ناموجود</value>
   </data>
@@ -311,5 +335,8 @@
   </data>
   <data name="ToastReorderNothingNewAdded" xml:space="preserve">
     <value>هیچ کالای جدیدی به سبد شما اضافه نشد — موجودی یا سقف خرید تمام کالاها به پایان رسیده است.</value>
+  </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>کالای «{0}» در حال حاضر قابل خرید نیست. لطفاً آن را از سبد خود حذف کنید یا بعداً دوباره تلاش کنید.</value>
   </data>
 </root>

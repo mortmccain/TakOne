@@ -151,6 +151,30 @@
   <data name="ClearFiltersButton" xml:space="preserve">
     <value>Clear filters</value>
   </data>
+  <data name="ActiveFiltersLabel" xml:space="preserve">
+    <value>Active filters</value>
+  </data>
+  <data name="ClearSearchTooltip" xml:space="preserve">
+    <value>Clear search</value>
+  </data>
+  <data name="ClearSearchAria" xml:space="preserve">
+    <value>Clear search for &apos;{0}&apos;</value>
+  </data>
+  <data name="ClearCategoryTooltip" xml:space="preserve">
+    <value>Clear category filter</value>
+  </data>
+  <data name="ClearCategoryAria" xml:space="preserve">
+    <value>Clear category filter &apos;{0}&apos;</value>
+  </data>
+  <data name="ClearAllFiltersTooltip" xml:space="preserve">
+    <value>Clear all filters</value>
+  </data>
+  <data name="ClearAllFiltersAria" xml:space="preserve">
+    <value>Clear all active filters</value>
+  </data>
+  <data name="ClearAllFiltersButton" xml:space="preserve">
+    <value>Clear all</value>
+  </data>
   <data name="StockOut" xml:space="preserve">
     <value>Out of stock</value>
   </data>
@@ -311,5 +335,8 @@
   </data>
   <data name="ToastReorderNothingNewAdded" xml:space="preserve">
     <value>No new items were added to your cart — stock or purchase limits have been exhausted for all items.</value>
+  </data>
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>&apos;{0}&apos; is currently unavailable for purchase. Please remove it from your cart or try again later.</value>
   </data>
 </root>

@@ -20,6 +20,7 @@ public sealed class AddItemToSaleCommandHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         IUnitOfWork unitOfWork,
         ILogger<AddItemToSaleCommandHandler> logger,
@@ -77,6 +78,37 @@ public sealed class AddItemToSaleCommandHandler
         if (product is null)
         {
             return Result.Failure($"Product '{command.ProductId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // CATEGORY-DEACTIVATION CHECK.
+        //   Same rule as CreateOrAppendSaleCommandHandler: if the product's
+        //   Category / SubCategory / SubSubCategory has been deactivated,
+        //   the product is unbuyable. StockQuantity is preserved. This
+        //   path is used by the admin / staff sale-detail page when
+        //   building a sale on behalf of a customer — the admin can still
+        //   SEE the product on the AdminProducts page (with a
+        //   "(deactivated)" badge), but they cannot add it to a sale.
+        //
+        //   The error uses CategoryDeactivatedErrors.Format so the UI
+        //   can localize it.
+        // ------------------------------------------------------------------
+        var hierarchyActive = await categoryRepository.IsProductCategoryHierarchyActiveAsync
+            (
+            product.CategoryId,
+            product.SubCategoryId,
+            product.SubSubCategoryId,
+            cancellationToken
+            );
+
+        if (!hierarchyActive)
+        {
+            logger.LogWarning
+                ("AddItemToSale: product {ProductId} ('{ProductName}') is under a deactivated category (Category={CategoryId}, Sub={SubCategoryId}, SubSub={SubSubCategoryId}). Rejecting add to sale {SaleId}.",
+                product.Id, product.Name, product.CategoryId, product.SubCategoryId, product.SubSubCategoryId, sale.Id);
+
+            return Result.Failure(
+                CategoryDeactivatedErrors.Format(product.Name));
         }
 
         // ------------------------------------------------------------------

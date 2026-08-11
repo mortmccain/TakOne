@@ -12,6 +12,7 @@ public sealed class SubmitSaleCommandHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         IUnitOfWork unitOfWork,
         ILogger<SubmitSaleCommandHandler> logger,
@@ -66,10 +67,21 @@ public sealed class SubmitSaleCommandHandler
         // for the full rationale), look up each line's product limit for
         // that group, and reject if any line's quantity exceeds it.
         //
+        // CATEGORY-DEACTIVATION RE-CHECK (also defense-in-depth):
+        //   Even if every line passed Add/Update validation, an admin may
+        //   have DEACTIVATED the product's Category / SubCategory /
+        //   SubSubCategory between the time the line was added and the
+        //   time the user clicked Submit. Such products must NOT be
+        //   submittable — but their StockQuantity is preserved (the
+        //   admin's intent was to suppress visibility, not to delete
+        //   inventory). We reject with CategoryDeactivatedErrors.Format
+        //   so the UI can localize the message and the user knows which
+        //   product to remove from their cart.
+        //
         // Single round-trip for the customer + single round-trip for all
-        // line-item products (via GetByIdsAsync). The failure error uses
-        // PurchaseLimitErrors.Format so the UI can localize it without
-        // mentioning "groups".
+        // line-item products (via GetByIdsAsync). The failure errors use
+        // PurchaseLimitErrors.Format / CategoryDeactivatedErrors.Format
+        // so the UI can localize them without mentioning "groups".
         // ------------------------------------------------------------------
         var customer = await userRepository.GetByIdAsync(sale.CustomerId, cancellationToken);
         if (customer is null)
@@ -82,13 +94,18 @@ public sealed class SubmitSaleCommandHandler
                 "The customer associated with this sale could not be found. Contact an administrator.");
         }
 
-        // Staff (no GroupName) have no per-product cap — skip the loop.
-        if (!string.IsNullOrWhiteSpace(customer.GroupName) && sale.LineItems.Count > 0)
+        if (sale.LineItems.Count > 0)
         {
             var lineProductIds = sale.LineItems.Select(li => li.ProductId).Distinct().ToList();
             var lineProducts = await productRepository.GetByIdsAsync(lineProductIds, cancellationToken);
             var lineProductById = lineProducts.ToDictionary(p => p.Id);
 
+            // ---- Pass 1: category-deactivation check (applies to ALL
+            //              customers, including staff with no GroupName).
+            //              A single product whose category was deactivated
+            //              fails the entire submit — the user must remove
+            //              the line or ask an admin to reactivate the
+            //              category.
             foreach (var line in sale.LineItems)
             {
                 if (!lineProductById.TryGetValue(line.ProductId, out var lineProduct))
@@ -104,16 +121,52 @@ public sealed class SubmitSaleCommandHandler
                         $"Product '{line.ProductName}' no longer exists. Remove the line before submitting.");
                 }
 
-                var limitVo = lineProduct.GetPurchaseLimitForGroup(customer.GroupName);
-                if (limitVo is not null && line.Quantity > limitVo.Limit)
+                var hierarchyActive = await categoryRepository.IsProductCategoryHierarchyActiveAsync
+                    (
+                    lineProduct.CategoryId,
+                    lineProduct.SubCategoryId,
+                    lineProduct.SubSubCategoryId,
+                    cancellationToken
+                    );
+
+                if (!hierarchyActive)
                 {
                     logger.LogWarning(
-                        "SubmitSale: purchase-limit exceeded at submit time for product {ProductId} on sale {SaleId} " +
-                        "(customer {CustomerId}, limit {Limit}, line qty {Qty}).",
-                        line.ProductId, sale.Id, sale.CustomerId, limitVo.Limit, line.Quantity);
+                        "SubmitSale: product {ProductId} ('{ProductName}') on sale {SaleId} line {LineId} is under a deactivated category " +
+                        "(Category={CategoryId}, Sub={SubCategoryId}, SubSub={SubSubCategoryId}). Rejecting submit.",
+                        lineProduct.Id, lineProduct.Name, sale.Id, line.Id,
+                        lineProduct.CategoryId, lineProduct.SubCategoryId, lineProduct.SubSubCategoryId);
 
                     return Result.Failure(
-                        PurchaseLimitErrors.Format(line.ProductName, limitVo.Limit));
+                        CategoryDeactivatedErrors.Format(lineProduct.Name));
+                }
+            }
+
+            // ---- Pass 2: purchase-limit check (ONLY for customers with
+            //              a GroupName — staff have no per-product cap).
+            if (!string.IsNullOrWhiteSpace(customer.GroupName))
+            {
+                foreach (var line in sale.LineItems)
+                {
+                    // lineProductById was populated above; the TryGetValue
+                    // already succeeded in Pass 1, so it will succeed here
+                    // too. Defensive null-check kept for safety.
+                    if (!lineProductById.TryGetValue(line.ProductId, out var lineProduct))
+                    {
+                        continue;
+                    }
+
+                    var limitVo = lineProduct.GetPurchaseLimitForGroup(customer.GroupName);
+                    if (limitVo is not null && line.Quantity > limitVo.Limit)
+                    {
+                        logger.LogWarning(
+                            "SubmitSale: purchase-limit exceeded at submit time for product {ProductId} on sale {SaleId} " +
+                            "(customer {CustomerId}, limit {Limit}, line qty {Qty}).",
+                            line.ProductId, sale.Id, sale.CustomerId, limitVo.Limit, line.Quantity);
+
+                        return Result.Failure(
+                            PurchaseLimitErrors.Format(line.ProductName, limitVo.Limit));
+                    }
                 }
             }
         }

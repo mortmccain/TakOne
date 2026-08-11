@@ -184,6 +184,23 @@ public sealed class GetProductsPaginatedQueryHandler
 
         var dtos = paginated.Items
             .Where(p => includeInactive || p.StockQuantity > 0)
+            // CATEGORY-DEACTIVATION FILTER:
+            //   When the caller is NOT asking for inactive products (i.e.
+            //   the customer-facing Products page, never the admin page),
+            //   hide any product whose Category / SubCategory / SubSubCategory
+            //   has been deactivated. The product's StockQuantity is
+            //   PRESERVED in the database — deactivation only suppresses
+            //   visibility and buyability. The admin (includeInactive=true)
+            //   still sees these products so they can re-categorize or
+            //   reactivate the category.
+            //
+            //   The lookups below already resolved each product's three
+            //   *IsActive flags against the in-memory category tree we
+            //   loaded in step 4. A product fails the filter if ANY of
+            //   its set levels is inactive. (Missing-from-tree is treated
+            //   as inactive too — a product pointing at a hard-deleted
+            //   category should not surface to customers.)
+            .Where(p => includeInactive || IsProductCategoryHierarchyActive(p, categoryById, subCategoryById, subSubCategoryById))
             .Where(p => !hasSearch ||
                         p.Name.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase))
             .Select(p =>
@@ -250,5 +267,49 @@ public sealed class GetProductsPaginatedQueryHandler
             .ToList();
 
         return new PaginatedResult<ProductListItemDto>(dtos, paginated.TotalCount, pageNumber, pageSize);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> only if every level of the product's category
+    /// hierarchy that IS set is currently active. A null SubCategoryId /
+    /// SubSubCategoryId is treated as "not set, skip". A missing-from-tree
+    /// Category (e.g. hard-deleted — should not happen since Category uses
+    /// soft-delete, but defensive) is treated as inactive.
+    ///
+    /// Used by the customer-facing <c>includeInactive == false</c> path
+    /// to hide products whose category was deactivated, WITHOUT zeroing
+    /// their StockQuantity.
+    /// </summary>
+    private static bool IsProductCategoryHierarchyActive(
+        Domain.Products.Entities.Product p,
+        Dictionary<Guid, Domain.Categories.Entities.Category> categoryById,
+        Dictionary<Guid, (string Name, bool IsActive)> subCategoryById,
+        Dictionary<Guid, (string Name, bool IsActive)> subSubCategoryById)
+    {
+        // Top-level Category — required on Product, always set.
+        if (!categoryById.TryGetValue(p.CategoryId, out var cat) || cat is null || !cat.IsActive)
+        {
+            return false;
+        }
+
+        // SubCategory — optional. If set, must be active.
+        if (p.SubCategoryId is not null)
+        {
+            if (!subCategoryById.TryGetValue(p.SubCategoryId.Value, out var sub) || !sub.IsActive)
+            {
+                return false;
+            }
+        }
+
+        // SubSubCategory — optional. If set, must be active.
+        if (p.SubSubCategoryId is not null)
+        {
+            if (!subSubCategoryById.TryGetValue(p.SubSubCategoryId.Value, out var subSub) || !subSub.IsActive)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

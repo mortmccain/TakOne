@@ -1110,6 +1110,12 @@
     ///     SubmitSale handlers. Localized via the PurchaseLimitExceeded
     ///     resx key, which does NOT mention "groups" (the original
     ///     Persian error leaked the internal group concept to customers).
+    ///   - <c>CategoryDeactivated:{productName}</c> — produced by
+    ///     UpdateSaleLineItem / AddItemToSale / CreateOrAppendSale /
+    ///     SubmitSale handlers when the product's category / sub / sub-sub
+    ///     has been deactivated. Localized via the CategoryDeactivated
+    ///     resx key. The product's StockQuantity is preserved; only
+    ///     visibility + buyability are suppressed.
     /// </summary>
     private string? LocalizeError(string? error)
     {
@@ -1120,6 +1126,13 @@
                 Loc["PurchaseLimitExceeded"],
                 productName,
                 limit);
+        }
+        if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedProductName))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["CategoryDeactivated"],
+                deactivatedProductName);
         }
         return error;
     }

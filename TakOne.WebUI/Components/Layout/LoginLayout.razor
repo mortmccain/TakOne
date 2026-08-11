@@ -1,4 +1,4 @@
-﻿@* LoginLayout.razor — Phase 0.11
+﻿﻿@* LoginLayout.razor — Phase 0.11
    Per roadmap Concern A: real branded full-screen layout (NOT a pass-through).
    - Full-screen dark gradient background (overrides the main Radzen theme)
    - Centered card container for the Login.razor child
@@ -9,7 +9,6 @@
    @layout LoginLayout) and just renders the form fields inside the card. *@
 
 @inherits LayoutComponentBase
-@inject IJSRuntime JS
 @inject NavigationManager Navigation
 
 <div class="login-shell">
@@ -29,24 +28,88 @@
                format CookieRequestCultureProvider expects (`c=X|uic=X`), then
                force-reloads so the localization middleware re-evaluates.
                MUST match MainLayout.razor's OnCultureChanged exactly so the
-               two switchers stay in sync. Previous version used plain
-               `<a href="?culture=en-US">` links which only set the culture
-               for THAT request — the choice was lost on the next navigation.*@
-            <a href="javascript:void(0)" @onclick="@(async () => await SwitchCultureAsync("en-US"))">@Localizer["SwitchToEnglish"]</a>
-            <a href="javascript:void(0)" @onclick="@(async () => await SwitchCultureAsync("fa-IR"))">@Localizer["SwitchToPersian"]</a>
+               two switchers stay in sync.
+
+               IMPORTANT — WHY PLAIN HTML onclick + JS (not Blazor @onclick):
+               Login.razor and ChangePassword.razor are STATIC SSR pages (no
+               Blazor circuit). Blazor's @onclick handler requires a live
+               circuit to round-trip the click event to the server — with no
+               circuit, @onclick silently never fires. This is the same
+               reason the eye-toggle button on those pages uses plain
+               onclick="takTogglePw(this)" instead of @onclick.
+
+               The inline takSwitchCulture() function at the bottom of this
+               file sets the cookie via document.cookie and force-reloads
+               via window.location.reload() — pure browser, no server
+               round-trip needed. Works identically on /Account/Login and
+               /Account/ChangePassword (both static SSR) AND on any future
+               page that adopts this layout.
+
+               Previous version used `@onclick="SwitchCultureAsync"` — that
+               was the bug: clicks were silently ignored on /Account/Login
+               and /Account/ChangePassword because no circuit existed. The
+               `@inject IJSRuntime JS` + `Navigation.NavigateTo(Uri,
+               forceLoad: true)` pattern only works when a circuit is
+               established (the JSRuntime needs a circuit to dispatch
+               through). With no circuit, the @onclick never fires AND the
+               JSRuntime call would also fail — but we never got that far
+               because the click itself was the broken link in the chain.
+
+               The href="javascript:void(0)" keeps the <a> semantically a
+               link (cursor: pointer, focusable, keyboard-accessible) while
+               the onclick handler does the actual work. *@
+            <a href="javascript:void(0)"
+               onclick="takSwitchCulture('en-US')">@Localizer["SwitchToEnglish"]</a>
+            <a href="javascript:void(0)"
+               onclick="takSwitchCulture('fa-IR')">@Localizer["SwitchToPersian"]</a>
         </footer>
     </main>
 </div>
 
+@* ── Inline culture-switch script ──
+   Sets the `takone_culture` cookie in the format ASP.NET Core's
+   CookieRequestCultureProvider expects (`c=XX|uic=XX`), then force-reloads
+   so the localization middleware re-evaluates on the next request.
+
+   The cookie name MUST match `CookieRequestCultureProvider.DefaultCookieName`
+   ("takone_culture" is configured in Program.cs via
+   options.CookieName = "takone_culture"). The value format
+   `c={culture}|uic={culture}` is the standard CookieRequestCultureProvider
+   format — `c` is the culture (used for formatting dates/numbers), `uic`
+   is the UI culture (used for resource lookups). We set both to the same
+   value because we don't differentiate them in this app.
+
+   The max-age=31536000 (1 year) + path=/ + samesite=strict attributes
+   match what MainLayout.razor's SwitchCultureAsync sets via JSRuntime.
+   samesite=strict is the security default — the cookie is only sent on
+   same-site requests, so a malicious site can't trick the user's browser
+   into switching their TakOne language by linking to a TakOne URL.
+
+   WHY INLINE (not a separate .js file):
+     - The function is 3 lines of trivial cookie + reload — too small to
+       justify a separate file, an extra HTTP request, a registration in
+       App.razor, and a cache-bust version parameter.
+     - It's layout-local: only the LoginLayout uses it (the main app's
+       MainLayout has its own SwitchCultureAsync via JSRuntime because
+       the main app DOES have a Blazor circuit).
+     - It MUST run without a Blazor circuit (see the comment above), so
+       it can't use JSRuntime — inline browser JS is the only option.
+
+   Identical in spirit to MainLayout.SwitchCultureAsync — kept duplicated
+   because the two layouts live in different worlds (MainLayout always
+   has a circuit; LoginLayout never does). Trying to share a single
+   implementation would require either (a) JSRuntime (broken without a
+   circuit) or (b) a shared <script src> in App.razor (loads the function
+   on every page even when LoginLayout isn't used). The 3-line
+   duplication is the lesser evil. *@
+<script>
+    function takSwitchCulture(culture) {
+        var cookieValue = 'c=' + culture + '|uic=' + culture;
+        document.cookie = 'takone_culture=' + cookieValue + '; path=/; max-age=31536000; samesite=strict';
+        window.location.reload();
+    }
+</script>
+
 @code {
     [Inject] private IStringLocalizer<LoginLayout> Localizer { get; set; } = default!;
-
-    private async Task SwitchCultureAsync(string culture)
-    {
-        // Same cookie format as MainLayout.OnCultureChanged — see comment there.
-        var cookieValue = $"c={culture}|uic={culture}";
-        await JS.InvokeVoidAsync("eval",
-            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
-        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
-    }
 }

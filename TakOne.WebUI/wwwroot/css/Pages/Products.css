@@ -1052,6 +1052,142 @@
     font-weight: 500;
 }
 
+/* =============================================================================
+   ACTIVE FILTER CHIPS
+   Rendered next to the products count when the user has an active search
+   term and/or category filter. Each chip shows what's filtered and offers
+   a one-click X to clear JUST that filter. When both filters are active,
+   an additional "Clear all" pill appears at the end.
+   ========================================================================== */
+.tm-active-filters {
+    display: inline-flex !important;
+    align-items: center !important;
+    flex-wrap: wrap;
+    gap: 6px;
+    /* Subtle separator between the count and the chip row */
+    margin-inline-start: 4px;
+    padding-inline-start: 10px;
+    border-inline-start: 1px solid var(--rz-border-color-light, rgba(0, 0, 0, 0.08));
+}
+
+/* Chip base — pill-shaped, soft tinted background, accent-colored text.
+   These styles MUST override Bootstrap reboot's <button> defaults and any
+   Radzen theme button styles. Explicitly reset appearance, margin, and
+   white-space so the chip always renders as a horizontal inline-flex pill. */
+.tm-filter-chip {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px;
+    padding: 3px 4px 3px 10px;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: inherit;
+    line-height: 1.4;
+    cursor: pointer;
+    background: var(--rz-component-background-color, #fff);
+    color: var(--tm-green, var(--rz-primary));
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    /* Cap chip width so a very long search term doesn't push the layout */
+    max-width: 280px;
+    /* Defense-in-depth: kill any native <button> chrome that could survive. */
+    margin: 0;
+    white-space: nowrap;
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    text-transform: none;
+    vertical-align: middle;
+}
+
+/* Search chip — green tint (matches the page's primary accent) */
+.tm-filter-chip-search {
+    background: var(--tm-green-mint, var(--rz-primary-lighter, #e6f4ea));
+    border-color: var(--tm-green-soft, rgba(14, 77, 60, 0.18));
+    color: var(--tm-green, var(--rz-primary));
+}
+
+/* Category chip — gold tint (matches the products-count badge) */
+.tm-filter-chip-category {
+    background: var(--tm-gold-tint, var(--rz-secondary-lighter, #fff8e6));
+    border-color: var(--tm-gold-soft, rgba(196, 154, 60, 0.22));
+    color: var(--tm-gold-dark, var(--rz-secondary, #8a6d1a));
+}
+
+/* "Clear all" pill — neutral gray, no X icon, just text + trash icon */
+.tm-filter-chip-clear-all {
+    background: transparent;
+    border-color: var(--rz-border-color, rgba(0, 0, 0, 0.12));
+    color: var(--rz-text-secondary-color, #6b7280);
+    padding-inline: 10px;
+}
+
+/* The chip's leading icon (search / folder / trash) */
+.tm-filter-chip-icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+/* The chip's label text — truncate with ellipsis if too long */
+.tm-filter-chip-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* The X icon on the right of each chip — circular hover target */
+.tm-filter-chip-x {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.06);
+    color: inherit;
+    transition: background 0.15s ease, transform 0.15s ease;
+    padding: 2px;
+    box-sizing: border-box;
+}
+
+/* Hover state — lift the chip slightly and brighten the X background */
+.tm-filter-chip:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+    .tm-filter-chip:hover .tm-filter-chip-x {
+        background: rgba(0, 0, 0, 0.16);
+        transform: scale(1.08);
+    }
+
+/* "Clear all" pill has no X icon — its entire surface is the click
+   target, so we use a stronger hover background to communicate that. */
+.tm-filter-chip-clear-all:hover {
+    background: var(--rz-base-background-color, rgba(0, 0, 0, 0.04));
+    border-color: var(--rz-border-color, rgba(0, 0, 0, 0.18));
+    color: var(--rz-text-color, #1f2937);
+}
+
+/* Focus ring for keyboard users (accessibility) */
+.tm-filter-chip:focus-visible {
+    outline: 2px solid var(--tm-green, var(--rz-primary));
+    outline-offset: 2px;
+}
+
+/* On small viewports, allow the chips row to break onto a new line
+   below the count instead of forcing horizontal scroll. */
+@media (max-width: 768px) {
+    .tm-active-filters {
+        margin-inline-start: 0;
+        padding-inline-start: 0;
+        border-inline-start: none;
+        width: 100%;
+    }
+}
+
 /* Product grid */
 .tm-product-grid {
     display: grid;

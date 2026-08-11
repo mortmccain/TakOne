@@ -218,6 +218,67 @@ public sealed class CategoryRepository : ICategoryRepository
     }
 
     /// <inheritdoc />
+    public async Task<bool> IsProductCategoryHierarchyActiveAsync
+        (
+        Guid categoryId,
+        Guid? subCategoryId,
+        Guid? subSubCategoryId,
+        CancellationToken cancellationToken = default
+        )
+    {
+        // Top-level: Categories table. If the parent Category is inactive,
+        // there is no point checking deeper levels — the product is already
+        // unbuyable. Short-circuit on the first miss.
+        //
+        // We query each table directly (rather than loading the full
+        // Category aggregate via Include(SubCategories).ThenInclude(...))
+        // because:
+        //   1. We only need ONE boolean per level — no navigation data.
+        //   2. The validator-style "AnyAsync on PK" query is the cheapest
+        //      possible shape (single-row index seek on each table).
+        //   3. Loading the whole aggregate just to read three booleans
+        //      would drag the entire SubCategories + SubSubCategories
+        //      collection into memory for nothing.
+        //
+        // PERFORMANCE: up to three short-circuited AnyAsync round-trips.
+        // In the common case (all levels active) this is 3 fast index
+        // seeks. When a level is inactive we return on the first miss,
+        // so the worst-case latency is bounded by the position of the
+        // first inactive level in the hierarchy.
+        var categoryActive = await _db.Categories
+            .AnyAsync(c => c.Id == categoryId && c.IsActive, cancellationToken);
+
+        if (!categoryActive)
+        {
+            return false;
+        }
+
+        if (subCategoryId is not null)
+        {
+            var subActive = await _db.SubCategories
+                .AnyAsync(s => s.Id == subCategoryId.Value && s.IsActive, cancellationToken);
+
+            if (!subActive)
+            {
+                return false;
+            }
+        }
+
+        if (subSubCategoryId is not null)
+        {
+            var subSubActive = await _db.SubSubCategories
+                .AnyAsync(ss => ss.Id == subSubCategoryId.Value && ss.IsActive, cancellationToken);
+
+            if (!subSubActive)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc />
     public async Task AddAsync(Category category, CancellationToken cancellationToken = default)
     {
         // SubCategories / SubSubCategories added via Category.AddSubCategory /

@@ -446,11 +446,70 @@
                 </div>
             </div>
 
-            @* PRODUCTS HEADER (count only — filter/sort bar deferred to a later iteration) *@
+            @* PRODUCTS HEADER (count + active filter chips) *@
             <div class="tm-products-header">
                 <div class="tm-products-title-block">
                     <h3 class="tm-products-title">@Loc["ProductsHeading"]</h3>
                     <span class="tm-products-count tm-persian-num">@ToPersian(_totalCount) @Loc["ProductsCountUnit"]</span>
+
+                    @* ACTIVE FILTER CHIPS
+                       Render one chip per active filter (search term, category)
+                       next to the count. Each chip shows what's currently
+                       filtered and offers a one-click X to clear JUST that
+                       filter (the other filter, if any, stays active).
+                       When both filters are active at once, an additional
+                       "Clear all" pill appears at the end so the user can
+                       wipe everything in one click. *@
+                    @if (HasActiveFilters)
+                    {
+                        <div class="tm-active-filters" role="group" aria-label="@Loc["ActiveFiltersLabel"]">
+                            @if (!string.IsNullOrWhiteSpace(_searchTerm))
+                            {
+                                <button type="button"
+                                        class="tm-filter-chip tm-filter-chip-search"
+                                        title="@Loc["ClearSearchTooltip"]"
+                                        aria-label="@string.Format(Loc["ClearSearchAria"], _searchTerm)"
+                                        @onclick="ClearSearchAsync">
+                                    <svg class="tm-filter-chip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                                    </svg>
+                                    <span class="tm-filter-chip-label">"@_searchTerm"</span>
+                                    <svg class="tm-filter-chip-x" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" width="14" height="14" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            }
+                            @if (GetSelectedCategoryName() is { } categoryName)
+                            {
+                                <button type="button"
+                                        class="tm-filter-chip tm-filter-chip-category"
+                                        title="@Loc["ClearCategoryTooltip"]"
+                                        aria-label="@string.Format(Loc["ClearCategoryAria"], categoryName)"
+                                        @onclick="(() => OnCategoryChanged(null))">
+                                    <svg class="tm-filter-chip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                                    </svg>
+                                    <span class="tm-filter-chip-label">@categoryName</span>
+                                    <svg class="tm-filter-chip-x" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" width="14" height="14" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            }
+                            @if (HasMultipleActiveFilters)
+                            {
+                                <button type="button"
+                                        class="tm-filter-chip tm-filter-chip-clear-all"
+                                        title="@Loc["ClearAllFiltersTooltip"]"
+                                        aria-label="@Loc["ClearAllFiltersAria"]"
+                                        @onclick="ClearFilters">
+                                    <svg class="tm-filter-chip-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a2 2 0 012-2h2a2 2 0 012 2v3" />
+                                    </svg>
+                                    <span class="tm-filter-chip-label">@Loc["ClearAllFiltersButton"]</span>
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -1045,6 +1104,82 @@
         _selectedCategoryId = null;
         _pageNumber = 1;
         await LoadProductsAsync();
+
+        // Clear the visible text in the search input — see ClearSearchAsync
+        // for the rationale (one-way binding means the input's visible
+        // text would otherwise stay stale).
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')");
+        }
+        catch
+        {
+            // Non-fatal — chip row is still cleared, just the input's
+            // visible text might be stale until the next interaction.
+        }
+    }
+
+    /// <summary>
+    /// Clears ONLY the search term (keeps the selected category, if any).
+    /// Triggered by the search filter chip's X button. Resets to page 1
+    /// because the result set changes when the search filter is dropped.
+    /// Also clears the visible text in the search input element so the
+    /// input doesn't show stale text after the chip is dismissed.
+    /// </summary>
+    private async Task ClearSearchAsync()
+    {
+        _searchTerm = string.Empty;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+
+        // Clear the visible text in the search input. Blazor's @bind is
+        // one-way here (we use value="@_searchTerm" + @oninput), so we
+        // must push the cleared value to the DOM explicitly. The input
+        // has id="tm-shop-search-input" — see the markup above.
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')");
+        }
+        catch
+        {
+            // Non-fatal — if JS interop is unavailable (e.g. during SSR
+            // or prerender), the chip is still cleared from the title
+            // block; only the input box's visible text is stale. The
+            // next keystroke or page reload will sync it.
+        }
+    }
+
+    /// <summary>
+    /// True when EITHER a search term or a category filter is active.
+    /// Drives whether the active-filters chip row is rendered at all.
+    /// </summary>
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_searchTerm) || _selectedCategoryId is not null;
+
+    /// <summary>
+    /// True when BOTH a search term AND a category filter are active at
+    /// once. In that case we additionally render a "Clear all" pill at
+    /// the end of the chip row so the user can wipe everything in one
+    /// click instead of clicking X twice.
+    /// </summary>
+    private bool HasMultipleActiveFilters =>
+        !string.IsNullOrWhiteSpace(_searchTerm) && _selectedCategoryId is not null;
+
+    /// <summary>
+    /// Resolves the currently-selected category's display name from the
+    /// in-memory _categories list. Returns null when no category is
+    /// selected OR when the selected id no longer maps to a category in
+    /// the list (e.g. the category was just deactivated and the tree was
+    /// reloaded without it). In either case the category chip is hidden.
+    /// </summary>
+    private string? GetSelectedCategoryName()
+    {
+        if (_selectedCategoryId is not { } catId)
+        {
+            return null;
+        }
+
+        return _categories.FirstOrDefault(c => c.Id == catId)?.Name;
     }
 
     // ── Quantity selector (per-card) ────────────────────────────────────
@@ -1499,6 +1634,12 @@
     ///     Localized via the PurchaseLimitExceeded resx key, which does
     ///     NOT mention "groups" (the original Persian error leaked the
     ///     internal group concept to customers).
+    ///   - <c>CategoryDeactivated:{productName}</c> — produced by
+    ///     CreateOrAppendSale / AddItemToSale / SubmitSale handlers when
+    ///     the product's category / sub / sub-sub has been deactivated.
+    ///     Localized via the CategoryDeactivated resx key. The product's
+    ///     StockQuantity is preserved; only visibility + buyability are
+    ///     suppressed.
     /// </summary>
     private string? LocalizeError(string? error)
     {
@@ -1509,6 +1650,13 @@
                 Loc["PurchaseLimitExceeded"],
                 productName,
                 limit);
+        }
+        if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedProductName))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["CategoryDeactivated"],
+                deactivatedProductName);
         }
         return error;
     }
