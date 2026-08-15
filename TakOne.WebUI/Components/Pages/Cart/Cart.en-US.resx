@@ -211,4 +211,11 @@
   <data name="CategoryDeactivated" xml:space="preserve">
     <value>&apos;{0}&apos; is currently unavailable for purchase. Please remove it from your cart or try again later.</value>
   </data>
+  <!-- SubmitEmptyCart — returned by SubmitSaleCommandHandler when the cart
+       has 0 line items. Defense-in-depth guard that should never fire (the
+       Submit button is disabled for empty carts), but if it does, show a
+       localized message instead of the raw error code. -->
+  <data name="SubmitEmptyCart" xml:space="preserve">
+    <value>Your cart is empty. Add at least one item before submitting.</value>
+  </data>
 </root>

@@ -167,6 +167,13 @@
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
   </data>
+  <!-- DeactivateDialogTitle — title shown at the top of the DeactivateUserDialog
+       modal (the second-step confirmation with the 3-second countdown). Kept
+       here (not in DeactivateUserDialog.en-US.resx) so the page that opens
+       the dialog owns its title, matching the SaleDetail pattern. -->
+  <data name="DeactivateDialogTitle" xml:space="preserve">
+    <value>Confirm deactivation</value>
+  </data>
   <data name="DeactivateSuccessTitle" xml:space="preserve">
     <value>User deactivated</value>
   </data>

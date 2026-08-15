@@ -171,9 +171,46 @@ public sealed class SubmitSaleCommandHandler
             }
         }
 
+        // ------------------------------------------------------------------
+        // EMPTY-CART GUARD (defense-in-depth).
+        //
+        // The Sale aggregate's Submit() method throws DomainException if
+        // the sale has no line items — which is caught by middleware and
+        // converted to Result.Failure with an English message
+        // ("Cannot submit a sale with no line items."). That English
+        // message leaks to the UI even in Persian mode.
+        //
+        // More importantly, this guard is the LAST line of defense against
+        // the "empty order" bug: if a ghost draft (an empty Draft row from
+        // a buggy code path — see QuickReorderLastSaleCommandHandler's
+        // commentary on the ghost-draft bug) ever makes it to the Submit
+        // flow, this check blocks it from becoming a Pending order. The
+        // user's cart page ALSO guards against this (the Submit button is
+        // disabled when the cart is empty, and HasStockIssue / HasLimitIssue
+        // re-check in the handler), but defense-in-depth means we don't
+        // trust any single layer.
+        //
+        // Returns a stable, culture-neutral error code that the UI
+        // localizes — mirroring the PurchaseLimitErrors / StockErrors /
+        // CategoryDeactivatedErrors pattern.
+        // ------------------------------------------------------------------
+        if (sale.LineItems.Count == 0)
+        {
+            logger.LogWarning
+                ("SubmitSale: sale {SaleId} ({SaleNumber}) has 0 line items. " +
+                 "Blocking submit — an empty draft should never reach the submit flow " +
+                 "(the QuickReorder handler's compute-first architecture prevents this, " +
+                 "and the Cart page disables the Submit button for empty carts).",
+                sale.Id, sale.SaleNumber);
+
+            return Result.Failure("SubmitEmptyCart");
+        }
+
         // Delegate to the aggregate. Submit() enforces:
         //   - sale is in Draft status (throws otherwise)
-        //   - sale has at least one line item (throws otherwise)
+        //   - sale has at least one line item (throws otherwise — redundant
+        //     with the guard above, but the domain doesn't trust the
+        //     application layer either)
         //   - sale total is positive (throws otherwise)
         // DomainException is caught by middleware and converted to Result.Failure.
         sale.Submit();

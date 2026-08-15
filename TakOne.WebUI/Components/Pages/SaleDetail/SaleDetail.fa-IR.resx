@@ -232,4 +232,21 @@
   <data name="ActionSuccessFormat" xml:space="preserve">
     <value>{0} — سفارش به‌روزرسانی شد.</value>
   </data>
+
+  <!-- پیام‌های خطای محلی‌شده برای کدهای خطای پایدار و مستقل از فرهنگ که
+       توسط هندلرهای دستور Approve / MarkAsInvoiced / Cancel بازگردانده می‌شوند.
+       به LocalizeError در SaleDetail.razor و کمک‌کننده‌های TakOne.Application.Common.Errors
+       (StockErrors، CategoryDeactivatedErrors، PurchaseLimitErrors) مراجعه کنید. -->
+  <!-- StockExceeded — {0} = نام محصول، {1} = موجودی فعلی، {2} = تعداد درخواستی -->
+  <data name="StockExceeded" xml:space="preserve">
+    <value>موجودی برای تأیید این سفارش کافی نیست. محصول «{0}» {1} عدد موجود دارد، اما سفارش به {2} عدد نیاز دارد.</value>
+  </data>
+  <!-- CategoryDeactivated — {0} = نام محصول (دسته‌بندی محصول غیرفعال شده است) -->
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>کالای «{0}» دیگر قابل خرید نیست. آن را از سفارش حذف کنید یا با مدیر سیستم تماس بگیرید.</value>
+  </data>
+  <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value>
+  </data>
 </root>

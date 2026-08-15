@@ -119,3 +119,15 @@
     color: var(--rz-danger);
     font-weight: 600;
 }
+
+/* -----------------------------------------------------------------------------
+   DeactivateUserDialog — warning heading color
+   -----------------------------------------------------------------------------
+   Same pattern as the CancelConfirmationDialog above: the dialog's
+   "⚠️ Login will be blocked" heading uses Radzen's danger color so it
+   reads as a warning across all themes. Scoped to the dialog's own
+   wrapper class (.deactivate-user-dialog) so it doesn't leak. */
+.deactivate-user-dialog__warning {
+    color: var(--rz-danger);
+    font-weight: 600;
+}

@@ -77,12 +77,14 @@
 @using TakOne.Application.Users.Queries.GetUsersPaginated
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.DeactivateUserDialog
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminUsers> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
 @inject IJSRuntime JS
+@inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -119,10 +121,10 @@
             }
 
             /* Restricted-action indicator — shown in place of the activate/
-                           deactivate button when the current user is a Manager and the
-                           row's user is NOT in the Employee or Customer role. Mirrors the
-                           size of the text buttons it replaces so the Actions column
-                           doesn't jump around when scrolling between rows. */
+                                       deactivate button when the current user is a Manager and the
+                                       row's user is NOT in the Employee or Customer role. Mirrors the
+                                       size of the text buttons it replaces so the Actions column
+                                       doesn't jump around when scrolling between rows. */
             .row-action-locked {
                 display: inline-flex;
                 align-items: center;
@@ -733,17 +735,52 @@
     {
         if (_isBusyUserId.HasValue) return;
 
-        // JS confirm() — destructive action deserves one click of friction.
+        // Custom in-app confirmation dialog (DeactivateUserDialog) with a
+        // 3-second countdown on the confirm button — same pattern as the
+        // sale-cancel flow (CancelConfirmationDialog). Replaces the old
+        // window.confirm() call, which gave a sparse native browser popup
+        // that didn't match the app's styling and had no friction against
+        // reflex confirmations.
+        //
+        // Rationale for the countdown: deactivation IS reversible (re-run
+        // Activate), but it blocks the target user from logging in — which
+        // could be a mistake if the admin clicked the wrong row. The
+        // 3-second pause is enough to catch a reflex click.
+        //
         // The handler also rejects self-deactivation as defense-in-depth,
         // but we hide the button on the user's own row anyway (see markup).
-        var confirmMessage = string.Format(
-            CultureInfo.CurrentCulture,
-            Loc["ConfirmDeactivate"],
-            user.FullName,
-            user.WorkerId);
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateUserDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "UserDisplayName", user.FullName }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,  // force the user to click a button — no accidental close
+                    ShowClose = true,                   // keep the X button so the user has an obvious escape
+                });
+        }
+        catch (Exception ex)
+        {
+            // DialogService.OpenAsync shouldn't throw under normal use, but
+            // if it does (e.g. JS-interop failure), surface it instead of
+            // silently swallowing.
+            System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
-        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
-        if (!confirmed) return;
+        // `confirmed` is `object?` (boxed bool from DialogService.Close(true|false),
+        // or null if the user dismissed via X / Esc / overlay). Anything that
+        // isn't exactly `true` is treated as "user aborted".
+        if (confirmed is not true) return;
 
         _isBusyUserId = user.Id;
         try

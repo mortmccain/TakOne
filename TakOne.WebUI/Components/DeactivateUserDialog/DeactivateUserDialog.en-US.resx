@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DeactivateUserDialog.en-US.resx — English strings for the user-deactivation
+     confirmation dialog. Sits next to the razor file so Blazor's SDK
+     auto-discovers it as the culture-specific resource for
+     DeactivateUserDialog. Mirrors the CancelConfirmationDialog.en-US.resx
+     structure (same key names where the meaning overlaps) so the two
+     dialogs stay consistent. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Dialog title (set by parent via DialogService.OpenAsync title arg, but
+       kept here for reference / potential reuse if the title moves inside) -->
+  <data name="DialogTitle" xml:space="preserve">
+    <value>Confirm deactivation</value>
+  </data>
+
+  <!-- Warning heading — red, with the ⚠️ icon. Note: deactivation is
+       reversible, so we say "Login will be blocked" instead of the
+       sale-cancel dialog's "Irreversible action". -->
+  <data name="WarningHeading" xml:space="preserve">
+    <value>⚠️ Login will be blocked</value>
+  </data>
+
+  <!-- Body text — three pieces rendered with the user's name in bold
+       in the middle. BodyIntro + bold-name + "." + BodyBlock is one
+       continuous sentence/clause in the rendered output. -->
+  <data name="BodyIntro" xml:space="preserve">
+    <value>You are about to deactivate the user</value>
+  </data>
+  <data name="BodyBlock" xml:space="preserve">
+    <value>They will no longer be able to log in. Their sales and history are preserved, and the account can be reactivated at any time.</value>
+  </data>
+  <data name="BodyConfirm" xml:space="preserve">
+    <value>Please confirm you want to proceed.</value>
+  </data>
+
+  <!-- Buttons -->
+  <data name="ButtonNo" xml:space="preserve">
+    <value>No, go back</value>
+  </data>
+  <data name="ButtonYesReady" xml:space="preserve">
+    <value>Yes, I'm sure</value>
+  </data>
+  <!-- {0} is the countdown number (1, 2, 3) -->
+  <data name="ButtonYesCounting" xml:space="preserve">
+    <value>Yes, I'm sure ({0}s)</value>
+  </data>
+</root>

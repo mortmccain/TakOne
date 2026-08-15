@@ -1134,6 +1134,16 @@
                 Loc["CategoryDeactivated"],
                 deactivatedProductName);
         }
+        // Stable error code returned by SubmitSaleCommandHandler when the
+        // cart is empty — defense-in-depth guard that should never fire
+        // (the Submit button is disabled for empty carts, and the
+        // QuickReorder handler's compute-first architecture prevents ghost
+        // drafts). If it does fire, show a localized message instead of the
+        // raw "SubmitEmptyCart" code.
+        if (error == "SubmitEmptyCart")
+        {
+            return Loc["SubmitEmptyCart"];
+        }
         return error;
     }
 

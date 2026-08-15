@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -55,9 +56,13 @@ public sealed class ApproveSaleCommandHandler
             var product = await productRepository.GetByIdAsync(line.ProductId, cancellationToken);
             if (product is null)
             {
+                // Product no longer exists — return a stable, culture-
+                // neutral error code that the UI localizes (via the
+                // CategoryDeactivatedErrors pattern — same UX: the
+                // product is unavailable, remove the line). Previously
+                // this was a hardcoded English string.
                 return Result.Failure(
-                    $"Product '{line.ProductName}' (line {line.LineNumber}) no longer exists. " +
-                    "Cannot approve this sale — remove the line or contact an administrator.");
+                    CategoryDeactivatedErrors.Format(line.ProductName));
             }
 
             // Total quantity across all lines for this product.
@@ -67,9 +72,14 @@ public sealed class ApproveSaleCommandHandler
 
             if (totalQuantityForProduct > product.StockQuantity)
             {
+                // Not enough stock — return a stable, culture-neutral
+                // error code (StockErrors.Format) so the UI can localize
+                // the message into the user's language. Previously this
+                // was a hardcoded English string that leaked as an
+                // English error toast even in Persian (fa-IR) mode —
+                // the exact bug reported by the user.
                 return Result.Failure(
-                    $"Not enough stock to approve sale. Product '{product.Name}' has " +
-                    $"{product.StockQuantity} in stock, but the sale requires {totalQuantityForProduct}.");
+                    StockErrors.Format(product.Name, product.StockQuantity, totalQuantityForProduct));
             }
 
             productsById[line.ProductId] = product;

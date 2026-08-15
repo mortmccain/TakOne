@@ -1658,6 +1658,13 @@
                 Loc["CategoryDeactivated"],
                 deactivatedProductName);
         }
+        // Stable error code returned by SubmitSaleCommandHandler when the
+        // cart is empty — defense-in-depth guard that should never fire.
+        // If it does, show a localized message instead of the raw code.
+        if (error == "SubmitEmptyCart")
+        {
+            return Loc["SubmitEmptyCart"];
+        }
         return error;
     }
 

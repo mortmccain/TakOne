@@ -339,4 +339,9 @@
   <data name="CategoryDeactivated" xml:space="preserve">
     <value>کالای «{0}» در حال حاضر قابل خرید نیست. لطفاً آن را از سبد خود حذف کنید یا بعداً دوباره تلاش کنید.</value>
   </data>
+  <!-- SubmitEmptyCart — توسط SubmitSaleCommandHandler وقتی سبد ۰ قلم دارد بازگردانده
+       می‌شود. محافظ دفاع در عمق که هرگز نباید فعال شود. -->
+  <data name="SubmitEmptyCart" xml:space="preserve">
+    <value>سبد شما خالی است. قبل از ثبت، حداقل یک کالا اضافه کنید.</value>
+  </data>
 </root>

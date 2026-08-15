@@ -1,0 +1,137 @@
+﻿@* DeactivateUserDialog.razor — second-step confirmation modal for user
+   deactivation.
+
+   OPENED BY:
+     AdminUsers.razor's HandleDeactivateAsync and UserDetail.razor's
+     HandleDeactivateAsync, via DialogService.OpenAsync<DeactivateUserDialog>.
+     The parent passes one parameter: UserDisplayName (string — the user's
+     FullName). The dialog returns true if the user confirmed, false/null
+     otherwise (matching the CancelConfirmationDialog.razor contract used by
+     the sale-cancel flow).
+
+   WHY A CUSTOM DIALOG (not JS confirm()):
+     The previous implementation called window.confirm() with a long
+     sentence, which gives a sparse native browser popup that:
+       - Doesn't match the app's Radzen styling (looks foreign in both
+         light/dark themes and breaks the visual flow on the admin pages).
+       - Renders in the browser's locale (Chrome/Firefox show "This page
+         says:" headers and OS-localized OK/Cancel buttons), not the
+         app's en-US/fa-IR culture.
+       - Has no friction against reflex confirmations — one click and
+         the user is locked out.
+     The user's spec asks for the same in-app popup pattern as the
+     sale-cancel flow (CancelConfirmationDialog.razor), INCLUDING the
+     3-second countdown on the confirm button. Rationale: even though
+     deactivation is reversible (via Activate), it blocks the target
+     user from logging in — which could be a mistake, and a 3-second
+     pause is enough to catch a reflex click on the wrong row.
+
+   LAYOUT (mirrors CancelConfirmationDialog.razor):
+     - Warning heading (red, bold — "⚠️ Login will be blocked")
+     - Body: three pieces — intro mentioning the user's name, an
+       explanation that the user will be unable to log in (but their
+       sales/history are preserved and the account can be reactivated),
+       and a "please confirm" sentence.
+     - Footer: "No, go back" (Secondary) + "Yes, I'm sure" (Danger).
+       The Yes button is DISABLED for the first 3 seconds after the
+       dialog opens, and shows the live countdown in its label.
+
+   LIFECYCLE & ROBUSTNESS:
+     - OnInitializedAsync starts a 3-iteration countdown loop with 1s
+       sleep between iterations. Each iteration updates `countdown`
+       and calls StateHasChanged so the button text re-renders.
+     - A CancellationTokenSource is created up-front; if the user closes
+       the dialog before the countdown finishes (e.g. clicks "No, go
+       back" or hits the X), the Dispose() method cancels the CTS so
+       the Task.Delay doesn't keep ticking in the background.
+     - We catch BOTH OperationCanceledException (raised when the CTS is
+       cancelled) AND ObjectDisposedException (raised if Dispose runs so
+       fast that the next Task.Delay tries to access a disposed CTS).
+     - The dialog is single-purpose — no Command dispatch here. The
+       parent decides what to do based on the bool return value.
+
+   LOCALIZATION:
+     en-US + fa-IR resx files sit next to this razor file. Both
+     render the countdown number via {0} so fa-IR shows Persian digits
+     when the culture's digit substitution kicks in.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<Components.DeactivateUserDialog.DeactivateUserDialog> Loc
+@implements IDisposable
+
+<div class="deactivate-user-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="deactivate-user-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@UserDisplayName</strong>.
+            @Loc["BodyBlock"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@ButtonText"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Disabled="@(countdown > 0)"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string UserDisplayName { get; set; } = string.Empty;
+
+    private int countdown = 3;
+    private CancellationTokenSource? _cts;
+
+    // Button text shows the countdown while it's ticking, then becomes the
+    // plain "Yes, I'm sure" once the button is enabled. The format string
+    // is localized so fa-IR can render the digits in Persian if it wants to.
+    private string ButtonText =>
+        countdown > 0
+            ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Loc["ButtonYesCounting"], countdown)
+            : Loc["ButtonYesReady"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        try
+        {
+            for (int i = 3; i > 0; i--)
+            {
+                countdown = i;
+                await InvokeAsync(StateHasChanged);
+                // Capture the token locally so that even if Dispose races
+                // ahead and nulls out _cts, we still have a valid reference
+                // to pass to Task.Delay. (Dispose also calls Cancel first,
+                // so a disposed-token race here surfaces as
+                // OperationCanceledException, which we catch below.)
+                var token = _cts.Token;
+                await Task.Delay(1000, token);
+            }
+            countdown = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* user closed dialog before countdown finished */ }
+        catch (ObjectDisposedException) { /* Dispose ran between iterations — same story */ }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch (ObjectDisposedException) { /* already disposed — fine */ }
+        _cts?.Dispose();
+        _cts = null;
+    }
+}

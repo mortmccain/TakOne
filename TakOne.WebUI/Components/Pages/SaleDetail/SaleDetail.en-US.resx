@@ -233,4 +233,22 @@
   <data name="ActionSuccessFormat" xml:space="preserve">
     <value>{0} — order updated.</value>
   </data>
+
+  <!-- Localized error messages for stable, culture-neutral error codes
+       returned by the Approve / MarkAsInvoiced / Cancel command handlers.
+       See LocalizeError in SaleDetail.razor and the TakOne.Application.Common.Errors
+       helpers (StockErrors, CategoryDeactivatedErrors, PurchaseLimitErrors)
+       for the format-string contracts. -->
+  <!-- StockExceeded — {0} = product name, {1} = current stock, {2} = required quantity -->
+  <data name="StockExceeded" xml:space="preserve">
+    <value>Not enough stock to approve this order. Product '{0}' has {1} in stock, but the order requires {2}.</value>
+  </data>
+  <!-- CategoryDeactivated — {0} = product name (product's category was deactivated) -->
+  <data name="CategoryDeactivated" xml:space="preserve">
+    <value>'{0}' is no longer available for purchase. Remove it from the order or contact an administrator.</value>
+  </data>
+  <!-- PurchaseLimitExceeded — {0} = product name, {1} = per-customer limit -->
+  <data name="PurchaseLimitExceeded" xml:space="preserve">
+    <value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value>
+  </data>
 </root>

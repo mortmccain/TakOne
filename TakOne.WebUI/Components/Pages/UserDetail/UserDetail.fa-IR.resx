@@ -298,6 +298,13 @@
     <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
     <comment>{0} = نام کامل کاربر؛ {1} = شناسه کارگری کاربر</comment>
   </data>
+  <!-- DeactivateDialogTitle — عنوان نمایش‌داده‌شده در بالای مودال DeactivateUserDialog
+       (تأیید دومرحله‌ای با شمارش معکوس ۳ ثانیه‌ای). این کلید در این فایل قرار دارد
+       (نه در DeactivateUserDialog.fa-IR.resx) تا صفحه‌ای که مودال را باز می‌کند،
+       عنوان آن را در اختیار داشته باشد — مطابق الگوی SaleDetail. -->
+  <data name="DeactivateDialogTitle" xml:space="preserve">
+    <value>تأیید غیرفعال‌سازی</value>
+  </data>
 
   <!-- Validation errors -->
   <data name="FullNameLengthError" xml:space="preserve">

@@ -82,6 +82,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Errors
 @using TakOne.Application.Sales.DTOs
 @using TakOne.Application.Sales.Queries.GetSaleById
 @using TakOne.Application.Sales.Commands.ApproveSale
@@ -1074,6 +1075,51 @@
     }
 
     /// <summary>
+    /// Translates stable, culture-neutral error codes (returned by the
+    /// Approve/MarkAsInvoiced/Cancel command handlers) into culture-aware
+    /// messages for the current UI culture. Returns null for any error
+    /// string it doesn't recognize — the caller falls back to the raw
+    /// error or to Error_GenericAction.
+    ///
+    /// Recognized error codes (see TakOne.Application.Common.Errors):
+    ///   - StockErrors.Format(name, stock, required)  → Loc["StockExceeded"]
+    ///   - CategoryDeactivatedErrors.Format(name)      → Loc["CategoryDeactivated"]
+    ///   - PurchaseLimitErrors.Format(name, limit)     → Loc["PurchaseLimitExceeded"]
+    ///
+    /// Mirrors the LocalizeError helpers in Products.razor and Cart.razor
+    /// so all three pages that surface sale-command errors share a
+    /// consistent localization strategy.
+    /// </summary>
+    private string? LocalizeError(string? error)
+    {
+        if (StockErrors.TryParse(error, out var stockName, out var stock, out var required))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["StockExceeded"],
+                stockName,
+                stock,
+                required);
+        }
+        if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedName))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["CategoryDeactivated"],
+                deactivatedName);
+        }
+        if (PurchaseLimitErrors.TryParse(error, out var limitName, out var limit))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["PurchaseLimitExceeded"],
+                limitName,
+                limit);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Common wrapper for the three staff actions: sets _isBusy, clears the
     /// previous _actionError, dispatches the command, handles success
     /// (toast + reload the sale to refresh audit trail + status badge) and
@@ -1104,10 +1150,13 @@
             }
             else
             {
-                // result.Error contains the handler's user-friendly message
-                // (e.g. "Not enough stock to approve sale. Product 'X' has 3
-                // in stock but the sale requires 5.").
-                _actionError = result.Error ?? Loc["Error_GenericAction"];
+                // result.Error may be a stable, culture-neutral error code
+                // (e.g. StockErrors.Format / CategoryDeactivatedErrors.Format /
+                // PurchaseLimitErrors.Format) that needs to be localized into
+                // the user's language. LocalizeError returns null for errors
+                // it doesn't recognize — we fall back to the raw error string,
+                // or to Error_GenericAction if the handler returned no error.
+                _actionError = LocalizeError(result.Error) ?? Loc["Error_GenericAction"];
                 await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
             }
         }
