@@ -258,15 +258,23 @@
 
                     @* ── Sale number — text filter (Radzen default) ──
                        Clickable link to /Sales/{Id}. Monospace + primary
-                       color so it reads as an identifier. *@
+                       color so it reads as an identifier.
+
+                       B2 deferred-allocation: drafts have no permanent
+                       SaleNumber, so the column binds to DisplayNumber
+                       (real SaleNumber for submitted sales, or
+                       DRAFT-{Guid[0..8]} for drafts). This makes drafts
+                       searchable — typing "DRAFT" or the Guid prefix in
+                       the filter row matches draft rows. *@
                     <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="SaleNumber"
+                                          Property="DisplayNumber"
                                           Title="@Loc["ColSaleNumber"]"
                                           Width="240px">
                         <Template Context="sale">
-                            <RadzenLink Text="@sale.SaleNumber"
+                            <RadzenLink Text="@sale.DisplayNumber"
                                         Path="@($"/Sales/{sale.Id}")"
-                                        class="sale-number-link" />
+                                        class="sale-number-link"
+                                        title="@(GetSaleNumberTooltip(sale))" />
                         </Template>
                     </RadzenDataGridColumn>
 
@@ -617,6 +625,15 @@
     }
 
     // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a tooltip for the sale-number link. When the sale is a Draft
+    /// (no permanent SaleNumber), returns a localized explanation of the
+    /// pseudo-id. Returns null for submitted sales so the browser doesn't
+    /// render an empty title attribute.
+    /// </summary>
+    private string? GetSaleNumberTooltip(SaleListItemDto sale) =>
+        sale.SaleNumber is null ? (string?)Loc["DraftPseudoIdTooltip"] : null;
 
     /// <summary>
     /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —

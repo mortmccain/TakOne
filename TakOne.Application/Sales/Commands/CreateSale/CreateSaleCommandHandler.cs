@@ -18,19 +18,12 @@ namespace TakOne.Application.Sales.Commands.CreateSale;
 /// </summary>
 public sealed class CreateSaleCommandHandler
 {
-    /// <summary>
-    /// Prefix used for the human-readable SaleNumber (e.g. "SALE-2026-0001").
-    /// Centralized here so it's easy to change without hunting for string literals.
-    /// </summary>
-    public const string SaleNumberPrefix = "SALE";
-
     public static async Task<Result<Guid>> HandleAsync(
         CreateSaleCommand command,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
         IProductRepository productRepository,
         ISaleRepository saleRepository,
-        ISaleNumberGenerator saleNumberGenerator,
         IUnitOfWork unitOfWork,
         ILogger<CreateSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -81,19 +74,13 @@ public sealed class CreateSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Generate the sale number. ISaleNumberGenerator is backed by the
-        //    Infrastructure layer (step 7d), which uses PersianCalendar to
-        //    compute the Persian year and counts ALL existing sales in that
-        //    year to produce a globally-unique sequence.
-        //    Concurrency note: two simultaneous CreateSale calls could both
-        //    compute the same sequence. The unique index on
-        //    (SaleNumber_Year, SaleNumber_Sequence) on the Sales table causes
-        //    the loser's SaveChangesAsync to fail. A retry policy (Polly)
-        //    will be added in a future hardening pass.
-        // ------------------------------------------------------------------
-        var saleNumber = await saleNumberGenerator.NextAsync(cancellationToken);
-        // ------------------------------------------------------------------
-        // 4. Create the Sale in Draft state.
+        // 3. Create the Sale in Draft state (B2 deferred-allocation design).
+        //    Drafts are created WITHOUT a SaleNumber — the permanent number
+        //    is allocated only when the customer submits (see
+        //    SubmitSaleCommandHandler). SaleNumber is passed as null here;
+        //    the EF configuration stores it as NULL, and the filtered unique
+        //    index on (SaleNumber_Year, SaleNumber_Sequence) allows multiple
+        //    concurrent drafts (NULLs are exempt from the filter).
         //    CustomerId/Name come from the resolved customer.
         //    CreatedById/Name come from the current user (which may equal
         //    the customer for self-buy, or be a staff member for on-behalf).
@@ -101,7 +88,7 @@ public sealed class CreateSaleCommandHandler
         var sale = Sale.Create(
             customerId: customer.Id,
             customerName: customer.FullName,
-            saleNumber: saleNumber,
+            saleNumber: null,
             createdByUserId: currentUser.UserId,
             createdByName: currentUser.FullName);
 
@@ -167,8 +154,8 @@ public sealed class CreateSaleCommandHandler
 
         var isSelfBuy = customer.Id == currentUser.UserId;
         logger.LogInformation(
-            "CreateSale: sale {SaleId} ({SaleNumber}) created by {CreatorId} for customer {CustomerId}. Self-buy: {SelfBuy}.",
-            sale.Id, sale.SaleNumber, currentUser.UserId, customer.Id, isSelfBuy);
+            "CreateSale: draft {SaleId} created by {CreatorId} for customer {CustomerId}. Self-buy: {SelfBuy}.",
+            sale.Id, currentUser.UserId, customer.Id, isSelfBuy);
 
         return Result<Guid>.Success(sale.Id);
     }

@@ -14,6 +14,7 @@ public sealed class SubmitSaleCommandHandler
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        ISaleNumberGenerator saleNumberGenerator,
         IUnitOfWork unitOfWork,
         ILogger<SubmitSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -193,18 +194,52 @@ public sealed class SubmitSaleCommandHandler
         // Returns a stable, culture-neutral error code that the UI
         // localizes — mirroring the PurchaseLimitErrors / StockErrors /
         // CategoryDeactivatedErrors pattern.
+        //
+        // NOTE: This guard runs BEFORE sale-number allocation. An empty
+        // cart must NOT burn a permanent sequence number — the allocation
+        // below costs a row update in SaleSequenceCounters and (under the
+        // gap-burning semantics of the generator) cannot be rolled back.
+        // Blocking empty carts here keeps the permanent sequence clean.
         // ------------------------------------------------------------------
         if (sale.LineItems.Count == 0)
         {
             logger.LogWarning
-                ("SubmitSale: sale {SaleId} ({SaleNumber}) has 0 line items. " +
+                ("SubmitSale: sale {SaleId} has 0 line items. " +
                  "Blocking submit — an empty draft should never reach the submit flow " +
                  "(the QuickReorder handler's compute-first architecture prevents this, " +
-                 "and the Cart page disables the Submit button for empty carts).",
-                sale.Id, sale.SaleNumber);
+                 "and the Cart page disables the Submit button for empty carts). " +
+                 "No sale number was allocated.",
+                sale.Id);
 
             return Result.Failure("SubmitEmptyCart");
         }
+
+        // ------------------------------------------------------------------
+        // SALE NUMBER ALLOCATION (B2 deferred-allocation design).
+        //
+        // The permanent SaleNumber is allocated HERE — at submit time, NOT
+        // at draft creation. Drafts are disposable carts; many are created
+        // and abandoned. Allocating at draft creation would burn permanent
+        // sequence numbers on drafts that never get submitted, producing
+        // gaps in the audit trail of POSTED sales.
+        //
+        // By allocating here, the permanent sequence stays clean: gaps only
+        // come from voided/cancelled submitted sales, which is the correct,
+        // auditable ERP behavior (matching SAP, Oracle, NetSuite).
+        //
+        // The generator (SaleNumberGenerator) uses an atomic UPDATE...OUTPUT
+        // on the SaleSequenceCounters table — the allocation commits
+        // independently of Wolverine's ambient transaction, so the number
+        // is "burned" even if SaveChangesAsync later fails. This is
+        // intentional: it prevents two concurrent submits from getting the
+        // same number, and the gap (if SaveChanges fails) is acceptable
+        // and auditable.
+        //
+        // We allocate AFTER all validation passes (empty-cart guard,
+        // purchase-limit re-check, category-deactivation re-check) so that
+        // a rejected submit does NOT burn a number.
+        // ------------------------------------------------------------------
+        var saleNumber = await saleNumberGenerator.NextAsync(cancellationToken);
 
         // Delegate to the aggregate. Submit() enforces:
         //   - sale is in Draft status (throws otherwise)
@@ -212,8 +247,11 @@ public sealed class SubmitSaleCommandHandler
         //     with the guard above, but the domain doesn't trust the
         //     application layer either)
         //   - sale total is positive (throws otherwise)
+        //   - saleNumber is non-null (throws otherwise — programmer error)
+        // Submit() assigns the SaleNumber to the Sale aggregate (it was null
+        // while the sale was a Draft).
         // DomainException is caught by middleware and converted to Result.Failure.
-        sale.Submit();
+        sale.Submit(saleNumber);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

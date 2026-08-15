@@ -18,7 +18,6 @@ public sealed class QuickReorderLastSaleCommandHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
-        ISaleNumberGenerator saleNumberGenerator,
         IUnitOfWork unitOfWork,
         ILogger<QuickReorderLastSaleCommandHandler> logger,
         CancellationToken cancellationToken
@@ -206,15 +205,15 @@ public sealed class QuickReorderLastSaleCommandHandler
         }
         else
         {
-            // No active draft → create a fresh one. The current user is both
-            // customer and creator (self-buy flow).
-            var saleNumber = await saleNumberGenerator.NextAsync(cancellationToken);
-
+            // No active draft → create a fresh one (B2 deferred-allocation
+            // design: no SaleNumber is allocated at draft creation; the
+            // permanent number is assigned only at submit time). The
+            // current user is both customer and creator (self-buy flow).
             draft = Sale.Create
                 (
                 customerId: currentUser.UserId,
                 customerName: currentUser.FullName,
-                saleNumber: saleNumber,
+                saleNumber: null,
                 createdByUserId: currentUser.UserId,
                 createdByName: currentUser.FullName
                 );

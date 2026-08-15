@@ -150,6 +150,13 @@
   <data name="ColSaleNumber" xml:space="preserve">
     <value>Sale #</value>
   </data>
+  <!-- Tooltip shown on draft sale numbers (pseudo-ids). Explains that this
+       is a temporary identifier for an unsubmitted cart, not a permanent
+       sale number. The permanent number is assigned when the cart is
+       submitted. -->
+  <data name="DraftPseudoIdTooltip" xml:space="preserve">
+    <value>Draft cart — no sale number assigned yet</value>
+  </data>
   <data name="ColStatus" xml:space="preserve">
     <value>Status</value>
   </data>

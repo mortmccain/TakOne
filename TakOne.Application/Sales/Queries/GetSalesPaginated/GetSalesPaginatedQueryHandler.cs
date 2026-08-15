@@ -94,19 +94,27 @@ public sealed class GetSalesPaginatedQueryHandler
         // ------------------------------------------------------------------
         // 4. Project to DTO. If a search term was supplied, apply it here
         //    (see class-level comment about why we filter in-memory).
-        //    The search matches SaleNumber OR CustomerName, case-insensitive.
+        //    The search matches SaleNumber OR CustomerName OR the draft
+        //    pseudo-id, case-insensitive.
+        //
+        //    DRAFT PSEUDO-ID SEARCH (B2 deferred-allocation design):
+        //    Drafts have no SaleNumber, so we also match against the pseudo-id
+        //    (DRAFT-{first 8 hex chars of Id}) so users can find drafts by
+        //    typing "DRAFT" or the Guid prefix. This keeps drafts searchable
+        //    just like submitted sales.
         // ------------------------------------------------------------------
         var searchTerm = query.SearchTerm?.Trim();
         var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
 
         var dtos = paginated.Items
             .Where(s => !hasSearch ||
-                        (s.SaleNumber.Value.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase) ||
-                         s.CustomerName.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase)))
+                        (s.SaleNumber?.Value.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase) == true ||
+                         s.CustomerName.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase) ||
+                         $"DRAFT-{s.Id.ToString()[..8].ToUpperInvariant()}".Contains(searchTerm!, StringComparison.OrdinalIgnoreCase)))
             .Select(s => new SaleListItemDto
             {
                 Id = s.Id,
-                SaleNumber = s.SaleNumber.Value,
+                SaleNumber = s.SaleNumber?.Value,
                 CustomerName = s.CustomerName,
                 Status = s.Status.ToString(),
                 Total = new MoneyDto

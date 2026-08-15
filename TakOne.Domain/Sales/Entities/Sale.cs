@@ -75,7 +75,26 @@ public sealed class Sale : AggregateRoot
 
 
 
-    public SaleNumber SaleNumber { get; }
+    /// <summary>
+    /// The sale's permanent identifier. NULL while the sale is in Draft status
+    /// — the number is allocated only when the sale is submitted (see Submit()).
+    /// Once assigned (on submission), the number is immutable.
+    ///
+    /// RATIONALE (B2 design — deferred allocation):
+    ///   Drafts are disposable carts; many are created and abandoned. Allocating
+    ///   a permanent sequence number at draft creation would burn numbers on
+    ///   drafts that never get submitted, producing gaps in the audit trail of
+    ///   POSTED sales. By deferring allocation to Submit(), the permanent
+    ///   sequence stays clean — gaps only come from voided/cancelled submitted
+    ///   sales, which is the correct, auditable ERP behavior.
+    ///
+    /// NULL HANDLING:
+    ///   - In Draft: SaleNumber is null. UI shows a pseudo-id derived from
+    ///     the sale's Guid Id (e.g. "DRAFT-ABC12345") — see read-side DTOs.
+    ///   - In Pending/Approved/Invoiced/Cancelled: SaleNumber is non-null and
+    ///     contains the permanent INT-{Year}-{Seq:D8} identifier.
+    /// </summary>
+    public SaleNumber? SaleNumber { get; private set; }
 
     /// <summary>
     /// The user who placed the sale. Immutable after creation.
@@ -183,20 +202,20 @@ public sealed class Sale : AggregateRoot
 
     /// <summary>
     /// Private constructor used by the static factory method.
-    /// Creates a Sale in <see cref="SaleStatus.Draft"/> status.
+    /// Creates a Sale in <see cref="SaleStatus.Draft"/> status with NO sale
+    /// number (the number is allocated later, on Submit()).
     /// </summary>
     private Sale
         (
         Guid customerId,
         string customerName,
-        SaleNumber saleNumber,
+        SaleNumber? saleNumber,
         Guid createdByUserId,
         string createdByName
         ) : base(Guid.NewGuid())
     {
         EnsureCustomerIdValid(customerId);
         EnsureCustomerNameValid(customerName);
-        EnsureSaleNumberValid(saleNumber);
         EnsureCreatedByUserValid(createdByUserId);
         EnsureCreatedByNameValid(createdByName);
 
@@ -220,14 +239,17 @@ public sealed class Sale : AggregateRoot
 
 
     /// <summary>
-    /// Creates a new Sale in <see cref="SaleStatus.Draft"/> status.
+    /// Creates a new Sale in <see cref="SaleStatus.Draft"/> status, with NO
+    /// sale number assigned yet. The sale number is allocated later, when the
+    /// customer submits the cart (see Submit()).
+    ///
     /// This is the ONLY way to create a Sale from application code.
     /// </summary>
     public static Sale Create
         (
         Guid customerId,
         string customerName,
-        SaleNumber saleNumber,
+        SaleNumber? saleNumber,
         Guid createdByUserId,
         string createdByName
         )
@@ -420,17 +442,46 @@ public sealed class Sale : AggregateRoot
     /// <see cref="SaleStatus.Pending"/>. This is the customer "submit cart" action.
     /// The sale must have at least one line item and a positive total.
     /// After submission, line items can no longer be modified.
+    ///
+    /// SALE NUMBER ALLOCATION (B2 design):
+    ///   The permanent SaleNumber is allocated by the application layer (via
+    ///   ISaleNumberGenerator) IMMEDIATELY BEFORE calling Submit(), and is
+    ///   passed in here. This is the only moment a SaleNumber gets assigned
+    ///   to a Sale — drafts have no number, and the number is immutable after
+    ///   submission. Allocating here (not at draft creation) keeps the
+    ///   permanent sequence clean: drafts that are abandoned never burn a
+    ///   number, so the audit trail of POSTED sales has gaps only from
+    ///   voided/cancelled sales (which is the correct, auditable ERP behavior).
     /// </summary>
-    public void Submit()
+    /// <param name="saleNumber">
+    /// The newly-allocated SaleNumber (non-null). The caller is responsible
+    /// for obtaining it from <c>ISaleNumberGenerator.NextAsync</c> immediately
+    /// before calling this method, so the allocation is as close as possible
+    /// to the actual state transition.
+    /// </param>
+    /// <exception cref="DomainException">
+    /// Thrown if the sale is not in Draft status, has no line items, has a
+    /// zero/negative total, or if <paramref name="saleNumber"/> is null.
+    /// </exception>
+    public void Submit(SaleNumber saleNumber)
     {
         EnsureDraft();
         EnsureHasLineItems();
         EnsureTotalIsPositive();
+        EnsureSaleNumberNotNull(saleNumber);
 
+        SaleNumber = saleNumber;
         Status = SaleStatus.Pending;
         SubmittedAtUtc = DateTime.UtcNow;
 
-        AddDomainEvent(new SaleSubmittedDomainEvent(Id, CustomerId, Total, CreatedByUserId));
+        AddDomainEvent(new SaleSubmittedDomainEvent
+            (
+                Id,
+                CustomerId,
+                Total,
+                saleNumber,
+                CreatedByUserId
+            ));
     }
 
     /// <summary>
@@ -665,16 +716,25 @@ public sealed class Sale : AggregateRoot
             throw new DomainException("Customer name is required.");
     }
 
-    private static void EnsureSaleNumberValid(SaleNumber saleNumber)
-    {
-        if (saleNumber is null)
-            throw new DomainException("Sale number is required.");
-    }
-
     private static void EnsureCreatedByUserValid(Guid createdByUserId)
     {
         if (createdByUserId == Guid.Empty)
             throw new DomainException("Created-by user ID is required.");
+    }
+
+    private static void EnsureSaleNumberNotNull(SaleNumber saleNumber)
+    {
+        // This guard is on Submit(), not on Create(). At draft creation the
+        // sale number is intentionally null (B2 deferred-allocation design).
+        // At submission, the application layer must allocate a fresh
+        // SaleNumber via ISaleNumberGenerator and pass it in — a null here
+        // means the application layer forgot to allocate, which is a
+        // programmer error, not a user-facing condition.
+        if (saleNumber is null)
+            throw new DomainException(
+                "A SaleNumber must be allocated and passed to Submit(). " +
+                "The application layer should call ISaleNumberGenerator.NextAsync " +
+                "immediately before calling Sale.Submit().");
     }
 
     private static void EnsureCreatedByNameValid(string createdByName)

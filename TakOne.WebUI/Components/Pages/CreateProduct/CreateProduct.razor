@@ -122,17 +122,17 @@
                 }
 
             /* RTL fallback for any RadzenNumeric that might appear on
-                               this page in the future. The price-amount and initial-stock
-                               fields now use native <input type="number" dir="ltr"> which
-                               doesn't need this rule (the dir attribute on a native input
-                               is respected by the browser for both caret AND insertion
-                               position). But if a future RadzenNumeric is added, this
-                               rule at least forces LTR direction on the inner input.
-                               NOTE: this CSS alone is NOT enough to fix the RadzenNumeric
-                               RTL caret bug — Radzen's JS mishandles caret position even
-                               with direction:ltr applied. The real fix is to use a native
-                               input with dir="ltr", as the price-amount and initial-stock
-                               fields do. This rule is kept as defense-in-depth. */
+                                           this page in the future. The price-amount and initial-stock
+                                           fields now use native <input type="number" dir="ltr"> which
+                                           doesn't need this rule (the dir attribute on a native input
+                                           is respected by the browser for both caret AND insertion
+                                           position). But if a future RadzenNumeric is added, this
+                                           rule at least forces LTR direction on the inner input.
+                                           NOTE: this CSS alone is NOT enough to fix the RadzenNumeric
+                                           RTL caret bug — Radzen's JS mishandles caret position even
+                                           with direction:ltr applied. The real fix is to use a native
+                                           input with dir="ltr", as the price-amount and initial-stock
+                                           fields do. This rule is kept as defense-in-depth. */
             .create-grid .rz-numeric .rz-textbox {
                 direction: ltr;
                 text-align: left;
@@ -177,7 +177,7 @@
             }
 
             /* Dropzone — a label element wrapping a visually-hidden InputFile.
-                                                   Clicking anywhere on the label triggers the file picker. */
+                                                               Clicking anywhere on the label triggers the file picker. */
             .picture-dropzone {
                 display: block;
                 cursor: pointer;
@@ -219,7 +219,7 @@
                 align-items: center;
                 gap: 0.75rem;
                 /* Let the label receive the click; otherwise the inner
-                                                       elements would steal it from the file input. */
+                                                                   elements would steal it from the file input. */
                 pointer-events: none;
             }
 
@@ -454,7 +454,7 @@
                                     <input type="number"
                                            class="rz-textbox"
                                            dir="ltr"
-                                           step="1"
+                                           step="0.01"
                                            min="0.01"
                                            @bind="_model.PriceAmount"
                                            @bind:culture="CultureInfo.CurrentCulture"

@@ -13,8 +13,8 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260810062740_AddSaleSequenceCounters")]
-    partial class AddSaleSequenceCounters
+    [Migration("20260815102445_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -695,7 +695,8 @@ namespace TakOne.Infrastructure.Migrations
                             b1.HasKey("SaleId");
 
                             b1.HasIndex("Year", "Sequence")
-                                .IsUnique();
+                                .IsUnique()
+                                .HasFilter("[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
 
                             b1.ToTable("Sales");
 
@@ -703,8 +704,7 @@ namespace TakOne.Infrastructure.Migrations
                                 .HasForeignKey("SaleId");
                         });
 
-                    b.Navigation("SaleNumber")
-                        .IsRequired();
+                    b.Navigation("SaleNumber");
                 });
 
             modelBuilder.Entity("TakOne.Domain.Sales.Entities.SaleLineItem", b =>

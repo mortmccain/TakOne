@@ -38,11 +38,23 @@ public sealed class CartDto
     public Guid SaleId { get; init; }
 
     /// <summary>
-    /// Human-friendly sale number (e.g. "1403-00001"). Shown in the page
+    /// Human-friendly sale number (e.g. "INT-۱۴۰۵-۰۰۰۰۰۰۴۲"). Shown in the page
     /// header for context — useful if the user wants to reference their
     /// cart number with a sales employee.
+    ///
+    /// NULL for drafts (B2 deferred-allocation design): drafts have no
+    /// permanent sale number until submitted. Use <see cref="DisplayNumber"/>
+    /// for UI display — it returns a pseudo-id (<c>DRAFT-{Guid[0..8]}</c>)
+    /// when this is null.
     /// </summary>
-    public string SaleNumber { get; init; } = string.Empty;
+    public string? SaleNumber { get; init; }
+
+    /// <summary>
+    /// Display-safe identifier: real SaleNumber for submitted sales, or
+    /// <c>DRAFT-{first 8 hex chars of SaleId}</c> for drafts. Never null.
+    /// </summary>
+    public string DisplayNumber =>
+        SaleNumber ?? $"DRAFT-{SaleId.ToString()[..8].ToUpperInvariant()}";
 
     /// <summary>
     /// Sum of all line item quantities. Convenience for the page header

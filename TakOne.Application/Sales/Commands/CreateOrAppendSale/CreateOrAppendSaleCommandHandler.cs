@@ -89,7 +89,6 @@ public sealed class CreateOrAppendSaleCommandHandler
         ICurrentUserService currentUser,
         IProductRepository productRepository,
         ISaleRepository saleRepository,
-        ISaleNumberGenerator saleNumberGenerator,
         IUserRepository userRepository,
         ICategoryRepository categoryRepository,
         IUnitOfWork unitOfWork,
@@ -319,31 +318,34 @@ public sealed class CreateOrAppendSaleCommandHandler
                     }
 
                     // --------------------------------------------------------------
-                    // 4d. CREATE path — no active draft, start a fresh one.
+                    // 4d. CREATE path — no active draft, start a fresh one
+                    //     (B2 deferred-allocation design: no SaleNumber is
+                    //     allocated at draft creation; the permanent number
+                    //     is assigned only at submit time by
+                    //     SubmitSaleCommandHandler).
                     //
                     //     This path can ALSO race: two concurrent invocations
-                    //     both see `sale == null`, both call SaleNumberGenerator
-                    //     (which has its own concurrency guard via the
-                    //     (SaleNumber_Year, SaleNumber_Sequence) unique index),
-                    //     both create a new Sale, and both SaveChanges. The
-                    //     loser's SaveChanges fails with a unique-constraint
-                    //     violation on the SaleNumber index — and the retry
-                    //     loop catches it.
+                    //     both see `sale == null`, both create a new Sale
+                    //     (with null SaleNumber), and both SaveChanges.
+                    //     Because drafts have NULL SaleNumber, the filtered
+                    //     unique index on (SaleNumber_Year, SaleNumber_Sequence)
+                    //     does NOT reject the second insert (NULLs are exempt
+                    //     from the filter). Both draft rows can co-exist.
                     //
-                    //     On retry, the losing invocation re-runs
-                    //     GetActiveDraftForUserAsync — which now sees the winning
-                    //     invocation's committed Sale (the most-recent Draft for
-                    //     this user) and falls through to the APPEND path (4c)
-                    //     above. So the user ends up with ONE draft Sale
-                    //     containing the line, not two orphan drafts.
+                    //     This is acceptable: on retry, the losing invocation
+                    //     re-runs GetActiveDraftForUserAsync — which now sees
+                    //     the winning invocation's committed Sale (the most-
+                    //     recent Draft for this user) and falls through to the
+                    //     APPEND path (4c) above. The orphan draft row from
+                    //     the loser's first attempt is harmless (it has no
+                    //     line items and no sale number; it will be GC'd by
+                    //     the periodic draft-cleanup job or ignored).
                     // --------------------------------------------------------------
-                    var saleNumber = await saleNumberGenerator.NextAsync(ct);
-
                     sale = Sale.Create
                         (
                         customerId: currentUser.UserId,
                         customerName: currentUser.FullName,
-                        saleNumber: saleNumber,
+                        saleNumber: null,
                         createdByUserId: currentUser.UserId,
                         createdByName: currentUser.FullName
                         );
@@ -361,8 +363,8 @@ public sealed class CreateOrAppendSaleCommandHandler
                     await unitOfWork.SaveChangesAsync(ct);
 
                     logger.LogInformation
-                        ("CreateOrAppendSale: created new draft {SaleId} ({SaleNumber}) for user {UserId} with {Qty} of product {ProductId}.",
-                        sale.Id, sale.SaleNumber, currentUser.UserId, command.Quantity, product.Id);
+                        ("CreateOrAppendSale: created new draft {SaleId} for user {UserId} with {Qty} of product {ProductId}.",
+                        sale.Id, currentUser.UserId, command.Quantity, product.Id);
 
                     return Result<Guid>.Success(sale.Id);
                 },

@@ -49,7 +49,7 @@
 
         <RadzenText>
             @Loc["BodyIntro"]
-            <strong>@SaleNumber</strong>.
+            <strong>@(SaleNumber ?? "—")</strong>.
             @Loc["BodyPermanent"]
         </RadzenText>
 
@@ -68,7 +68,7 @@
 </div>
 
 @code {
-    [Parameter] public string SaleNumber { get; set; } = string.Empty;
+    [Parameter] public string? SaleNumber { get; set; }
 
     private int countdown = 3;
     private CancellationTokenSource? _cts;

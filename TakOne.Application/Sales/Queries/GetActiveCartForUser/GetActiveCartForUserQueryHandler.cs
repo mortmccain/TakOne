@@ -160,7 +160,10 @@ public sealed class GetActiveCartForUserQueryHandler
         var cartDto = new CartDto
         {
             SaleId = sale.Id,
-            SaleNumber = sale.SaleNumber.Value,
+            // B2 deferred-allocation: drafts have no SaleNumber. Project to
+            // null here; the DTO's DisplayNumber property computes a pseudo-id
+            // (DRAFT-{Guid[0..8]}) for UI display.
+            SaleNumber = sale.SaleNumber?.Value,
             TotalItemCount = lineItemDtos.Sum(li => li.Quantity),
             Total = new MoneyDto
             {

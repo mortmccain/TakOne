@@ -101,12 +101,12 @@
 @inject Radzen.DialogService DialogService
 @inject Microsoft.Extensions.Logging.ILogger<SaleDetail> Logger
 
-<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{_sale.SaleNumber} — {Loc["PageTitle"]}")</PageTitle>
+<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{_sale.DisplayNumber} — {Loc["PageTitle"]}")</PageTitle>
 
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                                               Left = line items + audit (wider); right = sticky action panel. */
+                                                           Left = line items + audit (wider); right = sticky action panel. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -120,7 +120,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so the user sees status
-                                                   + actions before scrolling to the line-item table. */
+                                                               + actions before scrolling to the line-item table. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -143,8 +143,8 @@
             }
 
             /* Status badge (large) in the action panel header.
-                                               Color tokens mirror Radzen's BadgeStyle palette so the large
-                                               badge and the small inline badge read as the same status. */
+                                                           Color tokens mirror Radzen's BadgeStyle palette so the large
+                                                           badge and the small inline badge read as the same status. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -158,14 +158,14 @@
             }
 
             /* Per-status background colors (matching Radzen BadgeStyle semantics):
-                                               - Draft     → Base      (gray)
-                                               - Pending   → Warning   (amber)
-                                               - Approved  → Info      (blue)
-                                               - Invoiced  → Success   (green)
-                                               - Cancelled → Danger    (red)
-                                               rgba values are picked to be readable on both light and dark
-                                               Radzen themes — foreground is always the darker shade for
-                                               accessibility. */
+                                                           - Draft     → Base      (gray)
+                                                           - Pending   → Warning   (amber)
+                                                           - Approved  → Info      (blue)
+                                                           - Invoiced  → Success   (green)
+                                                           - Cancelled → Danger    (red)
+                                                           rgba values are picked to be readable on both light and dark
+                                                           Radzen themes — foreground is always the darker shade for
+                                                           accessibility. */
             .status-bg-draft {
                 background: rgba(158, 158, 158, 0.18);
                 color: #616161;
@@ -192,8 +192,8 @@
             }
 
             /* Audit trail — vertical timeline of timestamps + actors.
-                                               Each entry is one row; rows with no timestamp (e.g. a pending
-                                               sale that hasn't been approved yet) are shown muted. */
+                                                           Each entry is one row; rows with no timestamp (e.g. a pending
+                                                           sale that hasn't been approved yet) are shown muted. */
             .audit-trail {
                 display: flex;
                 flex-direction: column;
@@ -236,7 +236,7 @@
             }
 
             /* Line items table — RadzenDataGrid styles are fine, just tune
-                                               tabular-nums on the numeric columns. */
+                                                           tabular-nums on the numeric columns. */
             .line-item-money {
                 font-variant-numeric: tabular-nums;
                 text-align: right;
@@ -290,8 +290,8 @@
             }
 
             /* Inline cancel form — appears in the action panel when the user
-                           clicks "Cancel order". Left-border accent in --rz-danger makes
-                           the form read as a warning surface, matching the ERP pattern. */
+                                       clicks "Cancel order". Left-border accent in --rz-danger makes
+                                       the form read as a warning surface, matching the ERP pattern. */
             .cancel-form {
                 border: 1px solid var(--rz-base-border-color, var(--rz-danger));
                 border-left: 4px solid var(--rz-danger);
@@ -343,7 +343,7 @@
                 }
 
             /* Sticky action panel on desktop. On mobile it's not sticky
-                                               (would consume too much viewport height). */
+                                                           (would consume too much viewport height). */
             @@media (min-width: 993px) {
                 .detail-action-panel {
                     position: sticky;
@@ -426,12 +426,15 @@
                 <nav class="breadcrumb" aria-label="breadcrumb">
                     <a href="/Sales">@Loc["BreadcrumbSales"]</a>
                     <span class="crumb-sep">/</span>
-                    <span class="crumb-current">@_sale.SaleNumber</span>
+                    <span class="crumb-current">@_sale.DisplayNumber</span>
                 </nav>
 
                 @* Page header — sale number + status badge inline *@
                 <div class="detail-header" Style="margin-bottom: 1rem;">
-                    <h1 class="detail-sale-number">@_sale.SaleNumber</h1>
+                    <h1 class="detail-sale-number"
+                        title="@GetSaleNumberTooltip()">
+                        @_sale.DisplayNumber
+                    </h1>
                     <RadzenBadge Text="@GetStatusLabel(_sale.Status)"
                                  BadgeStyle="@GetStatusBadgeStyle(_sale.Status)"
                                  IsPill="true" />
@@ -641,7 +644,7 @@
                                             <RadzenIcon Icon="warning" Style="color: var(--rz-danger); font-size: 1.25rem;" />
                                             <RadzenText TextStyle="TextStyle.Subtitle1">
                                                 @Loc["CancelFormHeading"]
-                                                <strong>@_sale.SaleNumber</strong>
+                                                <strong>@_sale.DisplayNumber</strong>
                                             </RadzenText>
                                         </RadzenStack>
                                         <div>
@@ -1009,7 +1012,7 @@
         {
             confirmed = await DialogService.OpenAsync<CancelConfirmationDialog>(
                 Loc["CancelDialogTitle"],
-                new Dictionary<string, object?> { { "SaleNumber", _sale.SaleNumber } },
+                new Dictionary<string, object?> { { "SaleNumber", _sale.DisplayNumber } },
                 new Radzen.DialogOptions
                 {
                     Width = "420px",
@@ -1281,6 +1284,14 @@
         var localized = Loc[key];
         return localized == key ? status : localized;
     }
+
+    /// <summary>
+    /// Returns a tooltip explaining the pseudo-id when the sale is a Draft
+    /// (no permanent SaleNumber). Returns null for submitted sales so the
+    /// browser doesn't render an empty title attribute.
+    /// </summary>
+    private string? GetSaleNumberTooltip() =>
+        _sale?.SaleNumber is null ? (string?)Loc["DraftPseudoIdTooltip"] : null;
 
     // ── SaleStatus mirror (for nameof() comparisons) ───────────────────
 

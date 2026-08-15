@@ -692,7 +692,8 @@ namespace TakOne.Infrastructure.Migrations
                             b1.HasKey("SaleId");
 
                             b1.HasIndex("Year", "Sequence")
-                                .IsUnique();
+                                .IsUnique()
+                                .HasFilter("[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
 
                             b1.ToTable("Sales");
 
@@ -700,8 +701,7 @@ namespace TakOne.Infrastructure.Migrations
                                 .HasForeignKey("SaleId");
                         });
 
-                    b.Navigation("SaleNumber")
-                        .IsRequired();
+                    b.Navigation("SaleNumber");
                 });
 
             modelBuilder.Entity("TakOne.Domain.Sales.Entities.SaleLineItem", b =>

@@ -84,11 +84,16 @@ public sealed class GetSaleByIdQueryHandler
         //    CancelledByUserId) are projected to null — the domain stores
         //    them as Guid.Empty until set; the DTO hides that convention
         //    from the consumer.
+        //
+        //    SaleNumber is projected to null when the sale is a Draft (B2
+        //    deferred-allocation design). The DTO's DisplayNumber property
+        //    computes a pseudo-id (DRAFT-{Guid[0..8]}) when SaleNumber is
+        //    null, so the UI always has a display-safe identifier.
         // ------------------------------------------------------------------
         var dto = new SaleDto
         {
             Id = sale.Id,
-            SaleNumber = sale.SaleNumber.Value,
+            SaleNumber = sale.SaleNumber?.Value,
             Status = sale.Status.ToString(),
 
             CustomerId = sale.CustomerId,

@@ -12,8 +12,8 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///
 /// COLUMNS:
 ///   - Id                    (uniqueidentifier, PK)
-///   - SaleNumber_Year       (int, NOT NULL)                — owned SaleNumber value object
-///   - SaleNumber_Sequence   (int, NOT NULL)                — owned SaleNumber value object
+///   - SaleNumber_Year       (int, NULL)                    — owned SaleNumber value object (NULL for drafts)
+///   - SaleNumber_Sequence   (int, NULL)                    — owned SaleNumber value object (NULL for drafts)
 ///   - CustomerId            (uniqueidentifier, NOT NULL)   — cross-aggregate ref to User
 ///   - CustomerName          (nvarchar(200), NOT NULL)      — snapshot at sale time
 ///   - CreatedByUserId       (uniqueidentifier, NOT NULL)   — cross-aggregate ref to User
@@ -32,11 +32,14 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   - CancellationReason    (nvarchar(max), NULL)
 ///
 /// OWNED VALUE OBJECTS:
-///   - <c>SaleNumber</c> (OwnsOne) — flattened into Sales table. The
-///     <c>Value</c> string property is IGNORED (computed-on-access from
-///     Year + Sequence, see SaleNumber.cs). Kept as OwnsOne (not
-///     ComplexProperty) because it requires a globally-unique (Year,
-///     Sequence) index, and ComplexProperty does not support indexes.
+///   - <c>SaleNumber</c> (OwnsOne, OPTIONAL navigation) — flattened into Sales table.
+///     The navigation is NULL while the Sale is in Draft status (the permanent
+///     sale number is allocated only on Submit(), per the B2 deferred-allocation
+///     design). When the navigation is NULL, EF Core writes NULL to both
+///     SaleNumber_Year and SaleNumber_Sequence columns. The <c>Value</c> string
+///     property is IGNORED (computed-on-access from Year + Sequence, see SaleNumber.cs).
+///     Kept as OwnsOne (not ComplexProperty) because it requires a globally-unique
+///     (Year, Sequence) index, and ComplexProperty does not support indexes.
 ///   - <c>Total</c> (ComplexProperty Money) — flattened into Sales table.
 ///     Mapped as ComplexProperty (not OwnsOne) for value semantics: EF
 ///     Core compares Money instances by value, not by reference identity,
@@ -44,13 +47,18 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///     correctly. See the inline comment on the Total mapping below for
 ///     the full rationale.
 ///
-/// CRITICAL UNIQUE INDEX:
-///   <c>(SaleNumber_Year, SaleNumber_Sequence)</c> is GLOBALLY UNIQUE. This
-///   enforces the SaleNumber uniqueness contract: no two sales can share the
-///   same SaleNumber. The unique index is also the concurrency guard for the
-///   SaleNumberGenerator race condition (two concurrent CreateSale calls
-///   that both compute the same sequence — the loser's SaveChangesAsync
-///   fails with a unique-constraint violation, and the handler can retry).
+/// CRITICAL UNIQUE INDEX (FILTERED):
+///   <c>(SaleNumber_Year, SaleNumber_Sequence)</c> is UNIQUE, but only on rows
+///   where both columns are NON-NULL — i.e. only on submitted sales. This is
+///   a FILTERED unique index (SQL Server syntax: <c>WHERE [SaleNumber_Year] IS
+///   NOT NULL AND [SaleNumber_Sequence] IS NOT NULL</c>). Without the filter,
+///   multiple Draft rows (all with NULL sale numbers) would collide and violate
+///   the unique constraint. The filter enforces the SaleNumber uniqueness
+///   contract for submitted sales while leaving drafts free to have NULL numbers.
+///   The unique index is also the concurrency guard for the SaleNumberGenerator
+///   race condition (two concurrent SubmitSale calls that both compute the same
+///   sequence — the loser's SaveChangesAsync fails with a unique-constraint
+///   violation, and the handler can retry).
 ///
 /// CROSS-AGGREGATE REFERENCES — NO FKs:
 ///   CustomerId, CreatedByUserId, ApprovedByUserId, InvoicedByUserId,
@@ -74,26 +82,52 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.HasKey(s => s.Id);
 
         // ------------------------------------------------------------------
-        // Owned value object: SaleNumber
+        // Owned value object: SaleNumber (OPTIONAL navigation)
         //
-        // Flattened into Sales table. `Value` is computed-on-access from
-        // Year + Sequence + Prefix (see SaleNumber.cs) — we ignore it so EF
-        // doesn't try to map (and write to) the read-only expression-bodied
-        // property. `Prefix` is `public const string` on SaleNumber, so it's
-        // a static member; EF Core's conventions already skip static/const
-        // members and they will NOT become columns — no explicit Ignore needed.
+        // The Sale.SaleNumber navigation is NULLABLE (SaleNumber? on the entity).
+        // It is NULL while the Sale is in Draft status — the permanent sale
+        // number is allocated only when the customer submits the cart (see
+        // Sale.Submit() and SubmitSaleCommandHandler). This is the B2
+        // deferred-allocation design: drafts don't burn permanent sequence
+        // numbers, keeping the audit trail of POSTED sales gap-free.
+        //
+        // NULLABILITY PLUMBING:
+        //   - Sale.SaleNumber is declared as `SaleNumber?` in the domain.
+        //   - We mark the NAVIGATION as optional via
+        //     `builder.Navigation(s => s.SaleNumber).IsRequired(false)`
+        //     (see below the OwnsOne block). That tells EF Core the owned
+        //     entity can be absent, which automatically makes ALL its columns
+        //     nullable in the database.
+        //   - We must NOT call `.IsRequired(false)` on the individual `Year`
+        //     and `Sequence` properties — they are `int` (non-nullable value
+        //     types), and EF Core rejects marking a non-nullable CLR type as
+        //     nullable/optional at the property level. The column nullability
+        //     is driven entirely by the optional navigation.
+        //   - When the navigation is NULL, EF Core writes NULL to BOTH columns.
+        //     When the navigation is non-NULL, EF writes the Year and Sequence
+        //     values (both are guaranteed non-null by the SaleNumber value
+        //     object's constructor).
+        //
+        // `Value` is computed-on-access from Year + Sequence + Prefix (see
+        // SaleNumber.cs) — we ignore it so EF doesn't try to map (and write
+        // to) the read-only expression-bodied property. `Prefix` is
+        // `public const string` on SaleNumber, so it's a static member; EF
+        // Core's conventions already skip static/const members and they will
+        // NOT become columns — no explicit Ignore needed.
         // (Attempting `sn.Ignore(p => p.Prefix)` is a compile error: const
         // members cannot be accessed via an instance reference.)
         // ------------------------------------------------------------------
         builder.OwnsOne(s => s.SaleNumber, sn =>
         {
+            // Column names are explicit so the filtered unique index below
+            // can reference them by name in the HasFilter SQL. The columns
+            // are nullable because the navigation is optional (see the
+            // Navigation(...).IsRequired(false) call below).
             sn.Property(p => p.Year)
-                .HasColumnName("SaleNumber_Year")
-                .IsRequired();
+                .HasColumnName("SaleNumber_Year");
 
             sn.Property(p => p.Sequence)
-                .HasColumnName("SaleNumber_Sequence")
-                .IsRequired();
+                .HasColumnName("SaleNumber_Sequence");
 
             // IMPORTANT: ignore the `Value` computed property. Storing it
             // would be redundant (it's derivable from Year + Sequence) and
@@ -101,11 +135,16 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
             // re-deriving Value.
             sn.Ignore(p => p.Value);
 
-            // The globally-unique SaleNumber index. This is the authoritative
-            // enforcement of SaleNumber uniqueness AND the concurrency guard
-            // for the SaleNumberGenerator race condition (two concurrent
-            // CreateSale calls both computing sequence N — only one commits,
-            // the other gets a unique-constraint violation on SaveChangesAsync).
+            // The globally-unique SaleNumber index — FILTERED so it only
+            // applies to rows where both columns are NON-NULL (i.e. submitted
+            // sales). Without the filter, multiple Draft rows (all with NULL
+            // sale numbers) would collide and violate the unique constraint.
+            //
+            // This is the authoritative enforcement of SaleNumber uniqueness
+            // AND the concurrency guard for the SaleNumberGenerator race
+            // condition (two concurrent SubmitSale calls both computing
+            // sequence N — only one commits, the other gets a unique-
+            // constraint violation on SaveChangesAsync).
             //
             // WHY THIS LIVES INSIDE OwnsOne (not outside on builder.HasIndex):
             //   EF Core's HasIndex lambda only accepts DIRECT property access
@@ -126,9 +165,26 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
             //   direct members. EF will then flatten the index onto the
             //   parent (Sales) table using the column names we declared above
             //   (SaleNumber_Year, SaleNumber_Sequence).
+            //
+            // FILTER SYNTAX:
+            //   We use SQL Server's bracketed-identifier syntax
+            //   ([ColumnName] IS NOT NULL). EF Core passes the filter string
+            //   verbatim to the provider, so it must match the target DB's
+            //   SQL dialect. SQLite also accepts this syntax (treats [] as
+            //   optional quoting), so the same filter works for in-memory
+            //   SQLite tests if we add them later.
             sn.HasIndex(p => new { p.Year, p.Sequence })
-                .IsUnique();
+                .IsUnique()
+                .HasFilter("[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
         });
+
+        // Explicitly mark the owned navigation as optional. This is technically
+        // redundant with the nullable C# property (EF Core 6+ infers it), but
+        // making it explicit guards against a future developer changing the
+        // property back to non-nullable without realizing the DB schema still
+        // needs to support NULLs for legacy draft rows.
+        builder.Navigation(s => s.SaleNumber)
+            .IsRequired(false);
 
         // ------------------------------------------------------------------
         // Cross-aggregate reference columns (User aggregate)

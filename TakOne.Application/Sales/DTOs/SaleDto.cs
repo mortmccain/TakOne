@@ -12,11 +12,35 @@ namespace TakOne.Application.Sales.DTOs;
 /// nullable (ApprovedByUserId, InvoicedByUserId, CancelledByUserId). The
 /// domain stores them as non-nullable Guids (Guid.Empty until set); the DTO
 /// projects Guid.Empty → null so consumers don't have to know the convention.
+///
+/// SALE NUMBER NULLABILITY (B2 deferred-allocation design):
+///   <see cref="SaleNumber"/> is null when the sale is still a Draft (no
+///   permanent number has been allocated). Consumers should use
+///   <see cref="DisplayNumber"/> for display purposes — it returns the real
+///   SaleNumber for submitted sales, or a pseudo-id (<c>DRAFT-{Guid[0..8]}</c>)
+///   for drafts. The pseudo-id is also what the UI's search/filter matches
+///   against, so drafts are searchable just like submitted sales.
 /// </summary>
 public sealed class SaleDto
 {
     public Guid Id { get; init; }
-    public string SaleNumber { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The permanent SaleNumber (e.g. <c>INT-۱۴۰۵-۰۰۰۰۰۰۴۲</c>), or null when
+    /// the sale is still a Draft. See the class-level XML doc for the B2
+    /// deferred-allocation rationale. Use <see cref="DisplayNumber"/> for
+    /// UI display.
+    /// </summary>
+    public string? SaleNumber { get; init; }
+
+    /// <summary>
+    /// Display-safe identifier: returns <see cref="SaleNumber"/> for submitted
+    /// sales, or <c>DRAFT-{first 8 hex chars of Id}</c> for drafts. Never null.
+    /// This is what the UI renders and what the grid's filter matches against.
+    /// </summary>
+    public string DisplayNumber =>
+        SaleNumber ?? $"DRAFT-{Id.ToString()[..8].ToUpperInvariant()}";
+
     public string Status { get; init; } = string.Empty;
     public Guid CustomerId { get; init; }
     public string CustomerName { get; init; } = string.Empty;

@@ -105,8 +105,8 @@ namespace TakOne.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SaleNumber_Year = table.Column<int>(type: "int", nullable: false),
-                    SaleNumber_Sequence = table.Column<int>(type: "int", nullable: false),
+                    SaleNumber_Year = table.Column<int>(type: "int", nullable: true),
+                    SaleNumber_Sequence = table.Column<int>(type: "int", nullable: true),
                     CustomerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     CustomerName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     CreatedByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
@@ -127,6 +127,19 @@ namespace TakOne.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Sales", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "SaleSequenceCounters",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Year = table.Column<int>(type: "int", nullable: false),
+                    NextSequence = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SaleSequenceCounters", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -438,12 +451,19 @@ namespace TakOne.Infrastructure.Migrations
                 name: "IX_Sales_SaleNumber_Year_SaleNumber_Sequence",
                 table: "Sales",
                 columns: new[] { "SaleNumber_Year", "SaleNumber_Sequence" },
-                unique: true);
+                unique: true,
+                filter: "[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Sales_Status",
                 table: "Sales",
                 column: "Status");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SaleSequenceCounters_Year",
+                table: "SaleSequenceCounters",
+                column: "Year",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_SubCategories_CategoryId_Name",
@@ -500,6 +520,9 @@ namespace TakOne.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "SaleLineItems");
+
+            migrationBuilder.DropTable(
+                name: "SaleSequenceCounters");
 
             migrationBuilder.DropTable(
                 name: "SubSubCategories");
