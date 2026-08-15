@@ -89,7 +89,7 @@
 <HeadContent>
     <style>
             /* Page header — mirrors AdminUsers.razor's .admin-header layout
-                                   so the two pages read as members of the same family. */
+                                               so the two pages read as members of the same family. */
             .admin-header {
                 display: flex;
                 align-items: center;
@@ -99,8 +99,8 @@
             }
 
             /* Sale number — monospace + primary color so it reads as a clickable
-                                   identifier. The link itself is the clickable element; the wrapper
-                                   just provides consistent typography. */
+                                               identifier. The link itself is the clickable element; the wrapper
+                                               just provides consistent typography. */
             .sale-number-link {
                 font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
                 font-weight: 600;
@@ -113,7 +113,7 @@
                 }
 
             /* Status badge — RadzenBadge with BadgeStyle handles colors; this
-                                   just normalizes the width so badges in a column line up. */
+                                               just normalizes the width so badges in a column line up. */
             .sale-status-badge {
                 min-width: 96px;
                 display: inline-flex;
@@ -127,7 +127,7 @@
             }
 
             /* Muted timestamp for the "Created At" column. The timestamp is
-                                   secondary info; the sale number is the primary identifier. */
+                                               secondary info; the sale number is the primary identifier. */
             .sale-timestamp {
                 color: var(--rz-text-secondary-color);
                 font-size: 0.9rem;
@@ -262,7 +262,7 @@
                     <RadzenDataGridColumn TItem="SaleListItemDto"
                                           Property="SaleNumber"
                                           Title="@Loc["ColSaleNumber"]"
-                                          Width="180px">
+                                          Width="240px">
                         <Template Context="sale">
                             <RadzenLink Text="@sale.SaleNumber"
                                         Path="@($"/Sales/{sale.Id}")"

@@ -252,7 +252,7 @@ public sealed class SaleNumberGenerator : ISaleNumberGenerator
             throw new InvalidOperationException(
                 $"Sale sequence capacity reached for Persian year {persianYear}. " +
                 $"The system cannot create more than {SaleNumber.MaxSequence} sales " +
-                $"in one Persian year under the current 4-digit format. " +
+                $"in one Persian year under the current 8-digit format. " +
                 $"Contact support to extend the format.");
         }
 

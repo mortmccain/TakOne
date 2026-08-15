@@ -7,19 +7,19 @@ namespace TakOne.Domain.Sales.ValueObjects;
 /// A globally-unique, human-readable identifier for a Sale.
 ///
 /// FORMAT:
-///   <c>INT-{PersianYear}-{Sequence:0000}</c>
+///   <c>INT-{PersianYear}-{Sequence:00000000}</c>
 ///   where:
 ///     - <c>INT</c> is a fixed prefix meaning "Internal".
 ///     - <c>{PersianYear}</c> is the 4-digit Persian (Jalali) calendar year,
 ///       rendered with Persian digits (e.g. <c>۱۴۰۵</c>, not <c>1405</c>).
-///     - <c>{Sequence:0000}</c> is a 4-digit, zero-padded, GLOBALLY-UNIQUE
+///     - <c>{Sequence:00000000}</c> is an 8-digit, zero-padded, GLOBALLY-UNIQUE
 ///       sequence number representing the Nth sale of that Persian year
-///       across ALL customers. Rendered with Persian digits (e.g. <c>۰۰۴۲</c>).
+///       across ALL customers. Rendered with Persian digits (e.g. <c>۰۰۰۰۰۰۴۲</c>).
 ///
 ///   EXAMPLES:
-///     <c>INT-۱۴۰۵-۰۰۰۱</c>  — the very first sale of Persian year 1405 (any customer)
-///     <c>INT-۱۴۰۵-۰۰۴۲</c>  — the 42nd sale of Persian year 1405 (any customer)
-///     <c>INT-۱۴۰۶-۰۰۰۱</c>  — the first sale of the next Persian year
+///     <c>INT-۱۴۰۵-۰۰۰۰۰۰۰۱</c>  — the very first sale of Persian year 1405 (any customer)
+///     <c>INT-۱۴۰۵-۰۰۰۰۰۰۴۲</c>  — the 42nd sale of Persian year 1405 (any customer)
+///     <c>INT-۱۴۰۶-۰۰۰۰۰۰۰۱</c>  — the first sale of the next Persian year
 ///
 ///   UNIQUENESS:
 ///   The (Year, Sequence) pair is globally unique — no two sales can share
@@ -83,14 +83,15 @@ public class SaleNumber : BaseValueObject
     public const int MaxPersianYear = 1500;
 
     /// <summary>
-    /// Sequence bounds: 1 to 9999. The 4-digit format (D4) requires this range.
-    /// 9,999 sales per Persian year is ~27 sales per day, which is comfortable
-    /// headroom for a B2B/retail context. If a deployment ever exceeds this,
-    /// bumping the format to 5 digits is a one-line change in the format
-    /// string below — but we'd cross that bridge when we get to it.
+    /// Sequence bounds: 1 to 99999999. The 8-digit format (D8) requires this range.
+    /// 99,999,999 sales per Persian year is ~274,000 sales per day, which is far
+    /// beyond any plausible B2B/retail capacity. The 8-digit width also aligns
+    /// with typical ERP numbering (SAP, Oracle, NetSuite all use 8-digit sequences).
+    /// If a deployment ever exceeds this, the column type (int) still holds up
+    /// to 2,147,483,647 — but we'd cross that bridge when we get to it.
     /// </summary>
     public const int MinSequence = 1;
-    public const int MaxSequence = 9999;
+    public const int MaxSequence = 99999999;
 
 
 
@@ -108,7 +109,7 @@ public class SaleNumber : BaseValueObject
     public int Year { get; }
 
     /// <summary>
-    /// The global sequence number for this Persian year (1..9999).
+    /// The global sequence number for this Persian year (1..99999999).
     /// A value of <c>42</c> means this is the 42nd sale created across ALL
     /// customers in year <see cref="Year"/>.
     /// </summary>
@@ -127,7 +128,7 @@ public class SaleNumber : BaseValueObject
     ///   of formatting two short ints is negligible.
     /// </summary>
     public string Value =>
-        $"{Prefix}-{ToPersianDigits(Year.ToString())}-{ToPersianDigits(Sequence.ToString("D4"))}";
+        $"{Prefix}-{ToPersianDigits(Year.ToString())}-{ToPersianDigits(Sequence.ToString("D8"))}";
 
 
 
@@ -252,7 +253,7 @@ public class SaleNumber : BaseValueObject
                 $"Sale sequence {sequence} is out of the supported range " +
                 $"[{MinSequence}, {MaxSequence}]. The system cannot create " +
                 $"more than {MaxSequence} sales in one Persian year under " +
-                $"the current 4-digit format.", nameof(sequence));
+                $"the current 8-digit format.", nameof(sequence));
         }
     }
 
