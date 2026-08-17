@@ -86,6 +86,7 @@
 @using TakOne.Application.Sales.Commands.SubmitSale
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Components.CartBudgetBar
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
@@ -97,7 +98,7 @@
 <HeadContent>
     <style>
             /* Two-column layout: line items left, summary right.
-                                   On tablet/mobile, summary collapses below the items. */
+                                               On tablet/mobile, summary collapses below the items. */
             .cart-layout {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -112,10 +113,10 @@
             }
 
             /* ── Line item card ──
-                                   Each line item is its own RadzenCard with a grid layout:
-                                     [picture] [info] [qty + actions]
-                                   On mobile, the picture shrinks and the layout collapses to
-                                   a vertical stack with actions wrapping below. */
+                                               Each line item is its own RadzenCard with a grid layout:
+                                                 [picture] [info] [qty + actions]
+                                               On mobile, the picture shrinks and the layout collapses to
+                                               a vertical stack with actions wrapping below. */
             .cart-line {
                 display: grid;
                 grid-template-columns: 80px minmax(0, 1fr) auto;
@@ -192,15 +193,15 @@
             }
 
             /* Qty selector — a plain <input type="number" class="rz-textbox qty-input">
-                           rather than a RadzenNumeric. WHY: RadzenNumeric's internal JS
-                           mishandles caret position in RTL (fa-IR) mode — the cursor looks
-                           like it's at the end of the value, but typing inserts the
-                           character at the BEGINNING (turning a "1" + typed "0" into "01"
-                           instead of "10"). A native input with dir="ltr" bypasses
-                           Radzen's JS entirely and handles caret position AND character
-                           insertion correctly in both LTR and RTL page contexts. Same fix
-                           as CreateProduct.razor's PriceAmount / InitialStockQuantity
-                           fields. We lose the spinner arrows but gain correct behavior. */
+                                       rather than a RadzenNumeric. WHY: RadzenNumeric's internal JS
+                                       mishandles caret position in RTL (fa-IR) mode — the cursor looks
+                                       like it's at the end of the value, but typing inserts the
+                                       character at the BEGINNING (turning a "1" + typed "0" into "01"
+                                       instead of "10"). A native input with dir="ltr" bypasses
+                                       Radzen's JS entirely and handles caret position AND character
+                                       insertion correctly in both LTR and RTL page contexts. Same fix
+                                       as CreateProduct.razor's PriceAmount / InitialStockQuantity
+                                       fields. We lose the spinner arrows but gain correct behavior. */
             .cart-line .qty-input {
                 width: 90px;
                 text-align: left;
@@ -234,8 +235,8 @@
             }
 
             /* Summary panel — sticky on desktop so it stays in view while
-                                   the user scrolls long carts. On mobile it just sits at the
-                                   bottom of the page (no sticky — would cover content). */
+                                               the user scrolls long carts. On mobile it just sits at the
+                                               bottom of the page (no sticky — would cover content). */
             .cart-summary {
                 position: sticky;
                 top: 1rem;
@@ -362,6 +363,49 @@
             </span>
         }
     </div>
+
+    @* ── Monthly budget bar (Step 7) ──
+       Renders ABOVE the loading/error/empty/items branches so it's visible
+       in every cart state EXCEPT "loading" and "error" (when we don't yet
+       have authoritative budget info to show).
+
+       WHEN NULL:
+         GetActiveCartForUserQueryHandler populates BudgetInfo as null when:
+           - The user is staff (no GroupId) → staff don't have a salary budget
+           - The system's LimitMode is CountOnly → budget not enforced
+         In both cases the bar is hidden — correct UX.
+
+       WHEN POPULATED + EMPTY CART:
+         The customer has no active draft but DOES have a salary budget
+         (e.g. they've submitted an order earlier this month). The bar
+         shows their monthly budget, what they've already spent, and what
+         remains — encouraging them to start a new cart.
+
+       WHEN POPULATED + CART WITH ITEMS:
+         The bar shows the live status. CartTotal is the LIVE pending-qty
+         total (ComputeCartTotal), not the server's _cart.Total — this
+         keeps the bar in sync with the user's typing in the qty selectors
+         even before they click Update. The bar's Remaining value comes
+         from the server's snapshot (Budget.Remaining), which already
+         includes the server's cart total via the "cart reserves budget"
+         rule. So as the user types a larger quantity, the bar's
+         "Remaining" stays at the server's value (doesn't change live),
+         but the "In cart now" row updates to reflect the typed quantity.
+         This is intentional: the bar's authoritative numbers come from
+         the server; the live "In cart now" is a UX affordance showing
+         "if you commit this, this is how much your cart will be". The
+         numbers reconcile after the next LoadCartAsync call.
+
+       LIVE UPDATES:
+         The bar re-renders on every keystroke in the qty selector (via
+         CartTotal = ComputeCartTotal() which reads _pendingQuantities).
+         No backend round-trip until the user commits (blur / Enter). On
+         commit, LoadCartAsync refreshes _cart + _cart.BudgetInfo from
+         the server, which gives the bar its new authoritative values. *@
+    @if (_cart?.BudgetInfo is not null)
+    {
+        <CartBudgetBar Budget="_cart.BudgetInfo" CartTotal="ComputeCartTotal()" />
+    }
 
     @* ── Loading state ── *@
     @if (_isLoading)
@@ -1116,6 +1160,23 @@
     ///     has been deactivated. Localized via the CategoryDeactivated
     ///     resx key. The product's StockQuantity is preserved; only
     ///     visibility + buyability are suppressed.
+    ///   - <c>SalaryBudgetExceeded:{productName}|{lineTotal}|{remaining}|{currency}</c>
+    ///     — produced by AddItemToSale / UpdateSaleLineItem /
+    ///     CreateOrAppendSale / SubmitSale handlers when the salary budget
+    ///     (LimitMode = SalaryOnly or Both) would be exceeded by the
+    ///     mutation. Localized via the SalaryBudgetExceeded resx key —
+    ///     the message NEVER mentions "group" (the customer just sees
+    ///     their remaining monthly budget).
+    ///   - <c>CurrencyMismatch:{productName}|{productCurrency}|{salaryCurrency}</c>
+    ///     — produced by AddItemToSale / UpdateSaleLineItem /
+    ///     CreateOrAppendSale / SubmitSale handlers when the product's
+    ///     currency doesn't match the customer's salary currency. The
+    ///     localized message is intentionally GENERIC ("this item is not
+    ///     available for your account") — it does NOT reveal that the
+    ///     mismatch is about currency, because that would leak the
+    ///     existence of a "salary currency" concept (which implies a
+    ///     "group" concept). The customer just sees a polite "not
+    ///     available" message with an internal error code for support.
     /// </summary>
     private string? LocalizeError(string? error)
     {
@@ -1133,6 +1194,46 @@
                 CultureInfo.CurrentCulture,
                 Loc["CategoryDeactivated"],
                 deactivatedProductName);
+        }
+        // Step 7 — SalaryBudgetExceeded is produced when the salary budget
+        // (LimitMode = SalaryOnly or Both) would be exceeded. The customer
+        // sees a friendly message about their remaining monthly budget —
+        // the word "group" never appears (per the feature spec).
+        if (SalaryBudgetExceededErrors.TryParse(
+                error,
+                out var sbProductName,
+                out var sbLineTotal,
+                out var sbRemaining,
+                out var sbCurrency))
+        {
+            // Format the remaining amount using the same Money formatting
+            // as the rest of the cart (N0 + "ریال" for IRR, ISO code otherwise).
+            var remainingMoney = new MoneyDto
+            {
+                Amount = Math.Abs(sbRemaining),
+                Currency = sbCurrency
+            };
+            // Negative-prefix when remaining is negative (overdraft — the
+            // customer already exceeded their budget before this attempt).
+            var remainingDisplay = sbRemaining < 0
+                ? $"−{FormatPrice(remainingMoney)}"
+                : FormatPrice(remainingMoney);
+
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["SalaryBudgetExceeded"],
+                sbProductName,
+                remainingDisplay);
+        }
+        // Step 7 — CurrencyMismatch is produced when the product's currency
+        // doesn't match the customer's salary currency. The localized message
+        // is intentionally GENERIC — the customer doesn't see the word
+        // "currency" or "group", just "this item is not available for your
+        // account (code: CurrencyMismatch)". The internal code lets support
+        // staff diagnose the issue without leaking the group concept.
+        if (CurrencyMismatchErrors.TryParse(error, out _, out _, out _))
+        {
+            return Loc["CurrencyMismatch"];
         }
         // Stable error code returned by SubmitSaleCommandHandler when the
         // cart is empty — defense-in-depth guard that should never fire

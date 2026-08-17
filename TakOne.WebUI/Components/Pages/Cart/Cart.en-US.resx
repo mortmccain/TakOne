@@ -218,4 +218,31 @@
   <data name="SubmitEmptyCart" xml:space="preserve">
     <value>Your cart is empty. Add at least one item before submitting.</value>
   </data>
+
+  <!-- Step 7 — SalaryBudgetExceeded is produced when the customer's salary
+       budget (LimitMode = SalaryOnly or Both) would be exceeded by adding /
+       updating / submitting. The localized message is GENERIC — the
+       customer NEVER sees the word "group" (per the feature spec). They
+       just see their remaining monthly budget.
+
+       Format args:
+         {0} = product name (e.g. "Spaghetti 1.2")
+         {1} = remaining budget display (already formatted with currency
+               label, e.g. "30,000 ریال" or "1,250 USD") -->
+  <data name="SalaryBudgetExceeded" xml:space="preserve">
+    <value>Adding &apos;{0}&apos; would exceed your monthly budget. You have {1} remaining this month.</value>
+  </data>
+
+  <!-- Step 7 — CurrencyMismatch is produced when the product's currency
+       doesn't match the customer's salary currency. The localized message
+       is intentionally GENERIC — the customer doesn't see the word
+       "currency" or "group", just "this item is not available for your
+       account" with an internal error code (CurrencyMismatch) that support
+       staff can use to diagnose the issue. The error code is intentional —
+       it's not a leak, it's a diagnostic aid that lets the customer
+       self-troubleshoot (e.g. "I tried to buy a USD product but my account
+       is IRR"). -->
+  <data name="CurrencyMismatch" xml:space="preserve">
+    <value>This item is not available for your account (code: CurrencyMismatch).</value>
+  </data>
 </root>

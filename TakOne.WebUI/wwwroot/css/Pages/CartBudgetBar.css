@@ -1,0 +1,190 @@
+﻿/* CartBudgetBar.razor.css - Scoped CSS for the CartBudgetBar component.
+
+   Blazor CSS isolation: every selector here is automatically scoped to
+   this component via a unique b-<hash> attribute selector added by the
+   Blazor build pipeline. This means .cart-budget-row only matches
+   elements rendered by CartBudgetBar.razor - we don't need a custom
+   prefix to avoid colliding with Cart.razor's .cart-summary-row etc.
+
+   WHY SCOPED CSS (not inline <style>):
+     The inline <style> approach in Cart.razor / CreateProduct.razor etc.
+     works but has a downside: the <style> tag is re-emitted on every
+     render of the component, which is wasteful. Scoped .razor.css is
+     emitted ONCE per app load as a bundled stylesheet with the scope
+     attribute baked in. Cleaner, faster, no parser issues with CSS
+     comments containing double quotes / em dashes.
+
+   THEME-AWARENESS:
+     Uses --rz-* CSS variables (Radzen theme tokens) so the bar looks
+     correct in both light and dark themes. The brand --tm-* tokens
+     are NOT used here because Cart.razor itself uses --rz-* throughout,
+     and matching the existing visual language matters more than
+     introducing brand colors.
+
+   COLOR TIERS (traffic-light convention):
+     - Green (#4caf50) - healthy (under 70% usage)
+     - Amber (#ff9800) - warning (70-99% usage)
+     - Red (#f44336) - critical (100%+ usage OR Remaining < 0 overdraft)
+     These match Cart.razor's existing .stock-in / .stock-low / .stock-out
+     badge colors so the visual language is consistent.
+*/
+
+.cart-budget-card {
+    padding: 1.25rem;
+}
+
+.cart-budget-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.cart-budget-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cart-budget-header-icon {
+    font-size: 1.5rem;
+    color: var(--rz-primary);
+}
+
+.cart-budget-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--rz-text-primary-color);
+}
+
+.cart-budget-percent {
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cart-budget-percent--ok {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+}
+
+.cart-budget-percent--warning {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ff9800;
+}
+
+.cart-budget-percent--danger {
+    background: rgba(244, 67, 54, 0.15);
+    color: #f44336;
+}
+
+/* Progress bar - a custom div-based bar (NOT RadzenProgressBar) because
+   RadzenProgressBar clamps the value to [0,100] and we need to display
+   100% red when remaining < 0 (overdraft state). */
+.cart-budget-bar-track {
+    width: 100%;
+    height: 10px;
+    background: var(--rz-base-background-color);
+    border-radius: 9999px;
+    overflow: hidden;
+    border: 1px solid var(--rz-base-border-color);
+}
+
+.cart-budget-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.25s ease-in-out, background-color 0.25s ease-in-out;
+}
+
+.cart-budget-bar-fill--ok {
+    background: #4caf50;
+}
+
+.cart-budget-bar-fill--warning {
+    background: #ff9800;
+}
+
+.cart-budget-bar-fill--danger {
+    background: #f44336;
+}
+
+/* Stat rows - mirror Cart.razor's .cart-summary-row pattern (flex
+   space-between, label/value baseline alignment) so the visual language
+   is identical between the CartBudgetBar and the cart's own summary
+   panel. */
+.cart-budget-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.4rem 0;
+}
+
+    .cart-budget-row ::deep .label {
+        color: var(--rz-text-secondary-color);
+        font-size: 0.9rem;
+    }
+
+    .cart-budget-row ::deep .value {
+        font-weight: 600;
+        color: var(--rz-text-primary-color);
+        font-variant-numeric: tabular-nums;
+    }
+
+/* Total / Remaining row - slightly emphasized like the cart summary's
+   .total-row (top border, larger value). When exceeded, the value
+   turns danger-red to draw attention. */
+.cart-budget-row--total {
+    border-top: 1px solid var(--rz-base-border-color);
+    margin-top: 0.4rem;
+    padding-top: 0.75rem;
+}
+
+    .cart-budget-row--total ::deep .label {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .cart-budget-row--total ::deep .value {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--rz-primary);
+    }
+
+    .cart-budget-row--total.cart-budget-row--exceeded ::deep .value {
+        color: #f44336;
+    }
+
+/* Minus-sign prefix shown in front of the remaining value when negative. */
+.cart-budget-negative-prefix {
+    color: #f44336;
+    font-weight: 700;
+    margin-right: 0.15rem;
+}
+
+/* Footer hint - small text with info icon. */
+.cart-budget-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--rz-base-border-color);
+    font-size: 0.8rem;
+    color: var(--rz-text-secondary-color);
+}
+
+    .cart-budget-footer ::deep .rz-icon {
+        font-size: 1rem;
+        color: var(--rz-text-secondary-color);
+        opacity: 0.7;
+    }
+
+/* Exceeded-state alert - overrides Radzen's default padding so it
+   matches the card's spacing rhythm. */
+.cart-budget-exceeded-alert {
+    margin-top: 0.75rem;
+}

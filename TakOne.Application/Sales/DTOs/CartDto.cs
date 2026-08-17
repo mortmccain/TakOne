@@ -75,4 +75,39 @@ public sealed class CartDto
     /// being null, not by an empty list here.
     /// </summary>
     public List<CartLineItemDto> LineItems { get; init; } = new();
+
+    /// <summary>
+    /// The customer's monthly salary budget snapshot — populated by
+    /// <c>GetActiveCartForUserQueryHandler</c> via
+    /// <c>ISalaryBudgetService.GetBudgetInfoAsync</c>.
+    ///
+    /// NULL when:
+    ///   <list type="bullet">
+    ///     <item>The caller is a staff user (no GroupId — staff don't have
+    ///         a salary budget).</item>
+    ///     <item>The system's <c>LimitMode</c> is <c>CountOnly</c> (the salary
+    ///         budget is not enforced in that mode, so showing the bar would
+    ///         be misleading).</item>
+    ///     <item>Defensive: customer has a GroupId but the group was deleted
+    ///         (shouldn't happen — CustomerGroup is soft-deleted, not hard-
+    ///         deleted — but the budget service returns null in that case
+    ///         to be safe).</item>
+    ///   </list>
+    ///
+    /// Populated EVEN WHEN <see cref="LineItems"/> is empty — the
+    /// CartBudgetBar renders on the empty-cart state too, showing the
+    /// customer their remaining monthly budget ("you have X left to
+    /// spend this month"). This is the documented Step 7 behavior: when
+    /// the cart is empty, the bar shows just the salary + monthly
+    /// consumed (no cart contribution).
+    ///
+    /// This is a SNAPSHOT — it reflects the budget state at the moment
+    /// the handler ran. Mutations after the handler returns (e.g. another
+    /// browser tab adding an item) will NOT be reflected here until the
+    /// next <c>GetActiveCartForUserQuery</c> dispatch. The cart page
+    /// re-dispatches the query after every mutation (see Cart.razor's
+    /// <c>LoadCartAsync</c>), so the bar updates within milliseconds of
+    /// each user action.
+    /// </summary>
+    public SalaryBudgetInfo? BudgetInfo { get; init; }
 }

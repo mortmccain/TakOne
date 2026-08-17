@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CartBudgetBar.fa-IR.resx — Persian (Farsi) strings for CartBudgetBar.razor.
+
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. Individual strings
+     here don't need RTL markers.
+
+     CRITICAL: Like the English side, the customer NEVER sees the word
+     "گروه" (group) — all messages are generic. The internal group concept
+     is invisible to the customer; they just see "بودجهٔ ماهانه" (monthly
+     budget).
+
+     The four <resheader> tags below are REQUIRED by the .resx reader. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Header -->
+  <data name="Title" xml:space="preserve">
+    <value>بودجهٔ ماهانه</value>
+  </data>
+  <data name="ProgressBarLabel" xml:space="preserve">
+    <value>میزان استفاده از بودجه</value>
+  </data>
+
+  <!-- Stat row labels -->
+  <data name="MonthlyBudget" xml:space="preserve">
+    <value>بودجهٔ ماهانه</value>
+  </data>
+  <data name="SpentThisMonth" xml:space="preserve">
+    <value>خرج‌شده این ماه</value>
+  </data>
+  <data name="InCartNow" xml:space="preserve">
+    <value>در سبد خرید شما</value>
+  </data>
+  <data name="Remaining" xml:space="preserve">
+    <value>باقی‌مانده</value>
+  </data>
+
+  <!-- Footer "resets on" hint. {0} is the next Persian month's 1st day,
+       formatted as "۱ مهر" in fa-IR. -->
+  <data name="ResetsOnFormat" xml:space="preserve">
+    <value>بودجه در {0} بازنشانی می‌شود</value>
+  </data>
+
+  <!-- Overdraft alert (shown when Remaining < 0). The customer has spent
+       more than their monthly budget — usually because their salary was
+       lowered mid-month after a purchase. They cannot add ANY items until
+       next month. -->
+  <data name="ExceededTitle" xml:space="preserve">
+    <value>بودجه تمام شد</value>
+  </data>
+  <data name="ExceededMessage" xml:space="preserve">
+    <value>بودجهٔ ماهانه شما به‌طور کامل مصرف شده است. همچنان می‌توانید اقلام سبد را مرور یا حذف کنید، اما تا ماه آینده نمی‌توانید کالای جدیدی اضافه کنید.</value>
+  </data>
+</root>

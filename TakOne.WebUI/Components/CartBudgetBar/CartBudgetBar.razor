@@ -1,0 +1,283 @@
+﻿@* CartBudgetBar.razor - Step 7 of the salary/credit budget feature.
+
+   A small, self-contained card shown above the cart's line-item list that
+   communicates the customer's monthly salary budget status at a glance:
+     - Total monthly budget (Salary)
+     - Already-spent-this-month (submitted sales, NOT including cart)
+     - Currently-in-cart (the live draft cart total)
+     - Remaining (= Salary - Consumed, where Consumed includes the cart)
+     - Progress bar (0-100% of salary consumed; clamps to 100 when over)
+     - "Budget resets on {date}" footer hint with the Persian month name
+
+   VISUAL STATES:
+     1. Healthy (Remaining >= 0, used <= 70%)   -> green progress bar
+     2. Warning (used 70-99%)                    -> amber progress bar
+     3. Critical (used >= 100% OR Remaining < 0)-> red progress bar + alert
+        "Budget exceeded - you cannot add items until next month"
+
+   PARAMETERS:
+     - Budget     : SalaryBudgetInfo? - the full budget snapshot from
+                                       ISalaryBudgetService. When null,
+                                       the component renders nothing.
+     - CartTotal  : MoneyDto?         - the customer's current draft cart
+                                       total. Used to break "Consumed" out
+                                       into "Already spent" (submitted) +
+                                       "In cart now" (draft). When null/zero,
+                                       "In cart now" shows 0.
+
+   WHY A SEPARATE COMPONENT (not inline in Cart.razor):
+     - Reusability - the bar will eventually appear on the Products page
+       mini-cart and the Sales page order history too (Step 9+).
+     - Testability - easier to reason about in isolation than as a fragment
+       of a 1100-line Cart.razor file.
+     - Styling isolation - the CSS lives in CartBudgetBar.razor.css (Blazor
+       CSS isolation) and is scoped to this component via a b-<hash>
+       attribute. No risk of selector collisions.
+
+   CURRENCY MATCHING:
+     The SalaryBudgetInfo.Salary.Currency is ALWAYS the same as
+     CartTotal.Currency when LimitMode is SalaryOnly or Both - this is
+     enforced by the CurrencyMismatchErrors check in every sale-mutating
+     handler (Step 4 wiring). So we can safely display the cart total in
+     the salary's currency without a mismatch warning. The only edge case
+     is when the system is in CountOnly mode, but in that case BudgetInfo
+     is null and this component doesn't render at all.
+
+   PERSIAN DATE FORMATTING:
+     The "resets on" date is computed from SalaryBudgetInfo.WindowEndUtc
+     (the 1st of the NEXT Persian month). We display it as either:
+       - fa-IR: "{day} {monthName}" (e.g. "1 Mehr" in Persian digits)
+       - en-US: "{MMM d}" (e.g. "Sep 1")
+     Matching the Dashboard.razor pattern. No external PersianCalendar
+     service - we use System.Globalization.PersianCalendar directly (same
+     approach as SalaryBudgetWindow.cs in the Domain layer).
+
+   STYLING REFERENCES (must match the existing visual language):
+     - Card chrome: <RadzenCard Variant=Filled Class="cart-budget-card">
+       matches the cart summary card on Cart.razor.
+     - Stat rows: same .cart-summary-row pattern (flex space-between).
+     - Total row: same .total-row pattern (top border, larger value).
+     - Progress bar: a custom <div> with role="progressbar" - Radzen's
+       <RadzenProgressBar> requires a value 0-100 and doesn't allow the
+       overflow state (when Remaining < 0, the bar should be 100% red,
+       not display "120%").
+     - Alert for exceeded state: <RadzenAlert AlertStyle=Danger Variant=Filled>
+       - same as Cart.razor's error state. *@
+
+@using System.Globalization
+@using Microsoft.Extensions.Localization
+@using TakOne.Application.Sales.DTOs
+@using TakOne.SharedKernel.DTOs
+@inject IStringLocalizer<CartBudgetBar> Loc
+
+@if (Budget is not null)
+{
+    var salary = Budget.Salary;
+    var consumed = Budget.Consumed;
+    var remaining = Budget.Remaining;
+    var cartAmount = CartTotal?.Amount ?? 0m;
+    var alreadySubmitted = Math.Max(0m, consumed - cartAmount);
+
+    var isExceeded = remaining < 0m;
+    var usedPercent = salary.Amount > 0m
+        ? Math.Min(100m, (consumed / salary.Amount) * 100m)
+        : (isExceeded ? 100m : 0m);
+
+    // Pick the progress-bar fill color based on usage tier. The thresholds
+    // (70% / 100%) are conventional UX (green/amber/red traffic-light).
+    var barClass = isExceeded || usedPercent >= 100m
+        ? "cart-budget-bar-fill--danger"
+        : usedPercent >= 70m
+            ? "cart-budget-bar-fill--warning"
+            : "cart-budget-bar-fill--ok";
+
+    var percentBadgeClass = isExceeded || usedPercent >= 100m
+        ? "cart-budget-percent--danger"
+        : usedPercent >= 70m
+            ? "cart-budget-percent--warning"
+            : "cart-budget-percent--ok";
+
+    var salaryDto = new MoneyDto { Amount = salary.Amount, Currency = salary.Currency };
+    var cartTotalDto = new MoneyDto { Amount = cartAmount, Currency = salary.Currency };
+    var submittedDto = new MoneyDto { Amount = alreadySubmitted, Currency = salary.Currency };
+    var remainingDto = new MoneyDto
+    {
+        Amount = Math.Abs(remaining),
+        Currency = salary.Currency
+    };
+
+    <RadzenCard Variant="Variant.Filled" Class="cart-budget-card">
+        @* Header - wallet icon + title + percent badge *@
+        <div class="cart-budget-header">
+            <div class="cart-budget-header-left">
+                <RadzenIcon Icon="account_balance_wallet" class="cart-budget-header-icon" />
+                <h2 class="cart-budget-title">@Loc["Title"]</h2>
+            </div>
+            <span class="cart-budget-percent @percentBadgeClass">
+                @string.Format(CultureInfo.CurrentCulture, "{0:0}%", usedPercent)
+            </span>
+        </div>
+
+        @* Progress bar - custom div-based bar (NOT RadzenProgressBar) because
+           we need to display 100% red when remaining < 0 (overdraft).
+           RadzenProgressBar clamps the value to [0,100] which would hide
+           the overdraft state. *@
+        <div class="cart-budget-bar-track" role="progressbar"
+             aria-valuenow="@((int)Math.Round(usedPercent))"
+             aria-valuemin="0" aria-valuemax="100"
+             aria-label="@Loc["ProgressBarLabel"]">
+            <div class="cart-budget-bar-fill @barClass" style="width: @(string.Format(CultureInfo.InvariantCulture, "{0:0.##}%", usedPercent));"></div>
+        </div>
+
+        @* Stat rows - budget / already-spent / in-cart / remaining *@
+        <div class="cart-budget-row">
+            <span class="label">@Loc["MonthlyBudget"]</span>
+            <span class="value">@FormatPrice(salaryDto)</span>
+        </div>
+        <div class="cart-budget-row">
+            <span class="label">@Loc["SpentThisMonth"]</span>
+            <span class="value">@FormatPrice(submittedDto)</span>
+        </div>
+        <div class="cart-budget-row">
+            <span class="label">@Loc["InCartNow"]</span>
+            <span class="value">@FormatPrice(cartTotalDto)</span>
+        </div>
+        <div class="cart-budget-row cart-budget-row--total @(isExceeded ? "cart-budget-row--exceeded" : "")">
+            <span class="label">@Loc["Remaining"]</span>
+            <span class="value">
+                @if (isExceeded)
+                {
+                    <span class="cart-budget-negative-prefix">−</span>
+                }
+                @FormatPrice(remainingDto)
+            </span>
+        </div>
+
+        @* Overdraft alert - shown when the customer has exceeded their
+           salary budget. NON-blocking: the user can still see their cart
+           and reduce/remove items. Adding new items is blocked at the
+           backend by the salary-budget check in every cart-mutation
+           handler (Step 4 wiring). *@
+        @if (isExceeded)
+        {
+            <RadzenAlert Title="@Loc["ExceededTitle"]"
+                         Text="@Loc["ExceededMessage"]"
+                         AlertStyle="AlertStyle.Danger"
+                         Variant="Variant.Filled"
+                         ShowIcon="true"
+                         Class="cart-budget-exceeded-alert" />
+        }
+
+        @* Footer - "Budget resets on {date}" - WindowEndUtc is the 1st of
+           NEXT month. Rendered as either "1 Mehr" (fa-IR) or "Sep 1"
+           (en-US) using PersianCalendar for Persian month names. Matches
+           Dashboard.razor's FormatDate helper pattern. *@
+        <div class="cart-budget-footer">
+            <RadzenIcon Icon="event" />
+            <span>@string.Format(CultureInfo.CurrentCulture, Loc["ResetsOnFormat"], FormatWindowEnd(Budget.WindowEndUtc))</span>
+        </div>
+    </RadzenCard>
+}
+
+@code {
+    /// <summary>
+    /// The customer's monthly salary budget snapshot. When null, the
+    /// component renders nothing - the parent is responsible for the
+    /// null-check before placing the component in the tree (see Cart.razor's
+    /// <c>@if (_cart?.BudgetInfo is not null)</c> wrapper).
+    /// </summary>
+    [Parameter]
+    public SalaryBudgetInfo? Budget { get; set; }
+
+    /// <summary>
+    /// The current draft cart total. Used to break <c>Budget.Consumed</c>
+    /// into "already submitted this month" (= Consumed - CartTotal) and
+    /// "currently in cart" (= CartTotal).
+    ///
+    /// NULL or zero-amount when the customer has no active draft (empty
+    /// cart) - in that case, "In cart now" shows 0 and "Already spent"
+    /// equals the full Consumed amount.
+    ///
+    /// The currency of CartTotal is ALWAYS the same as Budget.Salary.Currency
+    /// when both are non-null (enforced by CurrencyMismatchErrors in every
+    /// sale-mutating handler). We project the cart amount into the salary's
+    /// currency unconditionally to avoid culture-mismatch display issues.
+    /// </summary>
+    [Parameter]
+    public MoneyDto? CartTotal { get; set; }
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display. Mirrors Cart.razor's FormatPrice
+    /// helper exactly - IRR is labelled with the Persian word for Rial
+    /// (no division), other currencies pass through as the ISO code. The
+    /// culture-aware N0 format produces Persian digits + Persian thousands
+    /// separator in fa-IR mode.
+    /// </summary>
+    private static string FormatPrice(MoneyDto price)
+    {
+        if (price is null) return "—";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var unit = isIrr ? "ریال" : price.Currency;
+        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
+    }
+
+    /// <summary>
+    /// Formats the budget window end (the 1st of the next Persian month) as
+    /// a culture-aware display string:
+    ///   - fa-IR: "{day} {PersianMonthName}" (e.g. "1 Mehr" in Persian digits)
+    ///   - en-US: "{MMM d}" (e.g. "Sep 1")
+    ///
+    /// WHY NOT JUST .ToString("d MMMM", culture):
+    ///   In fa-IR, .NET's PersianCalendar IS the active calendar for the
+    ///   culture, but DateTime.ToString still formats using the Gregorian
+    ///   calendar by default (DateTime's Kind=Utc has no calendar info).
+    ///   To get the Persian month name, we explicitly use PersianCalendar
+    ///   to read year/month/day, then format the month number back into a
+    ///   name via DateTimeFormatInfo.MonthNames for the fa-IR culture.
+    ///
+    ///   The salary window is anchored to the PERSIAN month (per spec: "1st
+    ///   of each Persian (Jalali) calendar month"). Displaying a Gregorian
+    ///   date would mislead the customer - they'd see "resets on Sep 22"
+    ///   when the actual reset is "1 Mehr" (which is Sep 22 in Gregorian but
+    ///   the customer thinks in Persian months).
+    /// </summary>
+    private static string FormatWindowEnd(DateTime windowEndUtc)
+    {
+        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
+
+        if (!isFa)
+        {
+            // en-US: "Sep 1" - short month name + day, no year (the year is
+            // implied; the budget resets every month, so showing the year
+            // would clutter the footer unnecessarily).
+            return windowEndUtc.ToString("MMM d", CultureInfo.CurrentCulture);
+        }
+
+        // fa-IR: "{day} {PersianMonthName}" - e.g. "1 Mehr" with Persian digits.
+        var pc = new PersianCalendar();
+        var month = pc.GetMonth(windowEndUtc);
+        var day = pc.GetDayOfMonth(windowEndUtc);
+
+        // Look up the Persian month name from the fa-IR culture's
+        // DateTimeFormatInfo.MonthNames array. This is the same source the
+        // BCL uses when formatting dates with the PersianCalendar culture -
+        // reliable across .NET versions (the array is static data shipped
+        // with the Globalization dataset).
+        var faCulture = CultureInfo.GetCultureInfo("fa-IR");
+        var monthNames = faCulture.DateTimeFormat.MonthNames;
+        // MonthNames is 1-indexed conceptually but 0-indexed as an array;
+        // index 12 is the empty string (13th month in leap-year calendars).
+        var monthName = month <= monthNames.Length
+            ? monthNames[month - 1]
+            : month.ToString("00", CultureInfo.InvariantCulture);
+
+        // Convert ASCII digits to Persian digits (fa-IR culture's
+        // NumberFormatInfo.NativeDigits). The CurrentCulture's N0 format
+        // does this for us automatically when we pass the culture.
+        var dayStr = day.ToString("N0", faCulture).Trim();
+
+        return $"{dayStr} {monthName}";
+    }
+}

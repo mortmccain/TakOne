@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CartBudgetBar.en-US.resx — English strings for CartBudgetBar.razor.
+
+     The CartBudgetBar is shown above the cart's line-item list (and on
+     the empty-cart state too) so the customer can see at a glance:
+       - How much monthly budget they have
+       - How much they've already spent this month (excludes draft cart)
+       - How much is currently in their cart
+       - How much is remaining (= salary − spent − in-cart)
+       - When the budget resets (1st of next Persian month)
+
+     CRITICAL: The customer NEVER sees the word "group" — the localized
+     messages are generic. The SalaryBudgetExceeded error handler in the
+     Application layer (SalaryBudgetExceededErrors.cs) is responsible for
+     the same neutrality on the error-path side; this resx follows the
+     same convention for the success-path side.
+
+     The four <resheader> tags below are REQUIRED by the .resx reader. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Header -->
+  <data name="Title" xml:space="preserve">
+    <value>Monthly budget</value>
+  </data>
+  <data name="ProgressBarLabel" xml:space="preserve">
+    <value>Budget usage</value>
+  </data>
+
+  <!-- Stat row labels — these mirror the cart summary panel's labels for
+       consistency. The customer sees the same word ("Total") in both places
+       with the same meaning. -->
+  <data name="MonthlyBudget" xml:space="preserve">
+    <value>Monthly budget</value>
+  </data>
+  <data name="SpentThisMonth" xml:space="preserve">
+    <value>Already spent this month</value>
+  </data>
+  <data name="InCartNow" xml:space="preserve">
+    <value>In your cart now</value>
+  </data>
+  <data name="Remaining" xml:space="preserve">
+    <value>Remaining</value>
+  </data>
+
+  <!-- Footer "resets on" hint. {0} is the next Persian month's 1st day,
+       formatted as either "Sep 1" (en-US) or "۱ مهر" (fa-IR). -->
+  <data name="ResetsOnFormat" xml:space="preserve">
+    <value>Budget resets on {0}</value>
+  </data>
+
+  <!-- Overdraft alert (shown when Remaining < 0). The customer has spent
+       more than their monthly budget — this can happen if their salary was
+       lowered mid-month after a purchase. They cannot add ANY items until
+       next month (every add-item handler rejects on budget-exceeded). -->
+  <data name="ExceededTitle" xml:space="preserve">
+    <value>Budget exceeded</value>
+  </data>
+  <data name="ExceededMessage" xml:space="preserve">
+    <value>You've used your entire monthly budget. You can still review or remove items in your cart, but you can't add new ones until next month.</value>
+  </data>
+</root>

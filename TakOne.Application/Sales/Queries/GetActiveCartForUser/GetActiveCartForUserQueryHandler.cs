@@ -20,6 +20,7 @@ public sealed class GetActiveCartForUserQueryHandler
         ISaleRepository saleRepository,
         IProductRepository productRepository,
         IUserRepository userRepository,
+        ISalaryBudgetService salaryBudgetService,
         ILogger<GetActiveCartForUserQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -37,6 +38,35 @@ public sealed class GetActiveCartForUserQueryHandler
         }
 
         // ------------------------------------------------------------------
+        // 0b. Compute the caller's salary budget info ONCE up-front. This
+        //     is needed in BOTH branches (sale-is-null + sale-is-loaded) so
+        //     the CartBudgetBar can render even when the customer has no
+        //     active draft — i.e. "you have X remaining this month, go
+        //     browse the catalog" is the right UX for the empty-cart
+        //     state. The Step 7 worklog calls this out explicitly: "When
+        //     the cart is empty, the bar will show just the salary + monthly
+        //     consumed (no cart contribution)".
+        //
+        //     GetBudgetInfoAsync is cheap + short-circuits internally when:
+        //       - The user has no GroupId (staff)         → returns null
+        //       - LimitMode == CountOnly                  → returns null
+        //       - The user has no group / group not found  → returns null
+        //     All three "returns null" outcomes correctly suppress the
+        //     CartBudgetBar UI (the page checks _cart?.BudgetInfo is not null
+        //     before rendering). No special-casing needed at this layer.
+        //
+        //     This call is OUTSIDE the cart mutation lock — it's a pure
+        //     read. The "cart reserves budget" rule means the consumed
+        //     amount INCLUDES the current draft total, so even when a
+        //     concurrent mutation is in flight, the snapshot returned
+        //     here is internally consistent (the draft total at the
+        //     moment of the call is either pre-mutation or post-mutation,
+        //     both are valid views).
+        // ------------------------------------------------------------------
+        var budgetInfo = await salaryBudgetService.GetBudgetInfoAsync(
+            currentUser.UserId, cancellationToken);
+
+        // ------------------------------------------------------------------
         // 1. Load the user's active draft (with line items eagerly loaded).
         //    Returns null if the user has no active draft — that's the
         //    "empty cart" state, which is a SUCCESS(null) per the query's
@@ -51,8 +81,18 @@ public sealed class GetActiveCartForUserQueryHandler
             logger.LogInformation
                 ("GetActiveCartForUser: user {UserId} has no active draft (empty cart).",
                 currentUser.UserId);
-            // Not a failure — empty cart is a normal state.
-            return Result<CartDto?>.Success(null);
+
+            // Empty-cart state STILL returns a CartDto with BudgetInfo populated
+            // so the CartBudgetBar renders above the empty-cart panel. The
+            // SaleId is Guid.Empty (default) — this is safe because the
+            // empty-cart UI branch never dispatches any cart-mutation command
+            // (which would need a real SaleId); it only shows the
+            // "Browse products" CTA.
+            //
+            // If budgetInfo is null (staff user / CountOnly mode / no group),
+            // the CartBudgetBar is silently hidden — the empty-cart CTA is
+            // shown on its own.
+            return Result<CartDto?>.Success(new CartDto { BudgetInfo = budgetInfo });
         }
 
         // ------------------------------------------------------------------
@@ -170,7 +210,11 @@ public sealed class GetActiveCartForUserQueryHandler
                 Amount = sale.Total.Amount,
                 Currency = sale.Total.Currency
             },
-            LineItems = lineItemDtos
+            LineItems = lineItemDtos,
+            // Step 7 — populated for both the empty-cart + cart-with-items
+            // branches so the CartBudgetBar renders in both states. See
+            // the top-of-method comment for the contract semantics.
+            BudgetInfo = budgetInfo
         };
 
         return Result<CartDto?>.Success(cartDto);
