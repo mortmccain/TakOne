@@ -125,12 +125,12 @@ public sealed class CreateSaleCommandHandler
             // GetPurchaseLimitForGroup returns the CustomerGroupPurchaseLimit
             // value object (or null if no limit is defined for that group on
             // this product). The Sale aggregate expects the raw int? — so we
-            // unwrap .Limit here. A null GroupName (staff buying as themselves
+            // unwrap .Limit here. A null GroupId (staff buying as themselves
             // for themselves) means no limit applies.
             int? purchaseLimit = null;
-            if (!string.IsNullOrWhiteSpace(customer.GroupName))
+            if (customer.GroupId is not null)
             {
-                var limitVo = product.GetPurchaseLimitForGroup(customer.GroupName);
+                var limitVo = product.GetPurchaseLimitForGroup(customer.GroupId.Value);
                 purchaseLimit = limitVo?.Limit;
             }
 

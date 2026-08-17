@@ -21,6 +21,7 @@ public sealed class GetProductByIdQueryHandler
         GetProductByIdQuery query,
         ICurrentUserService currentUser,
         IProductRepository productRepository,
+        IUserRepository userRepository,
         ILogger<GetProductByIdQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -67,6 +68,20 @@ public sealed class GetProductByIdQueryHandler
             currentUser.IsInRole(Roles.Manager) ||
             currentUser.IsInRole(Roles.Employee);
 
+        // ------------------------------------------------------------------
+        // 2b. Resolve the current user's GroupId FRESH from the DB.
+        //     The GroupId claim on the auth cookie is a snapshot from
+        //     login time and goes stale when an admin reassigns the user's
+        //     group after they're already logged in. Reading from the DB
+        //     guarantees the limit reflects the user's CURRENT group, so
+        //     the ProductDetail qty selector clamps correctly even without
+        //     a re-login.
+        //
+        //     For staff users, GroupId is null → no per-product cap.
+        // ------------------------------------------------------------------
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        var groupId = freshUser?.GroupId;
+
         var dto = new ProductDto
         {
             Id = product.Id,
@@ -93,7 +108,7 @@ public sealed class GetProductByIdQueryHandler
                     pl => new
                     ProductPurchaseLimitDto
                     {
-                        GroupName = pl.GroupName,
+                        GroupId = pl.GroupId,
                         Limit = pl.Limit
                     }
                     )
@@ -101,12 +116,12 @@ public sealed class GetProductByIdQueryHandler
                 : new List<ProductPurchaseLimitDto>(),
 
             // MyPurchaseLimit — the CURRENT caller's own per-group limit on
-            // this product. Null for staff (no GroupName → no cap) and for
+            // this product. Null for staff (no GroupId → no cap) and for
             // customers whose group has no specific limit set on this product.
             // The ProductDetail page uses this to clamp the quantity selector
             // so the customer cannot even SELECT more than their group allows.
-            MyPurchaseLimit = !string.IsNullOrWhiteSpace(currentUser.GroupName)
-                ? product.GetPurchaseLimitForGroup(currentUser.GroupName)?.Limit
+            MyPurchaseLimit = groupId is not null
+                ? product.GetPurchaseLimitForGroup(groupId.Value)?.Limit
                 : null
         };
 

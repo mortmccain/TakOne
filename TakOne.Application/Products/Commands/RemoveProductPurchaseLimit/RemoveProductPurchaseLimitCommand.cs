@@ -15,8 +15,11 @@ namespace TakOne.Application.Products.Commands.RemoveProductPurchaseLimit;
 ///   product with no quantity limit. If a different limit should apply
 ///   instead, use <see cref="SetProductPurchaseLimitCommand"/> to overwrite
 ///   rather than remove.
+///
+/// SALARY FEATURE (Step 3):
+///   Takes <c>GroupId</c> (Guid) instead of <c>GroupName</c> (string).
 /// </summary>
 [RequireRoles(Roles.Employee, Roles.Manager, Roles.Admin)]
 public sealed record RemoveProductPurchaseLimitCommand(
     Guid ProductId,
-    string GroupName);
+    Guid GroupId);

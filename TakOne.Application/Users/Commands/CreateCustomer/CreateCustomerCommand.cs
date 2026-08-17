@@ -9,7 +9,8 @@ namespace TakOne.Application.Users.Commands.CreateCustomer;
 /// AUTHORIZATION:
 ///   Manager, Admin. Employees cannot create users — even customers —
 ///   because creating a customer means assigning them to a group, and
-///   group membership determines purchase limits (a financial concern).
+///   group membership determines purchase limits + salary budget (a
+///   financial concern).
 ///
 /// TWO-PHASE CREATION:
 ///   1. The handler creates the Domain <c>User</c> via
@@ -30,10 +31,15 @@ namespace TakOne.Application.Users.Commands.CreateCustomer;
 ///   <see cref="Common.Interfaces.IUserRepository.WorkerIdExistsAsync"/>,
 ///   and backed by a unique index on ApplicationUser.UserName in the DB.
 ///
-/// GROUP NAME VISIBILITY:
-///   GroupName is required to create a customer (per domain invariant).
-///   It is NEVER shown to the customer themselves — only to admins and
-///   managers. See <see cref="Domain.Users.User"/> XML docs for rationale.
+/// GROUP VISIBILITY:
+///   The customer's GroupId is required at creation (per domain invariant).
+///   The group's NAME is NEVER shown to the customer themselves — only to
+///   admins and managers. See <see cref="Domain.Users.User"/> XML docs.
+///
+/// SALARY FEATURE (Step 3):
+///   Takes <c>GroupId</c> (Guid) instead of <c>GroupName</c> (string).
+///   The UI must select from existing groups via the
+///   <c>GetAllCustomerGroupsQuery</c>.
 ///
 /// GENDER (Phase 0.5):
 ///   Required field. Per roadmap Section 12.5, only Male and Female are
@@ -46,7 +52,7 @@ public sealed record CreateCustomerCommand
     (
     string WorkerId,
     string FullName,
-    string GroupName,
+    Guid GroupId,
     string Email,
     string InitialPassword,
     Gender Gender

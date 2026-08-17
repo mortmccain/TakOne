@@ -64,11 +64,16 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
             .WithMessage("Cannot specify a SubSubCategoryId without a SubCategoryId.");
 
         // ── Per-group purchase limits ────────────────────────────────────
-        // Each entry must have a non-empty GroupName (1..100 chars, matching
-        // the domain CustomerGroupPurchaseLimit guard) and a Limit >= 1.
-        // The handler also checks for duplicate group names across the list
-        // (a list-level invariant that requires full-list context, which
-        // FluentValidation can do but is cleaner in the handler).
+        // Each entry must have a non-empty GroupId (referencing an existing
+        // CustomerGroup row — existence is verified by the handler, since it
+        // requires DB access) and a Limit >= 1. The handler also checks for
+        // duplicate group Ids across the list (a list-level invariant that
+        // requires full-list context, which FluentValidation can do but is
+        // cleaner in the handler).
+        //
+        // SALARY FEATURE (Step 3): GroupName (string) was replaced with
+        // GroupId (Guid). The handler validates existence against the
+        // CustomerGroup aggregate via ICustomerGroupRepository.
         //
         // WHY .When(...) instead of `x => x.PurchaseLimits ?? Array.Empty<...>()`:
         //   FluentValidation's RuleForEach needs to infer a property name from
@@ -81,9 +86,8 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
         RuleForEach(x => x.PurchaseLimits)
             .ChildRules(entry =>
             {
-                entry.RuleFor(e => e.GroupName)
-                    .NotEmpty().WithMessage("Group name is required for each purchase limit.")
-                    .MaximumLength(100).WithMessage("Group name cannot exceed 100 characters.");
+                entry.RuleFor(e => e.GroupId)
+                    .NotEmpty().WithMessage("Group is required for each purchase limit.");
 
                 entry.RuleFor(e => e.Limit)
                     .GreaterThanOrEqualTo(1).WithMessage("Purchase limit must be at least 1.")

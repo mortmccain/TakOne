@@ -91,6 +91,9 @@ public sealed class CreateOrAppendSaleCommandHandler
         ISaleRepository saleRepository,
         IUserRepository userRepository,
         ICategoryRepository categoryRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
+        ISalaryBudgetService salaryBudgetService,
+        ICartMutationLock cartMutationLock,
         IUnitOfWork unitOfWork,
         ILogger<CreateOrAppendSaleCommandHandler> logger,
         CancellationToken cancellationToken
@@ -183,37 +186,120 @@ public sealed class CreateOrAppendSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 2. Purchase-limit lookup using the CURRENT USER's GroupName.
-        //    For staff (Employee/Manager/Admin), GroupName is null and no
-        //    limit applies — they can buy as much as stock allows.
-        //    For customers, GroupName comes from their User.GroupName (set
-        //    via AssignUserToGroup command). We look up the matching
-        //    CustomerGroupPurchaseLimit on this product.
+        // ACQUIRE PER-USER CART MUTATION LOCK (Step 4 wiring).
         //
-        //    WHY LOAD FROM DB (not from currentUser.GroupName claim):
-        //      The GroupName claim is a snapshot from login time and goes
-        //      stale when an admin assigns the user to a group after
-        //      they're already logged in. The stale claim caused a real
-        //      bug: customer's GroupName was null in the claim (because
-        //      they were assigned to the group post-login), so the limit
-        //      was null, so the Add-to-cart button never grayed out and
-        //      CreateOrAppendSale didn't enforce the limit — but
-        //      UpdateSaleLineItem (which loads the customer from DB) DID
-        //      enforce it, creating an asymmetry where the mini-cart +/-
-        //      buttons errored but the Add button didn't.
+        // CreateOrAppendSale is a SELF-BUY flow (only the current user can
+        // mutate their own draft — see the ownership check inside the retry
+        // lambda). The lock is therefore acquired on currentUser.UserId.
         //
-        //    This is OUTSIDE the retry loop because:
-        //      - It depends only on the product (read above, immutable for
-        //        the handler's lifetime) and the user's GroupName (also
-        //        immutable for the handler's lifetime).
-        //      - Re-querying it on each retry would be wasted work.
+        // The lock must be acquired BEFORE we read freshUser / compute the
+        // budget / currency check, because those reads must observe any
+        // concurrent invocation's commit. The retry loop further inside
+        // handles DB-level conflicts — the lock prevents the higher-level
+        // race where two invocations both read stale budget and both pass.
+        //
+        // Note: the lock is acquired AFTER the product read + category
+        // check (those are immutable for the handler's lifetime), but
+        // BEFORE the user read. See the user-read block below for why.
+        // ------------------------------------------------------------------
+        await using var _cartLockHandle = await cartMutationLock.AcquireAsync
+            (currentUser.UserId, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // 2. Resolve the current user FRESH from the DB (after lock acquired).
+        //    The GroupId claim on the auth cookie is a snapshot from login
+        //    time and goes stale when an admin reassigns the user's group
+        //    after they're already logged in. Reading from the DB guarantees
+        //    the limit reflects the user's CURRENT group, so the per-product
+        //    clamping below is correct without requiring a re-login.
+        //
+        //    For staff users, GroupId is null → no per-product cap and no
+        //    currency / salary-budget enforcement.
+        //
+        //    The lock acquired above guarantees that no concurrent
+        //    invocation is reading this same user's state while we mutate
+        //    their cart — the budget check below uses the authoritative
+        //    post-lock value.
+        // ------------------------------------------------------------------
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        var groupId = freshUser?.GroupId;
+
+        // ------------------------------------------------------------------
+        // 2b. CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
+        //    A customer whose salary is in IRR cannot buy a product priced
+        //    in USD. Staff (GroupId == null) bypasses.
+        // ------------------------------------------------------------------
+        if (groupId is not null)
+        {
+            var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
+                (product.Id, groupId, cancellationToken);
+
+            if (!currencyOk)
+            {
+                var salary = await salaryBudgetService.GetGroupSalaryAsync
+                    (groupId, cancellationToken);
+                var salaryCurrency = salary?.Currency ?? "???";
+
+                logger.LogWarning
+                    ("CreateOrAppendSale: currency mismatch for product {ProductId} ('{ProductName}') priced in {ProductCurrency}; user {UserId} salary currency is {SalaryCurrency}. Rejecting add-to-cart.",
+                    product.Id, product.Name, product.Price.Currency, currentUser.UserId, salaryCurrency);
+
+                return Result<Guid>.Failure(
+                    CurrencyMismatchErrors.Format(product.Name, product.Price.Currency, salaryCurrency));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 2c. SALARY BUDGET CHECK (enforced when LimitMode is SalaryOnly / Both).
+        //
+        //    delta = unitPrice × command.Quantity — the SIGNED change to
+        //    the customer's monthly consumed amount. budgetInfo.Consumed
+        //    already includes the customer's current draft cart total
+        //    (cart-reserves-budget), so the check is delta ≤ Remaining.
+        //
+        //    This check happens OUTSIDE the retry loop because the budget
+        //    info is independent of the (Create-vs-Append) decision — it
+        //    doesn't change between retries (the retry resolves DB-level
+        //    unique-index conflicts, not business-rule conflicts).
+        //
+        //    It happens INSIDE the lock so concurrent invocations can't
+        //    both pass this check while observing stale budget info.
+        // ------------------------------------------------------------------
+        var lineTotal = product.Price.Amount * command.Quantity;
+
+        if (groupId is not null
+            && await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken))
+        {
+            var budgetInfo = await salaryBudgetService.GetBudgetInfoAsync
+                (currentUser.UserId, cancellationToken);
+
+            if (budgetInfo is not null && lineTotal > budgetInfo.Remaining)
+            {
+                logger.LogWarning
+                    ("CreateOrAppendSale: salary budget exceeded for product {ProductId} (user {UserId}, lineTotal {LineTotal}, remaining budget {Remaining}, currency {Currency}).",
+                     product.Id, currentUser.UserId, lineTotal, budgetInfo.Remaining, budgetInfo.Salary.Currency);
+
+                return Result<Guid>.Failure(
+                    SalaryBudgetExceededErrors.Format
+                        (product.Name, lineTotal, budgetInfo.Remaining, budgetInfo.Salary.Currency));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 2d. Resolve the per-product count limit (replaces inline
+        //     product.GetPurchaseLimitForGroup). Returns null when:
+        //       - count limits are NOT enforced (mode = SalaryOnly)
+        //       - groupId is null (staff)
+        //       - the product has no limit set for the customer's group
+        //
+        //    Outside the retry loop — depends only on product + groupId,
+        //    both immutable for the handler's lifetime.
         // ------------------------------------------------------------------
         int? purchaseLimit = null;
-        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
-        if (freshUser is not null && !string.IsNullOrWhiteSpace(freshUser.GroupName))
+        if (groupId is not null)
         {
-            var limitVo = product.GetPurchaseLimitForGroup(freshUser.GroupName);
-            purchaseLimit = limitVo?.Limit;
+            purchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
+                (product.Id, groupId, cancellationToken);
         }
 
         // ------------------------------------------------------------------

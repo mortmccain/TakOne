@@ -14,6 +14,9 @@ public sealed class SubmitSaleCommandHandler
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
+        ISalaryBudgetService salaryBudgetService,
+        ICartMutationLock cartMutationLock,
         ISaleNumberGenerator saleNumberGenerator,
         IUnitOfWork unitOfWork,
         ILogger<SubmitSaleCommandHandler> logger,
@@ -34,55 +37,97 @@ public sealed class SubmitSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // The one forbidden thing: a sale must be submitted by its own
-        // creator. Customer creates draft + employee submits = NOT allowed.
-        // Employee creates on behalf + employee submits = allowed (same person).
+        // ACQUIRE PER-USER CART MUTATION LOCK (Step 4 wiring).
+        //
+        // Acquired on sale.CustomerId (NOT currentUser.UserId) so that
+        // staff-editing-on-behalf serializes on the customer's lock. The
+        // submit-time re-checks below (currency, salary budget) read the
+        // authoritative state under the lock — a concurrent invocation
+        // cannot add a line to the cart between our budget read and our
+        // Submit() call.
+        //
+        // The lock is acquired AFTER the sale load + ownership check (we
+        // need sale.CustomerId, and the ownership check must NOT block on
+        // the lock — the caller may be unauthorized).
         // ------------------------------------------------------------------
-        if (sale.CreatedByUserId != currentUser.UserId)
+        await using var _cartLockHandle = await cartMutationLock.AcquireAsync
+            (sale.CustomerId, cancellationToken);
+
+        // Re-load the sale after acquiring the lock — a concurrent
+        // invocation may have added / removed lines or even submitted the
+        // sale. The first load was needed to validate ownership BEFORE
+        // blocking on the lock; this second load gives us the authoritative
+        // post-lock state for the budget re-check.
+        sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
+        if (sale is null)
         {
             logger.LogWarning(
-                "SubmitSale: user {UserId} attempted to submit sale {SaleId} created by {CreatorId}. " +
-                "Only the creator can submit a sale.",
-                currentUser.UserId, sale.Id, sale.CreatedByUserId);
+                "SubmitSale: sale {SaleId} disappeared after acquiring cart lock.",
+                command.SaleId);
+            return Result.Failure($"Sale '{command.SaleId}' was not found.");
+        }
 
+        if (sale.CreatedByUserId != currentUser.UserId)
+        {
+            // Re-check ownership after re-load (defensive against a
+            // concurrent re-assignment — unlikely but cheap to verify).
+            logger.LogWarning(
+                "SubmitSale: after re-load, sale {SaleId} creator changed from {OrigCreator} to {NewCreator}.",
+                sale.Id, currentUser.UserId, sale.CreatedByUserId);
+            return Result.Failure("This cart was modified by another session. Refresh and try again.");
+        }
+
+        if (sale.Status != Domain.Sales.Enums.SaleStatus.Draft)
+        {
+            // The sale was already submitted by a concurrent invocation.
+            logger.LogInformation(
+                "SubmitSale: sale {SaleId} is no longer Draft after re-load (status = {Status}). A concurrent invocation likely already submitted it.",
+                sale.Id, sale.Status);
             return Result.Failure(
-                "Only the sale's creator can submit it. " +
-                "If you are a sales employee creating a sale on behalf of a customer, " +
-                "submit the sale yourself from the sales-employee page.");
+                "This cart was already submitted. Refresh the page.");
         }
 
         // ------------------------------------------------------------------
-        // PURCHASE-LIMIT RE-CHECK AT SUBMIT TIME (defense-in-depth).
+        // The one forbidden thing: a sale must be submitted by its own
+        // creator. Customer creates draft + employee submits = NOT allowed.
+        // Employee creates on behalf + employee submits = allowed (same person).
         //
-        // The Add / Update paths already enforce the per-group purchase
-        // limit at the time the line was last touched. But the limit may
-        // have been LOWERED by an admin between when the user added the
-        // item to their cart and when they clicked Submit. Without this
-        // re-check, the user could successfully submit a sale that
-        // violates the current limit — a real bug reported in the field
-        // ("you CAN hit submit order and submit something more than the
-        // allowed limit").
+        // (Already checked above — re-stated for clarity after the re-load.)
+        // ------------------------------------------------------------------
+        // Original ownership + status checks were done above BEFORE acquiring the lock.
+
+        // ------------------------------------------------------------------
+        // PURCHASE-LIMIT + CURRENCY + SALARY-BUDGET RE-CHECK AT SUBMIT TIME
+        // (defense-in-depth).
         //
-        // We re-resolve the customer's GroupName from the DB (the auth-
-        // cookie claim is stale — see GetActiveCartForUserQueryHandler
-        // for the full rationale), look up each line's product limit for
-        // that group, and reject if any line's quantity exceeds it.
+        // The Add / Update paths already enforced these at the time the
+        // line was last touched. But the limits / budget / currency may
+        // have CHANGED by an admin between when the user added the item to
+        // their cart and when they clicked Submit. Without these re-checks,
+        // the user could successfully submit a sale that violates the
+        // current limits.
+        //
+        // We re-resolve the customer's GroupId from the DB (the auth cookie
+        // claim is stale), look up each line's product, and reject if any
+        // of the following fails:
+        //   1. Currency match — every line's product currency must match
+        //      the customer's salary currency.
+        //   2. Salary budget — the customer's consumed amount must not
+        //      exceed their salary (Remaining >= 0). When salary budget
+        //      is enforced.
+        //   3. Per-product count limit — every line's qty must not exceed
+        //      the product's limit for the customer's group.
         //
         // CATEGORY-DEACTIVATION RE-CHECK (also defense-in-depth):
         //   Even if every line passed Add/Update validation, an admin may
         //   have DEACTIVATED the product's Category / SubCategory /
         //   SubSubCategory between the time the line was added and the
         //   time the user clicked Submit. Such products must NOT be
-        //   submittable — but their StockQuantity is preserved (the
-        //   admin's intent was to suppress visibility, not to delete
-        //   inventory). We reject with CategoryDeactivatedErrors.Format
-        //   so the UI can localize the message and the user knows which
-        //   product to remove from their cart.
+        //   submittable — but their StockQuantity is preserved.
         //
         // Single round-trip for the customer + single round-trip for all
-        // line-item products (via GetByIdsAsync). The failure errors use
-        // PurchaseLimitErrors.Format / CategoryDeactivatedErrors.Format
-        // so the UI can localize them without mentioning "groups".
+        // line-item products. The failure errors use the stable-code
+        // pattern so the UI can localize them without mentioning "groups".
         // ------------------------------------------------------------------
         var customer = await userRepository.GetByIdAsync(sale.CustomerId, cancellationToken);
         if (customer is null)
@@ -144,8 +189,11 @@ public sealed class SubmitSaleCommandHandler
             }
 
             // ---- Pass 2: purchase-limit check (ONLY for customers with
-            //              a GroupName — staff have no per-product cap).
-            if (!string.IsNullOrWhiteSpace(customer.GroupName))
+            //              a GroupId — staff have no per-product cap).
+            //              Uses the policy (replaces inline GetPurchaseLimitForGroup)
+            //              so the LimitMode is respected: when mode is SalaryOnly,
+            //              GetCountLimitAsync returns null and the check is skipped.
+            if (customer.GroupId is not null)
             {
                 foreach (var line in sale.LineItems)
                 {
@@ -157,16 +205,99 @@ public sealed class SubmitSaleCommandHandler
                         continue;
                     }
 
-                    var limitVo = lineProduct.GetPurchaseLimitForGroup(customer.GroupName);
-                    if (limitVo is not null && line.Quantity > limitVo.Limit)
+                    var limitVo = await purchaseLimitPolicy.GetCountLimitAsync
+                        (lineProduct.Id, customer.GroupId, cancellationToken);
+                    if (limitVo is not null && line.Quantity > limitVo.Value)
                     {
                         logger.LogWarning(
                             "SubmitSale: purchase-limit exceeded at submit time for product {ProductId} on sale {SaleId} " +
                             "(customer {CustomerId}, limit {Limit}, line qty {Qty}).",
-                            line.ProductId, sale.Id, sale.CustomerId, limitVo.Limit, line.Quantity);
+                            line.ProductId, sale.Id, sale.CustomerId, limitVo.Value, line.Quantity);
 
                         return Result.Failure(
-                            PurchaseLimitErrors.Format(line.ProductName, limitVo.Limit));
+                            PurchaseLimitErrors.Format(line.ProductName, limitVo.Value));
+                    }
+                }
+
+                // ---- Pass 2b: currency match re-check (always enforced).
+                //
+                // For each line, the product's current price currency must
+                // match the customer's salary currency. The price snapshot on
+                // the line is from when the line was added; we use that for
+                // the error message, but the policy re-reads the product to
+                // resolve its currency (so a currency change via admin updating
+                // the product's price is caught here).
+                //
+                // Note: changing a customer's salary CURRENCY is not allowed
+                // via UpdateCustomerGroupSalary (preserves currency — admin
+                // must deactivate + create new). So this check is purely
+                // defensive against the product's price having been edited.
+                // ------------------------------------------------------------------
+                foreach (var line in sale.LineItems)
+                {
+                    if (!lineProductById.TryGetValue(line.ProductId, out var lineProduct))
+                    {
+                        continue;
+                    }
+
+                    var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
+                        (lineProduct.Id, customer.GroupId, cancellationToken);
+
+                    if (!currencyOk)
+                    {
+                        var salary = await salaryBudgetService.GetGroupSalaryAsync
+                            (customer.GroupId, cancellationToken);
+                        var salaryCurrency = salary?.Currency ?? "???";
+
+                        logger.LogWarning(
+                            "SubmitSale: currency mismatch at submit time for product {ProductId} on sale {SaleId} " +
+                            "(line currency {LineCurrency}, customer salary currency {SalaryCurrency}).",
+                            lineProduct.Id, sale.Id, line.UnitPrice.Currency, salaryCurrency);
+
+                        return Result.Failure(
+                            CurrencyMismatchErrors.Format(lineProduct.Name, line.UnitPrice.Currency, salaryCurrency));
+                    }
+                }
+
+                // ---- Pass 2c: salary-budget re-check (defense-in-depth).
+                //
+                // Submitting the sale doesn't change the consumed amount
+                // (the draft cart total just becomes the submitted sale total —
+                // same query result). But the salary may have been LOWERED
+                // mid-month after the user added items to their cart, in
+                // which case the consumed amount now exceeds the salary.
+                //
+                // We reject submit if Remaining < 0 — meaning consumed > salary.
+                // The customer has to wait until next month's budget resets
+                // (or ask an admin to raise their salary / remove some items
+                // from the cart).
+                //
+                // Only runs when salary budget is enforced (SalaryOnly / Both).
+                // ------------------------------------------------------------------
+                if (await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken))
+                {
+                    var budgetInfo = await salaryBudgetService.GetBudgetInfoAsync
+                        (sale.CustomerId, cancellationToken);
+
+                    if (budgetInfo is not null && budgetInfo.Remaining < 0m)
+                    {
+                        // sale.Total is the cart being submitted. It's part of
+                        // budgetInfo.Consumed (cart-reserves-budget rule). The
+                        // error reports sale.Total as the lineTotal and
+                        // budgetInfo.Remaining as the (negative) remainingBudget.
+                        logger.LogWarning(
+                            "SubmitSale: salary budget exceeded at submit time for sale {SaleId} " +
+                            "(customer {CustomerId}, saleTotal {SaleTotal}, consumed {Consumed}, salary {Salary}, remaining {Remaining}, currency {Currency}). " +
+                            "The salary was likely lowered after the cart was assembled.",
+                            sale.Id, sale.CustomerId, sale.Total.Amount, budgetInfo.Consumed,
+                            budgetInfo.Salary.Amount, budgetInfo.Remaining, budgetInfo.Salary.Currency);
+
+                        return Result.Failure(
+                            SalaryBudgetExceededErrors.Format(
+                                /* productName */ sale.SaleNumber?.ToString() ?? sale.Id.ToString(),
+                                /* lineTotal  */ sale.Total.Amount,
+                                /* remaining  */ budgetInfo.Remaining,
+                                /* currency   */ budgetInfo.Salary.Currency));
                     }
                 }
             }

@@ -4,19 +4,21 @@ namespace TakOne.Application.Users.Commands.AssignUserToGroup;
 
 /// <summary>
 /// FluentValidation validator for <see cref="AssignUserToGroupCommand"/>.
+///
+/// Only checks primitive, self-contained properties. Cross-aggregate checks
+/// (group existence, role scoping) are the handler's job.
 /// </summary>
 public sealed class AssignUserToGroupCommandValidator : AbstractValidator<AssignUserToGroupCommand>
 {
-    public const int MaxGroupNameLength = 100;
-
     public AssignUserToGroupCommandValidator()
     {
         RuleFor(x => x.UserId)
             .NotEmpty().WithMessage("User ID is required.");
 
-        RuleFor(x => x.GroupName)
-            .NotEmpty().WithMessage("Group name is required.")
-            .MaximumLength(MaxGroupNameLength)
-            .WithMessage($"Group name cannot exceed {MaxGroupNameLength} characters.");
+        // GroupId must reference an existing CustomerGroup row. The handler
+        // verifies existence via ICustomerGroupRepository.GetByIdAsync —
+        // here we only check it's not Guid.Empty (programmer error).
+        RuleFor(x => x.GroupId)
+            .NotEmpty().WithMessage("Group ID is required.");
     }
 }

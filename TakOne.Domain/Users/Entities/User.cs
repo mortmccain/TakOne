@@ -13,9 +13,10 @@ namespace TakOne.Domain.Users;
 ///     (e.g. "EMP-12345"), NOT their name. Customers, employees and managers
 ///     are all employees of some company; they authenticate with their worker ID.
 ///   - <see cref="FullName"/> holds their human-readable name.
-///   - <see cref="GroupName"/> is set ONLY for customers, and is used to look up
-///     per-product purchase limits. Customers must NEVER see this value in the UI;
-///     it is an internal grouping mechanism.
+///   - <see cref="GroupId"/> is set ONLY for customers, and is used to look up
+///     per-product purchase limits and the monthly salary budget. Customers
+///     must NEVER see this value or the word "group" in the UI; it is an
+///     internal grouping mechanism.
 ///
 /// IDENTITY MAPPING (done in Infrastructure layer, step 7):
 ///   The Domain User is mapped to an ApplicationUser : IdentityUser&lt;Guid&gt;
@@ -30,7 +31,7 @@ namespace TakOne.Domain.Users;
 ///   Roles are NOT modeled on this aggregate. They live in ASP.NET Identity's
 ///   IdentityRole&lt;Guid&gt; + AspNetUserRoles table, queried via UserManager.
 ///   The Domain has no concept of "Customer role" or "Manager role" — it only
-///   knows about domain-level facts (WorkerId, FullName, GroupName, IsActive).
+///   knows about domain-level facts (WorkerId, FullName, GroupId, IsActive).
 ///
 /// CREATION AUTHORIZATION:
 ///   Users can only be created by IT admins (Admin role) or managers.
@@ -64,11 +65,18 @@ public sealed class User : AggregateRoot
     public string FullName { get; private set; }
 
     /// <summary>
-    /// The customer group this user belongs to. NULL for non-customer users
-    /// (employees, managers, read-only, admin). Used to look up per-product
-    /// purchase limits. Customers must NEVER see this value in the UI.
+    /// The Id of the <c>CustomerGroup</c> this user belongs to. NULL for
+    /// non-customer users (employees, managers, read-only, admin). Used to
+    /// look up per-product purchase limits and the monthly salary budget.
+    ///
+    /// Customers must NEVER see this value or the word "group" in the UI —
+    /// all customer-facing errors are generic with an internal error code.
+    ///
+    /// This is a Guid FK (not a string group name) because groups are now
+    /// first-class aggregates (see <c>CustomerGroup</c>). Renaming a group
+    /// no longer requires touching every User row — the FK stays the same.
     /// </summary>
-    public string? GroupName { get; private set; }
+    public Guid? GroupId { get; private set; }
 
     /// <summary>
     /// Whether the user can log in and perform actions.
@@ -107,16 +115,20 @@ public sealed class User : AggregateRoot
     /// <summary>
     /// Private constructor used by the static factory methods.
     /// </summary>
-    private User(string workerId, string fullName, string? groupName, Gender gender) : base(Guid.NewGuid())
+    private User(string workerId, string fullName, Guid? groupId, Gender gender) : base(Guid.NewGuid())
     {
         EnsureWorkerIdValid(workerId);
         EnsureFullNameValid(fullName);
-        // groupName can be null for staff users; only validated if non-null (see CreateCustomer).
+        // groupId can be null for staff users; only validated if non-null (see CreateCustomer).
+        if (groupId is not null)
+        {
+            EnsureGroupIdValid(groupId.Value);
+        }
         EnsureGenderValid(gender);
 
         WorkerId = workerId;
         FullName = fullName;
-        GroupName = groupName;
+        GroupId = groupId;
         Gender = gender;
         IsActive = true;
     }
@@ -131,25 +143,27 @@ public sealed class User : AggregateRoot
 
     /// <summary>
     /// Creates a new CUSTOMER user. Customers MUST belong to a group so that
-    /// per-product purchase limits can be applied to them at sale time.
+    /// per-product purchase limits and the monthly salary budget can be
+    /// applied to them at sale time.
     ///
     /// The "Customer" ASP.NET Identity role is assigned separately by the
     /// application layer (UserManager.AddToRoleAsync) AFTER this method returns
     /// and AFTER the ApplicationUser has been created in Infrastructure.
     /// </summary>
+    /// <param name="groupId">The Id of the CustomerGroup this customer belongs to.</param>
     /// <param name="gender">
     /// The user's gender. Per roadmap Section 12.5, only Male/Female are
     /// supported. Defaults to Male if the caller doesn't care.
     /// </param>
-    public static User CreateCustomer(string workerId, string fullName, string groupName, Gender gender = Gender.Male)
+    public static User CreateCustomer(string workerId, string fullName, Guid groupId, Gender gender = Gender.Male)
     {
-        EnsureGroupNameValid(groupName);
-        return new User(workerId, fullName, groupName, gender);
+        EnsureGroupIdValid(groupId);
+        return new User(workerId, fullName, groupId, gender);
     }
 
     /// <summary>
     /// Creates a new STAFF user (employee, manager, read-only, or admin).
-    /// Staff users do NOT belong to a customer group, so GroupName is null.
+    /// Staff users do NOT belong to a customer group, so GroupId is null.
     /// The specific role is assigned separately by the application layer
     /// via UserManager.AddToRoleAsync.
     /// </summary>
@@ -159,7 +173,7 @@ public sealed class User : AggregateRoot
     /// </param>
     public static User CreateStaff(string workerId, string fullName, Gender gender = Gender.Male)
     {
-        return new User(workerId, fullName, groupName: null, gender);
+        return new User(workerId, fullName, groupId: null, gender);
     }
 
 
@@ -174,20 +188,21 @@ public sealed class User : AggregateRoot
     /// Assigns the user to a customer group. Only meaningful for users who are
     /// (or will be) in the Customer role.
     /// </summary>
-    public void AssignToGroup(string groupName)
+    public void AssignToGroup(Guid groupId)
     {
-        EnsureGroupNameValid(groupName);
-        GroupName = groupName;
+        EnsureGroupIdValid(groupId);
+        GroupId = groupId;
     }
 
     /// <summary>
     /// Removes the user from their customer group. After this, per-product
-    /// purchase limits will not apply to them — typically you'd only call this
-    /// when converting a customer to a staff role or deactivating them.
+    /// purchase limits and the salary budget will not apply to them —
+    /// typically you'd only call this when converting a customer to a
+    /// staff role or deactivating them.
     /// </summary>
     public void RemoveFromGroup()
     {
-        GroupName = null;
+        GroupId = null;
     }
 
     /// <summary>
@@ -258,13 +273,15 @@ public sealed class User : AggregateRoot
             throw new DomainException("Full name cannot exceed 200 characters.");
     }
 
-    private static void EnsureGroupNameValid(string groupName)
+    /// <summary>
+    /// Validates that the supplied GroupId is not empty. A non-null but
+    /// empty Guid indicates a programming error (caller forgot to set it
+    /// or passed Guid.Empty by mistake).
+    /// </summary>
+    private static void EnsureGroupIdValid(Guid groupId)
     {
-        if (string.IsNullOrWhiteSpace(groupName))
-            throw new DomainException("Group name is required for customers.");
-
-        if (groupName.Length > 100)
-            throw new DomainException("Group name cannot exceed 100 characters.");
+        if (groupId == Guid.Empty)
+            throw new DomainException("Customer group Id is required for customers.");
     }
 
     /// <summary>

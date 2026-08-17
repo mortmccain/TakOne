@@ -6,9 +6,18 @@ using TakOne.SharedKernel.Common;
 namespace TakOne.Application.Users.Queries.GetAllGroupNames;
 
 /// <summary>
-/// Handler for <see cref="GetAllGroupNamesQuery"/>. Returns the distinct
-/// list of customer group names. See the query file for authorization +
-/// empty-result semantics.
+/// Handler for <see cref="GetAllGroupNamesQuery"/>.
+///
+/// SALARY FEATURE (Step 3) — DEPRECATED:
+///   This query is kept for backwards compatibility with callers that
+///   still use it (e.g. the CreateProduct page's per-group limit editor
+///   until Step 5 replaces it). Internally it delegates to
+///   <see cref="ICustomerGroupRepository.GetAllAsync"/> and returns the
+///   group NAMES (not the full group DTOs).
+///
+///   New callers should use <see cref="Customers.Queries.GetAllCustomerGroups.GetAllCustomerGroupsQuery"/>
+///   instead — it returns the full DTO (Id, Name, Salary, IsActive) needed
+///   for the new ManageGroups page and the salary-budget feature.
 /// </summary>
 [RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetAllGroupNamesQueryHandler
@@ -16,7 +25,7 @@ public sealed class GetAllGroupNamesQueryHandler
     public static async Task<Result<List<string>>> HandleAsync
         (
         GetAllGroupNamesQuery query,
-        IUserRepository userRepository,
+        ICustomerGroupRepository customerGroupRepository,
         ILogger<GetAllGroupNamesQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -32,16 +41,15 @@ public sealed class GetAllGroupNamesQueryHandler
         // ------------------------------------------------------------------
         try
         {
-            var groupNames = await userRepository.GetDistinctGroupNamesAsync(cancellationToken);
+            var groups = await customerGroupRepository.GetAllAsync(includeInactive: true, cancellationToken);
 
-            // Defensive: the repo returns null only if the underlying query
-            // failed in an unexpected way (it shouldn't — ToListAsync never
-            // returns null). Normalize to empty list for the caller.
-            if (groupNames is null)
-            {
-                logger.LogWarning("GetAllGroupNames: repository returned null. Returning empty list.");
-                return Result<List<string>>.Success(new List<string>());
-            }
+            // Project to names only (sorted) — that's what the legacy callers
+            // expect. New callers should use GetAllCustomerGroupsQuery which
+            // returns the full DTO.
+            var groupNames = groups
+                .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Name)
+                .ToList();
 
             return Result<List<string>>.Success(groupNames);
         }
@@ -52,7 +60,7 @@ public sealed class GetAllGroupNamesQueryHandler
             // load group names" instead of crashing the whole page.
             logger.LogError
                 (ex,
-                "GetAllGroupNames: failed to load distinct group names from the user repository.");
+                "GetAllGroupNames: failed to load customer groups from the repository.");
 
             return Result<List<string>>.Failure("Could not load customer group names. Please try again.");
         }

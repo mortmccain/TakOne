@@ -1,0 +1,600 @@
+﻿﻿@* ManageGroups.razor — Salary-budget feature, Step 6
+
+   Staff-facing customer-group management page at route `/Admin/Groups`.
+   Reached from the sidebar's "Admin → Customer Groups" link (wired in
+   SidebarContent.razor). Role-gated to Admin / Manager / Employee via
+   [Authorize(Roles=...)] as defense-in-depth. The page-level gate is the
+   first cut; the mutating command handlers enforce stricter rules
+   server-side (CreateCustomerGroup / RenameCustomerGroup /
+   UpdateCustomerGroupSalary / ActivateCustomerGroup /
+   DeactivateCustomerGroup all require Manager or Admin).
+
+   PURPOSE:
+     This page is the admin/manager's view of every customer group in the
+     system. It exists so they can:
+       1. See ALL groups in a compact, paginated table (active + inactive).
+       2. Filter by Name (text filter) + Status (active/inactive dropdown).
+       3. Create a new group → /Admin/Groups/Create (bulk-applies default
+          purchase limit of 1 to every existing product — see Step 5).
+       4. View/edit a group's details → /Admin/Groups/{Id} (rename, change
+          salary amount, activate/deactivate).
+       5. Activate or Deactivate a group inline (one-click toggle).
+
+   STYLE PARITY WITH ADMINUSERS / ADMINPRODUCTS:
+     Mirrors AdminUsers.razor's structure and styling:
+       - Same .admin-header layout (icon + page heading + primary action button).
+       - Same RadzenDataGrid configuration: AllowSorting, AllowFiltering with
+         FilterMode.SimpleWithMenu, AllowPaging with PageSize=20, RowRender
+         hook for opacity-cue on inactive rows.
+       - Same per-column FilterTemplate pattern for dropdown filters
+         (colored badge + AllowClear).
+       - Same .row-actions flex container for the Actions column buttons.
+       - Same loading / error / empty state markup.
+
+   ROLE-SCOPE FOR ACTIONS:
+     - View + Navigate: Admin / Manager / Employee (page-level gate).
+     - Create Group button: Manager + Admin only (Employees can see the
+       list but cannot create groups — the CreateCustomerGroupCommand
+       requires Manager or Admin).
+     - Inline Activate/Deactivate: Manager + Admin only. Employees see
+       the row but the action buttons are hidden.
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<ManageGroups>
+     (Loc). Keys in ManageGroups.en-US.resx + ManageGroups.fa-IR.resx.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All actions use Wolverine command dispatch
+     over the Blazor circuit. *@
+
+@page "/Admin/Groups"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.Commands.ActivateCustomerGroup
+@using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<ManageGroups> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject Radzen.DialogService DialogService
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .admin-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .group-name-cell {
+                font-weight: 500;
+            }
+
+            .salary-cell {
+                font-variant-numeric: tabular-nums;
+                direction: ltr;
+                display: inline-block;
+            }
+
+            .salary-currency {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.8125rem;
+                margin-inline-start: 0.25rem;
+            }
+
+            .row-actions {
+                display: flex;
+                gap: 0.25rem;
+                justify-content: flex-end;
+                align-items: center;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Page header ── *@
+    <div class="admin-header">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+            <RadzenIcon Icon="diversity_3" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+        </RadzenStack>
+
+        <RadzenButton Text="@Loc["CreateGroupButton"]"
+                      Icon="group_add"
+                      ButtonStyle="ButtonStyle.Primary"
+                      Variant="Variant.Filled"
+                      Visible="@(_isAdmin || _isManagerOnly)"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+    </div>
+
+    @* ── Loading spinner ── *@
+    @if (_isLoading)
+    {
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
+                     Style="height: 40vh;" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false"
+                                       Mode="ProgressBarMode.Indeterminate"
+                                       Size="ProgressBarCircularSize.Large" />
+            <RadzenText Text="@Loc["LoadingText"]"
+                        TextStyle="TextStyle.Caption"
+                        Style="color: var(--rz-text-secondary-color);" />
+        </RadzenStack>
+    }
+
+    @* ── Error banner ── *@
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true">
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadGroupsAsync"
+                          Style="margin-top: 0.5rem;" />
+        </RadzenAlert>
+    }
+
+    @* ── Empty state — no groups yet ──
+       Fresh installs have no groups. We show a friendly empty card with a
+       CTA button that takes the admin straight to /Admin/Groups/Create.
+       Mirrors the AdminUsers emptyText pattern but with an explicit
+       "create one" affordance because the default RadzenDataGrid empty
+       row gives no guidance. *@
+    else if (_groups.Count == 0)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 2.5rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="1rem">
+                <RadzenIcon Icon="diversity_3" Style="font-size: 3.5rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin: 0;" />
+                <RadzenText Text="@Loc["EmptyBody"]"
+                            TextStyle="TextStyle.Body2"
+                            Style="color: var(--rz-text-secondary-color); max-width: 480px; margin: 0;" />
+                @if (_isAdmin || _isManagerOnly)
+                {
+                    <RadzenButton Text="@Loc["CreateGroupButton"]"
+                                  Icon="group_add"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+                }
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Groups table ──
+       Radzen built-in filter row (AllowFiltering + FilterMode.SimpleWithMenu).
+       Name uses Radzen's default text filter. Status uses a custom
+       FilterTemplate dropdown with colored badge tags. Paging is built-in
+       (AllowPaging, PageSize=20). The dataset is small (5-15 rows
+       expected) so all rows are loaded in one round-trip and filtered
+       client-side — same approach as AdminUsers. *@
+    else
+    {
+        <RadzenCard Variant="Variant.Filled" Class="manage-groups-grid" Style="padding: 0.5rem;">
+            <RadzenDataGrid @ref="grid"
+                            Data="@_groups"
+                            TItem="CustomerGroupListItemDto"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            FilterMode="FilterMode.SimpleWithMenu"
+                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                            AllowPaging="true"
+                            PageSize="20"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            EmptyText="@Loc["EmptyText"]"
+                            Style="width: 100%;"
+                            RowRender="@OnRowRender">
+                <Columns>
+
+                    @* ── Name — text filter (Radzen default) ── *@
+                    <RadzenDataGridColumn TItem="CustomerGroupListItemDto"
+                                          Property="Name"
+                                          Title="@Loc["ColName"]"
+                                          Width="*">
+                        <Template Context="group">
+                            <span class="group-name-cell">@group.Name</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* ── Monthly Salary — read-only, no filter ──
+                       Display the amount + currency as two pieces of
+                       text inside one cell (tabular-nums + LTR direction
+                       via .salary-cell so the digit grouping reads
+                       correctly in both LTR and RTL layouts). The
+                       currency code is shown muted beside the amount. *@
+                    <RadzenDataGridColumn TItem="CustomerGroupListItemDto"
+                                          Property="Salary.Amount"
+                                          Title="@Loc["ColSalary"]"
+                                          Width="200px"
+                                          TextAlign="TextAlign.Start"
+                                          Sortable="true"
+                                          Filterable="false">
+                        <Template Context="group">
+                            <span class="salary-cell">
+                                @FormatSalaryAmount(group.Salary.Amount)
+                                <span class="salary-currency">@group.Salary.Currency</span>
+                            </span>
+                        </Template>
+                    </RadzenDataGridColumn>
+
+                    @* ── Status — dropdown filter with colored tags ──
+                       Active=green badge, Inactive=red badge. The dropdown's
+                       ValueTemplate shows the selected value as a colored
+                       badge; Template shows each option as a colored badge.
+                       AllowClear resets to null (All statuses). *@
+                    <RadzenDataGridColumn TItem="CustomerGroupListItemDto"
+                                          Property="IsActive"
+                                          Title="@Loc["ColStatus"]"
+                                          Width="160px"
+                                          TextAlign="TextAlign.Center"
+                                          FilterOperator="FilterOperator.Equals">
+                        <Template Context="group">
+                            <RadzenBadge Text="@GetStatusLabel(group.IsActive)"
+                                         BadgeStyle="@GetStatusBadgeStyle(group.IsActive)"
+                                         IsPill="true" />
+                        </Template>
+                        <FilterTemplate Context="column">
+                            <RadzenDropDown @bind-Value="@_selectedStatusFilter"
+                                            Data="@_statusFilterOptions"
+                                            TValue="string"
+                                            AllowClear="true"
+                                            Placeholder="@Loc["StatusAll"]"
+                                            Change="@(args => OnStatusFilterChanged(_selectedStatusFilter, column))"
+                                            Style="width: 100%; min-width: 130px;">
+                                <ValueTemplate Context="selected">
+                                    @{
+                                        var selectedStr = selected?.ToString();
+                                    }
+                                    @if (!string.IsNullOrEmpty(selectedStr))
+                                    {
+                                        <RadzenBadge Text="@GetStatusLabel(selectedStr)"
+                                                     BadgeStyle="@GetStatusBadgeStyle(selectedStr)"
+                                                     IsPill="true" />
+                                    }
+                                    else
+                                    {
+                                        <span>@Loc["StatusAll"]</span>
+                                    }
+                                </ValueTemplate>
+                                <Template Context="statusOption">
+                                    <RadzenBadge Text="@GetStatusLabel(statusOption)"
+                                                 BadgeStyle="@GetStatusBadgeStyle(statusOption)"
+                                                 IsPill="true" />
+                                </Template>
+                            </RadzenDropDown>
+                        </FilterTemplate>
+                    </RadzenDataGridColumn>
+
+                    @* ── Actions ──
+                       View details (all viewers), Activate/Deactivate toggle
+                       (Manager + Admin only). Employee viewers see only the
+                       view-details button — same gating pattern as
+                       AdminUsers.razor's activate/deactivate scope. *@
+                    <RadzenDataGridColumn TItem="CustomerGroupListItemDto"
+                                          Title="@Loc["ColActions"]"
+                                          Width="160px"
+                                          TextAlign="TextAlign.Center"
+                                          Sortable="false"
+                                          Filterable="false">
+                        <Template Context="group">
+                            <div class="row-actions">
+                                <RadzenButton Icon="visibility"
+                                              Variant="Variant.Text"
+                                              ButtonStyle="ButtonStyle.Info"
+                                              title="@Loc["ActionViewDetail"]"
+                                              aria-label="@Loc["ActionViewDetail"]"
+                                              Click="@(() => Navigation.NavigateTo($"/Admin/Groups/{group.Id}", forceLoad: false))" />
+
+                                @if ((_isAdmin || _isManagerOnly) && group.IsActive)
+                                {
+                                    <RadzenButton Icon="block"
+                                                  Variant="Variant.Text"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  title="@Loc["ActionDeactivate"]"
+                                                  aria-label="@Loc["ActionDeactivate"]"
+                                                  Disabled="@(_isBusyGroupId == group.Id)"
+                                                  Click="@(() => HandleDeactivateAsync(group))" />
+                                }
+                                @if ((_isAdmin || _isManagerOnly) && !group.IsActive)
+                                {
+                                    <RadzenButton Icon="check_circle"
+                                                  Variant="Variant.Text"
+                                                  ButtonStyle="ButtonStyle.Success"
+                                                  title="@Loc["ActionActivate"]"
+                                                  aria-label="@Loc["ActionActivate"]"
+                                                  Disabled="@(_isBusyGroupId == group.Id)"
+                                                  Click="@(() => HandleActivateAsync(group))" />
+                                }
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    }
+</RadzenStack>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    private List<CustomerGroupListItemDto> _groups = new();
+
+    private RadzenDataGrid<CustomerGroupListItemDto> grid = default!;
+
+    // Status filter — nullable; null = "no filter" (AllowClear=true on the
+    // RadzenDropDown passes null when the user clears). Uses string keys
+    // "Active"/"Inactive" (culture-neutral) that are mapped to the actual
+    // boolean property in the filter handler.
+    private string? _selectedStatusFilter;
+
+    private readonly List<string> _statusFilterOptions = new()
+    {
+        "Active", "Inactive"
+    };
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// The Id of the group whose action button is currently in flight.
+    /// Null when no action is pending. Used to disable that row's action
+    /// buttons while the round-trip is in progress (prevents double-clicks).
+    /// </summary>
+    private Guid? _isBusyGroupId;
+
+    /// <summary>
+    /// Whether the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false for everyone in
+    /// interactive Blazor Server mode because HttpContext is null over
+    /// the SignalR circuit).
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// Whether the current user is in the Manager role (and NOT also in
+    /// the Admin role). Used to gate the Create + Activate/Deactivate
+    /// buttons (Manager + Admin can act). Admins (who may also be in
+    /// the Manager role) bypass the `_isManagerOnly` check via the
+    /// `_isAdmin` short-circuit.
+    /// </summary>
+    private bool _isManagerOnly;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve the current user's Admin/Manager roles via the Blazor auth
+        // state (NOT ICurrentUserService — see field doc on _isAdmin).
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                _isAdmin = user.IsInRole(Roles.Admin);
+                // Manager-only means "in Manager role AND not also Admin".
+                // Admins who happen to also be in the Manager role are
+                // treated as Admins (no restriction).
+                _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _isAdmin stays false (Create + Activate/Deactivate
+            // buttons hidden — safer fallback if role resolution fails).
+        }
+
+        await LoadGroupsAsync();
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadGroupsAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            // Load all groups (including inactive). Filtering and paging are
+            // client-side via Radzen's built-in filter row + pager — same
+            // approach as AdminUsers (dataset is small: 5-15 rows expected).
+            var query = new GetAllCustomerGroupsQuery { IncludeInactive = true };
+
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(query);
+
+            if (result.IsSuccess)
+            {
+                _groups = result.Value;
+            }
+            else
+            {
+                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Filter handlers ─────────────────────────────────────────────────
+    // Sets column.FilterValue and calls grid.Reload() to trigger Radzen's
+    // client-side filtering. The bound field is updated by @bind-Value
+    // before the Change event fires, so we pass the field (not the args
+    // parameter) to the handler.
+
+    private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<CustomerGroupListItemDto> column)
+    {
+        _selectedStatusFilter = value;
+
+        if (string.IsNullOrEmpty(value))
+        {
+            column.FilterValue = null;
+        }
+        else
+        {
+            // Map the string key to a boolean for the IsActive column.
+            column.FilterValue = value == "Active";
+            column.FilterOperator = FilterOperator.Equals;
+        }
+
+        await grid.Reload();
+    }
+
+    // ── Activate / Deactivate ───────────────────────────────────────────
+
+    private async Task HandleDeactivateAsync(CustomerGroupListItemDto group)
+    {
+        if (_isBusyGroupId.HasValue) return;
+
+        // Confirmation dialog — reuses the simple JS confirm pattern.
+        // Deactivation is reversible (re-run Activate), but it blocks
+        // users in this group from making new purchases, so a quick
+        // confirmation is appropriate.
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivate"], group.Name));
+
+        if (!confirmed) return;
+
+        _isBusyGroupId = group.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateCustomerGroupCommand(group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], group.Name),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadGroupsAsync();
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["ActionError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyGroupId = null;
+        }
+    }
+
+    private async Task HandleActivateAsync(CustomerGroupListItemDto group)
+    {
+        if (_isBusyGroupId.HasValue) return;
+
+        // No confirmation for activation — it's a non-destructive restore.
+        _isBusyGroupId = group.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateCustomerGroupCommand(group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], group.Name),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await LoadGroupsAsync();
+            }
+            else
+            {
+                await Toast.Error(
+                    result.Error ?? Loc["ActionError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusyGroupId = null;
+        }
+    }
+
+    // ── Row render hook ─────────────────────────────────────────────────
+
+    private void OnRowRender(RowRenderEventArgs<CustomerGroupListItemDto> args)
+    {
+        // Subtle visual cue for inactive rows: slight opacity. The status
+        // badge already conveys the state, but the row-level cue helps
+        // scan-by-gesture users notice deactivated groups at a glance.
+        if (args.Data is { } g && !g.IsActive)
+        {
+            args.Attributes.Add("style", "opacity: 0.65;");
+        }
+    }
+
+    // ── Display helpers ──────────────────────────────────────────────────
+
+    private string GetStatusLabel(bool isActive)
+        => isActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"];
+
+    private string GetStatusLabel(string? status)
+        => status switch
+        {
+            "Active" => Loc["StatusActive"],
+            "Inactive" => Loc["StatusInactive"],
+            _ => Loc["StatusAll"]
+        };
+
+    private BadgeStyle GetStatusBadgeStyle(bool isActive)
+        => isActive ? BadgeStyle.Success : BadgeStyle.Danger;
+
+    private BadgeStyle GetStatusBadgeStyle(string? status)
+        => status switch
+        {
+            "Active" => BadgeStyle.Success,
+            "Inactive" => BadgeStyle.Danger,
+            _ => BadgeStyle.Base
+        };
+
+    /// <summary>
+    /// Formats the salary amount using the current UI culture's number
+    /// format (so fa-IR shows Persian digits + Persian thousands separator,
+    /// en-US shows ASCII digits + comma). Currency code is shown separately
+    /// via the .salary-currency span — kept out of the formatted number so
+    /// the number stays tabular-aligned in the column.
+    /// </summary>
+    private string FormatSalaryAmount(decimal amount)
+        => amount.ToString("N0", CultureInfo.CurrentCulture);
+
+    // IJSRuntime is needed for the JS confirm() call in HandleDeactivateAsync.
+    // Injected as a property rather than at the top of the file because
+    // it's only used in one method; keeping the @inject list above tidy.
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+}

@@ -1,0 +1,810 @@
+﻿@* EditGroup.razor — Salary-budget feature, Step 6
+
+   Staff-facing customer-group detail + edit page at route
+   `/Admin/Groups/{GroupId:guid}`. Reached from the row's "view details"
+   button on /Admin/Groups. Role-gated to Admin / Manager / Employee via
+   [Authorize(Roles=...)] as defense-in-depth. The page-level gate is the
+   first cut; the mutating command handlers enforce stricter rules
+   server-side (RenameCustomerGroup / UpdateCustomerGroupSalary /
+   ActivateCustomerGroup / DeactivateCustomerGroup all require Manager or
+   Admin).
+
+   PURPOSE:
+     This page is the admin/manager's view of a single customer group.
+     It exists so they can:
+       1. See the group's full state (Name, Salary, Status, audit dates,
+          active user count).
+       2. Rename the group (RenameCustomerGroupCommand).
+       3. Change the salary amount (UpdateCustomerGroupSalaryCommand —
+          note: currency cannot be changed; see the warning card).
+       4. Activate or Deactivate the group
+          (ActivateCustomerGroupCommand / DeactivateCustomerGroupCommand).
+
+   STYLE PARITY WITH SETTINGS / PRODUCTDETAIL:
+     Mirrors the Settings.razor + ProductDetail.razor detail-page
+     pattern:
+       - Same .create-grid layout (2fr form + 1fr help/info panel).
+       - Same .form-section vertical-stack of fields.
+       - Same .form-actions row at the bottom.
+       - Same .profile-grid pattern (label/value pairs) for the read-only
+         summary at the top.
+       - Same .section-title pattern for card headings.
+
+   ROLE-SCOPE FOR ACTIONS:
+     - View + Navigate: Admin / Manager / Employee (page-level gate).
+     - Edit (Rename / Salary): Manager + Admin only. Employees see the
+       summary card only (form is hidden).
+     - Activate/Deactivate: Manager + Admin only.
+
+   LOADING / ERROR / NOT-FOUND STATES:
+     The page shows distinct states for: loading spinner, load-failed
+     error, not-found (the {GroupId} doesn't exist in the DB), and the
+     normal loaded state. The not-found case is detected server-side
+     (GetCustomerGroupByIdQueryHandler returns Failure with "not found"
+     if the group doesn't exist) and we surface it as a friendly
+     "group not found" card with a back-to-list button.
+
+   LOCALIZATION:
+     All user-visible strings via IStringLocalizer<EditGroup> (Loc).
+     Keys defined in EditGroup.en-US.resx + EditGroup.fa-IR.resx. *@
+
+@page "/Admin/Groups/{GroupId:guid}"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.Commands.ActivateCustomerGroup
+@using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
+@using TakOne.Application.Customers.Commands.RenameCustomerGroup
+@using TakOne.Application.Customers.Commands.UpdateCustomerGroupSalary
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Customers.Queries.GetCustomerGroupById
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<EditGroup> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .edit-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 2rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .edit-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem;
+                }
+            }
+
+            .form-section {
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+
+            .salary-row {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-end;
+            }
+
+                .salary-row .salary-amount {
+                    flex: 1 1 auto;
+                }
+
+                .salary-row .salary-currency {
+                    flex: 0 0 180px;
+                }
+
+            .form-actions {
+                display: flex;
+                gap: 0.75rem;
+                justify-content: flex-end;
+                margin-top: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .form-error {
+                margin-bottom: 1rem;
+            }
+
+            /* Summary card — read-only label/value pairs in a 2-col grid.
+                           Mirrors Settings.razor's .profile-grid pattern. */
+            .profile-grid {
+                display: grid;
+                grid-template-columns: minmax(120px, auto) 1fr;
+                gap: 0.625rem 1.25rem;
+                align-items: baseline;
+            }
+
+            .profile-label {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+
+            .profile-value {
+                font-size: 0.9375rem;
+            }
+
+            .profile-value-mono {
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+                direction: ltr;
+                display: inline-block;
+            }
+
+            /* Section title — small heading inside a card with a leading icon.
+                           Mirrors Settings.razor's .section-title pattern. */
+            .section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-weight: 600;
+                margin-bottom: 0.75rem;
+            }
+
+            .help-panel {
+                position: sticky;
+                top: 1rem;
+            }
+
+                .help-panel ul {
+                    margin: 0.5rem 0 0 0;
+                    padding-inline-start: 1.25rem;
+                    color: var(--rz-text-secondary-color);
+                    line-height: 1.7;
+                }
+
+                .help-panel li {
+                    margin-bottom: 0.25rem;
+                }
+
+            @@media (max-width: 992px) {
+                .help-panel {
+                    position: static;
+                }
+            }
+
+            /* RTL fallback for RadzenNumeric — the inner input is forced
+                           LTR so the caret + digit grouping reads correctly in both
+                           LTR and RTL layouts. */
+            .salary-row .rz-numeric .rz-textbox {
+                direction: ltr;
+                text-align: left;
+            }
+
+            /* Currency-read-only pill — shown next to the salary amount
+                           field to communicate "you can edit the amount, but the
+                           currency is locked". Mirrors the .salary-currency span
+                           pattern used on the ManageGroups list page. */
+            .currency-locked-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.4rem 0.75rem;
+                border-radius: 999px;
+                background: var(--rz-base-background-color, #f3f4f6);
+                border: 1px solid var(--rz-border-color);
+                color: var(--rz-text-color);
+                font-size: 0.8125rem;
+                font-weight: 500;
+                direction: ltr;
+                white-space: nowrap;
+            }
+
+                .currency-locked-pill .currency-locked-icon {
+                    color: var(--rz-text-tertiary-color, #9ca3af);
+                    font-size: 0.95rem;
+                }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Breadcrumb + back button ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenButton Text="@Loc["BackToManageGroups"]"
+                      Icon="arrow_back"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
+    </RadzenStack>
+
+    @* ── Loading state ── *@
+    @if (_isLoading)
+    {
+        <RadzenCard>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+                <RadzenText Text="@Loc["Loading"]" TextStyle="TextStyle.Body1" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Error state — load failure (DB error, etc.) ── *@
+    else if (_loadError is not null && _group is null)
+    {
+        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                     Text="@_loadError"
+                     AlertStyle="AlertStyle.Danger"
+                     Variant="Variant.Filled"
+                     ShowIcon="true" />
+    }
+
+    @* ── Not-found state — the {GroupId} doesn't exist ──
+       The handler returns "Customer group '...' was not found." for both
+       genuinely-missing groups AND not-allowed-to-see (defense-in-depth
+       — same pattern as UserDetail.razor). We surface a friendly card. *@
+    else if (_group is null)
+    {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 2.5rem; text-align: center;">
+            <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="1rem">
+                <RadzenIcon Icon="search_off" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                <RadzenText Text="@Loc["NotFoundTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin: 0;" />
+                <RadzenText Text="@Loc["NotFoundBody"]"
+                            TextStyle="TextStyle.Body2"
+                            Style="color: var(--rz-text-secondary-color); max-width: 480px; margin: 0;" />
+                <RadzenButton Text="@Loc["BackToManageGroups"]"
+                              Icon="arrow_back"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Variant="Variant.Outlined"
+                              Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
+            </RadzenStack>
+        </RadzenCard>
+    }
+
+    @* ── Loaded state ── *@
+    else
+    {
+        @* ── Page header — name + status badge ──
+           The header uses flex-wrap (via the inline style) so on narrow
+           screens the status badge drops below the name instead of
+           overflowing horizontally. Same pattern as AdminUsers's
+           admin-header (which uses flex-wrap: wrap on the container). *@
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Style="flex-wrap: wrap;">
+            <RadzenIcon Icon="diversity_3" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+            <RadzenText Text="@_group.Name" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+            <RadzenBadge Text="@GetStatusLabel(_group.IsActive)"
+                         BadgeStyle="@GetStatusBadgeStyle(_group.IsActive)"
+                         IsPill="true" />
+        </RadzenStack>
+
+        <div class="edit-grid">
+            @* LEFT — summary + edit form *@
+            <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                @* ── Summary card — read-only label/value pairs ──
+                   Always shown (to all roles). The admin/manager-only edit
+                   form is rendered separately below. Employees see ONLY
+                   this card (no edit form). *@
+                <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="info" Style="color: var(--rz-primary);" />
+                        <span>@Loc["SummaryCardTitle"]</span>
+                    </div>
+
+                    <div class="profile-grid">
+                        <div class="profile-label">@Loc["ColName"]</div>
+                        <div class="profile-value">@_group.Name</div>
+
+                        <div class="profile-label">@Loc["ColSalary"]</div>
+                        <div class="profile-value profile-value-mono">
+                            @FormatSalaryAmount(_group.Salary.Amount)
+                            <span style="color: var(--rz-text-secondary-color); font-size: 0.8125rem; margin-inline-start: 0.25rem;">@_group.Salary.Currency</span>
+                        </div>
+
+                        <div class="profile-label">@Loc["ColStatus"]</div>
+                        <div class="profile-value">
+                            <RadzenBadge Text="@GetStatusLabel(_group.IsActive)"
+                                         BadgeStyle="@GetStatusBadgeStyle(_group.IsActive)"
+                                         IsPill="true" />
+                        </div>
+
+                        <div class="profile-label">@Loc["ColActiveUsers"]</div>
+                        <div class="profile-value">
+                            @if (_group.ActiveUserCount == 0)
+                            {
+                                <span style="color: var(--rz-text-secondary-color);">@Loc["NoActiveUsers"]</span>
+                            }
+                            else
+                            {
+                                <span>@FormatInt(_group.ActiveUserCount)</span>
+                            }
+                        </div>
+
+                        <div class="profile-label">@Loc["ColCreatedAt"]</div>
+                        <div class="profile-value profile-value-mono">@FormatDate(_group.CreatedAtUtc)</div>
+
+                        <div class="profile-label">@Loc["ColUpdatedAt"]</div>
+                        <div class="profile-value profile-value-mono">@FormatDate(_group.UpdatedAtUtc)</div>
+                    </div>
+                </RadzenCard>
+
+                @* ── Edit form — Manager + Admin only ──
+                   Employees see the summary card only. The form is gated
+                   both client-side (Visible) AND server-side (each command
+                   requires Manager or Admin role). *@
+                @if (_isAdmin || _isManagerOnly)
+                {
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+                        <EditForm Model="@_model"
+                                  OnValidSubmit="@HandleSubmitAsync"
+                                  OnInvalidSubmit="@HandleInvalidSubmit"
+                                  FormName="editGroup">
+                            <DataAnnotationsValidator />
+
+                            @* Server-side error banner (e.g. name collision). *@
+                            @if (!string.IsNullOrEmpty(_submitError))
+                            {
+                                <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                             Text="@_submitError"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Filled"
+                                             ShowIcon="true"
+                                             Class="form-error" />
+                            }
+
+                            <div class="form-section">
+                                @* ── Name (editable) ── *@
+                                <div>
+                                    <RadzenFormField Text="@Loc["FieldName"]" Style="width: 100%;">
+                                        <RadzenTextBox @bind-Value="_model.Name"
+                                                       Placeholder="@Loc["FieldNamePlaceholder"]"
+                                                       TValue="string"
+                                                       Style="width: 100%;" />
+                                    </RadzenFormField>
+                                </div>
+
+                                @* ── Salary Amount (editable) + Currency (locked) ──
+                                   The amount is editable via UpdateCustomerGroupSalaryCommand.
+                                   The currency is LOCKED — changing currency would
+                                   invalidate already-purchased products priced in the
+                                   old currency. To use a different currency, the admin
+                                   must deactivate this group and create a new one
+                                   (see help panel). The currency is shown as a
+                                   read-only pill to communicate this visually. *@
+                                <div>
+                                    <RadzenText Text="@Loc["FieldSalary"]"
+                                                TextStyle="TextStyle.Caption"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
+
+                                    <div class="salary-row">
+                                        <RadzenFormField Text="@Loc["FieldAmount"]" Class="salary-amount" Style="width: 100%;">
+                                            <RadzenNumeric @bind-Value="_model.SalaryAmount"
+                                                           TValue="decimal"
+                                                           Min="0"
+                                                           Step="1000"
+                                                           Style="width: 100%;" />
+                                        </RadzenFormField>
+
+                                        <RadzenFormField Text="@Loc["FieldCurrency"]" Class="salary-currency" Style="width: 100%;">
+                                            <div style="display: flex; align-items: center; height: 100%; padding-block: 0.4rem;">
+                                                <span class="currency-locked-pill" title="@Loc["CurrencyLockedTitle"]">
+                                                    <RadzenIcon Icon="lock" Class="currency-locked-icon" />
+                                                    @_model.SalaryCurrency
+                                                </span>
+                                            </div>
+                                        </RadzenFormField>
+                                    </div>
+
+                                    <RadzenText TextStyle="TextStyle.Caption"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                        @Loc["SalaryHint"]
+                                    </RadzenText>
+                                </div>
+
+                                @* ── Form actions ──
+                                   Save (primary, submit) + Cancel (secondary outlined,
+                                   navigates back to /Admin/Groups) + Activate/Deactivate
+                                   toggle (depends on current status). *@
+                                <div class="form-actions">
+                                    @if (_group.IsActive)
+                                    {
+                                        <RadzenButton Text="@Loc["DeactivateButton"]"
+                                                      Icon="block"
+                                                      ButtonStyle="ButtonStyle.Danger"
+                                                      Variant="Variant.Outlined"
+                                                      Disabled="@_isSubmitting"
+                                                      Click="@HandleDeactivateAsync" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenButton Text="@Loc["ActivateButton"]"
+                                                      Icon="check_circle"
+                                                      ButtonStyle="ButtonStyle.Success"
+                                                      Variant="Variant.Outlined"
+                                                      Disabled="@_isSubmitting"
+                                                      Click="@HandleActivateAsync" />
+                                    }
+
+                                    <RadzenButton Text="@Loc["CancelButton"]"
+                                                  Icon="close"
+                                                  ButtonStyle="ButtonStyle.Secondary"
+                                                  Variant="Variant.Outlined"
+                                                  Disabled="@_isSubmitting"
+                                                  Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
+
+                                    <RadzenButton Text="@Loc["SaveButton"]"
+                                                  Icon="save"
+                                                  ButtonType="ButtonType.Submit"
+                                                  ButtonStyle="ButtonStyle.Primary"
+                                                  Variant="Variant.Filled"
+                                                  Disabled="@_isSubmitting">
+                                        @if (_isSubmitting)
+                                        {
+                                            <RadzenProgressBarCircular ShowValue="false"
+                                                                       Mode="ProgressBarMode.Indeterminate"
+                                                                       Size="ProgressBarCircularSize.Small"
+                                                                       Style="margin-inline-end: 0.5rem;" />
+                                        }
+                                    </RadzenButton>
+                                </div>
+                            </div>
+                        </EditForm>
+                    </RadzenCard>
+                }
+            </RadzenStack>
+
+            @* RIGHT — help / info panel. Explains:
+                 - What "rename" does (does NOT affect existing references).
+                 - What "salary update" does (takes effect immediately for
+                   new purchases; doesn't retroactively change consumed
+                   amount for this month — could make remaining budget
+                   negative).
+                 - Why currency is locked (would invalidate already-
+                   purchased products priced in the old currency).
+                 - What "deactivate" does (blocks new purchases by users
+                   in this group; submitted sales are kept). *@
+            <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                <RadzenCard Variant="Variant.Outlined" Class="help-panel" Style="padding: 1.25rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
+                        <span>@Loc["HelpCardTitle"]</span>
+                    </div>
+                    <ul>
+                        <li>@Loc["HelpLine_Rename"]</li>
+                        <li>@Loc["HelpLine_SalaryImmediate"]</li>
+                        <li>@Loc["HelpLine_SalaryNegative"]</li>
+                        <li>@Loc["HelpLine_CurrencyLocked"]</li>
+                        <li>@Loc["HelpLine_Deactivate"]</li>
+                    </ul>
+                </RadzenCard>
+            </RadzenStack>
+        </div>
+    }
+</RadzenStack>
+
+@code {
+    // ── Route parameter ───────────────────────────────────────────────
+
+    [Parameter]
+    public Guid GroupId { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private CustomerGroupDto? _group;
+
+    private bool _isLoading = true;
+    private string? _loadError;
+    private bool _isSubmitting;
+    private string? _submitError;
+
+    /// <summary>
+    /// The form model. Bound via EditForm + DataAnnotationsValidator —
+    /// the [Required] + [StringLength] + [Range] attributes below
+    /// provide the FIRST wave of validation (fires in OnValidSubmit /
+    /// OnInvalidSubmit). The respective command validators provide the
+    /// SECOND wave server-side via Wolverine's pipeline.
+    /// </summary>
+    private sealed class EditGroupForm
+    {
+        [Required(ErrorMessage = "ValidationError_NameRequired")]
+        [StringLength(100, ErrorMessage = "ValidationError_NameLength")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "ValidationError_AmountRequired")]
+        [Range(0, double.MaxValue, ErrorMessage = "ValidationError_AmountRange")]
+        public decimal SalaryAmount { get; set; }
+
+        /// <summary>
+        /// Currency is read-only — bound from the loaded group, never
+        /// edited. Shown as a locked pill in the form. The
+        /// UpdateCustomerGroupSalaryCommand only accepts the amount;
+        /// currency is preserved on the existing aggregate.
+        /// </summary>
+        public string SalaryCurrency { get; set; } = string.Empty;
+    }
+
+    private readonly EditGroupForm _model = new();
+
+    /// <summary>
+    /// Whether the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false for everyone
+    /// in interactive Blazor Server mode because HttpContext is null
+    /// over the SignalR circuit). Same pattern as AdminUsers.razor.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// Whether the current user is in the Manager role (and NOT also in
+    /// the Admin role). Used to gate the edit form + Activate/Deactivate
+    /// buttons (Manager + Admin can act).
+    /// </summary>
+    private bool _isManagerOnly;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve the current user's Admin/Manager roles via the Blazor auth
+        // state (NOT ICurrentUserService — see field doc on _isAdmin).
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                _isAdmin = user.IsInRole(Roles.Admin);
+                _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _isAdmin stays false (edit form hidden — safer
+            // fallback if role resolution fails).
+        }
+
+        await LoadGroupAsync();
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadGroupAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        _submitError = null;
+
+        try
+        {
+            var query = new GetCustomerGroupByIdQuery { GroupId = GroupId };
+            var result = await MessageBus.InvokeAsync<Result<CustomerGroupDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _group = result.Value;
+
+                // Pre-fill the form model with the loaded group's values.
+                // If the user navigates away without saving, the form is
+                // discarded along with the component.
+                _model.Name = _group.Name;
+                _model.SalaryAmount = _group.Salary.Amount;
+                _model.SalaryCurrency = _group.Salary.Currency;
+            }
+            else
+            {
+                // The handler returns "Customer group '...' was not found."
+                // for both genuinely-missing groups AND not-allowed-to-see.
+                // We treat this as "not found" — the markup renders the
+                // NotFound card when _group is null.
+                _loadError = result.Error;
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Submit handlers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Called when EditForm validation passes. Dispatches BOTH the
+    /// RenameCustomerGroupCommand (if Name changed) AND the
+    /// UpdateCustomerGroupSalaryCommand (if SalaryAmount changed).
+    /// Both run in their own Wolverine transaction — if either fails,
+    /// the other is NOT rolled back (they're independent mutations on
+    /// the same aggregate; the user can fix the failing one and retry).
+    ///
+    /// DESIGN CHOICE: We could have a single "UpdateCustomerGroupCommand"
+    /// that does both, but the existing commands are atomic per-field
+    /// (Rename and UpdateSalary), and they each have their own validation
+    /// + audit log entry. Combining them would lose that granularity.
+    /// The two-command approach is cleaner.
+    /// </summary>
+    private async Task HandleSubmitAsync()
+    {
+        if (_group is null) return;
+
+        _submitError = null;
+        _isSubmitting = true;
+
+        try
+        {
+            _model.Name = _model.Name.Trim();
+
+            var nameChanged = !string.Equals(_model.Name, _group.Name, StringComparison.Ordinal);
+            var amountChanged = _model.SalaryAmount != _group.Salary.Amount;
+
+            if (!nameChanged && !amountChanged)
+            {
+                // No-op — nothing to save. Show a friendly toast and
+                // navigate back to the list.
+                await Toast.Info(Loc["NoChanges"], summary: Loc["NoChangesTitle"]);
+                Navigation.NavigateTo("/Admin/Groups", forceLoad: false);
+                return;
+            }
+
+            // 1. Rename if changed.
+            if (nameChanged)
+            {
+                var renameResult = await MessageBus.InvokeAsync<Result>(
+                    new RenameCustomerGroupCommand(_group.Id, _model.Name));
+
+                if (!renameResult.IsSuccess)
+                {
+                    _submitError = renameResult.Error ?? Loc["Error_Generic"];
+                    return;
+                }
+            }
+
+            // 2. Update salary amount if changed.
+            if (amountChanged)
+            {
+                var salaryResult = await MessageBus.InvokeAsync<Result>(
+                    new UpdateCustomerGroupSalaryCommand(_group.Id, _model.SalaryAmount));
+
+                if (!salaryResult.IsSuccess)
+                {
+                    _submitError = salaryResult.Error ?? Loc["Error_Generic"];
+                    return;
+                }
+            }
+
+            await Toast.Success(Loc["SuccessTitle"], summary: Loc["SuccessSummary"]);
+            Navigation.NavigateTo("/Admin/Groups", forceLoad: false);
+        }
+        catch
+        {
+            _submitError = Loc["Error_Generic"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private Task HandleInvalidSubmit()
+    {
+        _submitError = null;
+        return Task.CompletedTask;
+    }
+
+    // ── Activate / Deactivate ───────────────────────────────────────────
+
+    private async Task HandleDeactivateAsync()
+    {
+        if (_group is null) return;
+        if (_isSubmitting) return;
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivate"], _group.Name));
+
+        if (!confirmed) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateCustomerGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], _group.Name),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadGroupAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task HandleActivateAsync()
+    {
+        if (_group is null) return;
+        if (_isSubmitting) return;
+
+        // No confirmation for activation — it's a non-destructive restore.
+        _isSubmitting = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateCustomerGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], _group.Name),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await LoadGroupAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    // ── Display helpers ──────────────────────────────────────────────────
+
+    private string GetStatusLabel(bool isActive)
+        => isActive ? Loc["StatusActive"] : Loc["StatusInactive"];
+
+    private BadgeStyle GetStatusBadgeStyle(bool isActive)
+        => isActive ? BadgeStyle.Success : BadgeStyle.Danger;
+
+    private string FormatSalaryAmount(decimal amount)
+        => amount.ToString("N0", CultureInfo.CurrentCulture);
+
+    private string FormatInt(int value)
+        => value.ToString("N0", CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Formats a UTC DateTime as a localized date-time string in the
+    /// current UI culture. Converts to local time first using the
+    /// server's local time zone (TimeZoneInfo.Local) so the admin sees
+    /// the timestamp in their wall-clock time, not UTC.
+    /// </summary>
+    private string FormatDate(DateTime utc)
+    {
+        try
+        {
+            var local = TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
+            return local.ToString("g", CultureInfo.CurrentCulture);
+        }
+        catch
+        {
+            // Defensive — if TimeZoneInfo conversion fails (it shouldn't,
+            // but TimeZoneInfo.Local can throw on some stripped-down
+            // runtimes), fall back to UTC display.
+            return utc.ToString("g", CultureInfo.CurrentCulture);
+        }
+    }
+}

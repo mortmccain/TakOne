@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateGroup.fa-IR.resx — Persian (Farsi) strings for CreateGroup.razor.
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>ایجاد گروه مشتریان — تک‌وان</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>ایجاد گروه مشتریان</value>
+  </data>
+
+  <data name="BackToManageGroups" xml:space="preserve">
+    <value>بازگشت به گروه‌های مشتریان</value>
+  </data>
+
+  <data name="FieldName" xml:space="preserve">
+    <value>نام گروه</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>مثلاً: مدیریت، کارکنان، پیمانکاران</value>
+  </data>
+  <data name="NameHint" xml:space="preserve">
+    <value>باید یکتا باشد. ۱ تا ۱۰۰ نویسه.</value>
+  </data>
+
+  <data name="FieldSalary" xml:space="preserve">
+    <value>بودجه حقوق ماهانه</value>
+  </data>
+  <data name="FieldAmount" xml:space="preserve">
+    <value>مبلغ</value>
+  </data>
+  <data name="FieldCurrency" xml:space="preserve">
+    <value>واحد پول</value>
+  </data>
+  <data name="CurrencyPlaceholder" xml:space="preserve">
+    <value>انتخاب واحد پول…</value>
+  </data>
+  <data name="SalaryHint" xml:space="preserve">
+    <value>حداکثر مبلغی که هر مشتری در این گروه می‌تواند در ماه تقویمی فارسی خرج کند. واحد پول همچنین مشخص می‌کند مشتریان این گروه اجازه خرید کدام واحد پولی از محصولات را دارند.</value>
+  </data>
+
+  <data name="CancelButton" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+  <data name="CreateButton" xml:space="preserve">
+    <value>ایجاد گروه</value>
+  </data>
+
+  <data name="ValidationError_NameRequired" xml:space="preserve">
+    <value>نام گروه الزامی است.</value>
+  </data>
+  <data name="ValidationError_NameLength" xml:space="preserve">
+    <value>نام گروه باید ۱ تا ۱۰۰ نویسه باشد.</value>
+  </data>
+  <data name="ValidationError_AmountRequired" xml:space="preserve">
+    <value>مبلغ حقوق الزامی است.</value>
+  </data>
+  <data name="ValidationError_AmountRange" xml:space="preserve">
+    <value>مبلغ حقوق نمی‌تواند منفی باشد.</value>
+  </data>
+  <data name="ValidationError_CurrencyRequired" xml:space="preserve">
+    <value>واحد پول الزامی است.</value>
+  </data>
+  <data name="ValidationError_CurrencyLength" xml:space="preserve">
+    <value>واحد پول باید دقیقاً ۳ حرف (کد ISO 4217) باشد.</value>
+  </data>
+
+  <data name="HelpCardTitle" xml:space="preserve">
+    <value>نکاتی که باید بدانید</value>
+  </data>
+  <data name="HelpLine_Budget" xml:space="preserve">
+    <value>بودجه ماهانه، سقف خرج هر مشتری در هر ماه تقویمی فارسی است. مجموع سبد خرید پیش‌نویس بلافاصله از آن کسره می‌شود؛ سفارش‌های ثبت‌شده نیز محاسبه می‌شوند. لغو سفارش به‌صورت خودکار بازگردانده می‌شود.</value>
+  </data>
+  <data name="HelpLine_Currency" xml:space="preserve">
+    <value>واحد پول همچنین مشخص می‌کند مشتریان این گروه فقط می‌توانند محصولاتی با همان واحد پول را خریداری کنند. تطابق واحد پول در هر تغییر سبد خرید، فارغ از حالت محدودیت سراسری، اعمال می‌شود.</value>
+  </data>
+  <data name="HelpLine_BulkDefault" xml:space="preserve">
+    <value>ایجاد این گروه، محدودیت خرید پیش‌فرض ۱ را برای همه محصولات موجود در کاتالوگ به‌صورت گروهی اعمال می‌کند. می‌توانید بعداً از بخش مدیریت محصولات، محدودیت‌های جداگانه را ویرایش کنید.</value>
+  </data>
+  <data name="HelpLine_Permanent" xml:space="preserve">
+    <value>واحد پول پس از ایجاد قابل تغییر نیست. برای استفاده از واحد پولی دیگر، این گروه را غیرفعال کرده و گروه جدیدی بسازید.</value>
+  </data>
+
+  <data name="SuccessTitle" xml:space="preserve">
+    <value>گروه ایجاد شد</value>
+  </data>
+  <data name="SuccessSummary" xml:space="preserve">
+    <value>گروه مشتریان ایجاد شد و محدودیت‌های خرید پیش‌فرض اعمال گردید.</value>
+  </data>
+
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_Generic" xml:space="preserve">
+    <value>ایجاد گروه ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+</root>

@@ -10,9 +10,9 @@ public sealed class RemoveProductPurchaseLimitCommandValidator : AbstractValidat
         RuleFor(x => x.ProductId)
             .NotEmpty().WithMessage("Product ID is required.");
 
-        RuleFor(x => x.GroupName)
-            .NotEmpty().WithMessage("Group name is required.")
-            .MaximumLength(SetProductPurchaseLimitCommandValidator.MaxGroupNameLength)
-            .WithMessage($"Group name cannot exceed {SetProductPurchaseLimitCommandValidator.MaxGroupNameLength} characters.");
+        // GroupId must reference an existing CustomerGroup. The handler
+        // verifies existence — here we only check it's not Guid.Empty.
+        RuleFor(x => x.GroupId)
+            .NotEmpty().WithMessage("Group ID is required.");
     }
 }

@@ -16,6 +16,7 @@ public sealed class GetCustomersByGroupQueryHandler
         GetCustomersByGroupQuery query,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        ICustomerGroupRepository customerGroupRepository,
         ILogger<GetCustomersByGroupQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -50,17 +51,17 @@ public sealed class GetCustomersByGroupQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 2. Validate the GroupName. We don't use a FluentValidation
+        // 2. Validate the GroupId. We don't use a FluentValidation
         //    validator for queries (queries are read-only and the failure
         //    mode is benign), so we do the check inline.
         // ------------------------------------------------------------------
-        if (string.IsNullOrWhiteSpace(query.GroupName))
+        if (query.GroupId == Guid.Empty)
         {
             logger.LogInformation
-                ("GetCustomersByGroup: user {UserId} provided invalid group name.",
+                ("GetCustomersByGroup: user {UserId} provided an invalid (empty) group Id.",
                 currentUser.UserId);
 
-            return Result<List<UserListItemDto>>.Failure("Group name is required.");
+            return Result<List<UserListItemDto>>.Failure("Group ID is required.");
         }
 
         // ------------------------------------------------------------------
@@ -74,7 +75,20 @@ public sealed class GetCustomersByGroupQueryHandler
         // ------------------------------------------------------------------
         // 4. Load the users in this group.
         // ------------------------------------------------------------------
-        var users = await userRepository.GetByGroupNameAsync(query.GroupName, cancellationToken);
+        var users = await userRepository.GetByGroupIdAsync(query.GroupId, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // 4b. Resolve the group's display name (single round-trip). The
+        //     whole list is the same group, so we resolve once and project
+        //     onto every row. Null when the caller can't see group names.
+        // ------------------------------------------------------------------
+        string? groupName = null;
+        if (canSeeGroup)
+        {
+            var group = await customerGroupRepository.GetByIdReadOnlyAsync
+                (query.GroupId, cancellationToken);
+            groupName = group?.Name;
+        }
 
         // ------------------------------------------------------------------
         // 5. Project to DTO. Sort by FullName for stable UI rendering.
@@ -93,7 +107,8 @@ public sealed class GetCustomersByGroupQueryHandler
                 WorkerId = u.WorkerId,
                 FullName = u.FullName,
                 Gender = u.Gender,
-                GroupName = canSeeGroup ? u.GroupName : null,
+                GroupId = u.GroupId,
+                GroupName = canSeeGroup ? groupName : null,
                 IsActive = u.IsActive
             }
             )

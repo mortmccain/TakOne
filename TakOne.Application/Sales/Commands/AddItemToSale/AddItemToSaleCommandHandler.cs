@@ -22,6 +22,9 @@ public sealed class AddItemToSaleCommandHandler
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
+        ISalaryBudgetService salaryBudgetService,
+        ICartMutationLock cartMutationLock,
         IUnitOfWork unitOfWork,
         ILogger<AddItemToSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -31,10 +34,16 @@ public sealed class AddItemToSaleCommandHandler
             return Result.Failure("Authentication required.");
         }
 
+        // ------------------------------------------------------------------
         // Load the sale WITH line items, because we need to:
         //   - check ownership
         //   - check status
         //   - find an existing line for this product (for stock aggregation)
+        //
+        // We do this BEFORE acquiring the cart mutation lock — the load
+        // is read-only and we need the Sale.CustomerId (not just the
+        // command, which has the SaleId) to know whose lock to acquire.
+        // ------------------------------------------------------------------
         var sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
         if (sale is null)
         {
@@ -59,11 +68,57 @@ public sealed class AddItemToSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
+        // ACQUIRE PER-USER CART MUTATION LOCK (Step 4 wiring).
+        //
+        // The lock is acquired on sale.CustomerId (NOT currentUser.UserId)
+        // so that staff-editing-on-behalf-of-customer serializes on the
+        // CUSTOMER's lock — two staff members editing the same customer's
+        // cart must not race. For self-buy, sale.CustomerId ==
+        // currentUser.UserId so it doesn't matter which we use.
+        //
+        // The lock serializes ALL cart mutations for this customer. The
+        // salary budget check (below) reads the customer's "consumed"
+        // amount — without the lock, two concurrent invocations could
+        // BOTH see the same stale consumed amount and BOTH decide their
+        // line fits within the remaining budget, even though together
+        // they exceed it.
+        //
+        // `await using` guarantees release on all exit paths (including
+        // exceptions and early returns).
+        // ------------------------------------------------------------------
+        await using var _cartLockHandle = await cartMutationLock.AcquireAsync(sale.CustomerId, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // RE-LOAD THE SALE AFTER ACQUIRING THE LOCK.
+        //
+        // Between the first load (before the lock) and now, another
+        // invocation may have mutated the sale (added a line, etc.).
+        // Re-loading gives us the post-lock state so the salary budget
+        // check (which depends on sale.Total + sale.LineItems) is accurate.
+        //
+        // The first load was needed to validate ownership and status
+        // BEFORE blocking on the lock — we don't want to hold the lock
+        // while checking permissions (the caller may be unauthorized).
+        // ------------------------------------------------------------------
+        sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
+        if (sale is null || sale.Status != SaleStatus.Draft)
+        {
+            // Defensive: the sale was loaded moments ago and passed the
+            // status check. If it's now gone or no longer Draft, a
+            // concurrent invocation submitted it. Treat as a conflict.
+            logger.LogWarning(
+                "AddItemToSale: sale {SaleId} changed state after acquiring cart lock (was Draft, now {Status}).",
+                command.SaleId, sale?.Status.ToString() ?? "<null>");
+            return Result.Failure(
+                "This cart was modified by another session. Refresh the page and try again.");
+        }
+
+        // ------------------------------------------------------------------
         // Load the product. We need it for:
         //   - name snapshot (added to the line)
         //   - price snapshot (added to the line)
         //   - stock check
-        //   - per-group purchase-limit lookup
+        //   - per-group purchase-limit lookup (via policy now, not inline)
         //
         // READ-ONLY LOAD (AsNoTracking): same rationale as
         // CreateOrAppendSaleCommandHandler — we never mutate the Product
@@ -131,10 +186,15 @@ public sealed class AddItemToSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // Purchase-limit lookup using the CUSTOMER's GroupName (not the
-        // current user's, in case a staff member is editing a draft they're
-        // building on behalf of a customer). The sale stores CustomerId (a
-        // Guid) — we need to re-load the user to get their GroupName.
+        // Purchase-limit + currency + salary-budget checks using the CUSTOMER's
+        // GroupId (not the current user's, in case a staff member is editing
+        // a draft they're building on behalf of a customer). The sale stores
+        // CustomerId (a Guid) — we need to re-load the user to get their GroupId.
+        //
+        // The customer is reloaded AFTER the lock is acquired — so a
+        // concurrent group reassignment is observed (the customer's
+        // GroupId may have changed since the first load). The policy /
+        // budget checks below use the authoritative post-lock value.
         // ------------------------------------------------------------------
         var customer = await userRepository.GetByIdAsync(sale.CustomerId, cancellationToken);
         if (customer is null)
@@ -151,11 +211,80 @@ public sealed class AddItemToSaleCommandHandler
                 "The customer associated with this sale could not be found. Contact an administrator.");
         }
 
-        int? purchaseLimit = null;
-        if (!string.IsNullOrWhiteSpace(customer.GroupName))
+        // ------------------------------------------------------------------
+        // CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
+        // A customer whose salary is in IRR cannot buy a product priced
+        // in USD. Staff (GroupId == null) bypasses this check.
+        // ------------------------------------------------------------------
+        if (customer.GroupId is not null)
         {
-            var limitVo = product.GetPurchaseLimitForGroup(customer.GroupName);
-            purchaseLimit = limitVo?.Limit;
+            var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
+                (product.Id, customer.GroupId, cancellationToken);
+
+            if (!currencyOk)
+            {
+                // Salary currency resolved via the budget service's cached
+                // helper (single round-trip, often IMemoryCache-backed).
+                var salary = await salaryBudgetService.GetGroupSalaryAsync
+                    (customer.GroupId, cancellationToken);
+                var salaryCurrency = salary?.Currency ?? "???";
+
+                logger.LogWarning
+                    ("AddItemToSale: currency mismatch for product {ProductId} ('{ProductName}') priced in {ProductCurrency}; customer {CustomerId} salary currency is {SalaryCurrency}. Rejecting add to sale {SaleId}.",
+                    product.Id, product.Name, product.Price.Currency, sale.CustomerId, salaryCurrency, sale.Id);
+
+                return Result.Failure(
+                    CurrencyMismatchErrors.Format(product.Name, product.Price.Currency, salaryCurrency));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // SALARY BUDGET CHECK (enforced when LimitMode is SalaryOnly or Both).
+        //
+        // delta = unitPrice.Amount × quantity — the SIGNED change to the
+        // customer's monthly consumed amount. The budget info's Consumed
+        // field ALREADY includes the customer's current draft cart total
+        // (cart-reserves-budget rule), so the check is simply:
+        //
+        //   delta ≤ budgetInfo.Remaining
+        //
+        // (where Remaining = Salary − Consumed; can be negative if the
+        // salary was lowered mid-month after a purchase).
+        //
+        // Skip when customer has no group (staff) — no budget applies.
+        // ------------------------------------------------------------------
+        var lineTotal = product.Price.Amount * command.Quantity;
+
+        if (customer.GroupId is not null
+            && await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken))
+        {
+            var budgetInfo = await salaryBudgetService.GetBudgetInfoAsync
+                (sale.CustomerId, cancellationToken);
+
+            if (budgetInfo is not null && lineTotal > budgetInfo.Remaining)
+            {
+                logger.LogWarning
+                    ("AddItemToSale: salary budget exceeded for product {ProductId} on sale {SaleId} (customer {CustomerId}, lineTotal {LineTotal}, remaining budget {Remaining}, currency {Currency}).",
+                    product.Id, sale.Id, sale.CustomerId, lineTotal, budgetInfo.Remaining, budgetInfo.Salary.Currency);
+
+                return Result.Failure(
+                    SalaryBudgetExceededErrors.Format
+                        (product.Name, lineTotal, budgetInfo.Remaining, budgetInfo.Salary.Currency));
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // PER-PRODUCT COUNT LIMIT (replaces inline product.GetPurchaseLimitForGroup).
+        // Returns null when:
+        //   - count limits are NOT enforced (mode = SalaryOnly)
+        //   - customer has no group (staff)
+        //   - the product has no limit set for the customer's group
+        // ------------------------------------------------------------------
+        int? purchaseLimit = null;
+        if (customer.GroupId is not null)
+        {
+            purchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
+                (product.Id, customer.GroupId, cancellationToken);
         }
 
         // ------------------------------------------------------------------

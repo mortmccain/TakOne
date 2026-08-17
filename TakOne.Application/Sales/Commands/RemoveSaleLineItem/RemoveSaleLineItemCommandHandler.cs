@@ -12,6 +12,7 @@ public sealed class RemoveSaleLineItemCommandHandler
         RemoveSaleLineItemCommand command,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
+        ICartMutationLock cartMutationLock,
         IUnitOfWork unitOfWork,
         ILogger<RemoveSaleLineItemCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -22,6 +23,8 @@ public sealed class RemoveSaleLineItemCommandHandler
         }
 
         // Need line items loaded so the aggregate can find the line to remove.
+        // Loaded BEFORE the lock — we need sale.CustomerId to know whose lock
+        // to acquire, and the ownership check should not block on the lock.
         var sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
         if (sale is null)
         {
@@ -41,6 +44,35 @@ public sealed class RemoveSaleLineItemCommandHandler
         {
             return Result.Failure(
                 $"Line items can only be removed from a Draft sale. This sale is currently '{sale.Status}'.");
+        }
+
+        // ------------------------------------------------------------------
+        // ACQUIRE PER-USER CART MUTATION LOCK (Step 4 wiring).
+        //
+        // Even though RemoveSaleLineItem only frees budget (never exceeds
+        // it), the lock prevents the following race: a concurrent
+        // AddItemToSale invocation reads the sale's line items BEFORE our
+        // remove commits, computes its "existing line quantity" with the
+        // soon-to-be-removed line included, and then over-counts stock.
+        // The lock serializes the two operations.
+        //
+        // Acquired on sale.CustomerId (NOT currentUser.UserId) so that
+        // staff-editing-on-behalf serializes on the customer's lock.
+        // ------------------------------------------------------------------
+        await using var _cartLockHandle = await cartMutationLock.AcquireAsync(sale.CustomerId, cancellationToken);
+
+        // Re-load the sale after acquiring the lock — a concurrent
+        // invocation may have added / removed lines or even submitted the
+        // sale. The first load was needed to validate ownership + status
+        // BEFORE blocking on the lock.
+        sale = await saleRepository.GetByIdWithLineItemsAsync(command.SaleId, cancellationToken);
+        if (sale is null || sale.Status != SaleStatus.Draft)
+        {
+            logger.LogWarning(
+                "RemoveSaleLineItem: sale {SaleId} changed state after acquiring cart lock (was Draft, now {Status}).",
+                command.SaleId, sale?.Status.ToString() ?? "<null>");
+            return Result.Failure(
+                "This cart was modified by another session. Refresh the page and try again.");
         }
 
         // Defensive check before delegating to the aggregate. The aggregate's

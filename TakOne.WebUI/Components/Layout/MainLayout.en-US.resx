@@ -86,6 +86,9 @@
   <data name="ManageUsers" xml:space="preserve">
     <value>Manage Users</value>
   </data>
+  <data name="ManageGroups" xml:space="preserve">
+    <value>Customer Groups</value>
+  </data>
   <data name="Profile" xml:space="preserve">
     <value>Profile</value>
   </data>

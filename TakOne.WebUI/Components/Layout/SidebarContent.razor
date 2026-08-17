@@ -132,6 +132,10 @@
             <RadzenIcon Icon="group" />
             <span>@Localizer["ManageUsers"]</span>
         </a>
+        <a href="/Admin/Groups" class="tm-nav-item @(IsActive("/Admin/Groups") ? "active" : "")">
+            <RadzenIcon Icon="diversity_3" />
+            <span>@Localizer["ManageGroups"]</span>
+        </a>
     </AuthorizeView>
 
     <p class="tm-nav-section-header">@Localizer["NavSection_System"]</p>

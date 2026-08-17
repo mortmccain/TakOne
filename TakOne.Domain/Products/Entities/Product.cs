@@ -292,13 +292,16 @@ public sealed class Product : AggregateRoot
     /// Because <see cref="CustomerGroupPurchaseLimit"/> is a value object (immutable),
     /// "changing" a limit means replacing the old instance with a new one.
     /// </summary>
-    public void SetPurchaseLimit(string groupName, int limit)
+    public void SetPurchaseLimit(Guid groupId, int limit)
     {
-        var newLimit = CustomerGroupPurchaseLimit.Create(groupName, limit);
+        if (groupId == Guid.Empty)
+            throw new DomainException("Group Id is required to set a purchase limit.");
+
+        var newLimit = CustomerGroupPurchaseLimit.Create(groupId, limit);
 
         // Remove any existing limit for the same group, then add the new one.
-        // (Equality is by GroupName + Limit, so we filter on GroupName only.)
-        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
+        // (Equality is by GroupId + Limit, so we filter on GroupId only.)
+        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupId == groupId);
         if (existing is not null)
         {
             _purchaseLimits.Remove(existing);
@@ -309,30 +312,32 @@ public sealed class Product : AggregateRoot
 
     /// <summary>
     /// Removes the purchase limit for the given group, if any.
+    /// Idempotent — no-op if the limit doesn't exist.
     /// </summary>
-    public void RemovePurchaseLimit(string groupName)
+    public void RemovePurchaseLimit(Guid groupId)
     {
-        EnsureNameValid(groupName);
+        if (groupId == Guid.Empty)
+            throw new DomainException("Group Id is required to remove a purchase limit.");
 
-        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
+        var existing = _purchaseLimits.FirstOrDefault(l => l.GroupId == groupId);
         if (existing is not null)
         {
             _purchaseLimits.Remove(existing);
         }
-        // No-op if the limit doesn't exist — idempotent.
     }
 
     /// <summary>
     /// Returns the purchase limit for the given group, or null if no limit
     /// is defined for that group on this product.
-    /// Called by the application layer (CreateSaleCommandHandler) when building a sale.
+    /// Called by the application layer (via <c>IPurchaseLimitPolicy</c>)
+    /// when checking a purchase.
     /// </summary>
-    public CustomerGroupPurchaseLimit? GetPurchaseLimitForGroup(string groupName)
+    public CustomerGroupPurchaseLimit? GetPurchaseLimitForGroup(Guid groupId)
     {
-        if (string.IsNullOrWhiteSpace(groupName))
+        if (groupId == Guid.Empty)
             return null;
 
-        return _purchaseLimits.FirstOrDefault(l => l.GroupName == groupName);
+        return _purchaseLimits.FirstOrDefault(l => l.GroupId == groupId);
     }
 
 

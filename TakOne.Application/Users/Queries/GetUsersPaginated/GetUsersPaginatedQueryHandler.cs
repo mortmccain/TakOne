@@ -25,6 +25,7 @@ public sealed class GetUsersPaginatedQueryHandler
         GetUsersPaginatedQuery query,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        ICustomerGroupRepository customerGroupRepository,
         ILogger<GetUsersPaginatedQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -82,11 +83,39 @@ public sealed class GetUsersPaginatedQueryHandler
             (
             searchTerm: query.SearchTerm,
             isActive: query.IsActive,
-            groupName: query.GroupName,
+            groupId: query.GroupId,
             pageNumber: pageNumber,
             pageSize: pageSize,
             cancellationToken: cancellationToken
             );
+
+        // ------------------------------------------------------------------
+        // 3b. Batch-resolve customer group names for the page of users.
+        //     We load ALL groups (expected 5-15 rows) in a single round-trip
+        //     and build an in-memory lookup. Same pattern as the category
+        //     tree load in GetProductsPaginatedQueryHandler.
+        //
+        //     GroupName is exposed on the DTO ONLY for Admin/Manager callers
+        //     (canSeeGroup below). For Employee callers, we still load the
+        //     groups (cheap) but project to null — see step 4 below.
+        // ------------------------------------------------------------------
+        List<Domain.Customers.Entities.CustomerGroup>? groups = null;
+        try
+        {
+            groups = await customerGroupRepository.GetAllAsync(includeInactive: true, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal — if the group load fails we still return the users
+            // with empty group-name fields. The UI renders an em-dash for
+            // empty group names, which is acceptable.
+            logger.LogWarning(ex,
+                "GetUsersPaginated: failed to load customer groups for name enrichment. "
+                + "Users will be returned without group names.");
+            groups = new List<Domain.Customers.Entities.CustomerGroup>();
+        }
+
+        var groupById = groups.ToDictionary(g => g.Id);
 
         // ------------------------------------------------------------------
         // 4. Project to DTO. Strip GroupName if the caller can't see it.
@@ -111,7 +140,15 @@ public sealed class GetUsersPaginatedQueryHandler
                 WorkerId = u.WorkerId,
                 FullName = u.FullName,
                 Gender = u.Gender,
-                GroupName = canSeeGroup ? u.GroupName : null,
+                GroupId = u.GroupId,
+                // Resolve the display name from the in-memory group lookup.
+                // Null when the user has no group (staff) OR the caller
+                // can't see group names OR the group was hard-deleted
+                // (defensive — shouldn't happen since CustomerGroup uses
+                // soft-delete via IsActive=false).
+                GroupName = canSeeGroup && u.GroupId is not null && groupById.TryGetValue(u.GroupId.Value, out var g)
+                    ? g.Name
+                    : null,
                 IsActive = u.IsActive,
                 // Roles: empty list if the user has no roles (rare — only
                 // happens if role seeding is incomplete). The dictionary

@@ -86,6 +86,9 @@
   <data name="ManageUsers" xml:space="preserve">
     <value>مدیریت کاربران</value>
   </data>
+  <data name="ManageGroups" xml:space="preserve">
+    <value>گروه‌های مشتریان</value>
+  </data>
   <data name="Profile" xml:space="preserve">
     <value>پروفایل</value>
   </data>

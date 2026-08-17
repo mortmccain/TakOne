@@ -124,4 +124,53 @@ public interface ISaleRepository
     /// is actually a Draft before issuing the DELETE.
     /// </summary>
     Task DeleteAsync(Sale sale, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the total monetary amount consumed by the customer in the
+    /// given time window — used by the salary budget feature
+    /// (<c>ISalaryBudgetService</c>).
+    ///
+    /// Includes:
+    ///   <list type="bullet">
+    ///     <item>The customer's active DRAFT cart Total (if any) —
+    ///         "cart reserves budget" (the draft is implicitly counted as
+    ///         consumed immediately, NOT just at submit time)</item>
+    ///     <item>All SUBMITTED (non-Draft, non-Cancelled) sales with
+    ///         <c>SubmittedAtUtc</c> in [windowStartUtc, windowEndUtc) —
+    ///         includes Pending, Approved, and Invoiced statuses (anything
+    ///         that has left the cart state and hasn't been cancelled)</item>
+    ///   </list>
+    ///
+    /// Excludes:
+    ///   <list type="bullet">
+    ///     <item>Cancelled sales (the cancellation refund is implicit —
+    ///         the cancelled sale is simply not in the sum). "Use it or
+    ///         lose it": a sale cancelled in month M+1 (that was submitted
+    ///         in month M) does NOT refund to M+1's window, because the
+    ///         sale is no longer in M+1's [windowStartUtc, windowEndUtc)
+    ///         range — it was in M's range.</item>
+    ///     <item>Draft sales that are NOT the active one — there should be
+    ///         at most one active draft per customer; orphan drafts are
+    ///         ignored here (they have no line items anyway, so their
+    ///         Total is 0). This is a defensive measure against the
+    ///         "ghost draft" bug from the pre-Step-3 codebase.</item>
+    ///   </list>
+    ///
+    /// SUBMIT IS A BUDGET NO-OP:
+    ///   When a draft is submitted, its Total moves from the "draft" bucket
+    ///   to the "submitted" bucket — net change = 0. The consumed amount
+    ///   does NOT change at submit time.
+    ///
+    /// CURRENCY NOTE:
+    ///   The returned amount is a raw decimal — the caller
+    ///   (<c>ISalaryBudgetService</c>) is responsible for knowing the
+    ///   currency (it comes from the customer's CustomerGroup.Salary).
+    ///   Currency matching always applies: products priced in a different
+    ///   currency are blocked before they reach this method.
+    /// </summary>
+    Task<decimal> GetConsumedAmountForCustomerInWindowAsync(
+        Guid customerId,
+        DateTime windowStartUtc,
+        DateTime windowEndUtc,
+        CancellationToken cancellationToken = default);
 }

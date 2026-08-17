@@ -268,4 +268,91 @@ public sealed class SaleRepository : ISaleRepository
 
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public async Task<decimal> GetConsumedAmountForCustomerInWindowAsync(
+        Guid customerId,
+        DateTime windowStartUtc,
+        DateTime windowEndUtc,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Computes the customer's consumed salary-budget amount in the given
+        // Persian-month window. See ISaleRepository.GetConsumedAmountForCustomerInWindowAsync
+        // for the full rationale.
+        //
+        // The query is a single round-trip that sums the Total#Money#Amount
+        // column across two buckets:
+        //
+        //   1. ACTIVE DRAFT CART (Status == Draft) — "cart reserves budget".
+        //      At most one active draft per customer (enforced by the
+        //      GetActiveDraftForUserAsync convention + the new ghost-draft
+        //      cleanup in QuickReorderLastSaleCommandHandler). We SUM all
+        //      drafts defensively — if a ghost draft slipped through, its
+        //      Total is 0 anyway (no line items), so it contributes nothing.
+        //
+        //   2. SUBMITTED SALES (Status NOT IN (Draft, Cancelled)) with
+        //      SubmittedAtUtc in [windowStartUtc, windowEndUtc). This
+        //      covers Pending, Approved, Invoiced — anything that has
+        //      left the cart state and hasn't been cancelled.
+        //
+        //      "Use it or lose it": cross-month cancellations do NOT
+        //      refund to the new month. A sale submitted in month M and
+        //      cancelled in month M+1 is simply not in M+1's
+        //      [windowStartUtc, windowEndUtc) range — it was in M's range.
+        //      So it doesn't count either way in M+1's window.
+        //
+        //      Cancellation refund within the same month: a sale submitted
+        //      AND cancelled in month M IS still in M's window (SubmittedAtUtc
+        //      is in M). But because Status == Cancelled, the WHERE clause
+        //      excludes it. The refund is therefore implicit — no separate
+        //      "refund" operation needed.
+        //
+        //      NOTE on SubmittedAtUtc: this column is NULL for Drafts and
+        //      populated when the sale transitions to Pending (via
+        //      Sale.Submit()). The query treats NULL as "outside the
+        //      window" — drafts are caught by bucket 1 above.
+        //
+        // SQL TRANSLATION (rough):
+        //   SELECT COALESCE(SUM(s.Total_Amount), 0)
+        //   FROM Sales s
+        //   WHERE s.CustomerId = @customerId
+        //     AND (
+        //       s.Status = 0   -- Draft (active cart)
+        //       OR
+        //       (s.Status NOT IN (0, 4)   -- not Draft, not Cancelled
+        //        AND s.SubmittedAtUtc >= @windowStartUtc
+        //        AND s.SubmittedAtUtc <  @windowEndUtc)
+        //     )
+        //
+        //   (SaleStatus enum values: Draft=0, Pending=1, Approved=2,
+        //    Invoiced=3, Cancelled=4)
+        //
+        // ASNOTRACKING: this is a pure read — the caller (SalaryBudgetService)
+        // never mutates the Sale rows it sums. AsNoTracking keeps the query
+        // result out of the change tracker entirely.
+        // ------------------------------------------------------------------
+        if (customerId == Guid.Empty)
+        {
+            // Defensive: Guid.Empty would match no Sale (CustomerId is
+            // non-nullable in the schema), but we short-circuit here to
+            // avoid sending a nonsensical query to SQL Server.
+            return 0m;
+        }
+
+        var consumed = await _db.Sales
+            .AsNoTracking()
+            .Where(s => s.CustomerId == customerId
+                        && (s.Status == SaleStatus.Draft
+                            || (s.Status != SaleStatus.Draft
+                                && s.Status != SaleStatus.Cancelled
+                                && s.SubmittedAtUtc != null
+                                && s.SubmittedAtUtc >= windowStartUtc
+                                && s.SubmittedAtUtc < windowEndUtc)))
+            .SumAsync(s => (decimal?)s.Total.Amount, cancellationToken);
+
+        // SumAsync with a nullable cast returns null when no rows match.
+        // Coalesce to 0 — empty carts are a normal state (no consumption).
+        return consumed ?? 0m;
+    }
 }

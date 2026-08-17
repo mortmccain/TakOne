@@ -7,9 +7,17 @@ namespace TakOne.Application.Users.DTOs;
 /// <c>User</c> aggregate) with ASP.NET Identity fields (email, roles)
 /// fetched via <c>IUserAccountService</c>.
 ///
-/// GroupName is exposed here for ADMIN views only — customer-facing views
-/// must NEVER include it. The query handler that builds this DTO is
-/// responsible for respecting the caller's role.
+/// GROUP FIELD SEMANTICS (Salary feature, Step 3):
+///   <list type="bullet">
+///     <item><c>GroupId</c> — the FK to <c>CustomerGroups.Id</c>. Null for
+///         staff users (who have no group).</item>
+///     <item><c>GroupName</c> — the DISPLAY name of the group, looked up
+///         via <c>ICustomerGroupRepository.GetByIdAsync</c>. Populated
+///         ONLY when the caller is Admin/Manager — null otherwise.</item>
+///   </list>
+///
+///   Customers never see the word "group" in any UI string. The
+///   <c>GroupName</c> field here is internal-staff-only display data.
 ///
 /// Gender is included so the admin user-management page (Phase 7.3) and
 /// the user's own profile page (Phase 6.1) can display it without a
@@ -29,8 +37,23 @@ public sealed class UserDto
     public Gender Gender { get; init; }
 
     /// <summary>
-    /// The customer group, or null for staff users. Expose ONLY to admins
-    /// and managers — never to customers themselves.
+    /// The customer group Id (FK to CustomerGroups.Id). Null for staff
+    /// users (who have no group). Always populated for customers.
+    /// </summary>
+    public Guid? GroupId { get; init; }
+
+    /// <summary>
+    /// The customer group's DISPLAY NAME — populated via a single
+    /// <c>ICustomerGroupRepository.GetByIdAsync</c> call. Null when:
+    ///   - The user is staff (no group)
+    ///   - The caller is Employee (Employees don't see group names —
+    ///     they only need to know THAT a user is in a group, not which one)
+    ///   - The group was hard-deleted (defensive — shouldn't happen
+    ///     since CustomerGroup uses soft-delete via IsActive=false)
+    ///
+    /// Exposed ONLY to admins and managers — never to customers themselves.
+    /// The query handler that builds this DTO is responsible for respecting
+    /// the caller's role.
     /// </summary>
     public string? GroupName { get; init; }
 

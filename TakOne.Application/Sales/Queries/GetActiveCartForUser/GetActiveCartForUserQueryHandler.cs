@@ -87,10 +87,10 @@ public sealed class GetActiveCartForUserQueryHandler
         // 2b. Resolve the current caller's per-product purchase limits in
         //     the SAME pass we already made for stock. The Product aggregate
         //     owns the per-group limit value objects; we just look them up
-        //     by the caller's GroupName.
+        //     by the caller's GroupId.
         //
         //     WHY LOAD FROM DB (not from the auth-cookie claim):
-        //       The GroupName claim is a snapshot from login time and goes
+        //       The GroupId claim is a snapshot from login time and goes
         //       stale when an admin assigns the user to a group after
         //       they're already logged in. Reading from the DB guarantees
         //       the limit reflects the user's CURRENT group, so the cart's
@@ -105,14 +105,14 @@ public sealed class GetActiveCartForUserQueryHandler
         //       customer from the DB.
         // ------------------------------------------------------------------
         var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
-        var groupName = freshUser?.GroupName;
+        var groupId = freshUser?.GroupId;
         var productById = products.ToDictionary(p => p.Id);
 
         int? ResolveMyLimit(Guid productId)
         {
-            if (string.IsNullOrWhiteSpace(groupName)) return null; // staff
+            if (groupId is null) return null; // staff
             return productById.TryGetValue(productId, out var p)
-                ? p.GetPurchaseLimitForGroup(groupName)?.Limit
+                ? p.GetPurchaseLimitForGroup(groupId.Value)?.Limit
                 : null;
         }
 

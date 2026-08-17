@@ -26,9 +26,9 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 /// OWNED COLLECTION: <c>ProductPurchaseLimits</c> (one row per CustomerGroupPurchaseLimit)
 ///   - Id            (int, IDENTITY, shadow PK — EF requires a PK; the domain value object has no Id)
 ///   - ProductId     (uniqueidentifier, FK → Products.Id, cascade delete)
-///   - GroupName     (nvarchar(100), NOT NULL)
+///   - GroupId       (uniqueidentifier, FK → CustomerGroups.Id, NOT NULL)
 ///   - Limit         (int, NOT NULL)
-///   - Unique index on (ProductId, GroupName) — one limit per group per product
+///   - Unique index on (ProductId, GroupId) — one limit per group per product
 ///
 /// CROSS-AGGREGATE REFERENCES — WHY NO FKs:
 ///   In strict DDD, aggregates should be independent persistence units.
@@ -169,7 +169,22 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             // are AUTOMATICALLY set up by OwnsMany. Do NOT add a HasOne here
             // — see the block comment above for the rationale.
 
-            limit.Property(l => l.GroupName).HasMaxLength(100).IsRequired();
+            // GroupId — required FK to CustomerGroups.Id. Unlike the cross-aggregate
+            // Guid references above (CategoryId etc.), this one DOES have a real
+            // FK constraint because limits are an OWNED collection of Product,
+            // and ProductPurchaseLimit.GroupId conceptually belongs to a real
+            // CustomerGroup aggregate. The FK enforces that you can't create
+            // a limit row for a group that doesn't exist.
+            //
+            // OnDelete.Restrict: deleting a CustomerGroup that still has limits
+            // referencing it will throw. The application layer must remove the
+            // limits first (see Step 5's delete-group flow).
+            limit.Property(l => l.GroupId).IsRequired();
+            limit.HasOne<TakOne.Domain.Customers.Entities.CustomerGroup>()
+                .WithMany()
+                .HasForeignKey(l => l.GroupId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             limit.Property(l => l.Limit).IsRequired();
 
             // Unique index: a product can have AT MOST ONE limit per group.
@@ -179,7 +194,7 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
             //
             // "ProductId" here is a string referring to the shadow FK property
             // that OwnsMany created. EF resolves it by name.
-            limit.HasIndex("ProductId", nameof(CustomerGroupPurchaseLimit.GroupName))
+            limit.HasIndex("ProductId", nameof(CustomerGroupPurchaseLimit.GroupId))
                 .IsUnique();
         });
 

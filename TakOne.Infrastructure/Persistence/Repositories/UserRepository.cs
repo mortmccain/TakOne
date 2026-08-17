@@ -67,17 +67,17 @@ public sealed class UserRepository : IUserRepository
     }
 
     /// <inheritdoc />
-    public async Task<List<User>> GetByGroupNameAsync(string groupName, CancellationToken cancellationToken = default)
+    public async Task<List<User>> GetByGroupIdAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        // Returns all users in a customer group. The GroupName index makes
+        // Returns all users in a customer group. The GroupId index makes
         // this query fast. We don't paginate here because customer groups are
         // expected to be small (typically &lt;100 users per group); if a group
         // ever exceeds ~500 users, the staff dashboard query should switch to
-        // GetPaginatedAsync with groupName filter.
+        // GetPaginatedAsync with groupId filter.
         //
         // Order by FullName for stable UI rendering.
         return await _db.DomainUsers
-            .Where(u => u.GroupName == groupName)
+            .Where(u => u.GroupId == groupId)
             .OrderBy(u => u.FullName)
             .ToListAsync(cancellationToken);
     }
@@ -86,7 +86,7 @@ public sealed class UserRepository : IUserRepository
     public async Task<PaginatedResult<User>> GetPaginatedAsync(
         string? searchTerm = null,
         bool? isActive = null,
-        string? groupName = null,
+        Guid? groupId = null,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -108,9 +108,9 @@ public sealed class UserRepository : IUserRepository
             query = query.Where(u => u.IsActive == isActive.Value);
         }
 
-        if (groupName is not null)
+        if (groupId is not null)
         {
-            query = query.Where(u => u.GroupName == groupName);
+            query = query.Where(u => u.GroupId == groupId.Value);
         }
 
         // searchTerm matches WorkerId OR FullName. We OR them so a search for
@@ -262,27 +262,10 @@ public sealed class UserRepository : IUserRepository
                 g => g.Select(p => p.RoleName ?? string.Empty).ToList());
     }
 
-    /// <inheritdoc />
-    public async Task<List<string>> GetDistinctGroupNamesAsync(CancellationToken cancellationToken = default)
-    {
-        // SELECT DISTINCT GroupName FROM DomainUsers
-        //   WHERE GroupName IS NOT NULL AND GroupName != ''
-        //   ORDER BY GroupName
-        //
-        // Staff users have GroupName = null and are filtered out. We also
-        // filter empty strings defensively (a buggy creation flow could
-        // store "" instead of null — the domain guard should prevent it,
-        // but this is cheap insurance).
-        //
-        // Distinct + OrderBy are translated by EF Core into SQL DISTINCT +
-        // ORDER BY — single round-trip, no client-side grouping.
-        return await _db.DomainUsers
-            .Where(u => u.GroupName != null && u.GroupName != string.Empty)
-            .Select(u => u.GroupName!)
-            .Distinct()
-            .OrderBy(name => name)
-            .ToListAsync(cancellationToken);
-    }
+    // NOTE: GetDistinctGroupNamesAsync was REMOVED in Step 2 of the salary
+    // feature. Group names are no longer stored on User — they live on the
+    // CustomerGroup aggregate. To list all groups, use
+    // ICustomerGroupRepository.GetAllAsync.
 
     /// <inheritdoc />
     public async Task AddAsync(User user, CancellationToken cancellationToken = default)

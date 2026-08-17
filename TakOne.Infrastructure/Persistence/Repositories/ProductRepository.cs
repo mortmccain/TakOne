@@ -271,4 +271,22 @@ public sealed class ProductRepository : IProductRepository
         return await _db.Products
             .CountAsync(p => p.StockQuantity > 0, cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<List<Guid>> GetAllProductIdsAsync(CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Lightweight ID-only query: SELECT Id FROM Products
+        // No entity materialization, no tracking. Used by the bulk-default
+        // flow in CreateCustomerGroupCommandHandler (Step 5) to iterate all
+        // existing products without loading them all into memory at once.
+        //
+        // The handler batches through these IDs (default 200 per batch),
+        // loading tracked products via GetByIdsAsync for each batch,
+        // calling SetPurchaseLimit on each, and SaveChanges per batch.
+        // ------------------------------------------------------------------
+        return await _db.Products
+            .Select(p => p.Id)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Products.Entities;
+using TakOne.Domain.Products.ValueObjects;
 using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.ValueObjects;
 
@@ -19,6 +20,7 @@ public sealed class CreateProductCommandHandler
         ICurrentUserService currentUser,
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
+        ICustomerGroupRepository customerGroupRepository,
         IUnitOfWork unitOfWork,
         ILogger<CreateProductCommandHandler> logger,
         CancellationToken cancellationToken
@@ -138,11 +140,33 @@ public sealed class CreateProductCommandHandler
         // ------------------------------------------------------------------
         // 4b. Attach per-group purchase limits.
         //
+        //     TWO-PHASE FLOW (Step 5 wiring):
+        //
+        //     Phase 1 — AUTO-DEFAULT: For every ACTIVE CustomerGroup in
+        //         the catalog, set a default limit (=
+        //         CustomerGroupPurchaseLimit.DefaultLimit, currently 1)
+        //         for the new Product. This ensures that when a new
+        //         product is created, every existing group has a sane
+        //         per-product cap by default — admins can override
+        //         individual limits later via the Manage Products UI.
+        //
+        //         Inactive groups are SKIPPED — they're not actively
+        //         used, so creating limit rows for them is wasteful.
+        //         If the admin reactivates a group later, they can run
+        //         a separate bulk-default flow (or the reactivation
+        //         handler can do it — not implemented in Step 5).
+        //
+        //     Phase 2 — USER OVERRIDES: Apply the user-specified
+        //         PurchaseLimits from the command. Because
+        //         SetPurchaseLimit REPLACES any existing entry for the
+        //         same group, the user-specified values OVERRIDE the
+        //         defaults set in Phase 1.
+        //
         //     DDD INVARIANT: we DON'T pass domain value objects
         //     (CustomerGroupPurchaseLimit) in from the command — that would
         //     let the application layer construct domain VOs directly,
         //     bypassing the aggregate. Instead the command carries a flat
-        //     DTO (PurchaseLimitInputDto with just GroupName + Limit), and
+        //     DTO (PurchaseLimitInputDto with just GroupId + Limit), and
         //     we delegate VO creation to Product.SetPurchaseLimit, which
         //     internally calls CustomerGroupPurchaseLimit.Create + replaces
         //     any existing entry for the same group.
@@ -152,35 +176,87 @@ public sealed class CreateProductCommandHandler
         //     group isn't listed twice with different limits — that's a
         //     user input error, not a domain invariant, so we surface it as
         //     a friendly Result.Failure before touching the aggregate.
+        //
+        //     SALARY FEATURE (Step 3): entries are identified by GroupId
+        //     (Guid), not GroupName. The handler trusts the UI to have
+        //     validated that the GroupId references an existing
+        //     CustomerGroup row — we don't re-check existence here for
+        //     each entry (would N+1 the DB). The Product aggregate only
+        //     enforces that GroupId is not Guid.Empty.
+        // ------------------------------------------------------------------
+
+        // ---- Phase 2 validation (user-specified entries) — run BEFORE
+        //      Phase 1 so we fail-fast on duplicate group entries in
+        //      the command without having applied any defaults first.
+        //      (Phase 1's defaults are also idempotent — they get
+        //      overridden by Phase 2 — so applying them first is safe,
+        //      but failing before any work is friendlier.)
+        if (command.PurchaseLimits is { Count: > 0 })
+        {
+            var seenGroups = new HashSet<Guid>();
+            foreach (var entry in command.PurchaseLimits)
+            {
+                if (!seenGroups.Add(entry.GroupId))
+                {
+                    logger.LogWarning
+                        ("CreateProduct: duplicate purchase-limit entry for group {GroupId}. User {UserId} rejected.",
+                        entry.GroupId, currentUser.UserId);
+
+                    return Result<Guid>.Failure
+                        ($"Duplicate purchase limit for the same group. Each group may only appear once.");
+                }
+            }
+        }
+
+        // ---- Phase 1: AUTO-DEFAULT for every ACTIVE group.
+        //
+        //      GetAllAsync(includeInactive: false) returns only groups
+        //      with IsActive=true. The list is expected to be small
+        //      (5-15 rows), so no batching needed — single round-trip,
+        //      single mutation loop, single SaveChanges at the end.
+        //
+        //      For each active group, call SetPurchaseLimit with the
+        //      default limit. SetPurchaseLimit is idempotent — replaces
+        //      any existing entry for the same group. The user-specified
+        //      entries in Phase 2 will then OVERRIDE these defaults.
+        // ------------------------------------------------------------------
+        var activeGroups = await customerGroupRepository.GetAllAsync
+            (includeInactive: false, cancellationToken);
+
+        foreach (var activeGroup in activeGroups)
+        {
+            product.SetPurchaseLimit(activeGroup.Id, CustomerGroupPurchaseLimit.DefaultLimit);
+        }
+
+        if (activeGroups.Count > 0)
+        {
+            logger.LogInformation
+                ("CreateProduct: auto-applied default purchase limit {DefaultLimit} for {GroupCount} active groups to new product '{ProductName}'.",
+                 CustomerGroupPurchaseLimit.DefaultLimit, activeGroups.Count, command.Name);
+        }
+
+        // ---- Phase 2: USER OVERRIDES (replace defaults for explicitly-
+        //               specified groups).
+        //
+        //      SetPurchaseLimit REPLACES the entry for the same group,
+        //      so user-specified values OVERRIDE the defaults from Phase 1.
+        //      Groups NOT listed in the command keep their default limit.
         // ------------------------------------------------------------------
         if (command.PurchaseLimits is { Count: > 0 })
         {
-            // Detect duplicate group names in the input list. The validator
-            // already enforces non-empty group names + limit >= 1; this is
-            // a secondary check that requires the full list context.
-            var seenGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in command.PurchaseLimits)
-            {
-                if (!seenGroups.Add(entry.GroupName))
-                {
-                    logger.LogWarning
-                        ("CreateProduct: duplicate purchase-limit entry for group '{Group}'. User {UserId} rejected.",
-                        entry.GroupName, currentUser.UserId);
-
-                    return Result<Guid>.Failure
-                        ($"Duplicate purchase limit for group '{entry.GroupName}'. Each group may only appear once.");
-                }
-            }
-
-            // All entries are unique — delegate to the aggregate.
             foreach (var entry in command.PurchaseLimits)
             {
                 // SetPurchaseLimit calls CustomerGroupPurchaseLimit.Create
-                // internally, which enforces GroupName (1..100) + Limit (>=1).
-                // Invalid values throw DomainException → middleware converts
-                // to Result.Failure with a friendly message.
-                product.SetPurchaseLimit(entry.GroupName.Trim(), entry.Limit);
+                // internally, which enforces GroupId != Guid.Empty +
+                // Limit (>=1). Invalid values throw DomainException →
+                // middleware converts to Result.Failure with a friendly
+                // message.
+                product.SetPurchaseLimit(entry.GroupId, entry.Limit);
             }
+
+            logger.LogInformation
+                ("CreateProduct: applied {OverrideCount} user-specified purchase-limit override(s) for new product '{ProductName}'.",
+                 command.PurchaseLimits.Count, command.Name);
         }
 
         // ------------------------------------------------------------------

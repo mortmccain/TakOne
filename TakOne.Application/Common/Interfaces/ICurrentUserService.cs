@@ -24,10 +24,20 @@ public interface ICurrentUserService
     string FullName { get; }
 
     /// <summary>
-    /// The customer group name of the authenticated user, or null if the user
-    /// has no group (staff users). Used to look up per-product purchase limits.
+    /// The customer group Id of the authenticated user, or null if the
+    /// user has no group (staff users). Sourced from the "GroupId" claim
+    /// set at login time.
+    ///
+    /// NOTE (Salary feature, Step 3): This claim may be STALE — if an
+    /// admin reassigns the user's group AFTER they logged in, the claim
+    /// still reflects the OLD group. Handlers that need the CURRENT
+    /// group (e.g. for purchase-limit or salary-budget checks) MUST
+    /// re-load the user from the repository via
+    /// <see cref="IUserRepository.GetByIdAsync"/>. The claim is only
+    /// for fast-path UI gating (e.g. hiding the cart-budget bar for
+    /// staff users) — never for authoritative budget enforcement.
     /// </summary>
-    string? GroupName { get; }
+    Guid? GroupId { get; }
 
     /// <summary>
     /// The gender of the authenticated user ("Male" or "Female"), or null if

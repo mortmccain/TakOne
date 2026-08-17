@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CreateGroup.en-US.resx — English strings for CreateGroup.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Create Customer Group — TakOne</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Create Customer Group</value>
+  </data>
+
+  <data name="BackToManageGroups" xml:space="preserve">
+    <value>Back to Customer Groups</value>
+  </data>
+
+  <data name="FieldName" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>e.g. Management, Staff, Contractors</value>
+  </data>
+  <data name="NameHint" xml:space="preserve">
+    <value>Must be unique. 1–100 characters.</value>
+  </data>
+
+  <data name="FieldSalary" xml:space="preserve">
+    <value>Monthly salary budget</value>
+  </data>
+  <data name="FieldAmount" xml:space="preserve">
+    <value>Amount</value>
+  </data>
+  <data name="FieldCurrency" xml:space="preserve">
+    <value>Currency</value>
+  </data>
+  <data name="CurrencyPlaceholder" xml:space="preserve">
+    <value>Select currency…</value>
+  </data>
+  <data name="SalaryHint" xml:space="preserve">
+    <value>The maximum each customer in this group may spend per Persian calendar month. The currency also defines what currency of products they may buy.</value>
+  </data>
+
+  <data name="CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="CreateButton" xml:space="preserve">
+    <value>Create group</value>
+  </data>
+
+  <!-- Validation error keys — referenced by ErrorMessage on the form
+       model attributes. Keep these generic (no 'group' word needed for
+       admin-only vocabulary, but the page is admin-only so 'group' is
+       fine here). -->
+  <data name="ValidationError_NameRequired" xml:space="preserve">
+    <value>Group name is required.</value>
+  </data>
+  <data name="ValidationError_NameLength" xml:space="preserve">
+    <value>Group name must be 1–100 characters.</value>
+  </data>
+  <data name="ValidationError_AmountRequired" xml:space="preserve">
+    <value>Salary amount is required.</value>
+  </data>
+  <data name="ValidationError_AmountRange" xml:space="preserve">
+    <value>Salary amount cannot be negative.</value>
+  </data>
+  <data name="ValidationError_CurrencyRequired" xml:space="preserve">
+    <value>Currency is required.</value>
+  </data>
+  <data name="ValidationError_CurrencyLength" xml:space="preserve">
+    <value>Currency must be exactly 3 letters (ISO 4217 code).</value>
+  </data>
+
+  <!-- Help panel — explains the consequences of the fields the admin is
+       about to set. Important so they understand:
+         - What "monthly budget" means (spending ceiling per user per month).
+         - What "currency" means (also defines what currency of products the
+           group's customers may buy — enforced on every cart mutation).
+         - Bulk-default behavior (creating a group bulk-applies a default
+           purchase-limit of 1 to every existing product).
+         - Currency is permanent (cannot be changed after creation). -->
+  <data name="HelpCardTitle" xml:space="preserve">
+    <value>What you should know</value>
+  </data>
+  <data name="HelpLine_Budget" xml:space="preserve">
+    <value>The monthly budget is the spending ceiling per customer, per Persian calendar month. Draft cart totals count against it immediately; submitted sales count too. Cancellations refund automatically.</value>
+  </data>
+  <data name="HelpLine_Currency" xml:space="preserve">
+    <value>The currency also defines which currency of products this group's customers may buy. Currency match is enforced on every cart mutation, regardless of the global limit mode.</value>
+  </data>
+  <data name="HelpLine_BulkDefault" xml:space="preserve">
+    <value>Creating this group will bulk-apply a default per-product purchase limit of 1 to every existing product in the catalog. You can override individual limits later from Manage Products.</value>
+  </data>
+  <data name="HelpLine_Permanent" xml:space="preserve">
+    <value>The currency cannot be changed after creation. To use a different currency, deactivate this group and create a new one.</value>
+  </data>
+
+  <data name="SuccessTitle" xml:space="preserve">
+    <value>Group created</value>
+  </data>
+  <data name="SuccessSummary" xml:space="preserve">
+    <value>The customer group has been created and default purchase limits have been applied.</value>
+  </data>
+
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_Generic" xml:space="preserve">
+    <value>We couldn't create the group. Please try again.</value>
+  </data>
+
+</root>

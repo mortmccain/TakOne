@@ -18,6 +18,10 @@ public sealed class QuickReorderLastSaleCommandHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        IUserRepository userRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
+        ISalaryBudgetService salaryBudgetService,
+        ICartMutationLock cartMutationLock,
         IUnitOfWork unitOfWork,
         ILogger<QuickReorderLastSaleCommandHandler> logger,
         CancellationToken cancellationToken
@@ -30,6 +34,27 @@ public sealed class QuickReorderLastSaleCommandHandler
         {
             return Result<Guid>.Failure("Authentication required.");
         }
+
+        // ------------------------------------------------------------------
+        // ACQUIRE PER-USER CART MUTATION LOCK (Step 4 wiring).
+        //
+        // Quick Reorder is a SELF-BUY flow (the current user is both the
+        // customer and the creator — see Sale.Create below). The lock is
+        // therefore acquired on currentUser.UserId.
+        //
+        // The lock serializes ALL cart mutations for this user. Without
+        // it, a concurrent Add-to-cart or Remove-line could change the
+        // draft state between our read of `existingDraft` (line 4 below)
+        // and our add-line loop — producing inconsistent budget / limit
+        // clamping.
+        //
+        // We acquire the lock BEFORE reading the user / last sale so that
+        // the salary budget check below uses the authoritative post-lock
+        // value (no concurrent invocation can mutate the cart between
+        // our budget read and our add-line commit).
+        // ------------------------------------------------------------------
+        await using var _cartLockHandle = await cartMutationLock.AcquireAsync
+            (currentUser.UserId, cancellationToken);
 
         // ------------------------------------------------------------------
         // 1. Find the user's most-recent submitted sale (with line items).
@@ -92,7 +117,36 @@ public sealed class QuickReorderLastSaleCommandHandler
         //    ghost draft from the old buggy code (self-healing), we
         //    hard-delete it.
         // ------------------------------------------------------------------
-        var groupName = currentUser.GroupName;
+        // 2b. Resolve the current caller's GroupId FRESH from the DB
+        //     (after lock acquired — see lock block above).
+        //     The GroupId claim on the auth cookie is a snapshot from
+        //     login time and goes stale when an admin reassigns the user's
+        //     group after they're already logged in. Reading from the DB
+        //     guarantees the limit reflects the user's CURRENT group, so
+        //     the per-product clamping below is correct without requiring
+        //     a re-login.
+        //
+        //     For staff users, GroupId is null → no per-product cap and
+        //     no currency / salary-budget enforcement.
+        //
+        //     Resolve the salary budget info ONCE here (when budget is
+        //     enforced) so we can clamp the per-line qty against the
+        //     remaining budget across the entire reorder batch. The
+        //     remaining budget DECREMENTS as we add lines — if the user
+        //     is repeating 5 lines that together exceed the budget, we
+        //     clamp each line proportionally (oldest first) until the
+        //     remaining budget is 0, then skip the rest.
+        // ------------------------------------------------------------------
+        var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
+        var groupId = freshUser?.GroupId;
+
+        var salaryBudgetEnforced = groupId is not null
+            && await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken);
+        var salaryBudgetInfo = salaryBudgetEnforced
+            ? await salaryBudgetService.GetBudgetInfoAsync(currentUser.UserId, cancellationToken)
+            : null;
+        var remainingBudget = salaryBudgetInfo?.Remaining ?? decimal.MaxValue;
+
         var linesToAdd = new List<(Product Product, int Quantity, int? PurchaseLimit)>();
 
         // We need the existing draft's line quantities to compute "remaining
@@ -114,11 +168,33 @@ public sealed class QuickReorderLastSaleCommandHandler
                 continue;
             }
 
+            // ------------------------------------------------------------------
+            // CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
+            // A customer whose salary is in IRR cannot buy a product priced
+            // in USD. Skip the line silently (the user can manually add it
+            // if they switch groups — but that's an admin action).
+            // ------------------------------------------------------------------
+            if (groupId is not null)
+            {
+                var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
+                    (product.Id, groupId, cancellationToken);
+
+                if (!currencyOk)
+                {
+                    logger.LogInformation
+                        ("QuickReorderLastSale: skipping line for product {ProductId} " +
+                         "(currency mismatch with user {UserId}'s salary).",
+                        product.Id, currentUser.UserId);
+                    continue;
+                }
+            }
+
             // Current per-group limit for this caller (null for staff).
             int? purchaseLimit = null;
-            if (!string.IsNullOrWhiteSpace(groupName))
+            if (groupId is not null)
             {
-                purchaseLimit = product.GetPurchaseLimitForGroup(groupName)?.Limit;
+                purchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
+                    (product.Id, groupId, cancellationToken);
             }
 
             // Existing draft quantity for this product (0 if no draft or
@@ -127,7 +203,7 @@ public sealed class QuickReorderLastSaleCommandHandler
                 .Where(li => li.ProductId == line.ProductId)
                 .Sum(li => li.Quantity) ?? 0;
 
-            // Clamp: min(original, stock, remainingLimit).
+            // Clamp: min(original, stock, remainingLimit, remainingBudget).
             var clamped = line.Quantity;
             if (clamped > product.StockQuantity)
             {
@@ -142,10 +218,46 @@ public sealed class QuickReorderLastSaleCommandHandler
                 }
             }
 
+            // ------------------------------------------------------------------
+            // SALARY BUDGET CLAMP: each line must not push the consumed
+            // amount past the salary. We clamp the qty DOWN so the line's
+            // total fits within the remaining budget. If the line's unit
+            // price alone exceeds the remaining budget, we skip the line.
+            //
+            // remainingBudget is updated AFTER clamping each line so the
+            // NEXT line in the loop sees the decremented value.
+            // ------------------------------------------------------------------
+            if (salaryBudgetEnforced && salaryBudgetInfo is not null)
+            {
+                var unitPrice = product.Price.Amount;
+                if (unitPrice <= 0m || unitPrice > remainingBudget)
+                {
+                    logger.LogInformation
+                        ("QuickReorderLastSale: skipping line for product {ProductId} " +
+                         "(unit price {UnitPrice} exceeds remaining budget {Remaining}, currency {Currency}).",
+                         product.Id, unitPrice, remainingBudget, salaryBudgetInfo.Salary.Currency);
+                    continue;
+                }
+
+                // maxAffordableQty = floor(remainingBudget / unitPrice)
+                var maxAffordableQty = (int)Math.Floor(remainingBudget / unitPrice);
+                if (clamped > maxAffordableQty)
+                {
+                    clamped = maxAffordableQty;
+                }
+            }
+
             if (clamped < 1)
             {
-                // Limit already exhausted in draft OR stock is 0. Skip silently.
+                // Limit already exhausted in draft OR stock is 0 OR budget
+                // exhausted. Skip silently.
                 continue;
+            }
+
+            // Decrement the remaining budget by the line's total cost.
+            if (salaryBudgetEnforced && salaryBudgetInfo is not null)
+            {
+                remainingBudget -= clamped * product.Price.Amount;
             }
 
             linesToAdd.Add((product, clamped, purchaseLimit));

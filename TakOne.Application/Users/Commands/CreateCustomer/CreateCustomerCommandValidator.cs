@@ -7,13 +7,13 @@ namespace TakOne.Application.Users.Commands.CreateCustomer;
 /// FluentValidation validator for <see cref="CreateCustomerCommand"/>.
 ///
 /// Only checks primitive, self-contained properties. Cross-aggregate
-/// checks (WorkerId uniqueness, email uniqueness) are the handler's job.
+/// checks (WorkerId uniqueness, email uniqueness, Group existence) are
+/// the handler's job.
 /// </summary>
 public sealed class CreateCustomerCommandValidator : AbstractValidator<CreateCustomerCommand>
 {
     public const int MaxWorkerIdLength = 100;
     public const int MaxFullNameLength = 200;
-    public const int MaxGroupNameLength = 100;
     public const int MaxEmailLength = 256; // RFC 5321 practical limit
     public const int MinPasswordLength = 8;
     public const int MaxPasswordLength = 100;
@@ -30,10 +30,12 @@ public sealed class CreateCustomerCommandValidator : AbstractValidator<CreateCus
             .MaximumLength(MaxFullNameLength)
             .WithMessage($"Full name cannot exceed {MaxFullNameLength} characters.");
 
-        RuleFor(x => x.GroupName)
-            .NotEmpty().WithMessage("Group name is required for customers.")
-            .MaximumLength(MaxGroupNameLength)
-            .WithMessage($"Group name cannot exceed {MaxGroupNameLength} characters.");
+        // GroupId must be a non-empty Guid. The handler verifies the group
+        // exists via ICustomerGroupRepository.GetByIdAsync — here we only
+        // check it's not Guid.Empty (programmer error from a UI that forgot
+        // to populate the dropdown).
+        RuleFor(x => x.GroupId)
+            .NotEmpty().WithMessage("A customer group is required for new customers.");
 
         RuleFor(x => x.Email)
             // Email is OPTIONAL — employees don't have company emails, and

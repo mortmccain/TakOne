@@ -42,17 +42,17 @@ public sealed class SetProductPurchaseLimitCommandHandler
 
         // Delegate to the aggregate. SetPurchaseLimit:
         //   - constructs a new CustomerGroupPurchaseLimit value object
-        //     (throws DomainException on invalid groupName or limit)
-        //   - removes any existing limit for the same group (by GroupName match)
+        //     (throws DomainException on invalid groupId or limit)
+        //   - removes any existing limit for the same group (by GroupId match)
         //   - adds the new value object to the owned collection
         // EF Core will track the owned-collection change and persist it.
-        product.SetPurchaseLimit(command.GroupName, command.Limit);
+        product.SetPurchaseLimit(command.GroupId, command.Limit);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("SetProductPurchaseLimit: limit for group '{Group}' on product {ProductId} set to {Limit} by user {UserId}.",
-            command.GroupName, product.Id, command.Limit, currentUser.UserId);
+            ("SetProductPurchaseLimit: limit for group {GroupId} on product {ProductId} set to {Limit} by user {UserId}.",
+            command.GroupId, product.Id, command.Limit, currentUser.UserId);
 
         return Result.Success();
     }

@@ -46,13 +46,13 @@ public sealed class RemoveProductPurchaseLimitCommandHandler
         // We persist unconditionally: in the idempotent no-op case, EF Core
         // simply won't detect any changes and SaveChangesAsync is a null-op
         // round-trip. Acceptable cost for simpler code.
-        product.RemovePurchaseLimit(command.GroupName);
+        product.RemovePurchaseLimit(command.GroupId);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("RemoveProductPurchaseLimit: limit for group '{Group}' removed from product {ProductId} (if it existed) by user {UserId}.",
-            command.GroupName, product.Id, currentUser.UserId);
+            ("RemoveProductPurchaseLimit: limit for group {GroupId} removed from product {ProductId} (if it existed) by user {UserId}.",
+            command.GroupId, product.Id, currentUser.UserId);
 
         return Result.Success();
     }

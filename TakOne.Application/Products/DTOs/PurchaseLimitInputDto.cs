@@ -9,23 +9,24 @@
 /// in the domain), so the command layer can stay decoupled from the
 /// <c>CustomerGroupPurchaseLimit</c> domain value object. The handler is
 /// responsible for converting each entry into a domain value object via
-/// <c>Product.SetPurchaseLimit(groupName, limit)</c>.
+/// <c>Product.SetPurchaseLimit(groupId, limit)</c>.
 ///
 /// Validation rules (mirrored from <c>CustomerGroupPurchaseLimit.Create</c>):
-///   - GroupName: 1..100 chars, non-whitespace
-///   - Limit:     &gt;= 1 (a limit of 0 would mean "can never buy", which
-///                isn't a meaningful configuration — use product deactivation
-///                instead)
+///   - GroupId: must be a non-empty Guid (must reference an existing
+///     CustomerGroup — verified by the handler via
+///     ICustomerGroupRepository.GetByIdAsync).
+///   - Limit:  &gt;= 1 (a limit of 0 would mean "can never buy", which
+///             isn't a meaningful configuration — use product deactivation
+///             instead)
 /// </summary>
 public sealed class PurchaseLimitInputDto
 {
     /// <summary>
-    /// The customer group name this limit applies to. Must match a
-    /// <c>User.GroupName</c> value used at customer-creation time, OR be a
-    /// new group name (forward-looking — limits can be set for groups
-    /// before any users exist in them).
+    /// The customer group Id this limit applies to. Must reference an
+    /// existing <c>CustomerGroup</c> row — the handler validates this
+    /// before calling <c>Product.SetPurchaseLimit</c>.
     /// </summary>
-    public string GroupName { get; init; } = string.Empty;
+    public Guid GroupId { get; init; }
 
     /// <summary>
     /// Maximum units of this product a single user in the group may have

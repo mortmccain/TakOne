@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EditGroup.en-US.resx — English strings for EditGroup.razor. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>Edit Customer Group — TakOne</value>
+  </data>
+  <data name="BackToManageGroups" xml:space="preserve">
+    <value>Back to Customer Groups</value>
+  </data>
+
+  <data name="Loading" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>Something went wrong</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>We couldn't load the group. Please try again.</value>
+  </data>
+  <data name="Error_Generic" xml:space="preserve">
+    <value>We couldn't save the changes. Please try again.</value>
+  </data>
+
+  <!-- Not-found state — shown when the {GroupId} doesn't exist in the DB. -->
+  <data name="NotFoundTitle" xml:space="preserve">
+    <value>Customer group not found</value>
+  </data>
+  <data name="NotFoundBody" xml:space="preserve">
+    <value>The group you're looking for doesn't exist or you don't have permission to view it.</value>
+  </data>
+
+  <!-- Summary card -->
+  <data name="SummaryCardTitle" xml:space="preserve">
+    <value>Group summary</value>
+  </data>
+  <data name="ColName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="ColSalary" xml:space="preserve">
+    <value>Monthly budget</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="ColActiveUsers" xml:space="preserve">
+    <value>Active customers</value>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>Created</value>
+  </data>
+  <data name="ColUpdatedAt" xml:space="preserve">
+    <value>Last updated</value>
+  </data>
+  <data name="NoActiveUsers" xml:space="preserve">
+    <value>No active customers in this group</value>
+  </data>
+
+  <!-- Status badges -->
+  <data name="StatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
+
+  <!-- Form fields -->
+  <data name="FieldName" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>e.g. Management, Staff, Contractors</value>
+  </data>
+
+  <data name="FieldSalary" xml:space="preserve">
+    <value>Monthly salary budget</value>
+  </data>
+  <data name="FieldAmount" xml:space="preserve">
+    <value>Amount</value>
+  </data>
+  <data name="FieldCurrency" xml:space="preserve">
+    <value>Currency</value>
+  </data>
+  <data name="CurrencyLockedTitle" xml:space="preserve">
+    <value>Currency is locked. To change currency, deactivate this group and create a new one.</value>
+  </data>
+  <data name="SalaryHint" xml:space="preserve">
+    <value>Changes take effect immediately for new purchases. The current month's consumed amount is not retroactively recalculated.</value>
+  </data>
+
+  <!-- Form actions -->
+  <data name="CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SaveButton" xml:space="preserve">
+    <value>Save changes</value>
+  </data>
+  <data name="ActivateButton" xml:space="preserve">
+    <value>Activate</value>
+  </data>
+  <data name="DeactivateButton" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+
+  <!-- Validation -->
+  <data name="ValidationError_NameRequired" xml:space="preserve">
+    <value>Group name is required.</value>
+  </data>
+  <data name="ValidationError_NameLength" xml:space="preserve">
+    <value>Group name must be 1–100 characters.</value>
+  </data>
+  <data name="ValidationError_AmountRequired" xml:space="preserve">
+    <value>Salary amount is required.</value>
+  </data>
+  <data name="ValidationError_AmountRange" xml:space="preserve">
+    <value>Salary amount cannot be negative.</value>
+  </data>
+
+  <!-- Help panel -->
+  <data name="HelpCardTitle" xml:space="preserve">
+    <value>What you should know</value>
+  </data>
+  <data name="HelpLine_Rename" xml:space="preserve">
+    <value>Renaming a group does not affect existing customer assignments or per-product purchase limits — they all point at the same group row.</value>
+  </data>
+  <data name="HelpLine_SalaryImmediate" xml:space="preserve">
+    <value>Salary changes take effect immediately for new cart mutations. Draft cart totals and already-submitted sales still count against the new ceiling.</value>
+  </data>
+  <data name="HelpLine_SalaryNegative" xml:space="preserve">
+    <value>If you lower the salary below what a customer has already spent this month, their remaining budget goes negative — they cannot add anything more until next month.</value>
+  </data>
+  <data name="HelpLine_CurrencyLocked" xml:space="preserve">
+    <value>Currency is locked. Changing it would invalidate already-purchased products priced in the old currency. To use a different currency, deactivate this group and create a new one.</value>
+  </data>
+  <data name="HelpLine_Deactivate" xml:space="preserve">
+    <value>Deactivating a group blocks new purchases by its customers. Submitted sales are kept; the group's per-product limits are preserved for reactivation.</value>
+  </data>
+
+  <!-- Toasts -->
+  <data name="NoChanges" xml:space="preserve">
+    <value>No changes to save.</value>
+  </data>
+  <data name="NoChangesTitle" xml:space="preserve">
+    <value>Nothing changed</value>
+  </data>
+  <data name="SuccessTitle" xml:space="preserve">
+    <value>Group updated</value>
+  </data>
+  <data name="SuccessSummary" xml:space="preserve">
+    <value>The customer group has been updated.</value>
+  </data>
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>Deactivate the group "{0}"? Customers in this group cannot make new purchases until it is reactivated. Their submitted sales are kept.</value>
+  </data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve">
+    <value>Group deactivated</value>
+  </data>
+  <data name="DeactivateSuccess" xml:space="preserve">
+    <value>"{0}" has been deactivated.</value>
+  </data>
+  <data name="ActivateSuccessTitle" xml:space="preserve">
+    <value>Group activated</value>
+  </data>
+  <data name="ActivateSuccess" xml:space="preserve">
+    <value>"{0}" has been activated and its customers can now shop.</value>
+  </data>
+
+</root>

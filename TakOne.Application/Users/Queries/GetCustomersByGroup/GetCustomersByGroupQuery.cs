@@ -26,13 +26,16 @@ namespace TakOne.Application.Users.Queries.GetCustomersByGroup;
 ///   paginated variant — but the current shop workflow expects the
 ///   employee to see the whole group at once so they can pick a customer
 ///   from a dropdown.
+///
+/// SALARY FEATURE (Step 3):
+///   Takes <c>GroupId</c> (Guid) instead of <c>GroupName</c> (string).
 /// </summary>
 [RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetCustomersByGroupQuery
 {
     /// <summary>
-    /// Exact group name to filter by. Required — passing null or whitespace
-    /// is rejected by the handler.
+    /// The customer group Id to filter by. Required — Guid.Empty is
+    /// rejected by the handler.
     /// </summary>
-    public string GroupName { get; init; } = string.Empty;
+    public Guid GroupId { get; init; }
 }

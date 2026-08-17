@@ -3,7 +3,7 @@
 namespace TakOne.Application.Users.Commands.AssignUserToGroup;
 
 /// <summary>
-/// Assigns a user to a customer group (sets <c>User.GroupName</c>).
+/// Assigns a user to a customer group (sets <c>User.GroupId</c>).
 ///
 /// AUTHORIZATION:
 ///   Employee, Manager, Admin — with role-based scope restrictions
@@ -19,7 +19,7 @@ namespace TakOne.Application.Users.Commands.AssignUserToGroup;
 ///   - Creating a new customer (when CreateCustomer wasn't used, or the
 ///     group was wrong).
 ///   - Moving a customer from one group to another (purchase limits
-///     change accordingly).
+///     and salary budget change accordingly).
 ///   - Converting a staff user to a customer (assign group + assign
 ///     Customer role via AssignUserRoleCommand).
 ///   - Inline "Change group" action on the Admin Users page (Phase 6.5).
@@ -27,11 +27,18 @@ namespace TakOne.Application.Users.Commands.AssignUserToGroup;
 /// NOTE:
 ///   This command does NOT assign the Customer ASP.NET Identity role —
 ///   that's a separate concern (AssignUserRoleCommand). The domain
-///   GroupName and the Identity role are intentionally decoupled so an
+///   GroupId and the Identity role are intentionally decoupled so an
 ///   admin can stage changes (set group first, then assign role).
 ///
 /// IDEMPOTENCY:
 ///   Assigning to the same group is allowed (the domain doesn't reject it).
+///
+/// SALARY FEATURE (Step 3):
+///   The command now takes <c>GroupId</c> (Guid) instead of <c>GroupName</c>
+///   (string). The UI must select from existing groups via the
+///   <c>GetAllCustomerGroupsQuery</c> — free-text group names are no
+///   longer supported. This guarantees every limit + salary assignment
+///   references a real <c>CustomerGroup</c> row.
 /// </summary>
 [RequireRoles(Roles.Employee, Roles.Manager, Roles.Admin)]
-public sealed record AssignUserToGroupCommand(Guid UserId, string GroupName);
+public sealed record AssignUserToGroupCommand(Guid UserId, Guid GroupId);

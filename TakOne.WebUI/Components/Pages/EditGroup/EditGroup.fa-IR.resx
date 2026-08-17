@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EditGroup.fa-IR.resx — Persian (Farsi) strings for EditGroup.razor.
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MainLayout based on the current culture. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="PageTitle" xml:space="preserve">
+    <value>ویرایش گروه مشتریان — تک‌وان</value>
+  </data>
+  <data name="BackToManageGroups" xml:space="preserve">
+    <value>بازگشت به گروه‌های مشتریان</value>
+  </data>
+
+  <data name="Loading" xml:space="preserve">
+    <value>در حال بارگذاری…</value>
+  </data>
+  <data name="ErrorTitle" xml:space="preserve">
+    <value>خطایی رخ داد</value>
+  </data>
+  <data name="Error_GenericLoad" xml:space="preserve">
+    <value>بارگذاری گروه ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="Error_Generic" xml:space="preserve">
+    <value>ذخیره تغییرات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <data name="NotFoundTitle" xml:space="preserve">
+    <value>گروه مشتریان یافت نشد</value>
+  </data>
+  <data name="NotFoundBody" xml:space="preserve">
+    <value>گروه مورد نظر وجود ندارد یا شما اجازه مشاهده آن را ندارید.</value>
+  </data>
+
+  <data name="SummaryCardTitle" xml:space="preserve">
+    <value>خلاصه گروه</value>
+  </data>
+  <data name="ColName" xml:space="preserve">
+    <value>نام</value>
+  </data>
+  <data name="ColSalary" xml:space="preserve">
+    <value>بودجه ماهانه</value>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+  </data>
+  <data name="ColActiveUsers" xml:space="preserve">
+    <value>مشتریان فعال</value>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>تاریخ ایجاد</value>
+  </data>
+  <data name="ColUpdatedAt" xml:space="preserve">
+    <value>آخرین به‌روزرسانی</value>
+  </data>
+  <data name="NoActiveUsers" xml:space="preserve">
+    <value>هیچ مشتری فعالی در این گروه نیست</value>
+  </data>
+
+  <data name="StatusActive" xml:space="preserve">
+    <value>فعال</value>
+  </data>
+  <data name="StatusInactive" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+
+  <data name="FieldName" xml:space="preserve">
+    <value>نام گروه</value>
+  </data>
+  <data name="FieldNamePlaceholder" xml:space="preserve">
+    <value>مثلاً: مدیریت، کارکنان، پیمانکاران</value>
+  </data>
+
+  <data name="FieldSalary" xml:space="preserve">
+    <value>بودجه حقوق ماهانه</value>
+  </data>
+  <data name="FieldAmount" xml:space="preserve">
+    <value>مبلغ</value>
+  </data>
+  <data name="FieldCurrency" xml:space="preserve">
+    <value>واحد پول</value>
+  </data>
+  <data name="CurrencyLockedTitle" xml:space="preserve">
+    <value>واحد پول قفل شده است. برای تغییر واحد پول، این گروه را غیرفعال کرده و گروه جدیدی بسازید.</value>
+  </data>
+  <data name="SalaryHint" xml:space="preserve">
+    <value>تغییرات بلافاصله برای خریدهای جدید اعمال می‌شود. مبلغ مصرف‌شده ماه جاری به‌صورت گذشته‌نگر بازمحاسبه نمی‌شود.</value>
+  </data>
+
+  <data name="CancelButton" xml:space="preserve">
+    <value>انصراف</value>
+  </data>
+  <data name="SaveButton" xml:space="preserve">
+    <value>ذخیره تغییرات</value>
+  </data>
+  <data name="ActivateButton" xml:space="preserve">
+    <value>فعال‌سازی</value>
+  </data>
+  <data name="DeactivateButton" xml:space="preserve">
+    <value>غیرفعال‌سازی</value>
+  </data>
+
+  <data name="ValidationError_NameRequired" xml:space="preserve">
+    <value>نام گروه الزامی است.</value>
+  </data>
+  <data name="ValidationError_NameLength" xml:space="preserve">
+    <value>نام گروه باید ۱ تا ۱۰۰ نویسه باشد.</value>
+  </data>
+  <data name="ValidationError_AmountRequired" xml:space="preserve">
+    <value>مبلغ حقوق الزامی است.</value>
+  </data>
+  <data name="ValidationError_AmountRange" xml:space="preserve">
+    <value>مبلغ حقوق نمی‌تواند منفی باشد.</value>
+  </data>
+
+  <data name="HelpCardTitle" xml:space="preserve">
+    <value>نکاتی که باید بدانید</value>
+  </data>
+  <data name="HelpLine_Rename" xml:space="preserve">
+    <value>تغییر نام گروه، تأثیری بر تخصیص مشتریان فعلی یا محدودیت‌های خرید هر محصول ندارد — همه به همان ردیف گروه اشاره می‌کنند.</value>
+  </data>
+  <data name="HelpLine_SalaryImmediate" xml:space="preserve">
+    <value>تغییرات حقوق بلافاصله برای تغییرات جدید سبد خرید اعمال می‌شود. مجموع سبد پیش‌نویس و سفارش‌های ثبت‌شده همچنان بر اساس سقف جدید محاسبه می‌شوند.</value>
+  </data>
+  <data name="HelpLine_SalaryNegative" xml:space="preserve">
+    <value>اگر حقوق را به زیر مبلغی که مشتری این ماه خرج کرده است کاهش دهید، بودجه باقی‌مانده او منفی می‌شود — تا ماه آینده نمی‌تواند چیزی به سبد اضافه کند.</value>
+  </data>
+  <data name="HelpLine_CurrencyLocked" xml:space="preserve">
+    <value>واحد پول قفل شده است. تغییر آن، محصولاتی که پیش‌تر با واحد پول قدیمی خریداری شده‌اند را نامعتبر می‌کند. برای استفاده از واحد پولی دیگر، این گروه را غیرفعال کرده و گروه جدیدی بسازید.</value>
+  </data>
+  <data name="HelpLine_Deactivate" xml:space="preserve">
+    <value>غیرفعال‌سازی گروه، خریدهای جدید توسط مشتریان آن را مسدود می‌کند. سفارش‌های ثبت‌شده نگه‌داری می‌شوند؛ محدودیت‌های هر محصول برای فعال‌سازی مجدد حفظ می‌شوند.</value>
+  </data>
+
+  <data name="NoChanges" xml:space="preserve">
+    <value>تغییری برای ذخیره وجود ندارد.</value>
+  </data>
+  <data name="NoChangesTitle" xml:space="preserve">
+    <value>تغییری داده نشد</value>
+  </data>
+  <data name="SuccessTitle" xml:space="preserve">
+    <value>گروه به‌روزرسانی شد</value>
+  </data>
+  <data name="SuccessSummary" xml:space="preserve">
+    <value>گروه مشتریان به‌روزرسانی شد.</value>
+  </data>
+  <data name="ConfirmDeactivate" xml:space="preserve">
+    <value>گروه «{0}» غیرفعال شود؟ مشتریان این گروه تا فعال‌سازی مجدد نمی‌توانند خرید جدیدی انجام دهند. سفارش‌های ثبت‌شده آن‌ها نگه‌داری می‌شود.</value>
+  </data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve">
+    <value>گروه غیرفعال شد</value>
+  </data>
+  <data name="DeactivateSuccess" xml:space="preserve">
+    <value>«{0}» غیرفعال شد.</value>
+  </data>
+  <data name="ActivateSuccessTitle" xml:space="preserve">
+    <value>گروه فعال شد</value>
+  </data>
+  <data name="ActivateSuccess" xml:space="preserve">
+    <value>«{0}» فعال شد و مشتریان آن اکنون می‌توانند خرید کنند.</value>
+  </data>
+
+</root>

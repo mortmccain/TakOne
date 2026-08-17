@@ -1,0 +1,456 @@
+﻿@* CreateGroup.razor — Salary-budget feature, Step 6
+
+   Staff-facing customer-group creation page at route `/Admin/Groups/Create`.
+   Reached from the "Create group" button on /Admin/Groups. Role-gated to
+   Admin / Manager via [Authorize(Roles=...)] as defense-in-depth. The
+   page-level gate is the first cut; the CreateCustomerGroupCommand
+   handler enforces stricter rules server-side (Manager or Admin only).
+
+   PURPOSE:
+     Lets admins/managers create a new customer group so the salary-budget
+     feature can be exercised end-to-end (a user must have a GroupId to
+     be subject to budget + currency-matching checks). Creating a group
+     also bulk-applies a default purchase-limit row of 1 to every existing
+     product (Step 5 wiring), so customers in the new group immediately
+     have a sensible per-product cap.
+
+   FORM FIELDS:
+     1. Name              (required, 1-100 chars; must be unique)
+     2. Salary Amount     (required, >= 0)
+     3. Salary Currency   (required, 3-letter ISO 4217 — dropdown with the
+                           most common currencies; user can also type a
+                           custom 3-letter code via AllowCustomValue)
+
+   STYLE PARITY WITH CREATEUSER / CREATEPRODUCT:
+     Mirrors CreateUser.razor's structure and styling:
+       - Same .create-grid layout (2fr form + 1fr help panel, collapses on
+         narrow screens).
+       - Same .form-section vertical-stack of fields.
+       - Same .form-actions row at the bottom (Cancel + Create).
+       - Same .form-error banner for server-side errors.
+       - Same .price-row pattern for amount + currency side-by-side.
+       - Same currency dropdown as CreateProduct (so the admin sees the
+         same currency list across both Create flows — consistency matters).
+
+   BULK-DEFAULT WARNING:
+     Creating a group bulk-applies a default purchase limit to every
+     existing product. The help panel on the right explains this so the
+     admin understands the impact before clicking Create. If the catalog
+     is large (> 1000 products), creation will take a few seconds — the
+     button shows a spinner during the round-trip.
+
+   CURRENCY NOTE:
+     The currency chosen here ALSO defines what currency of products the
+     group's customers may buy. Currency match is enforced on EVERY cart
+     mutation, in EVERY limit mode (including CountOnly), by
+     IPurchaseLimitPolicy. The currency CANNOT be changed after creation
+     (changing currency would invalidate already-purchased products
+     priced in the old currency) — to "change currency", deactivate this
+     group and create a new one. The help panel calls this out.
+
+   LOCALIZATION:
+     All user-visible strings via IStringLocalizer<CreateGroup> (Loc).
+     Keys defined in CreateGroup.en-US.resx + CreateGroup.fa-IR.resx.
+
+   ANTIFORGERY:
+     Required — EditForm with OnValidSubmit. Blazor Server circuits
+     already have an anti-forgery token established at circuit-start;
+     EditForm validates it automatically. *@
+
+@page "/Admin/Groups/Create"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.Commands.CreateCustomerGroup
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<CreateGroup> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+            .create-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+                gap: 2rem;
+                align-items: start;
+            }
+
+            @@media (max-width: 992px) {
+                .create-grid {
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem;
+                }
+            }
+
+            .form-section {
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+
+            .salary-row {
+                display: flex;
+                gap: 0.75rem;
+                align-items: flex-end;
+            }
+
+                .salary-row .salary-amount {
+                    flex: 1 1 auto;
+                }
+
+                .salary-row .salary-currency {
+                    flex: 0 0 220px;
+                }
+
+            .form-actions {
+                display: flex;
+                gap: 0.75rem;
+                justify-content: flex-end;
+                margin-top: 1rem;
+            }
+
+            .form-error {
+                margin-bottom: 1rem;
+            }
+
+            /* Help panel on the right — same pattern as CreateUser.razor.
+                           Sticky on desktop so it stays visible while the user scrolls
+                           the form on small screens. */
+            .help-panel {
+                position: sticky;
+                top: 1rem;
+            }
+
+                /* Section title — small heading inside the help card with
+                               a leading icon. Mirrors the .section-title pattern used
+                               on the Settings page's cards. */
+                .help-panel .section-title {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    font-weight: 600;
+                    margin-bottom: 0.75rem;
+                }
+
+                .help-panel ul {
+                    margin: 0.5rem 0 0 0;
+                    padding-inline-start: 1.25rem;
+                    color: var(--rz-text-secondary-color);
+                    line-height: 1.7;
+                }
+
+                .help-panel li {
+                    margin-bottom: 0.25rem;
+                }
+
+            @@media (max-width: 992px) {
+                .help-panel {
+                    position: static;
+                }
+            }
+
+            /* RTL fallback for RadzenNumeric — the inner input is forced
+                           LTR so the caret + digit grouping reads correctly in both
+                           LTR and RTL layouts. Same pattern as CreateProduct.razor. */
+            .salary-row .rz-numeric .rz-textbox {
+                direction: ltr;
+                text-align: left;
+            }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+    @* ── Breadcrumb + back button ──
+       ButtonStyle.Secondary + Variant.Outlined (NOT ButtonStyle.Light) —
+       the Light variant renders as flat gray text on light themes,
+       which is invisible. Secondary gives a visible outlined button
+       that works on both light and dark themes. Same pattern as
+       CreateUser.razor's back button. *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenButton Text="@Loc["BackToManageGroups"]"
+                      Icon="arrow_back"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
+                      Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
+    </RadzenStack>
+
+    @* ── Page header ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+        <RadzenIcon Icon="group_add" Style="font-size: 1.75rem; color: var(--rz-primary);" />
+        <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
+    </RadzenStack>
+
+    @* ── Main form ── *@
+    <div class="create-grid">
+        @* LEFT — form fields *@
+        <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem;">
+            <EditForm Model="@_model"
+                      OnValidSubmit="@HandleSubmitAsync"
+                      OnInvalidSubmit="@HandleInvalidSubmit"
+                      FormName="createGroup">
+                <DataAnnotationsValidator />
+
+                @* Server-side error banner (e.g. "A group with name 'X' already exists.") *@
+                @if (!string.IsNullOrEmpty(_submitError))
+                {
+                    <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                 Text="@_submitError"
+                                 AlertStyle="AlertStyle.Danger"
+                                 Variant="Variant.Filled"
+                                 ShowIcon="true"
+                                 Class="form-error" />
+                }
+
+                <div class="form-section">
+                    @* ── Name ── *@
+                    <div>
+                        <RadzenFormField Text="@Loc["FieldName"]" Style="width: 100%;">
+                            <RadzenTextBox @bind-Value="_model.Name"
+                                           Placeholder="@Loc["FieldNamePlaceholder"]"
+                                           TValue="string"
+                                           Style="width: 100%;" />
+                        </RadzenFormField>
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                            @Loc["NameHint"]
+                        </RadzenText>
+                    </div>
+
+                    @* ── Salary Amount + Currency ──
+                       Side-by-side row: amount takes the remaining space,
+                       currency is fixed 220px. Same .salary-row pattern as
+                       CreateProduct.razor's .price-row. *@
+                    <div>
+                        <RadzenText Text="@Loc["FieldSalary"]"
+                                    TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
+
+                        <div class="salary-row">
+                            <RadzenFormField Text="@Loc["FieldAmount"]" Class="salary-amount" Style="width: 100%;">
+                                <RadzenNumeric @bind-Value="_model.SalaryAmount"
+                                               TValue="decimal"
+                                               Min="0"
+                                               Step="1000"
+                                               Style="width: 100%;" />
+                            </RadzenFormField>
+
+                            <RadzenFormField Text="@Loc["FieldCurrency"]" Class="salary-currency" Style="width: 100%;">
+                                <RadzenDropDown @bind-Value="_model.SalaryCurrency"
+                                                Data="@_currencyOptions"
+                                                TValue="string"
+                                                TextProperty="DisplayName"
+                                                ValueProperty="Code"
+                                                AllowCustomValue="true"
+                                                AllowFiltering="true"
+                                                Placeholder="@Loc["CurrencyPlaceholder"]"
+                                                Style="width: 100%;" />
+                            </RadzenFormField>
+                        </div>
+
+                        <RadzenText TextStyle="TextStyle.Caption"
+                                    Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                            @Loc["SalaryHint"]
+                        </RadzenText>
+                    </div>
+
+                    @* ── Form actions ── *@
+                    <div class="form-actions">
+                        <RadzenButton Text="@Loc["CancelButton"]"
+                                      Icon="close"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Disabled="@_isSubmitting"
+                                      Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
+
+                        <RadzenButton Text="@Loc["CreateButton"]"
+                                      Icon="check"
+                                      ButtonType="ButtonType.Submit"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Variant="Variant.Filled"
+                                      Disabled="@_isSubmitting">
+                            @if (_isSubmitting)
+                            {
+                                <RadzenProgressBarCircular ShowValue="false"
+                                                           Mode="ProgressBarMode.Indeterminate"
+                                                           Size="ProgressBarCircularSize.Small"
+                                                           Style="margin-inline-end: 0.5rem;" />
+                            }
+                        </RadzenButton>
+                    </div>
+                </div>
+            </EditForm>
+        </RadzenCard>
+
+        @* RIGHT — help panel. Explains:
+             - What "monthly budget" means (spending ceiling per user per month).
+             - What "currency" means (also defines what currency of products
+               the group's customers may buy — enforced on every cart mutation).
+             - Bulk-default behavior (creating a group bulk-applies a default
+               purchase-limit of 1 to every existing product).
+             - Currency is permanent (cannot be changed after creation —
+               to "change currency", deactivate this group and create a new one). *@
+        <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+            <RadzenCard Variant="Variant.Outlined" Class="help-panel" Style="padding: 1.25rem;">
+                <div class="section-title">
+                    <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
+                    <span>@Loc["HelpCardTitle"]</span>
+                </div>
+                <ul>
+                    <li>@Loc["HelpLine_Budget"]</li>
+                    <li>@Loc["HelpLine_Currency"]</li>
+                    <li>@Loc["HelpLine_BulkDefault"]</li>
+                    <li>@Loc["HelpLine_Permanent"]</li>
+                </ul>
+            </RadzenCard>
+        </RadzenStack>
+    </div>
+</RadzenStack>
+
+@code {
+    // ── State ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The form model. Bound via EditForm + DataAnnotationsValidator —
+    /// the [Required] + [Range] attributes below provide the FIRST wave
+    /// of validation (fires in OnValidSubmit / OnInvalidSubmit). The
+    /// CreateCustomerGroupCommandValidator provides the SECOND wave
+    /// server-side via Wolverine's pipeline (more business-rule checks:
+    /// exact length bounds, currency 3-letter format). The handler
+    /// itself provides the THIRD wave (name uniqueness in the DB).
+    /// </summary>
+    private sealed class CreateGroupForm
+    {
+        [Required(ErrorMessage = "ValidationError_NameRequired")]
+        [StringLength(100, ErrorMessage = "ValidationError_NameLength")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "ValidationError_AmountRequired")]
+        [Range(0, double.MaxValue, ErrorMessage = "ValidationError_AmountRange")]
+        public decimal SalaryAmount { get; set; } = 0;
+
+        [Required(ErrorMessage = "ValidationError_CurrencyRequired")]
+        [StringLength(3, MinimumLength = 3, ErrorMessage = "ValidationError_CurrencyLength")]
+        public string SalaryCurrency { get; set; } = "IRR";
+    }
+
+    private readonly CreateGroupForm _model = new();
+
+    private bool _isSubmitting;
+    private string? _submitError;
+
+    /// <summary>
+    /// The most common ISO 4217 currency codes — identical to
+    /// CreateProduct.razor's _currencyOptions so the admin sees the
+    /// same currency list across both Create flows. The user can also
+    /// type a custom 3-letter code via the dropdown's AllowCustomValue.
+    ///
+    /// DISPLAY FORMAT (per the user's spec):
+    ///   - In fa-IR (Persian) UI:  "IRR (ریال)"
+    ///   - In en-US (English) UI:  "IRR (Rial)"
+    /// Only the matching language's name is shown — the code is always
+    /// Latin (ISO 4217) so it's recognizable in both UIs.
+    /// </summary>
+    private readonly List<CurrencyOption> _currencyOptions = new()
+    {
+        new() { Code = "IRR", EnglishName = "Rial",           PersianName = "ریال" },
+        new() { Code = "USD", EnglishName = "US dollar",      PersianName = "دلار" },
+        new() { Code = "EUR", EnglishName = "Euro",           PersianName = "یورو" },
+        new() { Code = "GBP", EnglishName = "Pound sterling", PersianName = "پوند" },
+        new() { Code = "JPY", EnglishName = "Japanese yen",   PersianName = "ین ژاپن" },
+        new() { Code = "CNY", EnglishName = "Chinese yuan",   PersianName = "یوآن چین" },
+        new() { Code = "AED", EnglishName = "UAE dirham",     PersianName = "درهم امارات" },
+        new() { Code = "TRY", EnglishName = "Turkish lira",   PersianName = "لیر ترکیه" },
+        new() { Code = "CAD", EnglishName = "Canadian dollar", PersianName = "دلار کانادا" },
+        new() { Code = "AUD", EnglishName = "Australian dollar", PersianName = "دلار استرالیا" }
+    };
+
+    private sealed class CurrencyOption
+    {
+        public string Code { get; init; } = string.Empty;
+        public string EnglishName { get; init; } = string.Empty;
+        public string PersianName { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Culture-aware display string — same logic as CreateProduct's
+        /// CurrencyOption.DisplayName. Re-evaluated on every render so
+        /// language switches pick up without rebuilding the list.
+        /// </summary>
+        public string DisplayName =>
+            CultureInfo.CurrentUICulture.Name
+                .StartsWith("fa", StringComparison.OrdinalIgnoreCase)
+                ? $"{Code} ({PersianName})"
+                : $"{Code} ({EnglishName})";
+    }
+
+    // ── Submit handlers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Called when EditForm validation passes. Dispatches the
+    /// CreateCustomerGroupCommand via Wolverine. On success, navigates
+    /// back to /Admin/Groups with a success toast. On failure, surfaces
+    /// the server error in the form-error banner.
+    /// </summary>
+    private async Task HandleSubmitAsync()
+    {
+        _submitError = null;
+        _isSubmitting = true;
+
+        try
+        {
+            // Trim whitespace from name + currency before submission —
+            // prevents " ABC " from being treated as different from "ABC".
+            _model.Name = _model.Name.Trim();
+            _model.SalaryCurrency = _model.SalaryCurrency.Trim().ToUpperInvariant();
+
+            var command = new CreateCustomerGroupCommand(
+                _model.Name,
+                _model.SalaryAmount,
+                _model.SalaryCurrency);
+
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["SuccessTitle"], summary: Loc["SuccessSummary"]);
+                Navigation.NavigateTo("/Admin/Groups", forceLoad: false);
+            }
+            else
+            {
+                // The handler returns friendly, user-actionable messages
+                // (e.g. "A customer group with the name 'X' already exists.
+                // Choose a different name.") — surface verbatim.
+                _submitError = result.Error ?? Loc["Error_Generic"];
+            }
+        }
+        catch
+        {
+            _submitError = Loc["Error_Generic"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    /// <summary>
+    /// Called when EditForm validation FAILS (e.g. user submitted with an
+    /// empty Name). We just clear the previous server-side error banner
+    /// so the user sees the field-level errors only (no stale banner).
+    /// The DataAnnotationsValidator already renders field-level errors
+    /// next to each RadzenFormField.
+    /// </summary>
+    private Task HandleInvalidSubmit()
+    {
+        _submitError = null;
+        return Task.CompletedTask;
+    }
+}

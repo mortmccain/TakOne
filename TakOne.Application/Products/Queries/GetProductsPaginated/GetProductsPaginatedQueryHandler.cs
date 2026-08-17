@@ -158,8 +158,8 @@ public sealed class GetProductsPaginatedQueryHandler
         //
         //    MY PURCHASE LIMIT:
         //    The current user's per-product limit is resolved here. We
-        //    load the user's GroupName FRESH from the database (not from
-        //    the GroupName claim on the auth cookie) because the claim is
+        //    load the user's GroupId FRESH from the database (not from
+        //    the GroupId claim on the auth cookie) because the claim is
         //    a snapshot from login time and goes stale when an admin
         //    assigns the user to a group after they're already logged in.
         //    Reading from the DB guarantees the limit reflects the user's
@@ -175,12 +175,12 @@ public sealed class GetProductsPaginatedQueryHandler
         var searchTerm = query.SearchTerm?.Trim();
         var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
 
-        // Load the current user's GroupName FRESH from the DB. Single
-        // round-trip; cached in `groupName` for the per-product lookup
-        // below. If the user is staff (no GroupName in the DB either),
-        // groupName is null and no per-product cap applies.
+        // Load the current user's GroupId FRESH from the DB. Single
+        // round-trip; cached in `groupId` for the per-product lookup
+        // below. If the user is staff (no GroupId in the DB either),
+        // groupId is null and no per-product cap applies.
         var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
-        var groupName = freshUser?.GroupName;
+        var groupId = freshUser?.GroupId;
 
         var dtos = paginated.Items
             .Where(p => includeInactive || p.StockQuantity > 0)
@@ -259,8 +259,8 @@ public sealed class GetProductsPaginatedQueryHandler
                     SubSubCategoryName = subSubName,
                     SubSubCategoryIsActive = subSubActive,
 
-                    MyPurchaseLimit = !string.IsNullOrWhiteSpace(groupName)
-                        ? p.GetPurchaseLimitForGroup(groupName)?.Limit
+                    MyPurchaseLimit = groupId is not null
+                        ? p.GetPurchaseLimitForGroup(groupId.Value)?.Limit
                         : null
                 };
             })

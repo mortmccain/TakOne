@@ -13,8 +13,8 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   - Id         (uniqueidentifier, PK)
 ///   - WorkerId   (nvarchar(100), NOT NULL, UNIQUE)
 ///   - FullName   (nvarchar(200), NOT NULL)
-///   - GroupName  (nvarchar(100), NULL)
-///   - Gender     (int, NOT NULL, default 0 = Male) — Phase 0.5
+///   - GroupId    (uniqueidentifier, NULL — FK to CustomerGroups.Id)
+///   - Gender     (int, NOT NULL, default 0 = Male)
 ///   - IsActive   (bit, NOT NULL)
 ///
 /// RELATIONSHIP TO ASP.NET IDENTITY's <c>ApplicationUser</c>:
@@ -35,10 +35,17 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///   exists, an ApplicationUser with the same Id also exists" via the
 ///   <c>IUserAccountService.CreateIdentityAccountAsync</c> method.
 ///
+/// RELATIONSHIP TO <c>CustomerGroup</c> (Salary-feature Step 2):
+///   <c>GroupId</c> is a proper FK to <c>CustomerGroups.Id</c>. Null is
+///   allowed (staff users have no group). The FK uses <c>Restrict</c>
+///   delete behavior — deleting a CustomerGroup that still has users is
+///   rejected by the DB. The application layer must reassign or remove all
+///   users from a group before deleting it (see Step 5's delete-group flow).
+///
 /// INDEXES:
 ///   - Unique index on <c>WorkerId</c> — login identifier, must be unique.
-///   - Non-unique index on <c>GroupName</c> — for the staff dashboard query
-///     "all customers in group X" (used by IUserRepository.GetByGroupNameAsync).
+///   - Non-unique index on <c>GroupId</c> — for the staff dashboard query
+///     "all customers in group X" (used by IUserRepository.GetByGroupIdAsync).
 ///   - Non-unique index on <c>IsActive</c> — for the admin "active/inactive
 ///     users" filter (used by IUserRepository.GetPaginatedAsync).
 ///
@@ -59,7 +66,26 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.Property(u => u.WorkerId).HasMaxLength(100).IsRequired();
         builder.Property(u => u.FullName).HasMaxLength(200).IsRequired();
-        builder.Property(u => u.GroupName).HasMaxLength(100);
+
+        // ------------------------------------------------------------------
+        // GroupId — nullable FK to CustomerGroups.Id.
+        //
+        // Staff users (employees, managers, read-only, admin) have
+        // GroupId = null. Only customers are assigned to a group.
+        //
+        // The column is nullable, but the FK constraint enforces that any
+        // non-null value MUST reference an existing CustomerGroup.Id.
+        // ------------------------------------------------------------------
+        builder.Property(u => u.GroupId);
+
+        // FK relationship: User.GroupId → CustomerGroups.Id, Restrict delete.
+        // Restrict means: trying to delete a CustomerGroup that still has
+        // users referencing it will throw a DbUpdateException (FK violation)
+        // — the application layer must reassign or remove users first.
+        builder.HasOne<TakOne.Domain.Customers.Entities.CustomerGroup>()
+            .WithMany()
+            .HasForeignKey(u => u.GroupId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Gender — stored as int (EF Core's default enum mapping). NOT NULL
         // with column default 0 (Male) so existing rows survive the
@@ -77,9 +103,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // against races.
         builder.HasIndex(u => u.WorkerId).IsUnique();
 
-        // GroupName index — used by GetByGroupNameAsync and the GroupName
-        // filter in GetPaginatedAsync. Non-unique (many users share a group).
-        builder.HasIndex(u => u.GroupName);
+        // GroupId index — used by GetByGroupIdAsync and the GroupId filter
+        // in GetPaginatedAsync. Non-unique (many users share a group).
+        builder.HasIndex(u => u.GroupId);
 
         // IsActive index — used by the active/inactive filter in
         // GetPaginatedAsync. Non-unique (most users are active).

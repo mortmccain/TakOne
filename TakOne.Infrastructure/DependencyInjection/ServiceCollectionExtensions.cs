@@ -426,11 +426,20 @@ public static class ServiceCollectionExtensions
         //    All Scoped — they depend on the scoped ApplicationDbContext.
         //    Each handler invocation gets a fresh DbContext + fresh repository
         //    instances; they're disposed together at the end of the scope.
+        //
+        //    Salary-feature Step 2 added:
+        //      - ICustomerGroupRepository  → CustomerGroupRepository
+        //      - ISystemSettingsRepository → SystemSettingsRepository
+        //        (kept under Infrastructure/Services/ because it owns the
+        //         singleton-row lazy-create + SaveChangesAsync logic that
+        //         differs from a typical CRUD repository)
         // ------------------------------------------------------------------
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<ISaleRepository, SaleRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<ICustomerGroupRepository, CustomerGroupRepository>();
+        services.AddScoped<ISystemSettingsRepository, SystemSettingsRepository>();
 
         // ------------------------------------------------------------------
         // 5. Application-service registrations.
@@ -438,10 +447,59 @@ public static class ServiceCollectionExtensions
         //    All Scoped for the same reason as the repositories — they depend
         //    on the scoped ApplicationDbContext (and UserAccountService also
         //    depends on the scoped UserManager<ApplicationUser>).
+        //
+        //    Salary-feature Step 2 added:
+        //      - ISystemSettingsService → SystemSettingsService
+        //        (wraps ISystemSettingsRepository with an IMemoryCache so
+        //         hot-path purchase-limit checks don't hit the DB)
         // ------------------------------------------------------------------
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ISaleNumberGenerator, SaleNumberGenerator>();
         services.AddScoped<IUserAccountService, UserAccountService>();
+        services.AddScoped<ISystemSettingsService, SystemSettingsService>();
+
+        // ------------------------------------------------------------------
+        // 5b. Salary-feature Step 3 — purchase-limit policy + salary budget service.
+        //
+        //    - IPurchaseLimitPolicy → PurchaseLimitPolicy
+        //      Centralizes the system-wide purchase-limit policy: count
+        //      limits, salary budget enforcement, currency matching.
+        //      Reads the current LimitMode from cached
+        //      ISystemSettingsService (zero DB hits in steady state).
+        //
+        //    - ISalaryBudgetService → SalaryBudgetService
+        //      Computes the customer's monthly salary budget snapshot
+        //      (salary, consumed, remaining, window start/end) for the
+        //      CartBudgetBar UI + the 5 sale-mutating handlers.
+        //
+        //    Both are Scoped — they depend on Scoped repositories and
+        //    the Scoped ISystemSettingsService. Lifetime matches the
+        //    request/handler scope.
+        // ------------------------------------------------------------------
+        services.AddScoped<IPurchaseLimitPolicy, PurchaseLimitPolicy>();
+        services.AddScoped<ISalaryBudgetService, SalaryBudgetService>();
+
+        // ------------------------------------------------------------------
+        // 5b-extra. Per-user cart mutation lock (Step 4 wiring).
+        //
+        //     ICartMutationLock → CartMutationLock — registered as
+        //     SINGLETON so all requests share the same ConcurrentDictionary
+        //     of per-userId SemaphoreSlim instances. The 5 sale-mutating
+        //     handlers (CreateOrAppendSale, AddItemToSale,
+        //     UpdateSaleLineItem, RemoveSaleLineItem, QuickReorderLastSale)
+        //     acquire this lock before reading or mutating a customer's
+        //     cart, serializing concurrent invocations for the same user.
+        //
+        //     Why Singleton: a Scoped lifetime would create a new
+        //     dictionary per request, defeating the entire purpose —
+        //     concurrent requests wouldn't see each other's semaphores.
+        //
+        //     See ICartMutationLock / CartMutationLock for the full design
+        //     rationale (per-user not per-sale; acquire on sale.CustomerId
+        //     not currentUser.UserId so staff-editing-on-behalf serializes
+        //     on the customer; etc.).
+        // ------------------------------------------------------------------
+        services.AddSingleton<ICartMutationLock, CartMutationLock>();
 
         // ------------------------------------------------------------------
         // 5c. Claims transformation — keeps FullName claim current.

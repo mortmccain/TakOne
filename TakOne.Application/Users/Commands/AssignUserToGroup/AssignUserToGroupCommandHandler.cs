@@ -142,16 +142,16 @@ public sealed class AssignUserToGroupCommandHandler
 
         // ------------------------------------------------------------------
         // 3. Delegate to the aggregate. AssignToGroup validates the group
-        //    name (non-empty, ≤ 100 chars). DomainException is caught by
-        //    middleware.
+        //    Id (must not be Guid.Empty — domain invariant). DomainException
+        //    is caught by middleware.
         // ------------------------------------------------------------------
-        user.AssignToGroup(command.GroupName);
+        user.AssignToGroup(command.GroupId);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("AssignUserToGroup: user {UserId} (worker ID '{WorkerId}') assigned to group '{Group}' by user {ActorId}.",
-            user.Id, user.WorkerId, user.GroupName, currentUser.UserId);
+            ("AssignUserToGroup: user {UserId} (worker ID '{WorkerId}') assigned to group {GroupId} by user {ActorId}.",
+            user.Id, user.WorkerId, user.GroupId, currentUser.UserId);
 
         return Result.Success();
     }

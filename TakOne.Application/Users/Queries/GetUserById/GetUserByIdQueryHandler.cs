@@ -24,6 +24,7 @@ public sealed class GetUserByIdQueryHandler
         ICurrentUserService currentUser,
         IUserRepository userRepository,
         IUserAccountService userAccountService,
+        ICustomerGroupRepository customerGroupRepository,
         ILogger<GetUserByIdQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -111,6 +112,23 @@ public sealed class GetUserByIdQueryHandler
         }
 
         // ------------------------------------------------------------------
+        // 4b. Resolve the user's group display name (if any). Single
+        //     round-trip via ICustomerGroupRepository — only fires when
+        //     the user actually has a group AND the caller can see it.
+        //
+        //     We use GetByIdReadOnlyAsync (AsNoTracking) because we're
+        //     only reading the Name field for display — never mutating
+        //     the group here.
+        // ------------------------------------------------------------------
+        string? groupName = null;
+        if (canSeeGroup && user.GroupId is not null)
+        {
+            var group = await customerGroupRepository.GetByIdReadOnlyAsync
+                (user.GroupId.Value, cancellationToken);
+            groupName = group?.Name;
+        }
+
+        // ------------------------------------------------------------------
         // 5. Project to DTO. Email is left null for now — see class-level
         //    remark. Roles come from IUserAccountService. Gender is sourced
         //    from the Domain User (the source of truth — ApplicationUser's
@@ -122,7 +140,8 @@ public sealed class GetUserByIdQueryHandler
             WorkerId = user.WorkerId,
             FullName = user.FullName,
             Gender = user.Gender,
-            GroupName = canSeeGroup ? user.GroupName : null,
+            GroupId = user.GroupId,
+            GroupName = groupName,
             IsActive = user.IsActive,
             Email = null, // TODO: extend IUserAccountService with GetEmailAsync
             Roles = roles.ToList()

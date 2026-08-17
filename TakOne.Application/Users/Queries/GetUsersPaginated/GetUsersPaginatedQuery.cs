@@ -22,10 +22,13 @@ namespace TakOne.Application.Users.Queries.GetUsersPaginated;
 /// FILTERS:
 ///   - <see cref="SearchTerm"/>: matched case-insensitively against WorkerId
 ///     and FullName.
-///   - <see cref="GroupName"/>: exact match (group names are short and
-///     discrete — substring search is unnecessary).
+///   - <see cref="GroupId"/>: exact match (FK to CustomerGroups.Id). Null
+///     = include users from all groups (and staff users with no group).
 ///   - <see cref="IsActive"/>: tristate. Null = both, true = active only,
 ///     false = inactive only.
+///
+/// SALARY FEATURE (Step 3):
+///   Replaced <c>GroupName</c> (string) filter with <c>GroupId</c> (Guid).
 /// </summary>
 [RequireRoles(Roles.Admin, Roles.Manager, Roles.Employee)]
 public sealed class GetUsersPaginatedQuery
@@ -34,7 +37,12 @@ public sealed class GetUsersPaginatedQuery
     public int PageSize { get; init; } = 20;
 
     public string? SearchTerm { get; init; }
-    public string? GroupName { get; init; }
+
+    /// <summary>
+    /// Optional filter by customer group Id. Null = all groups + staff
+    /// users with no group.
+    /// </summary>
+    public Guid? GroupId { get; init; }
 
     /// <summary>
     /// Tristate activity filter. Null = both, true = active only,

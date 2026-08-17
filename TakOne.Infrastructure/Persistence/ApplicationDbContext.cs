@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TakOne.Domain.Categories.Entities;
+using TakOne.Domain.Common.Entities;
+using TakOne.Domain.Customers.Entities;
 using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Users;
@@ -117,6 +119,28 @@ public class ApplicationDbContext
     /// Maps to the <c>SaleSequenceCounters</c> table.
     /// </summary>
     public DbSet<SaleSequenceCounter> SaleSequenceCounters { get; set; } = null!;
+
+    /// <summary>
+    /// CustomerGroup aggregate root — a named bucket of customers who
+    /// share the same monthly salary budget and the same per-product
+    /// purchase-limit table. Maps to the <c>CustomerGroups</c> table.
+    ///
+    /// Referenced by <c>Users.GroupId</c> (nullable FK) and by
+    /// <c>ProductPurchaseLimits.GroupId</c> (FK inside the Product
+    /// aggregate's OwnsMany block).
+    /// </summary>
+    public DbSet<CustomerGroup> CustomerGroups { get; set; } = null!;
+
+    /// <summary>
+    /// SystemSettings singleton entity — application-wide configuration
+    /// that admins can change at runtime (no app restart required).
+    /// Maps to the <c>SystemSettings</c> table. Always contains exactly
+    /// one row, identified by <see cref="SystemSettings.SingletonId"/>.
+    ///
+    /// Reads are cached in-process via <c>ISystemSettingsService</c>
+    /// so the hot-path purchase-limit checks don't hit the DB.
+    /// </summary>
+    public DbSet<SystemSettings> SystemSettings { get; set; } = null!;
 
     /// <summary>
     /// ASP.NET Core Data Protection key ring. One row per key. The

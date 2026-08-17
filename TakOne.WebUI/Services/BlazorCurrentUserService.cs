@@ -129,14 +129,32 @@ public sealed class BlazorCurrentUserService : ICurrentUserService
         }
     }
 
-    public string? GroupName
+    /// <summary>
+    /// The customer group Id of the authenticated user, or null if the user
+    /// has no group (staff users). Sourced from the "GroupId" claim set at
+    /// login time.
+    ///
+    /// STALE-CLAIM WARNING (Salary feature, Step 3):
+    ///   This value is a snapshot from login time. If an admin reassigns
+    ///   the user's group AFTER they logged in, this claim reflects the
+    ///   OLD group. Handlers that need the CURRENT group (e.g. for
+    ///   purchase-limit or salary-budget checks) MUST re-load the user
+    ///   from the repository via <c>IUserRepository.GetByIdAsync</c>.
+    ///   The claim is only for fast-path UI gating — never for
+    ///   authoritative budget enforcement.
+    /// </summary>
+    public Guid? GroupId
     {
         get
         {
             var user = GetCurrentUser();
-            return user?.Identity?.IsAuthenticated == true
-                ? user.FindFirst("GroupName")?.Value
-                : null;
+            if (user?.Identity?.IsAuthenticated != true) return null;
+
+            var claim = user.FindFirst("GroupId");
+            if (claim is null || !Guid.TryParse(claim.Value, out var groupId))
+                return null;
+
+            return groupId;
         }
     }
 

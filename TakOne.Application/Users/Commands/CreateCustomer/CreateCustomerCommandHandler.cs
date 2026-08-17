@@ -54,11 +54,11 @@ public sealed class CreateCustomerCommandHandler
 
         // ------------------------------------------------------------------
         // 2. Create the Domain User via the customer factory. This enforces
-        //    the domain invariants (WorkerId/FullName/GroupName non-empty,
+        //    the domain invariants (WorkerId/FullName/GroupId non-empty,
         //    length caps, Gender is a defined enum value). DomainException
         //    is caught by middleware.
         // ------------------------------------------------------------------
-        var user = User.CreateCustomer(command.WorkerId, command.FullName, command.GroupName, command.Gender);
+        var user = User.CreateCustomer(command.WorkerId, command.FullName, command.GroupId, command.Gender);
 
         // ------------------------------------------------------------------
         // 3. Persist the Domain User. This generates the user's Guid Id,
@@ -135,8 +135,8 @@ public sealed class CreateCustomerCommandHandler
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("CreateCustomer: customer {UserId} (worker ID '{WorkerId}', group '{Group}') created by user {ActorId}.",
-            user.Id, user.WorkerId, user.GroupName, currentUser.UserId);
+            ("CreateCustomer: customer {UserId} (worker ID '{WorkerId}', group {GroupId}) created by user {ActorId}.",
+            user.Id, user.WorkerId, user.GroupId, currentUser.UserId);
 
         return Result<Guid>.Success(user.Id);
     }

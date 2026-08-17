@@ -112,4 +112,31 @@ public interface IProductRepository
     Task<int> CountInStockAsync(CancellationToken cancellationToken = default);
 
     Task AddAsync(Product product, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the Id of every Product in the catalog (lightweight —
+    /// single round-trip, no entity materialization, no tracking).
+    ///
+    /// USED BY:
+    ///   <c>CreateCustomerGroupCommandHandler</c> (Step 5 wiring) — when a
+    ///   new CustomerGroup is created, the handler iterates all existing
+    ///   product IDs in batches, loads tracked products, calls
+    ///   <see cref="Product.SetPurchaseLimit"/> on each, and SaveChanges
+    ///   per batch — bulk-applying the default limit (1) to every product
+    ///   for the new group.
+    ///
+    /// WHY NOT A REPO-LEVEL BULK METHOD:
+    ///   The batching loop needs to call <see cref="IUnitOfWork.SaveChangesAsync"/>
+    ///   and <see cref="IUnitOfWork.ClearChangeTracker"/> between batches —
+    ///   both of which live on IUnitOfWork, not on the repository. Putting
+    ///   the loop in the handler keeps the repository focused on queries and
+    ///   lets the handler orchestrate the per-batch save+clear cycle.
+    ///
+    /// SCALE CONSIDERATIONS:
+    ///   This returns a <c>List&lt;Guid&gt;</c> — for a catalog with ~10K
+    ///   products, that's ~160KB of Guids (16 bytes each × 10K). Acceptable.
+    ///   For 100K+ products, switch to a streaming <c>IAsyncEnumerable&lt;Guid&gt;</c>
+    ///   and process in smaller batches.
+    /// </summary>
+    Task<List<Guid>> GetAllProductIdsAsync(CancellationToken cancellationToken = default);
 }
