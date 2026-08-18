@@ -121,9 +121,9 @@
 @using TakOne.Application.Products.Commands.UpdateProductDetails
 @using TakOne.Application.Products.Commands.SetProductPurchaseLimit
 @using TakOne.Application.Products.Commands.RemoveProductPurchaseLimit
+@using TakOne.Application.Products.Commands.SetProductStock
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
-@using TakOne.Application.Sales.Commands.CreateOrAppendSale
 @using TakOne.Application.Customers.Queries.GetAllCustomerGroups
 @using TakOne.Application.Customers.DTOs
 @using TakOne.SharedKernel.Common
@@ -229,32 +229,6 @@
                 .category-hierarchy .crumb-sep {
                     opacity: 0.5;
                 }
-
-            /* Quantity selector + Add-to-cart button row */
-            .purchase-row {
-                display: flex;
-                gap: 0.75rem;
-                align-items: stretch;
-                margin-top: 0.5rem;
-            }
-
-                .purchase-row .qty-input {
-                    width: 100px;
-                }
-
-                .purchase-row .add-to-cart-btn {
-                    flex: 1;
-                }
-
-            @@media (max-width: 480px) {
-                .purchase-row {
-                    flex-direction: column;
-                }
-
-                    .purchase-row .qty-input {
-                        width: 100%;
-                    }
-            }
 
             /* Breadcrumb */
             .breadcrumb {
@@ -488,20 +462,22 @@
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
     @* ── Back button ──
-       Always visible. Returns to /Products. Wrapped in a grid that
-       mirrors the detail-grid layout (5fr picture | 7fr info) so the
-       button stays aligned with the START of the info column — right
-       above the breadcrumb text — in both LTR and RTL modes. The
-       button itself is sized to its content (justify-content: flex-start
-       in .back-button-cell prevents it from stretching to the cell width). *@
+       Role-aware: staff (Admin/Manager/Employee) see "Back to manage products"
+       and go to /Admin/Products; everyone else sees "Back to catalog" and
+       goes to /Products. Wrapped in a grid that mirrors the detail-grid
+       layout (5fr picture | 7fr info) so the button stays aligned with the
+       START of the info column — right above the breadcrumb text — in both
+       LTR and RTL modes. The button itself is sized to its content
+       (justify-content: flex-start in .back-button-cell prevents it from
+       stretching to the cell width). *@
     <div class="back-button-row">
         <div class="back-button-spacer" aria-hidden="true"></div>
         <div class="back-button-cell">
-            <RadzenButton Text="@Loc["BackToCatalog"]"
+            <RadzenButton Text="@(_canEdit ? Loc["BackToManageProducts"] : Loc["BackToCatalog"])"
                           Icon="arrow_back"
                           ButtonStyle="ButtonStyle.Secondary"
                           Variant="Variant.Outlined"
-                          Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+                          Click="@GoBackAsync" />
         </div>
     </div>
 
@@ -606,59 +582,14 @@
                     </div>
                 }
 
-                @* Customer purchase panel: quantity selector + Add to cart button.
-                   Available to ALL authenticated users (every role can buy).
-                   Min=1, Max = the per-group limit if one applies to the current
-                   user, otherwise a large number (bounded only by stock — staff
-                   see no stock number, so the selector's Max here is effectively
-                   unlimited).
-
-                   NOTE: _myPurchaseLimit is now populated from
-                   _product.MyPurchaseLimit (set by GetProductByIdQueryHandler
-                   via Product.GetPurchaseLimitForGroup(currentUser.GroupId)).
-                   Before this fix, _myPurchaseLimit was hardcoded to null
-                   because ProductDto didn't expose the field — so the
-                   selector's Max was always 999999, letting customers SELECT
-                   past their group's limit and only get stopped by a backend
-                   DomainException (surfaced as a generic error toast). The
-                   UI now clamps to the limit like the Products grid does. *@
-                <div class="purchase-row">
-                    @* Native <input type="number" dir="ltr"> instead of RadzenNumeric.
-                       WHY: RadzenNumeric's internal JS mishandles caret positioning
-                       in RTL (fa-IR) mode — the cursor LOOKS like it's at the right
-                       place but typed digits go BEHIND the existing value (turning
-                       "1" + typed "0" into "01" instead of "10"). A native input
-                       with dir="ltr" bypasses Radzen's JS; the browser's native input
-                       handling respects dir="ltr" for both caret AND insertion. We
-                       lose the spinner arrows but gain correct RTL behavior. The
-                       .rz-textbox class keeps the visual style consistent with other
-                       Radzen form fields on the page. The qty-input class preserves
-                       the 100px width on desktop / 100% on mobile. *@
-                    <input type="number"
-                           class="rz-textbox qty-input"
-                           dir="ltr"
-                           step="1"
-                           min="1"
-                           max="@(_myPurchaseLimit ?? 999999)"
-                           @bind="_quantity"
-                           @bind:culture="CultureInfo.CurrentCulture"
-                           style="width: 100px; text-align: left;" />
-                    <RadzenButton Text="@Loc["AddToCart"]"
-                                  Icon="add_shopping_cart"
-                                  ButtonStyle="ButtonStyle.Primary"
-                                  Variant="Variant.Filled"
-                                  class="add-to-cart-btn"
-                                  Disabled="@(_isSubmitting)"
-                                  Click="@HandleAddToCartAsync" />
-                </div>
-
-                @if (_myPurchaseLimit.HasValue)
-                {
-                    <RadzenText TextStyle="TextStyle.Caption"
-                                Style="color: var(--rz-text-secondary-color);">
-                        @(string.Format(CultureInfo.CurrentCulture, Loc["MyPurchaseLimitHint"], CultureFormat.FormatDigits(_myPurchaseLimit.Value)))
-                    </RadzenText>
-                }
+                @* The "Add to cart" purchase row was REMOVED per the user's
+                   request — the product detail page is now a VIEW + STAFF
+                   STOCK-MANAGEMENT surface. Customers still see the read-only
+                   product info above (picture, name, price, description,
+                   category hierarchy); staff additionally see the edit +
+                   stock-set + per-group-limits sections below. Cart actions
+                   happen via the customer-facing Products grid (/Products),
+                   which still has its own Add-to-cart card UI. *@
 
                 @* ── STAFF EDIT SECTION ──
                    Only shown to Admin / Manager / Employee. Contains:
@@ -705,6 +636,83 @@
                                           Variant="Variant.Filled"
                                           Disabled="@(_isSavingDetails || string.IsNullOrWhiteSpace(_editName))"
                                           Click="@HandleSaveDetailsAsync" />
+                        </div>
+
+                        @* ── Stock-set section ──
+                           Lets staff set the product's stock to an EXACT value
+                           (not additive). Dispatches SetProductStockCommand,
+                           which calls Product.AdjustStockTo — the domain enforces
+                           quantity > 0 (zero and negatives are rejected with a
+                           clear message telling the user to use the Deactivate
+                           action instead).
+
+                           WHY A SEPARATE SECTION (not just a button on the
+                           AdminProducts grid):
+                             The grid's Restock action ADDS to stock (delta =
+                             +N). The user wanted a way to set stock to an
+                           absolute value (stock = N), e.g. after a stock-take
+                           when they know the actual physical count. Putting
+                           it on the detail page keeps the grid uncluttered
+                           and gives staff a clear "current value + new value"
+                           side-by-side view. *@
+                        <div class="staff-section-title" style="margin-top: 1.5rem;">
+                            <RadzenIcon Icon="inventory_2" />
+                            <span>@Loc["StockSetTitle"]</span>
+                        </div>
+
+                        @* Current stock display — read-only boxed value, mirroring
+                           the RestockProductDialog's current-stock box. *@
+                        <div style="border: 1px solid var(--rz-base-border-color);
+                            border-left: 4px solid var(--rz-primary);
+                            border-radius: var(--tm-radius, 0);
+                            padding: 0.75rem 1rem;
+                            background: var(--rz-component-background-color, var(--rz-base-background-color));
+                            margin-bottom: 0.5rem;">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    @Loc["StockSetCurrentLabel"]
+                                </RadzenText>
+                                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; font-variant-numeric: tabular-nums;">
+                                    @(CultureFormat.FormatNumber(_product.StockQuantity))
+                                </RadzenText>
+                            </RadzenStack>
+                        </div>
+
+                        @* New stock value input — native <input type="number"> with
+                           dir="ltr" to avoid RadzenNumeric's RTL caret bug (see the
+                           qty-input comment that used to live above for the long
+                           explanation). min="1" enforces positivity at the HTML
+                           level. The validator + domain guard enforce it server-side. *@
+                        <div class="edit-row">
+                            <RadzenFormField Text="@Loc["StockSetNewLabel"]" Style="width: 100%;">
+                                <input type="number"
+                                       class="rz-textbox"
+                                       dir="ltr"
+                                       step="1"
+                                       min="1"
+                                       placeholder="@Loc["StockSetPlaceholder"]"
+                                       @bind="_editStock"
+                                       @bind:culture="CultureInfo.CurrentCulture"
+                                       style="width: 100%; text-align: left;" />
+                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["StockSetHint"]
+                            </RadzenText>
+                            @if (_showStockError)
+                            {
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-danger);">
+                                    @Loc["StockSetRequiredError"]
+                                </RadzenText>
+                            }
+                        </div>
+                        <div class="edit-actions">
+                            <RadzenButton Text="@Loc["StockSetButton"]"
+                                          Icon="save"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Disabled="@(_isSavingStock)"
+                                          Click="@HandleSetStockAsync" />
                         </div>
 
                         @* ── Per-group purchase limits editor ──
@@ -925,29 +933,31 @@
     private string? _categoryHierarchy;
     private string? _loadError;
     private bool _isLoading = true;
-    private int _quantity = 1;
-    private bool _isSubmitting;
 
     /// <summary>
     /// True if the current user is in Admin/Manager/Employee role. Computed
     /// once in OnInitializedAsync via AuthenticationStateProvider (NOT
     /// ICurrentUserService.IsInRole — see the file header for why).
-    /// Gates the entire staff-edit section + the Change Photo button.
+    /// Gates the entire staff-edit section + the Change Photo button + the
+    /// role-aware Back button label/destination.
     /// </summary>
     private bool _canEdit;
-
-    /// <summary>
-    /// The current user's per-product purchase limit, if any. Null means
-    /// no limit applies (staff user, or customer in a group with no limit
-    /// set on this product). Used to clamp the quantity selector's Max.
-    /// </summary>
-    private int? _myPurchaseLimit;
 
     // ── Editable copies for the Name/Description inline editor ──
 
     private string _editName = string.Empty;
     private string _editDescription = string.Empty;
     private bool _isSavingDetails;
+
+    // ── Stock-set editor state (staff-only) ──
+    //
+    // Holds the user's input for the "Set stock" field. Null = empty (no
+    // value entered yet). The min=1 on the input + the SetProductStockCommand
+    // validator + Product.AdjustStockTo domain guard all enforce > 0.
+
+    private int? _editStock;
+    private bool _isSavingStock;
+    private bool _showStockError;
 
     // ── Photo editor state ──
     //
@@ -1042,12 +1052,6 @@
             {
                 _editName = _product.Name;
                 _editDescription = _product.Description;
-                // _myPurchaseLimit is now populated from the DTO (set by
-                // GetProductByIdQueryHandler). Before this fix, it was
-                // hardcoded to null because ProductDto didn't expose the
-                // field — see the purchase-row comment above for the full
-                // rationale on why this matters.
-                _myPurchaseLimit = _product.MyPurchaseLimit;
 
                 var categoryTask = LoadCategoryHierarchyAsync();
                 var groupsTask = _canEdit ? LoadGroupNamesAsync() : Task.CompletedTask;
@@ -1223,42 +1227,90 @@
         }
     }
 
-    // ── Add-to-cart ────────────────────────────────────────────────────
+    // ── Back button (role-aware destination) ────────────────────────────
 
-    private async Task HandleAddToCartAsync()
+    /// <summary>
+    /// Navigates the user back to the list they likely came from:
+    ///   - staff (Admin/Manager/Employee) → /Admin/Products
+    ///   - everyone else                  → /Products
+    /// This matches the role-aware Back button label in the markup
+    /// (BackToManageProducts for staff, BackToCatalog for customers).
+    /// </summary>
+    private void GoBackAsync()
     {
-        if (_product is null || _quantity < 1)
+        var target = _canEdit ? "/Admin/Products" : "/Products";
+        Navigation.NavigateTo(target, forceLoad: false);
+    }
+
+    // ── Set stock to an exact value (staff-only) ──────────────────────
+
+    /// <summary>
+    /// Sets the product's stock to the value entered in _editStock.
+    /// Dispatches SetProductStockCommand, which calls Product.AdjustStockTo
+    /// — the domain enforces quantity > 0 (zero and negatives are rejected
+    /// with a clear message pointing the user to the Deactivate flow).
+    ///
+    /// VALIDATION ORDER:
+    ///   1. Client-side: if _editStock is null or ≤ 0, show inline error
+    ///      and don't dispatch. Same UX pattern as the Restock dialog.
+    ///   2. Server-side: SetProductStockCommandValidator rejects ≤ 0.
+    ///   3. Domain-side: Product.AdjustStockTo throws DomainException if
+    ///      ≤ 0 (defense-in-depth).
+    /// </summary>
+    private async Task HandleSetStockAsync()
+    {
+        if (_product is null) return;
+
+        if (_editStock is null || _editStock <= 0)
         {
+            _showStockError = true;
             return;
         }
+        _showStockError = false;
 
-        _isSubmitting = true;
+        _isSavingStock = true;
         try
         {
-            var command = new CreateOrAppendSaleCommand(_product.Id, _quantity);
-            var result = await MessageBus.InvokeAsync<Result<Guid>>(command);
+            var command = new SetProductStockCommand(_product.Id, _editStock.Value);
+            var result = await MessageBus.InvokeAsync<Result>(command);
 
             if (result.IsSuccess)
             {
+                // Reflect the new stock locally so the "Current stock" display
+                // updates without a full reload. ProductDto is a class (not a
+                // record), so we create a new instance copying the existing
+                // fields and overwriting StockQuantity.
+                _product = new ProductDto
+                {
+                    Id = _product.Id,
+                    Name = _product.Name,
+                    Description = _product.Description,
+                    PictureUrl = _product.PictureUrl,
+                    Price = _product.Price,
+                    StockQuantity = _editStock.Value,
+                    CategoryId = _product.CategoryId,
+                    SubCategoryId = _product.SubCategoryId,
+                    SubSubCategoryId = _product.SubSubCategoryId,
+                    PurchaseLimits = _product.PurchaseLimits
+                };
                 await Toast.Success(
-                    string.Format(CultureInfo.CurrentCulture, Loc["AddedToCart"], _quantity, _product.Name),
-                    summary: Loc["AddedToCartTitle"]);
-                _quantity = 1;
+                    string.Format(CultureInfo.CurrentCulture, Loc["StockSetSuccess"], _product.Name, CultureFormat.FormatNumber(_editStock.Value)),
+                    summary: Loc["StockSetSuccessTitle"]);
             }
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericAdd"],
+                    result.Error ?? Loc["Error_GenericSave"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericAdd"], summary: Loc["ErrorTitle"]);
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
         }
         finally
         {
-            _isSubmitting = false;
+            _isSavingStock = false;
         }
     }
 

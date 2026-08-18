@@ -68,6 +68,10 @@
   <data name="BackToCatalog" xml:space="preserve">
     <value>Back to catalog</value>
   </data>
+  <data name="BackToManageProducts" xml:space="preserve">
+    <value>Back to manage products</value>
+    <comment>Staff-only back button — navigates to /Admin/Products. Replaces the customer-facing "Back to catalog" button when the viewer is staff.</comment>
+  </data>
   <data name="Loading" xml:space="preserve">
     <value>Loading product…</value>
   </data>
@@ -218,5 +222,33 @@
   <data name="ActionCreateGroup" xml:space="preserve">
     <value>Create new group</value>
     <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
+  </data>
+  <data name="StockSetTitle" xml:space="preserve">
+    <value>Stock</value>
+    <comment>Staff-only stock-set section heading on the product detail page.</comment>
+  </data>
+  <data name="StockSetCurrentLabel" xml:space="preserve">
+    <value>Current stock</value>
+  </data>
+  <data name="StockSetNewLabel" xml:space="preserve">
+    <value>New stock value</value>
+  </data>
+  <data name="StockSetHint" xml:space="preserve">
+    <value>Enter the exact stock count. Setting to zero is not allowed — to deactivate the product, use the Deactivate action on the manage products page.</value>
+  </data>
+  <data name="StockSetPlaceholder" xml:space="preserve">
+    <value>e.g. 50</value>
+  </data>
+  <data name="StockSetButton" xml:space="preserve">
+    <value>Set stock</value>
+  </data>
+  <data name="StockSetRequiredError" xml:space="preserve">
+    <value>Enter a positive whole number.</value>
+  </data>
+  <data name="StockSetSuccessTitle" xml:space="preserve">
+    <value>Stock updated</value>
+  </data>
+  <data name="StockSetSuccess" xml:space="preserve">
+    <value>Stock for "{0}" set to {1}.</value>
   </data>
 </root>

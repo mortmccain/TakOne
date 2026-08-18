@@ -53,7 +53,12 @@
    RESET PASSWORD FLOW:
      - Admin-only (button hidden from Managers). Also hidden on the
        current user's own row (confusing UX).
-     - On click: prompt via JS prompt() for new password.
+     - On click: opens an inline modal dialog (same UX as UserDetail.razor's
+       Reset Password modal — overlay + dialog + password input with
+       show/hide toggle + inline validation + Cancel/Submit footer). The
+       previous implementation used the browser's native JS prompt(), which
+       was ugly, unstyled, un-themeable, and didn't render localized text
+       correctly in some browsers.
 
    LOCALIZATION:
      All user-visible strings go through IStringLocalizer<AdminUsers>
@@ -84,7 +89,6 @@
 @inject IStringLocalizer<AdminUsers> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
-@inject IJSRuntime JS
 @inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -135,6 +139,164 @@
                 color: var(--rz-text-tertiary-color, #9ca3af);
                 cursor: help;
             }
+
+            /* ── Reset Password modal (mirrors UserDetail.razor's modal) ──
+                           Inline modal dialog for resetting a user's password from the
+                           admin users list. Same visual structure as UserDetail's modal
+                           (overlay + dialog + header/body/footer) so admins get the same
+                           UX whether they're on the list page or the detail page. The
+                           previous implementation used JS prompt() which was ugly,
+                           unstyled, un-themeable, and not localizable properly.
+
+                           CSS copied verbatim from UserDetail.razor so the two pages
+                           render identical modals. If you change one, change the other. */
+            .modal-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1050;
+                padding: 1rem;
+                animation: modal-fade-in 0.15s ease-out;
+            }
+
+            @@keyframes modal-fade-in {
+                from {
+                    opacity: 0;
+                }
+
+                to {
+                    opacity: 1;
+                }
+            }
+
+            .modal-dialog {
+                background: var(--rz-background-color, #fff);
+                border-radius: 8px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+                width: 100%;
+                max-width: 480px;
+                max-height: calc(100vh - 2rem);
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                animation: modal-slide-up 0.2s ease-out;
+            }
+
+            @@keyframes modal-slide-up {
+                from {
+                    transform: translateY(20px);
+                    opacity: 0;
+                }
+
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+
+            .modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 1rem 1.25rem;
+                border-bottom: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.08));
+            }
+
+            .modal-title {
+                margin: 0;
+                font-size: 1.125rem;
+                font-weight: 600;
+                color: var(--rz-text-color, #212121);
+            }
+
+            .modal-close-btn {
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                padding: 0.25rem;
+                line-height: 1;
+                color: var(--rz-text-secondary-color);
+                font-size: 1.25rem;
+                border-radius: 4px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+                .modal-close-btn:hover:not(:disabled) {
+                    background: rgba(0, 0, 0, 0.06);
+                    color: var(--rz-text-color);
+                }
+
+                .modal-close-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+            .modal-body {
+                padding: 1.25rem;
+                flex: 1 1 auto;
+            }
+
+            .modal-body-text {
+                margin: 0 0 1rem 0;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.9375rem;
+                line-height: 1.5;
+            }
+
+            .modal-label {
+                display: block;
+                margin-bottom: 0.375rem;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.875rem;
+                font-weight: 500;
+            }
+
+            .modal-validation {
+                min-height: 1.25rem;
+                margin-top: 0.5rem;
+                font-size: 0.8125rem;
+            }
+
+            .modal-validation-error {
+                color: var(--rz-danger, #f44336);
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+            }
+
+            .modal-footer {
+                display: flex;
+                justify-content: flex-end;
+                gap: 0.5rem;
+                padding: 1rem 1.25rem;
+                border-top: 1px solid var(--rz-border-color, rgba(0, 0, 0, 0.08));
+            }
+
+            @@media (max-width: 576px) {
+                .modal-footer {
+                    flex-direction: column-reverse;
+                }
+
+                    .modal-footer .rz-button {
+                        width: 100%;
+                    }
+            }
+
+            .modal-password-row {
+                display: flex;
+                gap: 0.5rem;
+                align-items: stretch;
+            }
+
+                .modal-password-row .modal-password-field {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                }
     </style>
 </HeadContent>
 
@@ -472,6 +634,97 @@
             </RadzenDataGrid>
         </RadzenCard>
     }
+
+    @* ── Reset Password modal ──
+       Inline modal dialog for resetting a user's password. Same visual
+       structure as UserDetail.razor's Reset Password modal (overlay +
+       dialog + header/body/footer) so admins get the same UX whether
+       they're on the list page or the detail page.
+
+       Admin-only (the button that opens this modal is gated by
+       `_isAdmin && !_isViewingSelf`). The handler enforces
+       [RequireRoles(Admin)] server-side as defense-in-depth, and Identity's
+       password-complexity rules are the final authority on what's accepted.
+
+       State mirrors UserDetail.razor's Reset Password modal:
+         - _isResetPasswordModalOpen — controls visibility
+         - _resetPasswordTarget    — the UserListItemDto being reset
+         - _resetPasswordInput     — the new password being typed
+         - _resetPasswordError     — inline validation message
+         - _showResetPassword      — show/hide toggle for the password box *@
+    @if (_isResetPasswordModalOpen)
+    {
+        <div class="modal-overlay" @onclick="CloseResetPasswordModal" role="presentation">
+            <div class="modal-dialog"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="reset-password-modal-title"
+                 @onclick:stopPropagation="true"
+                 @onkeydown="HandleResetPasswordModalKeydownAsync">
+                <div class="modal-header">
+                    <h2 id="reset-password-modal-title" class="modal-title">@Loc["ResetPasswordModalTitle"]</h2>
+                    <button type="button"
+                            class="modal-close-btn"
+                            title="@Loc["ModalCancel"]"
+                            aria-label="@Loc["ModalCancel"]"
+                            disabled="@(_isBusyUserId.HasValue)"
+                            @onclick="CloseResetPasswordModal">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <p class="modal-body-text">@Loc["ResetPasswordModalBody"]</p>
+
+                    <label class="modal-label" for="reset-password-input">@Loc["ResetPasswordModalLabel"]</label>
+                    <div class="modal-password-row">
+                        <RadzenTextBox Value="_resetPasswordInput"
+                                       ValueChanged="@OnResetPasswordChanged"
+                                       id="reset-password-input"
+                                       Type="@(_showResetPassword ? "text" : "password")"
+                                       Placeholder="@Loc["ResetPasswordModalPlaceholder"]"
+                                       Class="modal-password-field"
+                                       Style="width: 100%;"
+                                       Disabled="@(_isBusyUserId.HasValue)"
+                                       autocomplete="new-password"
+                                       autofocus />
+                        <RadzenButton Icon="@(_showResetPassword ? "visibility_off" : "visibility")"
+                                      title="@(_showResetPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                      aria-label="@(_showResetPassword ? Loc["PasswordHide"] : Loc["PasswordShow"])"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Outlined"
+                                      Disabled="@(_isBusyUserId.HasValue)"
+                                      Click="@ToggleResetPasswordVisibility" />
+                    </div>
+                    <RadzenText TextStyle="TextStyle.Caption"
+                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                        @Loc["ResetPasswordModalHint"]
+                    </RadzenText>
+                    <div class="modal-validation" role="status" aria-live="polite">
+                        @if (!string.IsNullOrEmpty(_resetPasswordError))
+                        {
+                            <span class="modal-validation-error">@_resetPasswordError</span>
+                        }
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <RadzenButton Text="@Loc["ModalCancel"]"
+                                  Icon="close"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Outlined"
+                                  Disabled="@(_isBusyUserId.HasValue)"
+                                  Click="@CloseResetPasswordModal" />
+                    <RadzenButton Text="@Loc["ResetPasswordModalSubmit"]"
+                                  Icon="vpn_key"
+                                  ButtonStyle="ButtonStyle.Warning"
+                                  Variant="Variant.Filled"
+                                  Disabled="@(_isBusyUserId.HasValue)"
+                                  Click="@ConfirmResetPasswordAsync" />
+                </div>
+            </div>
+        </div>
+    }
 </RadzenStack>
 
 @code {
@@ -516,8 +769,52 @@
     /// The Id of the user whose action button is currently in flight.
     /// Null when no action is pending. Used to disable that row's action
     /// buttons while the round-trip is in progress (prevents double-clicks).
+    /// Also gates the Reset Password modal's buttons (Cancel/Submit/Close/
+    /// show-hide toggle) — when a password reset is in flight, those buttons
+    /// are disabled so the user can't accidentally close the modal mid-flight.
     /// </summary>
     private Guid? _isBusyUserId;
+
+    // ── Reset Password modal state ────────────────────────────────────
+    //
+    // Mirrors UserDetail.razor's Reset Password modal state 1:1 (same names,
+    // same semantics) so the two pages render identical UX.
+
+    /// <summary>
+    /// True when the Reset Password modal is open. Toggled by
+    /// HandleResetPasswordAsync (open) and CloseResetPasswordModal /
+    /// ConfirmResetPasswordAsync (close).
+    /// </summary>
+    private bool _isResetPasswordModalOpen;
+
+    /// <summary>
+    /// The user targeted by the open Reset Password modal. Null when the
+    /// modal is closed. Set in HandleResetPasswordAsync + cleared in
+    /// CloseResetPasswordModal / ConfirmResetPasswordAsync (on success).
+    /// </summary>
+    private UserListItemDto? _resetPasswordTarget;
+
+    /// <summary>
+    /// The new password currently typed into the modal's RadzenTextBox.
+    /// Bound via the explicit ValueChanged callback (OnResetPasswordChanged)
+    /// — see that method's remark for why we don't use @bind-Value here.
+    /// Cleared when the modal closes.
+    /// </summary>
+    private string _resetPasswordInput = string.Empty;
+
+    /// <summary>
+    /// Inline validation message shown below the modal's password box.
+    /// Populated by ValidateResetPasswordInput when Submit is clicked.
+    /// Empty string when the input is valid (or not yet validated).
+    /// </summary>
+    private string _resetPasswordError = string.Empty;
+
+    /// <summary>
+    /// Toggles the password box between masked (default) and plaintext.
+    /// Mirrors CreateUser.razor's _showPassword pattern. Purely a UX
+    /// affordance — doesn't affect validation or submission.
+    /// </summary>
+    private bool _showResetPassword;
 
     /// <summary>
     /// The current user's Id — used to hide self-action buttons
@@ -851,66 +1148,169 @@
     }
 
     // ── Reset password (Admin only) ─────────────────────────────────────
+    //
+    // The flow uses an INLINE MODAL (mirrors UserDetail.razor's Reset Password
+    // modal — same HTML/CSS/keys) instead of the previous JS prompt(). JS
+    // prompt() was ugly, unstyled, un-themeable, and didn't render localized
+    // text correctly in some browsers. The modal gives us:
+    //   1. A styled dialog that matches the rest of the app's UX.
+    //   2. A password input with show/hide toggle.
+    //   3. Inline validation messaging (no Toast.Warning on bad input).
+    //   4. Cancel + Submit buttons (no accidental dismiss via Esc/click-out).
+    //
+    // State variables (defined alongside _isBusyUserId above):
+    //   _isResetPasswordModalOpen — controls modal visibility
+    //   _resetPasswordTarget      — the UserListItemDto being reset (null when modal closed)
+    //   _resetPasswordInput       — the new password being typed
+    //   _resetPasswordError       — inline validation message (empty when valid)
+    //   _showResetPassword        — show/hide toggle for the password box
+    //
+    // The handler defers password-complexity validation to ASP.NET Identity's
+    // configured rules. Client-side, we just check non-empty + ≥ 8 chars to
+    // catch obvious typos before the round-trip (same as UserDetail.razor).
 
     /// <summary>
-    /// Prompts the admin (via the browser's native prompt()) for a new
-    /// password, then dispatches ResetUserPasswordCommand. Same UX pattern
-    /// as AdminProducts.razor's restock flow — simple, no custom dialog.
-    ///
-    /// The handler defers password-complexity validation to ASP.NET
-    /// Identity's configured rules. Client-side, we just check non-empty
-    /// and at least 8 chars to catch obvious typos before the round-trip.
+    /// Opens the Reset Password modal for the given user. Stores the target
+    /// user so ConfirmResetPasswordAsync knows which account to reset. Clears
+    /// any previous input + error so the modal starts fresh each time.
+    /// Called from the "Reset password" button in the row's Actions column.
     /// </summary>
-    private async Task HandleResetPasswordAsync(UserListItemDto user)
+    private void HandleResetPasswordAsync(UserListItemDto user)
     {
         if (_isBusyUserId.HasValue) return;
 
-        var promptMessage = string.Format(
-            CultureInfo.CurrentCulture,
-            Loc["ResetPrompt"],
-            user.FullName,
-            user.WorkerId);
+        _resetPasswordTarget = user;
+        _resetPasswordInput = string.Empty;
+        _resetPasswordError = string.Empty;
+        _showResetPassword = false;
+        _isResetPasswordModalOpen = true;
+    }
 
-        var newPassword = await JS.InvokeAsync<string?>("prompt", promptMessage, "");
+    /// <summary>
+    /// Closes the Reset Password modal without saving. Called by the Cancel
+    /// button, the X close button, and the Escape key handler. Clears all
+    /// modal state so the next open starts fresh.
+    /// </summary>
+    private void CloseResetPasswordModal()
+    {
+        // Don't allow closing while a request is in flight — the server
+        // might be mid-reset and we don't want to lose track of the result.
+        if (_isBusyUserId.HasValue) return;
 
-        // User clicked Cancel or pressed Escape.
-        if (string.IsNullOrWhiteSpace(newPassword)) return;
+        _isResetPasswordModalOpen = false;
+        _resetPasswordTarget = null;
+        _resetPasswordInput = string.Empty;
+        _resetPasswordError = string.Empty;
+        _showResetPassword = false;
+    }
 
-        newPassword = newPassword.Trim();
-
-        // Minimal client-side check — Identity's complexity rules are
-        // the real authority and will reject anything too weak.
-        if (newPassword.Length < 8)
+    /// <summary>
+    /// Keydown handler for the Reset Password modal. Closes the modal on
+    /// Escape (same UX as UserDetail.razor's modal). Enter is NOT bound
+    /// here because the password input's own Enter handling submits the
+    /// form implicitly via the Submit button.
+    /// </summary>
+    private Task HandleResetPasswordModalKeydownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
         {
-            await Toast.Warning(Loc["ResetInvalidPassword"], summary: Loc["ErrorTitle"]);
-            return;
+            CloseResetPasswordModal();
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Bound to the password box's ValueChanged callback so we can toggle
+    /// the input type between Text and Password without losing the value
+    /// (RadzenTextBox @bind-Value doesn't round-trip through the Type change
+    /// cleanly — this explicit ValueChanged pattern is more reliable).
+    /// Same pattern as CreateUser.razor's OnPasswordChanged.
+    /// </summary>
+    private Task OnResetPasswordChanged(string value)
+    {
+        _resetPasswordInput = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Toggles the password visibility between masked and plaintext.
+    /// Mirrors CreateUser.razor's TogglePasswordVisibility.
+    /// </summary>
+    private Task ToggleResetPasswordVisibility()
+    {
+        _showResetPassword = !_showResetPassword;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Validates _resetPasswordInput. Returns true if valid (and populates
+    /// _resetPasswordError for inline display if invalid). Minimal client-
+    /// side check — Identity's complexity rules are the real authority.
+    /// </summary>
+    private bool ValidateResetPasswordInput()
+    {
+        if (string.IsNullOrWhiteSpace(_resetPasswordInput))
+        {
+            _resetPasswordError = Loc["ResetPasswordRequiredError"];
+            return false;
         }
 
-        _isBusyUserId = user.Id;
+        if (_resetPasswordInput.Length < 8)
+        {
+            _resetPasswordError = Loc["ResetPasswordLengthError"];
+            return false;
+        }
+
+        _resetPasswordError = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Submit handler for the Reset Password modal. Validates the input; if
+    /// valid, dispatches ResetUserPasswordCommand via Wolverine. On success,
+    /// shows a toast + closes the modal. On failure, surfaces Identity's
+    /// error description verbatim (they're user-friendly).
+    /// </summary>
+    private async Task ConfirmResetPasswordAsync()
+    {
+        if (_resetPasswordTarget is null) return;
+
+        if (!ValidateResetPasswordInput()) return;
+
+        var target = _resetPasswordTarget;
+        var newPassword = _resetPasswordInput;
+
+        _isBusyUserId = target.Id;
         try
         {
             var result = await MessageBus.InvokeAsync<Result>(
-                new ResetUserPasswordCommand(user.Id, newPassword));
+                new ResetUserPasswordCommand(target.Id, newPassword));
 
             if (result.IsSuccess)
             {
                 await Toast.Success(
-                    string.Format(CultureInfo.CurrentCulture, Loc["ResetSuccess"], user.FullName),
+                    string.Format(CultureInfo.CurrentCulture, Loc["ResetSuccess"], target.FullName),
                     summary: Loc["ResetSuccessTitle"]);
+
+                // Close the modal + clear state.
+                _isResetPasswordModalOpen = false;
+                _resetPasswordTarget = null;
+                _resetPasswordInput = string.Empty;
+                _resetPasswordError = string.Empty;
+                _showResetPassword = false;
             }
             else
             {
                 // Identity's error descriptions are user-friendly (e.g.
                 // "Passwords must have at least one non-alphanumeric character.")
-                // — surface verbatim.
-                await Toast.Error(
-                    result.Error ?? Loc["ResetError"],
-                    summary: Loc["ErrorTitle"]);
+                // — surface verbatim in the inline validation slot so the
+                // user can fix + retry without losing their typed value.
+                _resetPasswordError = result.Error ?? Loc["ResetError"];
             }
         }
         catch
         {
-            await Toast.Error(Loc["ResetError"], summary: Loc["ErrorTitle"]);
+            _resetPasswordError = Loc["ResetError"];
         }
         finally
         {

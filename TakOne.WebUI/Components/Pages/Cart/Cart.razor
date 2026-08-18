@@ -1,8 +1,18 @@
 ﻿@* Cart.razor — Phase 4.1
 
-   Customer-facing shopping cart page at route `/Cart`. All authenticated
-   users except ReadOnly can shop (the MainLayout already gates the sidebar
-   link — Customer + Admin/Manager/Employee see it, ReadOnly doesn't).
+   Customer-facing shopping cart page at route `/Cart`. The page's
+   [Authorize(Roles = "Admin,Manager,Employee,Customer")] attribute blocks
+   ReadOnly users from reaching the page AT ALL — they get redirected to
+   /Account/AccessDenied by the router. This is defense-in-depth on top of
+   the UI affordances that hide the cart from ReadOnly:
+     - MainLayout.razor's top-bar cart icon uses <AuthorizeView Roles="...">
+       that excludes ReadOnly.
+     - Products.razor's top-bar cart icon (same AuthorizeView pattern).
+     - Products.razor's green HeroButtonCart is wrapped in the same
+       AuthorizeView so ReadOnly users don't see it.
+     - SidebarContent.razor's "Cart" nav link uses the same AuthorizeView.
+   So ReadOnly users have no UI affordance to reach /Cart, AND direct URL
+   entry is blocked by the [Authorize(Roles=...)] attribute.
 
    BACKEND CONTRACT:
      - Load:    GetActiveCartForUserQuery → Result<CartDto?>
@@ -73,7 +83,7 @@
      token is established at circuit start. *@
 
 @page "/Cart"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin,Manager,Employee,Customer")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
@@ -633,8 +643,9 @@
                                                   Disabled="@_isBusy"
                                                   Click="@HandleClearCartAsync" />
                                     <RadzenButton Text="@Loc["ConfirmClearNo"]"
-                                                  ButtonStyle="ButtonStyle.Light"
-                                                  Variant="Variant.Text"
+                                                  Icon="arrow_back"
+                                                  ButtonStyle="ButtonStyle.Secondary"
+                                                  Variant="Variant.Outlined"
                                                   Disabled="@_isBusy"
                                                   Click="@(() => _confirmingClear = false)" />
                                 </RadzenStack>

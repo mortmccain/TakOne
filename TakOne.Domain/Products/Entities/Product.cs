@@ -279,6 +279,31 @@ public sealed class Product : AggregateRoot
         StockQuantity = quantity;
     }
 
+    /// <summary>
+    /// Sets the stock to the EXACT given quantity, with a stricter guard
+    /// than <see cref="SetStock"/>: quantity must be strictly positive
+    /// (≥ 1). Used by the staff "Set stock" UI on ProductDetail.razor,
+    /// which lets staff set stock to an absolute number rather than
+    /// adding to it.
+    ///
+    /// WHY THIS EXISTS (separate from <see cref="SetStock"/>):
+    ///   <see cref="SetStock"/> accepts 0 because the DEACTIVATION flow
+    ///   (DeactivateProductCommandHandler) calls SetStock(0) to zero out
+    ///   stock. The "Set stock" UI feature, however, must NOT allow 0 —
+    ///   per the user spec, "setting to negative or zero is not possible;
+    ///   to make it zero they should deactivate the product". This method
+    ///   enforces that invariant at the domain level (defense-in-depth:
+    ///   the command validator ALSO rejects ≤ 0, but the domain never
+    ///   trusts the caller).
+    /// </summary>
+    public void AdjustStockTo(int quantity)
+    {
+        if (quantity <= 0)
+            throw new DomainException("Stock quantity must be greater than zero. To make it zero, deactivate the product instead.");
+
+        StockQuantity = quantity;
+    }
+
 
 
     // ==================================================================================================================================

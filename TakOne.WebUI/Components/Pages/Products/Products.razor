@@ -440,9 +440,18 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
-                        <button type="button" class="tm-hero-btn-green" @onclick="GoToCart">
-                            @Loc["HeroButtonCart"]
-                        </button>
+                        @* Green "Cart" hero button — gated to exclude ReadOnly.
+                           ReadOnly users cannot shop (CreateOrAppendSaleCommand
+                           is gated to Admin/Manager/Employee/Customer via
+                           [RequireRoles]), so showing them a cart CTA would be
+                           misleading. Matches the top-bar cart icon + sidebar
+                           cart link + /Cart route's [Authorize(Roles=...)]
+                           attribute — all exclude ReadOnly. *@
+                        <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee + "," + Roles.Customer)">
+                            <button type="button" class="tm-hero-btn-green" @onclick="GoToCart">
+                                @Loc["HeroButtonCart"]
+                            </button>
+                        </AuthorizeView>
                     </div>
                 </div>
             </div>

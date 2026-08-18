@@ -578,11 +578,18 @@
 
 <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
     @* ── Back button ──
-       Returns to /Admin/Users. forceLoad:false preserves the Blazor circuit. *@
+       Returns to /Admin/Users. Style matches the Sales page's "Continue
+       shopping" button (ButtonStyle.Secondary + Variant.Outlined) per the
+       user's request so secondary navigation buttons share a consistent
+       visual language across the app. The button auto-sizes to its
+       content (no width:100% / align-self:stretch), so it's as wide as
+       its text + icon — not the full line. forceLoad:false preserves the
+       Blazor circuit. *@
     <RadzenButton Text="@Loc["BackToList"]"
                   Icon="arrow_back"
-                  ButtonStyle="ButtonStyle.Light"
-                  Variant="Variant.Text"
+                  ButtonStyle="ButtonStyle.Secondary"
+                  Variant="Variant.Outlined"
+                  Style="align-self: flex-start;"
                   Click="@(() => Navigation.NavigateTo("/Admin/Users", forceLoad: false))" />
 
     @* ── Loading state ── *@

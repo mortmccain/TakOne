@@ -72,6 +72,10 @@
   <data name="BackToCatalog" xml:space="preserve">
     <value>بازگشت به فهرست محصولات</value>
   </data>
+  <data name="BackToManageProducts" xml:space="preserve">
+    <value>بازگشت به مدیریت محصولات</value>
+    <comment>Staff-only back button — navigates to /Admin/Products. Replaces the customer-facing "Back to catalog" button when the viewer is staff.</comment>
+  </data>
   <data name="Loading" xml:space="preserve">
     <value>در حال بارگذاری محصول…</value>
   </data>
@@ -222,5 +226,33 @@
   <data name="ActionCreateGroup" xml:space="preserve">
     <value>ایجاد گروه جدید</value>
     <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
+  </data>
+  <data name="StockSetTitle" xml:space="preserve">
+    <value>موجودی</value>
+    <comment>Staff-only stock-set section heading on the product detail page.</comment>
+  </data>
+  <data name="StockSetCurrentLabel" xml:space="preserve">
+    <value>موجودی فعلی</value>
+  </data>
+  <data name="StockSetNewLabel" xml:space="preserve">
+    <value>مقدار جدید موجودی</value>
+  </data>
+  <data name="StockSetHint" xml:space="preserve">
+    <value>تعداد دقیق موجودی را وارد کنید. صفر کردن مجاز نیست — برای غیرفعال‌سازی محصول، از عملیات «غیرفعال‌سازی» در صفحهٔ مدیریت محصولات استفاده کنید.</value>
+  </data>
+  <data name="StockSetPlaceholder" xml:space="preserve">
+    <value>مثلاً ۵۰</value>
+  </data>
+  <data name="StockSetButton" xml:space="preserve">
+    <value>تنظیم موجودی</value>
+  </data>
+  <data name="StockSetRequiredError" xml:space="preserve">
+    <value>یک عدد صحیح مثبت وارد کنید.</value>
+  </data>
+  <data name="StockSetSuccessTitle" xml:space="preserve">
+    <value>موجودی به‌روزرسانی شد</value>
+  </data>
+  <data name="StockSetSuccess" xml:space="preserve">
+    <value>موجودی «{0}» برابر {1} تنظیم شد.</value>
   </data>
 </root>

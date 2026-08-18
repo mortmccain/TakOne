@@ -595,9 +595,18 @@
     /// <summary>
     /// Status filter handler. Maps the string key ("InStock"/"OutOfStock")
     /// to a Radzen filter on the StockQuantity column:
-    ///   - "InStock"     → FilterOperator.GreaterThan, FilterValue = 0
-    ///   - "OutOfStock"  → FilterOperator.Equals,      FilterValue = 0
+    ///   - "InStock"     → FilterOperator.GreaterThanOrEquals, FilterValue = 1
+    ///   - "OutOfStock"  → FilterOperator.Equals,                FilterValue = 0
     ///   - null / empty  → clear the filter (All)
+    ///
+    /// WHY GreaterThanOrEquals + 1 (not GreaterThan + 0):
+    ///   Radzen's column filter treats FilterValue == 0 (the default int
+    ///   value) as "no filter" in some code paths — so setting
+    ///   FilterValue = 0 + GreaterThan silently no-op'd and the grid
+    ///   showed out-of-stock products when the user picked "In stock".
+    ///   Using GreaterThanOrEquals with a value of 1 avoids the 0-sentinel
+    ///   and produces the equivalent predicate (StockQuantity >= 1 ⟺
+    ///   StockQuantity > 0 for integers).
     /// </summary>
     private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<ProductListItemDto> column)
     {
@@ -609,13 +618,15 @@
         }
         else if (value == "InStock")
         {
-            column.FilterValue = 0;
-            column.FilterOperator = FilterOperator.GreaterThan;
+            // Set the operator BEFORE the value so the column's filter
+            // logic is in place when FilterValue's setter re-evaluates.
+            column.FilterOperator = FilterOperator.GreaterThanOrEquals;
+            column.FilterValue = 1;
         }
         else // "OutOfStock"
         {
-            column.FilterValue = 0;
             column.FilterOperator = FilterOperator.Equals;
+            column.FilterValue = 0;
         }
 
         await grid.Reload();
