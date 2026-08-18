@@ -328,7 +328,7 @@
                                           TextAlign="TextAlign.Right">
                         <Template Context="product">
                             <span class="stock-cell @GetStockClass(product.StockQuantity)">
-                                @string.Format(CultureInfo.CurrentCulture, "{0:N0}", product.StockQuantity)
+                                @(CultureFormat.FormatNumber(product.StockQuantity))
                             </span>
                         </Template>
                     </RadzenDataGridColumn>
@@ -817,14 +817,11 @@
     /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
     /// admin pages show the real Rial amount stored in the database).
     /// Other currencies pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyRial"/> for
+    /// culture-native digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatPrice(MoneyDto? price)
-    {
-        if (price is null) return "—";
-        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var unit = isIrr ? "ریال" : price.Currency;
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
-    }
+        => CultureFormat.FormatMoneyRial(price);
 
     private static string GetStockClass(int stock)
     {

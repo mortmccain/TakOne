@@ -330,6 +330,43 @@
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>The purchase limit for &apos;{0}&apos; is {1} units per customer. You cannot add more than this amount.</value>
   </data>
+  <!-- SalaryBudgetExceeded — produced by AddItemToSale / UpdateSaleLineItem /
+       CreateOrAppendSale / SubmitSale handlers when the salary budget
+       (LimitMode = SalaryOnly or Both) would be exceeded by the mutation.
+       The localized message NEVER mentions "group" — the customer just
+       sees their remaining monthly budget.
+
+       Format args:
+         {0} = product name (e.g. "Spaghetti 1.2")
+         {1} = remaining budget display (already formatted with currency
+               unit and thousand separators — "4,950,000 Toman" or "0 Toman").
+               Negative-remaining is pre-fixed with a minus sign.
+
+       Amounts are formatted on the UI side (not in resx) so they pick up
+       the current culture's digit shape (Latin for en-US, Persian for fa-IR)
+       AND match the products page's "IRR ÷ 10 → Toman" convention. The
+       backend sends the raw IRR amount; we divide by 10 here so the error
+       uses the same unit the customer sees on the price tag. -->
+  <data name="SalaryBudgetExceeded" xml:space="preserve">
+    <value>You can&apos;t add &apos;{0}&apos; — it would go over your monthly budget. You have {1} left this month.</value>
+  </data>
+  <!-- AddButtonSalaryReached — shown on the Add button when the salary
+       budget is exhausted (remaining &lt; 0) OR adding even one more unit
+       of this product would exceed the remaining budget (unitPrice &gt;
+       remaining). Mirrors the count-limit "AddButtonLimitReached" disabled
+       state — same .tm-add-btn-text-full class, same disabled treatment. -->
+  <data name="AddButtonSalaryReached" xml:space="preserve">
+    <value>Budget reached</value>
+  </data>
+  <data name="AddButtonSalaryReachedTitle" xml:space="preserve">
+    <value>Adding this item would exceed your monthly salary budget.</value>
+  </data>
+  <!-- ToastSalaryReached — shown when the customer clicks Add but the
+       server-side salary-budget check rejects the call (race / stale UI).
+       Mirror of ToastLimitReached for the count-limit mode. -->
+  <data name="ToastSalaryReached" xml:space="preserve">
+    <value>Your monthly salary budget has been reached.</value>
+  </data>
   <data name="ToastReorderNothingToAdd" xml:space="preserve">
     <value>No items could be added to your cart — stock or purchase limits have been exhausted for all items.</value>
   </data>

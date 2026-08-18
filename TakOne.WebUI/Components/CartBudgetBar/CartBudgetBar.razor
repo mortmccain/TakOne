@@ -209,75 +209,22 @@
     // ── Display helpers ────────────────────────────────────────────────
 
     /// <summary>
-    /// Formats a MoneyDto for display. Mirrors Cart.razor's FormatPrice
-    /// helper exactly - IRR is labelled with the Persian word for Rial
-    /// (no division), other currencies pass through as the ISO code. The
-    /// culture-aware N0 format produces Persian digits + Persian thousands
-    /// separator in fa-IR mode.
+    /// Formats a MoneyDto for display. Mirrors the products page's Toman
+    /// convention - IRR is divided by 10 and labelled "تومان", other
+    /// currencies pass through. Delegates to
+    /// <see cref="CultureFormat.FormatMoneyToman"/> for culture-native
+    /// digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatPrice(MoneyDto price)
-    {
-        if (price is null) return "—";
-        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var unit = isIrr ? "ریال" : price.Currency;
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
-    }
+        => CultureFormat.FormatMoneyToman(price);
 
     /// <summary>
     /// Formats the budget window end (the 1st of the next Persian month) as
-    /// a culture-aware display string:
-    ///   - fa-IR: "{day} {PersianMonthName}" (e.g. "1 Mehr" in Persian digits)
-    ///   - en-US: "{MMM d}" (e.g. "Sep 1")
-    ///
-    /// WHY NOT JUST .ToString("d MMMM", culture):
-    ///   In fa-IR, .NET's PersianCalendar IS the active calendar for the
-    ///   culture, but DateTime.ToString still formats using the Gregorian
-    ///   calendar by default (DateTime's Kind=Utc has no calendar info).
-    ///   To get the Persian month name, we explicitly use PersianCalendar
-    ///   to read year/month/day, then format the month number back into a
-    ///   name via DateTimeFormatInfo.MonthNames for the fa-IR culture.
-    ///
-    ///   The salary window is anchored to the PERSIAN month (per spec: "1st
-    ///   of each Persian (Jalali) calendar month"). Displaying a Gregorian
-    ///   date would mislead the customer - they'd see "resets on Sep 22"
-    ///   when the actual reset is "1 Mehr" (which is Sep 22 in Gregorian but
-    ///   the customer thinks in Persian months).
+    /// a culture-aware display string. Delegates to
+    /// <see cref="CultureFormat.FormatMonthDay"/> which produces:
+    ///   - fa-IR: "{day} {PersianMonthName}" (e.g. "۱ مرداد")
+    ///   - en-US: "MMM d" (e.g. "Aug 1")
     /// </summary>
     private static string FormatWindowEnd(DateTime windowEndUtc)
-    {
-        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
-
-        if (!isFa)
-        {
-            // en-US: "Sep 1" - short month name + day, no year (the year is
-            // implied; the budget resets every month, so showing the year
-            // would clutter the footer unnecessarily).
-            return windowEndUtc.ToString("MMM d", CultureInfo.CurrentCulture);
-        }
-
-        // fa-IR: "{day} {PersianMonthName}" - e.g. "1 Mehr" with Persian digits.
-        var pc = new PersianCalendar();
-        var month = pc.GetMonth(windowEndUtc);
-        var day = pc.GetDayOfMonth(windowEndUtc);
-
-        // Look up the Persian month name from the fa-IR culture's
-        // DateTimeFormatInfo.MonthNames array. This is the same source the
-        // BCL uses when formatting dates with the PersianCalendar culture -
-        // reliable across .NET versions (the array is static data shipped
-        // with the Globalization dataset).
-        var faCulture = CultureInfo.GetCultureInfo("fa-IR");
-        var monthNames = faCulture.DateTimeFormat.MonthNames;
-        // MonthNames is 1-indexed conceptually but 0-indexed as an array;
-        // index 12 is the empty string (13th month in leap-year calendars).
-        var monthName = month <= monthNames.Length
-            ? monthNames[month - 1]
-            : month.ToString("00", CultureInfo.InvariantCulture);
-
-        // Convert ASCII digits to Persian digits (fa-IR culture's
-        // NumberFormatInfo.NativeDigits). The CurrentCulture's N0 format
-        // does this for us automatically when we pass the culture.
-        var dayStr = day.ToString("N0", faCulture).Trim();
-
-        return $"{dayStr} {monthName}";
-    }
+        => CultureFormat.FormatMonthDay(windowEndUtc);
 }

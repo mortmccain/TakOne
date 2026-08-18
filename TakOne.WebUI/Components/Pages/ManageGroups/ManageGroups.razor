@@ -225,9 +225,10 @@
                         {
                             <div class="limit-mode-meta">
                                 @(string.Format(CultureInfo.CurrentCulture, Loc["LimitModeLastUpdated"],
-                                                _limitModeUpdatedAt.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)))
+                                                CultureFormat.FormatTehranDateTime(_limitModeUpdatedAt.Value)))
                             </div>
                         }
+
                     </div>
                 </div>
 
@@ -885,14 +886,14 @@
         };
 
     /// <summary>
-    /// Formats the salary amount using the current UI culture's number
-    /// format (so fa-IR shows Persian digits + Persian thousands separator,
-    /// en-US shows ASCII digits + comma). Currency code is shown separately
-    /// via the .salary-currency span — kept out of the formatted number so
-    /// the number stays tabular-aligned in the column.
+    /// Formats the salary amount using the current UI culture's native
+    /// digits (Persian digits in fa-IR mode, ASCII in en-US). Currency
+    /// code is shown separately via the .salary-currency span — kept
+    /// out of the formatted number so the number stays tabular-aligned
+    /// in the column. Delegates to <see cref="CultureFormat.FormatNumber(decimal)"/>.
     /// </summary>
     private string FormatSalaryAmount(decimal amount)
-        => amount.ToString("N0", CultureInfo.CurrentCulture);
+        => CultureFormat.FormatNumber(amount);
 
     // IJSRuntime is needed for the JS confirm() call in HandleDeactivateAsync.
     // Injected as a property rather than at the top of the file because

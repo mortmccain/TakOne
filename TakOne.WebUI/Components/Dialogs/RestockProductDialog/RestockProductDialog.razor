@@ -83,7 +83,7 @@
                     @Loc["CurrentStockLabel"]
                 </RadzenText>
                 <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; font-variant-numeric: tabular-nums;">
-                    @string.Format(System.Globalization.CultureInfo.CurrentCulture, "{0:N0}", CurrentStock)
+                    @(CultureFormat.FormatNumber(CurrentStock))
                 </RadzenText>
             </RadzenStack>
         </div>

@@ -272,7 +272,7 @@
                                           Title="@Loc["ColSaleNumber"]"
                                           Width="240px">
                         <Template Context="sale">
-                            <RadzenLink Text="@sale.DisplayNumber"
+                            <RadzenLink Text="@(CultureFormat.FormatDigits(sale.DisplayNumber))"
                                         Path="@($"/Sales/{sale.Id}")"
                                         class="sale-number-link"
                                         title="@(GetSaleNumberTooltip(sale))" />
@@ -640,36 +640,26 @@
     /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
     /// order history shows the real Rial amount on record). Other currencies
     /// pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyRial"/> for
+    /// culture-native digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatMoney(MoneyDto? money)
-    {
-        if (money is null) return "—";
-        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var unit = isIrr ? "ریال" : money.Currency;
-        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
-    }
+        => CultureFormat.FormatMoneyRial(money);
 
     /// <summary>
     /// Formats a UTC timestamp for display in Tehran time, culture-aware.
-    ///
-    /// Tehran = UTC + 3:30 (no DST since 2022). We add the offset inline
-    /// instead of using a static TimeZoneInfo field — the field was coming
-    /// back null on some Windows deployments and Blazor hot-reload doesn't
-    /// refresh static field initializers. Inline arithmetic is bulletproof.
-    ///
-    /// Format string "g" = short date + short time (culture-dependent).
-    /// For fa-IR with the PersianCalendar configured, this renders as
-    /// e.g. "۱۴۰۳/۰۵/۱۲ ۱۵:۳۰" (Jalali date + Persian-digit time).
-    /// For en-US it renders as e.g. "8/2/2024 3:30 PM".
+    /// Delegates to <see cref="CultureFormat.FormatTehranDateTime(DateTimeOffset)"/>,
+    /// which handles the Tehran offset (+3:30, no DST since 2022), the
+    /// Jalali calendar conversion in fa-IR mode, and the Persian digit
+    /// swap. The previous implementation called
+    /// <c>tehran.DateTime.ToString("g", CultureInfo.CurrentCulture)</c>
+    /// directly, which produced ASCII digits in fa-IR mode (because .NET's
+    /// NumberFormatInfo.NativeDigits is informational-only) and a
+    /// Gregorian year (because .NET's fa-IR culture's default calendar is
+    /// Gregorian, not Jalali). The centralized helper fixes both issues.
     /// </summary>
     private static string FormatTehranDateTime(DateTimeOffset utc)
-    {
-        // AddHours shifts the datetime but keeps the +00:00 offset;
-        // .DateTime extracts the shifted DateTime without any further
-        // timezone conversion.
-        var tehran = utc.AddHours(3.5);
-        return tehran.DateTime.ToString("g", CultureInfo.CurrentCulture);
-    }
+        => CultureFormat.FormatTehranDateTime(utc);
 
     /// <summary>
     /// Maps a sale status string (the SaleStatus enum's ToString() output)

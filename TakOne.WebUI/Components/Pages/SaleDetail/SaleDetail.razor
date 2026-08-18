@@ -100,7 +100,7 @@
 @inject Radzen.DialogService DialogService
 @inject Microsoft.Extensions.Logging.ILogger<SaleDetail> Logger
 
-<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{_sale.DisplayNumber} — {Loc["PageTitle"]}")</PageTitle>
+<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{CultureFormat.FormatDigits(_sale.DisplayNumber)} — {Loc["PageTitle"]}")</PageTitle>
 
 <HeadContent>
     <style>
@@ -425,14 +425,14 @@
                 <nav class="breadcrumb" aria-label="breadcrumb">
                     <a href="/Sales">@Loc["BreadcrumbSales"]</a>
                     <span class="crumb-sep">/</span>
-                    <span class="crumb-current">@_sale.DisplayNumber</span>
+                    <span class="crumb-current">@(CultureFormat.FormatDigits(_sale.DisplayNumber))</span>
                 </nav>
 
                 @* Page header — sale number + status badge inline *@
                 <div class="detail-header" Style="margin-bottom: 1rem;">
                     <h1 class="detail-sale-number"
                         title="@GetSaleNumberTooltip()">
-                        @_sale.DisplayNumber
+                        @(CultureFormat.FormatDigits(_sale.DisplayNumber))
                     </h1>
                     <RadzenBadge Text="@GetStatusLabel(_sale.Status)"
                                  BadgeStyle="@GetStatusBadgeStyle(_sale.Status)"
@@ -466,7 +466,7 @@
                                                   Width="60px"
                                                   TextAlign="TextAlign.Center">
                                 <Template Context="line">
-                                    <span style="color: var(--rz-text-secondary-color);">@line.LineNumber</span>
+                                    <span style="color: var(--rz-text-secondary-color);">@(CultureFormat.FormatDigits(line.LineNumber))</span>
                                 </Template>
                             </RadzenDataGridColumn>
 
@@ -485,7 +485,7 @@
                                                   Width="100px"
                                                   TextAlign="TextAlign.Right">
                                 <Template Context="line">
-                                    <span class="line-item-money">@line.Quantity.ToString("N0", CultureInfo.CurrentCulture)</span>
+                                    <span class="line-item-money">@(CultureFormat.FormatNumber(line.Quantity))</span>
                                 </Template>
                             </RadzenDataGridColumn>
 
@@ -575,11 +575,11 @@
                         <div>
                             <div class="totals-row">
                                 <span class="label">@Loc["TotalLines"]</span>
-                                <span class="value">@_sale.LineItems.Count.ToString("N0", CultureInfo.CurrentCulture)</span>
+                                <span class="value">@(CultureFormat.FormatNumber(_sale.LineItems.Count))</span>
                             </div>
                             <div class="totals-row">
                                 <span class="label">@Loc["TotalUnits"]</span>
-                                <span class="value">@_sale.LineItems.Sum(li => li.Quantity).ToString("N0", CultureInfo.CurrentCulture)</span>
+                                <span class="value">@(CultureFormat.FormatNumber(_sale.LineItems.Sum(li => li.Quantity)))</span>
                             </div>
                             <div class="totals-row grand-total">
                                 <span class="label">@Loc["GrandTotal"]</span>
@@ -643,7 +643,7 @@
                                             <RadzenIcon Icon="warning" Style="color: var(--rz-danger); font-size: 1.25rem;" />
                                             <RadzenText TextStyle="TextStyle.Subtitle1">
                                                 @Loc["CancelFormHeading"]
-                                                <strong>@_sale.DisplayNumber</strong>
+                                                <strong>@(CultureFormat.FormatDigits(_sale.DisplayNumber))</strong>
                                             </RadzenText>
                                         </RadzenStack>
                                         <div>
@@ -1187,14 +1187,11 @@
     /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
     /// matches Sales.razor so an order's totals read the same on the list
     /// and the detail page). Other currencies pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyRial"/> for
+    /// culture-native digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatMoney(MoneyDto? money)
-    {
-        if (money is null) return "—";
-        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var unit = isIrr ? "ریال" : money.Currency;
-        return $"{money.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
-    }
+        => CultureFormat.FormatMoneyRial(money);
 
     // ── Tehran timezone ─────────────────────────────────────────────────
     //
@@ -1209,33 +1206,30 @@
 
     /// <summary>
     /// Formats a UTC timestamp for display in Tehran time, culture-aware.
+    /// Delegates to <see cref="CultureFormat.FormatTehranDateTime(DateTimeOffset)"/>.
     ///
     /// WHY NOT .LocalDateTime:
     ///   .LocalDateTime converts to the SERVER's local timezone, which is
     ///   UTC on this deployment. The user explicitly asked for Tehran
-    ///   time, so we add a fixed +3:30 offset (Tehran abolished DST in
-    ///   2022) and format the result.
+    ///   time, so the centralized helper adds a fixed +3:30 offset
+    ///   (Tehran abolished DST in 2022) and formats the result.
     ///
     /// WHY NOT TimeZoneInfo.ConvertTime:
     ///   We previously used a static TimeZoneInfo field, but it was coming
-    ///   back null on some Windows deployments (TryFindSystemTimeZoneById
-    ///   edge cases + Blazor hot-reload doesn't refresh static field
-    ///   initializers). Inline arithmetic is bulletproof — no timezone
-    ///   lookup, no static state.
+    ///   back null on some Windows deployments. The centralized helper uses
+    ///   inline arithmetic — bulletproof, no timezone lookup, no static state.
     ///
-    /// Format string "g" = short date + short time (culture-dependent).
-    /// For fa-IR with the PersianCalendar configured, this renders as
-    /// e.g. "۱۴۰۳/۰۵/۱۲ ۱۵:۳۰" (Jalali date + Persian-digit time).
-    /// For en-US it renders as e.g. "8/2/2024 3:30 PM".
+    /// The centralized helper builds the date+time string piece-by-piece
+    /// from PersianCalendar in fa-IR mode (with Persian digits) and uses
+    /// Gregorian + ASCII in en-US mode. The previous implementation called
+    /// <c>tehran.DateTime.ToString("g", CultureInfo.CurrentCulture)</c>
+    /// directly, which produced ASCII digits in fa-IR mode (because .NET's
+    /// NumberFormatInfo.NativeDigits is informational-only) and a
+    /// Gregorian year (because .NET's fa-IR culture's default calendar is
+    /// Gregorian, not Jalali). The centralized helper fixes both issues.
     /// </summary>
     private static string FormatTimestamp(DateTimeOffset utc)
-    {
-        // Tehran = UTC + 3:30 (no DST since 2022). AddHours shifts the
-        // datetime but keeps the +00:00 offset; .DateTime extracts the
-        // shifted DateTime without any further timezone conversion.
-        var tehran = utc.AddHours(3.5);
-        return tehran.DateTime.ToString("g", CultureInfo.CurrentCulture);
-    }
+        => CultureFormat.FormatTehranDateTime(utc);
 
     /// <summary>
     /// Maps a sale status string (the SaleStatus enum's ToString() output)

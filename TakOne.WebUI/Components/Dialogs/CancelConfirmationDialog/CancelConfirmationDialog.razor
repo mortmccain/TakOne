@@ -49,7 +49,7 @@
 
         <RadzenText>
             @Loc["BodyIntro"]
-            <strong>@(SaleNumber ?? "—")</strong>.
+            <strong>@(SaleNumber is null ? "—" : CultureFormat.FormatDigits(SaleNumber))</strong>.
             @Loc["BodyPermanent"]
         </RadzenText>
 

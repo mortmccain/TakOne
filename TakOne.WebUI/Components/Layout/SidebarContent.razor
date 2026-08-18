@@ -211,28 +211,23 @@
     /// Formats a numeric string (ASCII digits) using the current UI culture's
     /// native digits. In fa-IR mode this produces Persian digits (۴۸۲); in
     /// en-US mode it leaves ASCII digits unchanged (482). Used for the
-    /// sidebar support phone number so it follows the same digit rule as the
-    /// rest of the UI.
+    /// sidebar support phone number so it follows the same digit rule as
+    /// the rest of the UI.
     ///
     /// WHY (instead of hard-coding ۴۸۲): the user asked that ALL numbers in
     /// the app follow the culture rule — Persian digits in Persian mode,
     /// English digits in English mode. Hard-coding either form would break
     /// one of the two cultures.
     ///
-    /// IMPLEMENTATION: parses the input as an integer and re-formats it with
-    /// CultureInfo.CurrentCulture.NumberFormat.NativeDigits via ToString("0").
-    /// .NET 10's fa-IR culture has NativeDigits = ۰..۹, so this produces
-    /// Persian digits in fa-IR mode. Returns the original string unchanged
-    /// if parsing fails (defensive — should never happen for "482").
+    /// IMPLEMENTATION: delegates to <see cref="CultureFormat.FormatDigits(string)"/>,
+    /// which formats with InvariantCulture first and then swaps ASCII digits
+    /// for Persian digits in fa-IR mode. We can't just call
+    /// <c>n.ToString("0", CultureInfo.CurrentCulture)</c> because .NET's
+    /// NumberFormatInfo.NativeDigits is informational-only and not honored
+    /// by ToString in modern .NET.
     /// </summary>
     private string FormatLocalDigits(string value)
-    {
-        if (int.TryParse(value, out var n))
-        {
-            return n.ToString("0", CultureInfo.CurrentCulture);
-        }
-        return value;
-    }
+        => CultureFormat.FormatDigits(value);
 
     /// <summary>
     /// Returns true if the given nav path matches the current page. Used to

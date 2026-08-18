@@ -549,7 +549,36 @@
                         var qty = GetQtyForProduct(product.Id);
                         var limitReached = remaining <= 0;
                         var stockOut = product.StockQuantity <= 0;
-                        var disabled = limitReached || stockOut || _isAddingAny;
+                        // ── Salary budget gray-out (revised) ────────────────────────────
+                        //
+                        // Two coordinated checks implement the user's two
+                        // scenarios (A=100, B=200, salary=1000):
+                        //
+                        //   Scenario 1 — cart_total reaches 1000:
+                        //     Remaining = 0 → qty × unitPrice > 0 for any
+                        //     product with a positive price → Add button
+                        //     is disabled on ALL cards.
+                        //
+                        //   Scenario 2 — cart has 9 × A (900), Remaining = 100:
+                        //     • Product A (100): qty=1 × 100 = 100 ≤ Remaining
+                        //       → Add enabled. + at qty=1 disabled by
+                        //       GetQtyMaxForProduct's salary cap (max=1,
+                        //       so qty can't go to 2).
+                        //     • Product B (200): qty=1 × 200 = 200 > Remaining
+                        //       → Add disabled.
+                        //
+                        // The Add button check uses the CURRENTLY-SELECTED
+                        // qty (not just 1) so that even if the + selector
+                        // somehow reaches a high qty (e.g. cart was mutated
+                        // by another tab after page load, leaving a stale
+                        // selector state), the Add button still greys out
+                        // instead of letting the click dispatch a command
+                        // the backend will reject.
+                        var budget = _cart?.BudgetInfo;
+                        var unitPrice = product.Price?.Amount ?? 0m;
+                        var salaryReached = budget is not null
+                            && (qty * unitPrice) > budget.Remaining;
+                        var disabled = limitReached || stockOut || salaryReached || _isAddingAny;
                         <div class="tm-product-card">
                             <div class="tm-product-image">
                                 @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
@@ -626,6 +655,15 @@
                                                 disabled
                                                 title="@Loc["AddButtonLimitReachedTitle"]">
                                             @Loc["AddButtonLimitReached"]
+                                        </button>
+                                    }
+                                    else if (salaryReached && !stockOut)
+                                    {
+                                        <button type="button"
+                                                class="tm-add-btn tm-add-btn-text-full"
+                                                disabled
+                                                title="@Loc["AddButtonSalaryReachedTitle"]">
+                                            @Loc["AddButtonSalaryReached"]
                                         </button>
                                     }
                                     else if (stockOut)
@@ -1205,14 +1243,53 @@
 
     private int GetQtyMaxForProduct(ProductListItemDto product)
     {
-        // Max = min(stock, remaining limit). For staff (no limit), max = stock.
-        // We always allow at least 1 so the user can interact with the selector
-        // (the add button is disabled separately when remaining <= 0).
+        // Max = min(stock, remaining count limit, salary budget).
+        // For staff (no count limit), max = stock. We always allow at
+        // least 1 so the user can interact with the selector (the Add
+        // button is disabled separately when remaining <= 0 OR when
+        // qty × unitPrice > salary Remaining).
         var remaining = GetRemainingForProduct(product);
         var cap = product.MyPurchaseLimit.HasValue
             ? Math.Min(remaining, product.StockQuantity)
             : product.StockQuantity;
-        return Math.Max(1, cap);
+        var max = Math.Max(1, cap);
+
+        // Salary budget cap — Step 12-d follow-up (revised).
+        //
+        // The +/- selector's Max must reflect the salary budget too,
+        // not just stock + count limit. Otherwise the user could pick
+        // a qty whose line total exceeds the remaining budget and
+        // then click Add, only to get a (friendly) toast from the
+        // backend. We want the + button itself to grey out at the
+        // right qty so the user understands "I literally cannot pick
+        // more of this product without going over my salary budget".
+        //
+        // Concretely (A=100, B=200, salary=1000, cart has 9 × A = 900,
+        // Remaining=100):
+        //   • For product A: salaryMax = floor(100/100) = 1 → max=1.
+        //     + is disabled at qty=1 (qty >= max). The Add button at
+        //     qty=1 is enabled because 1 × 100 ≤ 100 Remaining.
+        //   • For product B: salaryMax = floor(100/200) = 0, clamped to
+        //     1 (UX floor so the selector still works). + is disabled
+        //     at qty=1. The Add button at qty=1 is disabled because
+        //     1 × 200 > 100 Remaining.
+        //
+        // Clamp salaryMax to at least 1 — if even one unit exceeds
+        // the budget (salaryMax = 0), we still want the selector to
+        // be interactive so the user can SEE the qty and understand
+        // why Add is greyed out. The Add button's salaryReached check
+        // (in the render block) is what actually blocks the click.
+        if (_cart?.BudgetInfo is { } budget && product.Price is { } price)
+        {
+            var unitPrice = price.Amount;
+            if (unitPrice > 0m)
+            {
+                var salaryMax = (int)Math.Floor(budget.Remaining / unitPrice);
+                max = Math.Min(max, Math.Max(1, salaryMax));
+            }
+        }
+
+        return max;
     }
 
     /// <summary>
@@ -1315,6 +1392,30 @@
             await Toast.Info(string.Format(Loc["ToastQtyClamped"], ToPersian(remaining)));
         }
 
+        // Step 12-d follow-up — Salary budget predictive guard.
+        //
+        // Same defensive pattern as the count-limit clamp above: if the
+        // user's salary budget is enforced (BudgetInfo is non-null) AND
+        // adding the currently-selected qty of this product would exceed
+        // the remaining budget, surface a friendly toast and bail BEFORE
+        // dispatching the command. The Add button is already grayed out
+        // in this state (see salaryReached in the rendering block, which
+        // uses the same qty × unitPrice > Remaining check), so this is
+        // the "stale UI" path: cart was mutated by another tab / session
+        // after page load, BudgetInfo was reloaded (e.g. via Submit),
+        // and now this Add click would exceed the budget.
+        var budget = _cart?.BudgetInfo;
+        if (budget is not null)
+        {
+            var unitPrice = product.Price?.Amount ?? 0m;
+            var lineTotal = unitPrice * qty;
+            if (lineTotal > budget.Remaining)
+            {
+                await Toast.Warning(Loc["ToastSalaryReached"]);
+                return;
+            }
+        }
+
         // Set BOTH flags before any await. _isAddingAny is the global
         // guard (disables ALL Add buttons); _addingProductId drives the
         // per-card spinner icon (still useful for visual feedback even
@@ -1361,22 +1462,53 @@
 
     /// <summary>
     /// Upper bound for the +/- buttons on a mini-cart line. Same formula
-    /// as the cart page's <c>GetLineMax</c>:
-    ///   <c>Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c>.
+    /// as the cart page's <c>GetLineMax</c>, PLUS a salary-budget cap.
     ///
-    /// Before this fix, the mini-cart used <c>Max(CurrentStock, Quantity)</c>
-    /// and IGNORED the per-group purchase limit — so a customer could click
+    /// BEFORE the salary cap was added, the mini-cart used
+    /// <c>Max(CurrentStock, Quantity)</c> and IGNORED both the per-group
+    /// purchase limit AND the salary budget — so a customer could click
     /// + past their group's limit and only get stopped by a backend
-    /// DomainException (surfaced as a generic error toast). Now the + button
-    /// greys out at the limit, matching the products-grid qty selector's
-    /// behavior.
+    /// DomainException (surfaced as a generic error toast).
+    ///
+    /// The cap is now <c>Min(byCount, bySalary)</c> where:
+    ///   <c>byCount = Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c>
+    ///   <c>bySalary = Quantity + Max(0, floor(Remaining / unitPrice))</c>
+    ///
+    /// <c>bySalary</c> is the absolute max qty this line can reach without
+    /// exceeding the salary budget — i.e. the current qty PLUS the max
+    /// number of NEW units the budget can absorb. When <c>Remaining</c>
+    /// is exhausted (or already in overdraft), <c>bySalary = Quantity</c>
+    /// and the + button greys out (since <c>Quantity &gt;= Quantity</c>).
+    ///
+    /// The + button's disabled check is <c>line.Quantity &gt;= lineMax</c>
+    /// — so when salary only allows N more units, + greys out exactly
+    /// after the Nth increment, matching the user's scenario 2:
+    /// "the + sign on product A is not allowed to make it 2 instead of 1".
     /// </summary>
-    private static int GetCartLineMax(CartLineItemDto line)
+    private int GetCartLineMax(CartLineItemDto line)
     {
         var byStock = Math.Max(line.CurrentStock, line.Quantity);
-        return line.MyPurchaseLimit.HasValue
+        var byCount = line.MyPurchaseLimit.HasValue
             ? Math.Min(line.MyPurchaseLimit.Value, byStock)
             : byStock;
+
+        // Salary budget cap on the absolute qty this line can reach.
+        // salaryAdditionalMax = how many MORE units of this product the
+        // remaining budget can absorb. When this is 0, the + button is
+        // disabled at the current qty (line.Quantity >= line.Quantity).
+        // When negative (overdraft), Math.Max(0, …) clamps it to 0 too.
+        if (_cart?.BudgetInfo is { } budget && line.UnitPrice is { } unitPrice)
+        {
+            var price = unitPrice.Amount;
+            if (price > 0m)
+            {
+                var salaryAdditionalMax = (int)Math.Floor(budget.Remaining / price);
+                var salaryAbsoluteMax = line.Quantity + Math.Max(0, salaryAdditionalMax);
+                byCount = Math.Min(byCount, salaryAbsoluteMax);
+            }
+        }
+
+        return byCount;
     }
 
     private async Task UpdateCartLineQtyAsync(Guid lineItemId, int newQty)
@@ -1600,41 +1732,37 @@
 
     // ── Display helpers ─────────────────────────────────────────────────
 
+    // All number / money / date formatting now delegates to the centralized
+    // CultureFormat helper (see Services/CultureFormat.cs). The local
+    // FormatPrice / ToPersian wrappers are kept so the existing markup
+    // (which calls them by name) doesn't have to change — only the bodies
+    // are swapped to use CultureFormat, which produces Persian digits in
+    // fa-IR mode and ASCII digits in en-US mode (matching the Dashboard).
+
     /// <summary>
     /// Formats a MoneyDto for display. IRR is converted to Toman (amount ÷ 10)
     /// and labelled "تومان" — matches the Dashboard convention
     /// (GetDashboardStatsQueryHandler). Other currencies pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyToman"/>.
     /// </summary>
     private static string FormatPrice(MoneyDto? price)
-    {
-        if (price is null || price.Amount == 0) return "—";
-        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
-        var amount = displayAmount.ToString("N0", CultureInfo.CurrentCulture);
-        var unit = isIrr ? "تومان" : price.Currency;
-        return $"{amount} {unit}";
-    }
+        => CultureFormat.FormatMoneyToman(price);
 
     /// <summary>
-    /// Converts Latin digits in a number/string to Persian digits (۰۱۲۳۴۵۶۷۸۹).
-    /// Persian culture already does this for ToString("N0"), but for integer
-    /// counts (like "5 کالا") we render via @ToPersian(5) — which would
-    /// otherwise show Latin digits in any culture. This helper keeps the
-    /// page's digit system consistent with the rest of the Persian UI.
-    /// Returns the original string for null/empty/non-numeric input.
+    /// Formats an integer count (e.g. "5 کالا") using culture-native digits.
+    /// No thousands separators (counts don't need them).
+    /// Delegates to <see cref="CultureFormat.FormatDigits(int)"/>.
     /// </summary>
     private static string ToPersian(int value)
-    {
-        // Use the current culture's digit shape — for fa-IR this is Persian,
-        // for en-US this is Latin. Respects the language switcher.
-        return value.ToString("N0", CultureInfo.CurrentCulture)
-                   .Replace(",", ""); // counts don't need thousand separators
-    }
+        => CultureFormat.FormatDigits(value);
 
+    /// <summary>
+    /// Formats a decimal value (e.g. a percentage or a count with decimals)
+    /// using culture-native digits and thousands separators.
+    /// Delegates to <see cref="CultureFormat.FormatNumber(decimal)"/>.
+    /// </summary>
     private static string ToPersian(decimal value)
-    {
-        return value.ToString("N0", CultureInfo.CurrentCulture);
-    }
+        => CultureFormat.FormatNumber(value);
 
     /// <summary>
     /// Translates a backend <c>Result.Error</c> string into a user-facing,
@@ -1659,11 +1787,16 @@
     {
         if (PurchaseLimitErrors.TryParse(error, out var productName, out var limit))
         {
+            // Format the limit with culture-native digits before substitution
+            // so {1} picks up Persian digits in fa-IR mode. Passing the raw
+            // int would let string.Format call .ToString() on it, which
+            // produces ASCII digits (because .NET's NumberFormatInfo
+            // NativeDigits is informational-only in modern .NET).
             return string.Format(
                 CultureInfo.CurrentCulture,
                 Loc["PurchaseLimitExceeded"],
                 productName,
-                limit);
+                CultureFormat.FormatDigits(limit));
         }
         if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedProductName))
         {
@@ -1671,6 +1804,35 @@
                 CultureInfo.CurrentCulture,
                 Loc["CategoryDeactivated"],
                 deactivatedProductName);
+        }
+        // Step 12-d follow-up — SalaryBudgetExceeded is produced when the
+        // salary budget (LimitMode = SalaryOnly or Both) would be exceeded
+        // by adding/updating/submitting. The customer sees a friendly
+        // message about their remaining monthly budget — the word "group"
+        // never appears (per the feature spec).
+        //
+        // Amounts are formatted with FormatSalaryAmount — which mirrors
+        // the products page's FormatPrice helper (IRR ÷ 10 → "تومان" /
+        // "Toman", N0 thousand separators, current-culture digits) so the
+        // error message uses the SAME unit the customer sees on the price
+        // tag. The raw error string carried the raw IRR amount with decimal
+        // trailing zeros (e.g. "50000.00"); FormatSalaryAmount strips the
+        // decimals and converts to Toman so the message matches the price
+        // tag exactly.
+        if (SalaryBudgetExceededErrors.TryParse(
+                error,
+                out var sbProductName,
+                out var sbLineTotal,
+                out var sbRemaining,
+                out var sbCurrency))
+        {
+            var remainingDisplay = FormatSalaryAmount(sbRemaining, sbCurrency);
+
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["SalaryBudgetExceeded"],
+                sbProductName,
+                remainingDisplay);
         }
         // Stable error code returned by SubmitSaleCommandHandler when the
         // cart is empty — defense-in-depth guard that should never fire.
@@ -1698,6 +1860,55 @@
             return Loc["NoCustomerGroup"];
         }
         return error;
+    }
+
+    /// <summary>
+    /// Formats a (amount, currency) pair for display in salary-budget
+    /// error messages. Mirrors <see cref="FormatPrice(MoneyDto?)"/>'s
+    /// IRR → Toman conversion (÷ 10, labelled "تومان") and N0 thousand
+    /// separators, BUT does NOT collapse zero amounts to "—" (the way
+    /// FormatPrice does for price tags). For an error message like
+    /// "you have 0 Toman remaining", we want to show the literal zero,
+    /// not an em-dash placeholder.
+    ///
+    /// Negative amounts (overdraft — the customer already exceeded
+    /// their budget before this attempt) are pre-fixed with a minus
+    /// sign, mirroring the CartBudgetBar's overdraft display convention.
+    ///
+    /// WHY THIS EXISTS (vs. just calling FormatPrice with a MoneyDto):
+    ///   1. FormatPrice returns "—" for amount = 0, which is wrong for an
+    ///      error message (the customer needs to see "0 تومان", not "—").
+    ///   2. FormatPrice takes a MoneyDto (a non-null object), but the
+    ///      SalaryBudgetExceededErrors.TryParse path yields raw
+    ///      (decimal, string) values — wrapping them in a MoneyDto just
+    ///      to unwrap them inside FormatPrice is needless churn.
+    ///   3. Keeping the negative-prefix logic in one place ensures the
+    ///      error message and the CartBudgetBar render overdrafts the
+    ///      same way (consistent UX).
+    /// </summary>
+    private static string FormatSalaryAmount(decimal amount, string currency)
+    {
+        var isIrr = string.Equals(currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        // IRR → Toman: divide by 10 so the error matches the price tag.
+        // Use Math.Abs so the minus sign is rendered explicitly (not via
+        // the N0 format's culture-specific negative pattern, which can
+        // produce "(4,950,000)" parens in en-US — confusing in an error).
+        var magnitude = isIrr ? Math.Abs(amount) / 10m : Math.Abs(amount);
+        // Use CultureFormat to get Persian digits in fa-IR mode (matching
+        // the rest of the products page) — the previous call to
+        // .ToString("N0", CultureInfo.CurrentCulture) produced ASCII digits
+        // in fa-IR mode because .NET's NumberFormatInfo.NativeDigits is
+        // informational-only.
+        var formatted = CultureFormat.FormatNumber(magnitude);
+        var sign = amount < 0m ? "−" : string.Empty;
+        // The currency unit label is hard-coded "تومان" for IRR — this
+        // mirrors FormatPrice and the rest of the products page. For
+        // en-US users seeing IRR prices, the "تومان" label is still
+        // shown (it's the Persian word for Toman, which has no English
+        // equivalent that the customer would recognize on a price tag).
+        // For other currencies, pass through the ISO 4217 code.
+        var unit = isIrr ? "تومان" : currency;
+        return $"{sign}{formatted} {unit}";
     }
 
     /// <summary>

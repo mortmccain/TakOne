@@ -855,30 +855,7 @@ else if (_stats is not null)
     /// through unchanged.
     /// </summary>
     private string ToCultureDigits(string? s)
-    {
-        if (string.IsNullOrEmpty(s)) return string.Empty;
-
-        var isFa = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa";
-        var sb = new System.Text.StringBuilder(s.Length);
-        foreach (var c in s)
-        {
-            if (c >= '0' && c <= '9')
-            {
-                // ASCII digit → Persian (in fa mode) or keep as ASCII (otherwise).
-                sb.Append(isFa ? (char)('۰' + (c - '0')) : c);
-            }
-            else if (c >= '۰' && c <= '۹')
-            {
-                // Persian digit → keep as Persian (in fa mode) or convert to ASCII (otherwise).
-                sb.Append(isFa ? c : (char)('0' + (c - '۰')));
-            }
-            else
-            {
-                sb.Append(c);
-            }
-        }
-        return sb.ToString();
-    }
+        => CultureFormat.ToCultureDigits(s);
 
     /// <summary>
     /// Formats a numeric string using the current UI culture's native

@@ -133,7 +133,7 @@
             }
 
             /* Summary card — read-only label/value pairs in a 2-col grid.
-                           Mirrors Settings.razor's .profile-grid pattern. */
+                                       Mirrors Settings.razor's .profile-grid pattern. */
             .profile-grid {
                 display: grid;
                 grid-template-columns: minmax(120px, auto) 1fr;
@@ -158,7 +158,7 @@
             }
 
             /* Section title — small heading inside a card with a leading icon.
-                           Mirrors Settings.razor's .section-title pattern. */
+                                       Mirrors Settings.razor's .section-title pattern. */
             .section-title {
                 display: flex;
                 align-items: center;
@@ -190,17 +190,17 @@
             }
 
             /* RTL fallback for RadzenNumeric — the inner input is forced
-                           LTR so the caret + digit grouping reads correctly in both
-                           LTR and RTL layouts. */
+                                       LTR so the caret + digit grouping reads correctly in both
+                                       LTR and RTL layouts. */
             .salary-row .rz-numeric .rz-textbox {
                 direction: ltr;
                 text-align: left;
             }
 
             /* Currency-read-only pill — shown next to the salary amount
-                           field to communicate "you can edit the amount, but the
-                           currency is locked". Mirrors the .salary-currency span
-                           pattern used on the ManageGroups list page. */
+                                       field to communicate "you can edit the amount, but the
+                                       currency is locked". Mirrors the .salary-currency span
+                                       pattern used on the ManageGroups list page. */
             .currency-locked-pill {
                 display: inline-flex;
                 align-items: center;
@@ -944,30 +944,21 @@
         => isActive ? BadgeStyle.Success : BadgeStyle.Danger;
 
     private string FormatSalaryAmount(decimal amount)
-        => amount.ToString("N0", CultureInfo.CurrentCulture);
+        => CultureFormat.FormatNumber(amount);
 
     private string FormatInt(int value)
-        => value.ToString("N0", CultureInfo.CurrentCulture);
+        => CultureFormat.FormatDigits(value);
 
     /// <summary>
-    /// Formats a UTC DateTime as a localized date-time string in the
-    /// current UI culture. Converts to local time first using the
-    /// server's local time zone (TimeZoneInfo.Local) so the admin sees
-    /// the timestamp in their wall-clock time, not UTC.
+    /// Formats a UTC DateTime as a localized date-time string in Tehran
+    /// time, culture-aware. Delegates to
+    /// <see cref="CultureFormat.FormatTehranDateTime(DateTime)"/>, which
+    /// produces Persian digits + Jalali date in fa-IR mode and ASCII
+    /// digits + Gregorian date in en-US mode. The previous implementation
+    /// used <c>local.ToString("g", CultureInfo.CurrentCulture)</c>, which
+    /// produced ASCII digits in fa-IR mode and a Gregorian year (because
+    /// .NET's fa-IR culture's default calendar is Gregorian, not Jalali).
     /// </summary>
     private string FormatDate(DateTime utc)
-    {
-        try
-        {
-            var local = TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
-            return local.ToString("g", CultureInfo.CurrentCulture);
-        }
-        catch
-        {
-            // Defensive — if TimeZoneInfo conversion fails (it shouldn't,
-            // but TimeZoneInfo.Local can throw on some stripped-down
-            // runtimes), fall back to UTC display.
-            return utc.ToString("g", CultureInfo.CurrentCulture);
-        }
-    }
+        => CultureFormat.FormatTehranDateTime(utc);
 }

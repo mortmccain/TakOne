@@ -23,7 +23,7 @@
         @Body
 
         <footer class="login-footer">
-            <span>&copy; @DateTime.UtcNow.Year TakOne</span>
+            <span>&copy; @(CultureFormat.FormatDigits(DateTime.UtcNow.Year)) TakOne</span>
             @* Language switcher — writes the `takone_culture` cookie in the
                format CookieRequestCultureProvider expects (`c=X|uic=X`), then
                force-reloads so the localization middleware re-evaluates.

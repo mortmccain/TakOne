@@ -216,7 +216,7 @@
                                           Title="@Loc["ColWorkerId"]"
                                           Width="160px">
                         <Template Context="user">
-                            <span class="worker-id-cell">@user.WorkerId</span>
+                            <span class="worker-id-cell">@(CultureFormat.FormatDigits(user.WorkerId))</span>
                         </Template>
                     </RadzenDataGridColumn>
 

@@ -127,7 +127,7 @@
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                           Same shape as UserDetail.razor. */
+                                       Same shape as UserDetail.razor. */
             .settings-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -164,8 +164,8 @@
             }
 
             /* Account profile grid — 2-col label/value layout. Mirrors
-                           UserDetail.razor's .profile-grid so the two pages feel
-                           visually consistent. */
+                                       UserDetail.razor's .profile-grid so the two pages feel
+                                       visually consistent. */
             .profile-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
@@ -211,18 +211,18 @@
             }
 
             /* Theme selector — responsive auto-fill grid of card buttons.
-                           Mirrors CreateUser.razor's .usertype-toggle pattern exactly:
-                           each theme is a RadzenCard with the .usertype-option class;
-                           the selected theme's card additionally gets .is-selected.
-                           Selected = primary-tinted background + solid primary border.
-                           Unselected = outlined with the neutral border color.
+                                       Mirrors CreateUser.razor's .usertype-toggle pattern exactly:
+                                       each theme is a RadzenCard with the .usertype-option class;
+                                       the selected theme's card additionally gets .is-selected.
+                                       Selected = primary-tinted background + solid primary border.
+                                       Unselected = outlined with the neutral border color.
 
-                           The grid uses auto-fill + minmax(170px, 1fr) so the cards
-                           wrap onto as many rows as needed. With 12 themes total
-                           (2 Tak + 10 Radzen built-in), this gives 4-6 columns on
-                           desktop, 2-3 on tablet, 1 on mobile — no overflow, no
-                           squashed cards. Each card has the theme's display name +
-                           a small sun/moon icon to hint at light vs dark. */
+                                       The grid uses auto-fill + minmax(170px, 1fr) so the cards
+                                       wrap onto as many rows as needed. With 12 themes total
+                                       (2 Tak + 10 Radzen built-in), this gives 4-6 columns on
+                                       desktop, 2-3 on tablet, 1 on mobile — no overflow, no
+                                       squashed cards. Each card has the theme's display name +
+                                       a small sun/moon icon to hint at light vs dark. */
             .theme-toggle {
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -230,9 +230,9 @@
             }
 
             /* Category header — small all-caps label above each theme
-                           group ("Tak themes", "Radzen themes"). Visually groups the
-                           2 custom Tak themes apart from the 10 built-in Radzen ones
-                           so the user understands which is which at a glance. */
+                                       group ("Tak themes", "Radzen themes"). Visually groups the
+                                       2 custom Tak themes apart from the 10 built-in Radzen ones
+                                       so the user understands which is which at a glance. */
             .theme-category-header {
                 font-size: 0.75rem;
                 font-weight: 600;
@@ -243,8 +243,8 @@
             }
 
             /* .usertype-option is reused from CreateUser.razor. Re-declared
-                           here so this page is self-contained (CreateUser's CSS lives
-                           inside that page's scoped style block, not globally). */
+                                       here so this page is self-contained (CreateUser's CSS lives
+                                       inside that page's scoped style block, not globally). */
             .usertype-option {
                 transition: background-color 0.15s ease, border-color 0.15s ease;
             }
@@ -282,7 +282,7 @@
             }
 
             /* Loading + error + not-found states reuse Radzen's alert
-                           components — same pattern as ProductDetail.razor. */
+                                       components — same pattern as ProductDetail.razor. */
     </style>
 </HeadContent>
 
@@ -332,7 +332,7 @@
 
                     <div class="profile-grid">
                         <div class="profile-label">@Loc["ColWorkerId"]</div>
-                        <div class="profile-value profile-value-mono">@_user.WorkerId</div>
+                        <div class="profile-value profile-value-mono">@(CultureFormat.FormatDigits(_user.WorkerId))</div>
 
                         <div class="profile-label">@Loc["ColFullName"]</div>
                         <div class="profile-value">@_user.FullName</div>

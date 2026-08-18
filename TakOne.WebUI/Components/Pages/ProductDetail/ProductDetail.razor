@@ -181,8 +181,8 @@
                 }
 
             /* "Change photo" button — overlaid on the picture bottom-right
-                                                   corner. Only shown to staff. Uses RadzenButton underneath
-                                                   but is positioned via a wrapper. */
+                                                               corner. Only shown to staff. Uses RadzenButton underneath
+                                                               but is positioned via a wrapper. */
             .change-photo-overlay {
                 position: absolute;
                 inset-inline-end: 0.5rem;
@@ -316,8 +316,8 @@
             }
 
             /* Picture upload section — dropzone + preview card.
-                                                   Mirrors CreateProduct.razor's picture-dropzone styles so the
-                                                   two pages share a consistent upload UI. */
+                                                               Mirrors CreateProduct.razor's picture-dropzone styles so the
+                                                               two pages share a consistent upload UI. */
             .upload-section {
                 display: flex;
                 flex-direction: column;
@@ -458,11 +458,11 @@
                 }
 
             /* Back button row — mirrors the detail-grid columns so the
-                                       button stays aligned with the START of the info column
-                                       (right above the breadcrumb) in both LTR and RTL modes.
-                                       The button cell uses flex + justify-content: flex-start so
-                                       the button sizes to its content instead of stretching to
-                                       the full cell width. */
+                                                   button stays aligned with the START of the info column
+                                                   (right above the breadcrumb) in both LTR and RTL modes.
+                                                   The button cell uses flex + justify-content: flex-start so
+                                                   the button sizes to its content instead of stretching to
+                                                   the full cell width. */
             .back-button-row {
                 display: grid;
                 grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -656,7 +656,7 @@
                 {
                     <RadzenText TextStyle="TextStyle.Caption"
                                 Style="color: var(--rz-text-secondary-color);">
-                        @string.Format(CultureInfo.CurrentCulture, Loc["MyPurchaseLimitHint"], _myPurchaseLimit.Value)
+                        @(string.Format(CultureInfo.CurrentCulture, Loc["MyPurchaseLimitHint"], CultureFormat.FormatDigits(_myPurchaseLimit.Value)))
                     </RadzenText>
                 }
 
@@ -1637,14 +1637,9 @@
     /// and labelled "تومان" — matches the Products grid convention so a
     /// customer sees the same unit on the listing and the detail page.
     /// Other currencies pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyToman"/> for
+    /// culture-native digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatPrice(MoneyDto price)
-    {
-        if (price is null) return "—";
-        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
-        var amount = displayAmount.ToString("N0", CultureInfo.CurrentCulture);
-        var unit = isIrr ? "تومان" : price.Currency;
-        return $"{amount} {unit}";
-    }
+        => CultureFormat.FormatMoneyToman(price);
 }

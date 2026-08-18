@@ -359,7 +359,7 @@
             <span class="cart-count-badge">
                 @string.Format(CultureInfo.CurrentCulture,
                     liveItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
-                    liveItemCount)
+                    CultureFormat.FormatDigits(liveItemCount))
             </span>
         }
     </div>
@@ -483,14 +483,14 @@
                                 {
                                     <span class="stock-badge stock-low">
                                         <RadzenIcon Icon="warning_amber" />
-                                        @string.Format(CultureInfo.CurrentCulture, Loc["StockLow"], line.CurrentStock)
+                                        @(string.Format(CultureInfo.CurrentCulture, Loc["StockLow"], CultureFormat.FormatDigits(line.CurrentStock)))
                                     </span>
                                 }
                                 else
                                 {
                                     <span class="stock-badge stock-in">
                                         <RadzenIcon Icon="check_circle" />
-                                        @string.Format(CultureInfo.CurrentCulture, Loc["StockIn"], line.CurrentStock)
+                                        @(string.Format(CultureInfo.CurrentCulture, Loc["StockIn"], CultureFormat.FormatDigits(line.CurrentStock)))
                                     </span>
                                 }
                             </div>
@@ -585,7 +585,7 @@
                             }
                             @string.Format(CultureInfo.CurrentCulture,
                                 liveItemCount == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
-                                liveItemCount)
+                                CultureFormat.FormatDigits(liveItemCount))
                         </span>
                     </div>
 
@@ -594,7 +594,7 @@
                         <span class="value">
                             @string.Format(CultureInfo.CurrentCulture,
                                 _cart.LineItems.Count == 1 ? Loc["ItemCountSingular"] : Loc["ItemCount"],
-                                _cart.LineItems.Count)
+                                CultureFormat.FormatDigits(_cart.LineItems.Count))
                         </span>
                     </div>
 
@@ -919,7 +919,9 @@
     /// <summary>
     /// Returns the upper bound for a cart line's quantity selector.
     ///
-    /// Computed as: <c>Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c>.
+    /// Computed as: <c>Min(byCount, bySalary)</c> where:
+    ///   <c>byCount = Min(MyPurchaseLimit, Max(CurrentStock, Quantity))</c>
+    ///   <c>bySalary = Quantity + Max(0, floor(Remaining / unitPrice))</c>
     ///
     /// WHY Max(CurrentStock, Quantity) AND NOT JUST CurrentStock:
     ///   Same rationale as before this fix — if the live stock has dropped
@@ -927,22 +929,45 @@
     ///   the last units while this cart was sitting open), we still let
     ///   the user SELECT their existing quantity so they can deliberately
     ///   reduce it. They just can't INCREASE past stock.
+    ///   For staff (MyPurchaseLimit == null), the count cap is omitted and
+    ///   the bound is just Max(CurrentStock, Quantity).
     ///
-    /// WHY Min WITH MyPurchaseLimit:
-    ///   Before this fix the limit was ignored entirely here, so a
-    ///   customer could click + past their group's per-product limit and
-    ///   only get stopped by a backend DomainException (surfaced as a
-    ///   generic error toast). Clamping at the UI is the correct UX —
-    ///   the customer can't even SELECT a quantity their group isn't
-    ///   allowed to buy. For staff (MyPurchaseLimit == null), the limit
-    ///   is omitted and the bound is just Max(CurrentStock, Quantity).
+    /// SALARY BUDGET CAP (added later):
+    ///   <c>bySalary</c> is the absolute max qty this line can reach without
+    ///   exceeding the customer's monthly salary budget. It's the current
+    ///   line quantity PLUS the max number of NEW units the remaining budget
+    ///   can absorb (floor(Remaining / unitPrice), clamped to ≥ 0 so an
+    ///   overdraft doesn't let the user add more).
+    ///
+    ///   When the salary budget is enforced (BudgetInfo non-null) AND
+    ///   Remaining &lt; unitPrice, bySalary = Quantity, so the input's max
+    ///   equals the current qty — the user can't increase the qty. This
+    ///   matches the products page's per-card salary cap behavior.
     /// </summary>
-    private static int GetLineMax(CartLineItemDto line)
+    private int GetLineMax(CartLineItemDto line)
     {
         var byStock = Math.Max(line.CurrentStock, line.Quantity);
-        return line.MyPurchaseLimit.HasValue
+        var byCount = line.MyPurchaseLimit.HasValue
             ? Math.Min(line.MyPurchaseLimit.Value, byStock)
             : byStock;
+
+        // Salary budget cap on the absolute qty this line can reach.
+        // salaryAdditionalMax = how many MORE units of this product the
+        // remaining budget can absorb. When this is 0 (or negative, in
+        // overdraft — clamped to 0), the input's max equals the current
+        // line.Quantity, so the user cannot increase the qty.
+        if (_cart?.BudgetInfo is { } budget && line.UnitPrice is { } unitPrice)
+        {
+            var price = unitPrice.Amount;
+            if (price > 0m)
+            {
+                var salaryAdditionalMax = (int)Math.Floor(budget.Remaining / price);
+                var salaryAbsoluteMax = line.Quantity + Math.Max(0, salaryAdditionalMax);
+                byCount = Math.Min(byCount, salaryAbsoluteMax);
+            }
+        }
+
+        return byCount;
     }
 
     private void SetPendingQty(Guid lineItemId, int value)
@@ -1133,14 +1158,11 @@
     /// Formats a MoneyDto for display. IRR is labelled "ریال" (no division —
     /// the cart shows the real Rial amount the customer will be charged).
     /// Other currencies pass through unchanged.
+    /// Delegates to <see cref="CultureFormat.FormatMoneyRial"/> for
+    /// culture-native digits (Persian digits in fa-IR mode, ASCII in en-US).
     /// </summary>
     private static string FormatPrice(MoneyDto price)
-    {
-        if (price is null) return "—";
-        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
-        var unit = isIrr ? "ریال" : price.Currency;
-        return $"{price.Amount.ToString("N0", CultureInfo.CurrentCulture)} {unit}";
-    }
+        => CultureFormat.FormatMoneyRial(price);
 
     /// <summary>
     /// Translates a backend <c>Result.Error</c> string into a user-facing,
@@ -1182,11 +1204,13 @@
     {
         if (PurchaseLimitErrors.TryParse(error, out var productName, out var limit))
         {
+            // Format the limit with culture-native digits before substitution
+            // so {1} picks up Persian digits in fa-IR mode.
             return string.Format(
                 CultureInfo.CurrentCulture,
                 Loc["PurchaseLimitExceeded"],
                 productName,
-                limit);
+                CultureFormat.FormatDigits(limit));
         }
         if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedProductName))
         {
