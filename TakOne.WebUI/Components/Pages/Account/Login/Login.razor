@@ -19,14 +19,16 @@
      6. On failure, we re-render the form with an error message.
 
    CUSTOM CLAIMS:
-     BlazorCurrentUserService reads "FullName" and "GroupName" claims
+     BlazorCurrentUserService reads "FullName" and "GroupId" claims
      from the principal. We populate these at sign-in time by replacing
      Identity's default ClaimsPrincipal with one that includes our
      custom claims. The technique: call SignInManager.PasswordSignInAsync
      to validate the password + issue the cookie, then if it succeeds,
      re-issue the principal with the extra claims via
      SignInManager.SignInWithClaimsAsync (which atomically replaces
-     the cookie).
+     the cookie). (Step 8: the legacy "GroupName" string claim was
+     replaced with the "GroupId" Guid claim when the domain aggregate
+     was migrated from string GroupName to Guid? GroupId.)
 
    ROLE-AWARE REDIRECT (roadmap Section 12.8):
      Admin/Manager/Employee/ReadOnly → /  (Dashboard)
@@ -103,35 +105,35 @@
                 width: 100%;
             }
 
-            /* Force the RadzenFormField (renders as .rz-form-field with
-               display:inline-flex by default) to stretch to 100% width.
-               Without this, the field shrinks to its content width when
-               placed inside a block-level parent (.password-row), making
-               the password textbox visibly narrower than the Worker ID
-               field above it (which is a direct flex child of RadzenStack
-               and gets stretched via align-items:stretch). Width:100% on
-               .rz-form-field forces the wrapper to fill the .password-row,
-               and the input inside fills the wrapper — matching the Worker
-               ID field's width exactly. */
-            .password-row .rz-form-field {
-                width: 100%;
-            }
+                /* Force the RadzenFormField (renders as .rz-form-field with
+                           display:inline-flex by default) to stretch to 100% width.
+                           Without this, the field shrinks to its content width when
+                           placed inside a block-level parent (.password-row), making
+                           the password textbox visibly narrower than the Worker ID
+                           field above it (which is a direct flex child of RadzenStack
+                           and gets stretched via align-items:stretch). Width:100% on
+                           .rz-form-field forces the wrapper to fill the .password-row,
+                           and the input inside fills the wrapper — matching the Worker
+                           ID field's width exactly. */
+                .password-row .rz-form-field {
+                    width: 100%;
+                }
 
             .password-toggle {
                 position: absolute;
                 /* RadzenFormField renders label-above + input-below.
-                   The input sits at the bottom of the form-field wrapper
-                   and is ~40px tall, so the input's vertical center is
-                   ~20px from the bottom of the wrapper. The button is
-                   32px tall (so its center is 16px from its bottom edge);
-                   to align the button's center with the input's center,
-                   bottom = 20 - 16 = 4px. */
+                               The input sits at the bottom of the form-field wrapper
+                               and is ~40px tall, so the input's vertical center is
+                               ~20px from the bottom of the wrapper. The button is
+                               32px tall (so its center is 16px from its bottom edge);
+                               to align the button's center with the input's center,
+                               bottom = 20 - 16 = 4px. */
                 bottom: 4px;
                 /* Physical `right` (not `inset-inline-end`) — the input
-                   is forced dir="ltr" so text always starts from the left;
-                   the eye therefore always belongs on the physical right
-                   edge of the textbox, in both English and Persian modes.
-                   See the big comment block above . */
+                               is forced dir="ltr" so text always starts from the left;
+                               the eye therefore always belongs on the physical right
+                               edge of the textbox, in both English and Persian modes.
+                               See the big comment block above . */
                 right: 8px;
                 width: 32px;
                 height: 32px;
@@ -146,7 +148,7 @@
                 cursor: pointer;
                 transition: background-color 0.15s ease, color 0.15s ease;
                 /* Ensure the button sits above the input (so the click
-                   target is on top, not the input). */
+                               target is on top, not the input). */
                 z-index: 1;
             }
 
@@ -165,15 +167,15 @@
                 }
 
             /* Reserve space INSIDE the input on the RIGHT so the typed
-               text doesn't run under the absolutely-positioned eye icon.
-               Uses PHYSICAL `padding-right` (NOT the CSS logical property
-               `padding-inline-end`) — the input is forced dir="ltr" so
-               text always starts from the left and extends to the right,
-               and the eye always sits on the physical right. !important
-               is needed to beat Radzen's default .rz-textbox padding rule.
-               Applies to any <input> inside .password-row (RadzenPassword
-               renders as input.rz-textbox, and our native <input> uses
-               class="rz-textbox" too). */
+                           text doesn't run under the absolutely-positioned eye icon.
+                           Uses PHYSICAL `padding-right` (NOT the CSS logical property
+                           `padding-inline-end`) — the input is forced dir="ltr" so
+                           text always starts from the left and extends to the right,
+                           and the eye always sits on the physical right. !important
+                           is needed to beat Radzen's default .rz-textbox padding rule.
+                           Applies to any <input> inside .password-row (RadzenPassword
+                           renders as input.rz-textbox, and our native <input> uses
+                           class="rz-textbox" too). */
             .password-row input {
                 padding-right: 36px !important;
             }
@@ -676,9 +678,18 @@
             {
                 new("FullName", domainUser?.FullName ?? appUser.UserName ?? string.Empty),
             };
-            if (domainUser is not null && !string.IsNullOrEmpty(domainUser.GroupName))
+            // SALARY FEATURE (Step 8): The domain User aggregate now carries
+            // `GroupId` (Guid? FK to CustomerGroups.Id), not the legacy
+            // `GroupName` string. We bake the GroupId into the principal as
+            // a claim so downstream middleware/handlers can resolve the
+            // caller's group without a DB lookup. The value is the Guid's
+            // string representation (lowercased, no dashes — matches how
+            // ICurrentUserService parses it back). Empty/null GroupId
+            // (staff users) means no claim is added at all.
+            if (domainUser is not null && domainUser.GroupId.HasValue
+                && domainUser.GroupId.Value != Guid.Empty)
             {
-                extraClaims.Add(new Claim("GroupName", domainUser.GroupName));
+                extraClaims.Add(new Claim("GroupId", domainUser.GroupId.Value.ToString()));
             }
             // Also stash Gender as a claim — cheap to add, useful for the
             // profile page (avoids a DB lookup just to render "Gender: Male").

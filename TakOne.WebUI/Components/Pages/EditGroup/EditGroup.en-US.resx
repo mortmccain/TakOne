@@ -221,4 +221,31 @@
     <value>"{0}" has been activated and its customers can now shop.</value>
   </data>
 
+  <!-- Bulk Apply Defaults card — closes the "reactivation gap" documented
+       since Step 5: when a group is deactivated and new products are added
+       during the inactive period, those products have no limit row for the
+       group. This card lets the admin bulk-fill missing limits with the
+       default value (1) in one shot. Existing limits are always preserved. -->
+  <data name="BulkDefaultsCardTitle" xml:space="preserve">
+    <value>Bulk apply default limits</value>
+  </data>
+  <data name="BulkDefaultsDescription" xml:space="preserve">
+    <value>Apply the default purchase limit (1) to every product that doesn't already have a limit for this group. Products with existing limits are preserved. Use this after reactivating a group to fill gaps for products created while it was inactive.</value>
+  </data>
+  <data name="BulkApplyDefaultsButton" xml:space="preserve">
+    <value>Apply default limits</value>
+  </data>
+  <data name="ConfirmBulkApplyDefaults" xml:space="preserve">
+    <value>Apply the default purchase limit (1) to every product missing a limit for the group "{0}"? Products that already have a limit will not be changed. This may take a few seconds for large catalogs.</value>
+  </data>
+  <data name="BulkApplyDefaultsTitle" xml:space="preserve">
+    <value>Bulk apply complete</value>
+  </data>
+  <data name="BulkApplyDefaultsSuccess" xml:space="preserve">
+    <value>Applied default limit {3} to {0} of {1} product(s). {2} product(s) already had limits and were skipped.</value>
+  </data>
+  <data name="BulkApplyDefaultsNoUpdates" xml:space="preserve">
+    <value>All {0} product(s) already have a limit for this group. No changes were made.</value>
+  </data>
+
 </root>

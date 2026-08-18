@@ -238,4 +238,8 @@
   <data name="Error_CustomLimitsMissing" xml:space="preserve">
     <value>{0} new group(s) without a limit</value>
   </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>Create new group</value>
+    <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
+  </data>
 </root>

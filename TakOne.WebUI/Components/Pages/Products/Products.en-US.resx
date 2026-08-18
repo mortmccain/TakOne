@@ -344,4 +344,10 @@
   <data name="SubmitEmptyCart" xml:space="preserve">
     <value>Your cart is empty. Add at least one item before submitting.</value>
   </data>
+  <!-- Step 10d — CartConflict is produced when the cart was mutated (or
+       submitted) by a concurrent invocation between the initial load and
+       the cart-lock acquire. The customer just needs to refresh the page. -->
+  <data name="CartConflict" xml:space="preserve">
+    <value>Your cart was modified by another session. Refresh the page to continue.</value>
+  </data>
 </root>

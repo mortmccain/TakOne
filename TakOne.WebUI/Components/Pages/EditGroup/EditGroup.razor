@@ -19,6 +19,13 @@
           note: currency cannot be changed; see the warning card).
        4. Activate or Deactivate the group
           (ActivateCustomerGroupCommand / DeactivateCustomerGroupCommand).
+       5. Bulk-apply default purchase limits to every product that
+          doesn't already have a limit for this group
+          (BulkApplyDefaultsForGroupCommand — closes the "reactivation
+          gap" documented since Step 5: when a group is deactivated and
+          new products are added during the inactive period, those new
+          products have NO limit row for the group; this button fills
+          them in with the default limit of 1).
 
    STYLE PARITY WITH SETTINGS / PRODUCTDETAIL:
      Mirrors the Settings.razor + ProductDetail.razor detail-page
@@ -35,6 +42,8 @@
      - Edit (Rename / Salary): Manager + Admin only. Employees see the
        summary card only (form is hidden).
      - Activate/Deactivate: Manager + Admin only.
+     - Bulk Apply Defaults: Manager + Admin only, AND group must be
+       active. Closes the "reactivation gap" (see command XML doc).
 
    LOADING / ERROR / NOT-FOUND STATES:
      The page shows distinct states for: loading spinner, load-failed
@@ -58,6 +67,7 @@
 @using Wolverine
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Customers.Commands.ActivateCustomerGroup
+@using TakOne.Application.Customers.Commands.BulkApplyDefaultsForGroup
 @using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
 @using TakOne.Application.Customers.Commands.RenameCustomerGroup
 @using TakOne.Application.Customers.Commands.UpdateCustomerGroupSalary
@@ -454,6 +464,60 @@
                             </div>
                         </EditForm>
                     </RadzenCard>
+
+                    @* ── Bulk Apply Defaults card — Manager + Admin only, group must be active ──
+                       Closes the "reactivation gap" documented since Step 5:
+                       when a group is deactivated and new products are added
+                       during the inactive period, those new products do NOT
+                       get default purchase-limit rows for the inactive group
+                       (CreateProduct Phase-1 auto-default loop only iterates
+                       ACTIVE groups, by design). On reactivation, this button
+                       fills that gap by bulk-applying the default limit (1)
+                       to every product missing a limit row for this group.
+
+                       The button is rendered only when:
+                         - User is Admin or Manager (server enforces too via
+                           [RequireRoles] on the command); AND
+                         - Group is active (the handler also rejects inactive
+                           groups with a friendly error — the UI hides the
+                           button preemptively to avoid a dead-end click).
+
+                       The card is visually distinct (Warning tone + auto_fix_high
+                       icon) to signal that this is a bulk operation across
+                       the entire catalog, not a single-row mutation. The
+                       JS.confirm() dialog explains the semantics before the
+                       user commits. *@
+                    @if (_group.IsActive)
+                    {
+                        <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem; border-inline-start: 3px solid var(--rz-warning-color, #f59e0b);">
+                            <div class="section-title">
+                                <RadzenIcon Icon="auto_fix_high" Style="color: var(--rz-warning-color, #f59e0b);" />
+                                <span>@Loc["BulkDefaultsCardTitle"]</span>
+                            </div>
+
+                            <RadzenText TextStyle="TextStyle.Body2"
+                                        Style="color: var(--rz-text-secondary-color); margin-bottom: 1rem; line-height: 1.6;">
+                                @Loc["BulkDefaultsDescription"]
+                            </RadzenText>
+
+                            <div class="form-actions">
+                                <RadzenButton Text="@Loc["BulkApplyDefaultsButton"]"
+                                              Icon="auto_fix_high"
+                                              ButtonStyle="ButtonStyle.Warning"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(_isSubmitting || _isBulkApplyingDefaults)"
+                                              Click="@HandleBulkApplyDefaultsAsync">
+                                    @if (_isBulkApplyingDefaults)
+                                    {
+                                        <RadzenProgressBarCircular ShowValue="false"
+                                                                   Mode="ProgressBarMode.Indeterminate"
+                                                                   Size="ProgressBarCircularSize.Small"
+                                                                   Style="margin-inline-end: 0.5rem;" />
+                                    }
+                                </RadzenButton>
+                            </div>
+                        </RadzenCard>
+                    }
                 }
             </RadzenStack>
 
@@ -500,6 +564,18 @@
     private string? _loadError;
     private bool _isSubmitting;
     private string? _submitError;
+
+    /// <summary>
+    /// Separate spinner flag for the "Bulk Apply Defaults" button. Kept
+    /// distinct from <see cref="_isSubmitting"/> purely so the bulk
+    /// button can render its OWN inline spinner (the form-action buttons
+    /// don't show a spinner, they just go disabled). During a bulk
+    /// operation, BOTH flags are set true — <see cref="_isSubmitting"/>
+    /// disables the form-action buttons (Save/Activate/Deactivate/Cancel),
+    /// and <see cref="_isBulkApplyingDefaults"/> shows the inline spinner
+    /// in the bulk button itself. See <see cref="HandleBulkApplyDefaultsAsync"/>.
+    /// </summary>
+    private bool _isBulkApplyingDefaults;
 
     /// <summary>
     /// The form model. Bound via EditForm + DataAnnotationsValidator —
@@ -768,6 +844,93 @@
         }
         finally
         {
+            _isSubmitting = false;
+        }
+    }
+
+    // ── Bulk Apply Defaults ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Dispatches <see cref="BulkApplyDefaultsForGroupCommand"/> for the
+    /// current group. The command scans every product in the catalog and
+    /// inserts a default purchase-limit row (= 1) wherever one is missing
+    /// for this group — closing the "reactivation gap" where new products
+    /// created during the group's inactive period have no limit row.
+    ///
+    /// FLOW:
+    ///   1. JS.confirm() dialog explaining what's about to happen (the
+    ///      operation is idempotent but bulk — confirmation prevents
+    ///      accidental clicks).
+    ///   2. Set BOTH <see cref="_isSubmitting"/> (disables form-action
+    ///      buttons to prevent concurrent mutations) AND
+    ///      <see cref="_isBulkApplyingDefaults"/> (shows the inline
+    ///      spinner on the bulk button itself).
+    ///   3. Dispatch command. The handler does its own batching + per-
+    ///      batch SaveChanges; this UI thread just awaits the final result.
+    ///   4. On success, show a toast with the breakdown: how many products
+    ///      received the default, how many already had limits, total
+    ///      scanned, and the applied limit value.
+    ///   5. On "no updates needed" (every product already had a limit),
+    ///      show an Info toast instead of Success — the user should know
+    ///      nothing changed.
+    ///   6. On failure, show the server's error message via Error toast.
+    /// </summary>
+    private async Task HandleBulkApplyDefaultsAsync()
+    {
+        if (_group is null) return;
+        if (_isSubmitting || _isBulkApplyingDefaults) return;
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            string.Format(CultureInfo.CurrentCulture, Loc["ConfirmBulkApplyDefaults"], _group.Name));
+
+        if (!confirmed) return;
+
+        // Set BOTH flags: _isSubmitting disables the form-action buttons
+        // (Save / Activate / Deactivate / Cancel) to prevent concurrent
+        // mutations; _isBulkApplyingDefaults shows the inline spinner on
+        // the bulk button itself.
+        _isSubmitting = true;
+        _isBulkApplyingDefaults = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<BulkApplyDefaultsResult>>(
+                new BulkApplyDefaultsForGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                var r = result.Value;
+
+                if (r.ProductsUpdated == 0)
+                {
+                    // Idempotent no-op — every product already had a limit.
+                    // Use Info tone (not Success) to communicate "nothing changed".
+                    await Toast.Info(
+                        string.Format(CultureInfo.CurrentCulture,
+                            Loc["BulkApplyDefaultsNoUpdates"], r.TotalProductsScanned),
+                        summary: Loc["BulkApplyDefaultsTitle"]);
+                }
+                else
+                {
+                    await Toast.Success(
+                        string.Format(CultureInfo.CurrentCulture,
+                            Loc["BulkApplyDefaultsSuccess"],
+                            r.ProductsUpdated, r.TotalProductsScanned,
+                            r.ProductsSkipped, r.AppliedLimit),
+                        summary: Loc["BulkApplyDefaultsTitle"]);
+                }
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBulkApplyingDefaults = false;
             _isSubmitting = false;
         }
     }

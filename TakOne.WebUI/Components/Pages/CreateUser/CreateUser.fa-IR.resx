@@ -154,30 +154,12 @@
   <data name="FieldGroupName" xml:space="preserve">
     <value>نام گروه</value>
   </data>
-  <!-- برچسب‌ها و راهنماهای حالت گروه (جایگزین طراحی قدیمی فقط‌کشویی). -->
-  <data name="GroupModeExisting" xml:space="preserve">
-    <value>گروه موجود</value>
-  </data>
-  <data name="GroupModeExistingHint" xml:space="preserve">
-    <value>از گروه‌های قبلاً ساخته‌شده انتخاب کنید</value>
-  </data>
-  <data name="GroupModeNew" xml:space="preserve">
-    <value>گروه جدید</value>
-  </data>
-  <data name="GroupModeNewHint" xml:space="preserve">
-    <value>نام یک گروه جدید را وارد کنید</value>
-  </data>
+  <!-- برچسب‌ها و راهنماهای بخش گروه. -->
   <data name="NoExistingGroups" xml:space="preserve">
-    <value>هنوز گروهی وجود ندارد. به «گروه جدید» بروید تا یکی بسازید.</value>
+    <value>هنوز گروهی وجود ندارد. روی «ایجاد گروه جدید» بزنید تا یکی بسازید.</value>
   </data>
   <data name="ExistingGroupHint" xml:space="preserve">
     <value>برای مشتری الزامی است. یک گروه را از فهرست انتخاب کنید. مشتری هرگز این مقدار را نمی‌بیند.</value>
-  </data>
-  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
-    <value>مثلاً مشتریان ویژه</value>
-  </data>
-  <data name="NewGroupHint" xml:space="preserve">
-    <value>نام گروه جدید را وارد کنید. محدودیت‌های خرید هر محصول بعداً در بخش محصول تنظیم می‌شود. مشتری هرگز این مقدار را نمی‌بیند.</value>
   </data>
 
   <data name="FieldStaffRole" xml:space="preserve">
@@ -278,5 +260,9 @@
   </data>
   <data name="HelpInitialPassword" xml:space="preserve">
     <value>گذرواژه اولیه را از طریق کانالی جداگانه به کاربر اطلاع دهید. آن‌ها از این گذرواژه برای اولین ورود استفاده خواهند کرد.</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>ایجاد گروه جدید</value>
+    <comment>Step 8: link button shown in the Group section when no existing groups exist.</comment>
   </data>
 </root>

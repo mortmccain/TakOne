@@ -78,6 +78,7 @@
 @using TakOne.Application.Sales.Queries.GetCustomerShopStats
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Components.CartBudgetBar
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
@@ -713,6 +714,19 @@
                     <span class="tm-cart-header-badge tm-persian-num">@ToPersian(cart.TotalItemCount) @Loc["CartUnit"]</span>
                 }
             </div>
+
+            @* Step 10e — CartBudgetBar (mini-cart version).
+               Shown when _cart.BudgetInfo is populated (i.e. the customer
+               has an active salary budget AND LimitMode enforces it). When
+               null (staff, or LimitMode = CountOnly), the bar is absent
+               and the mini-cart reverts to its pre-Step 10e layout.
+               CartTotal is the live cart total from _cart.Total — the
+               mini-cart doesn't track pending quantities like the full
+               Cart page does, so we use the server snapshot directly. *@
+            @if (_cart?.BudgetInfo is not null)
+            {
+                <CartBudgetBar Budget="_cart.BudgetInfo" CartTotal="_cart?.Total" />
+            }
 
             @if (_cart is null || _cart.LineItems.Count == 0)
             {
@@ -1664,6 +1678,15 @@
         if (error == "SubmitEmptyCart")
         {
             return Loc["SubmitEmptyCart"];
+        }
+        // Step 10d — CartConflict is produced when AddItemToSale /
+        // UpdateSaleLineItem / RemoveSaleLineItem / SubmitSale detects
+        // that the sale was mutated (or submitted) by a concurrent
+        // invocation between the initial load and the cart-lock acquire.
+        // The customer just needs to refresh the page.
+        if (CartConflictErrors.TryParse(error))
+        {
+            return Loc["CartConflict"];
         }
         return error;
     }

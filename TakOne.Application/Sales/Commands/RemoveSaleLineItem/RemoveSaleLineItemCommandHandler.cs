@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
@@ -71,8 +72,7 @@ public sealed class RemoveSaleLineItemCommandHandler
             logger.LogWarning(
                 "RemoveSaleLineItem: sale {SaleId} changed state after acquiring cart lock (was Draft, now {Status}).",
                 command.SaleId, sale?.Status.ToString() ?? "<null>");
-            return Result.Failure(
-                "This cart was modified by another session. Refresh the page and try again.");
+            return Result.Failure(CartConflictErrors.Format());
         }
 
         // Defensive check before delegating to the aggregate. The aggregate's

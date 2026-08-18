@@ -102,7 +102,7 @@
     <value>We couldn't add this item to your cart. Please try again.</value>
   </data>
   <data name="MyPurchaseLimitHint" xml:space="preserve">
-    <value>Max {0} per order for your group.</value>
+    <value>Max {0} per order for your account.</value>
   </data>
   <data name="StaffEditTitle" xml:space="preserve">
     <value>Staff edit</value>
@@ -214,5 +214,9 @@
   </data>
   <data name="RemoveImage" xml:space="preserve">
     <value>Remove</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>Create new group</value>
+    <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
   </data>
 </root>

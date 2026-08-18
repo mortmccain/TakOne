@@ -19,7 +19,7 @@
    UNIFIED FORM (Customer + Staff):
      CreateCustomerCommand and CreateStaffCommand share 5 fields
      (WorkerId, FullName, Email, InitialPassword, Gender) and differ in:
-       - Customer requires GroupName; Staff forbids it.
+       - Customer requires GroupId; Staff forbids it.
        - Customer always gets the "Customer" role; Staff requires an
          explicit Role selection (Employee / Manager / ReadOnly / Admin).
        - Customer creation: Manager or Admin. Staff creation: Admin or
@@ -35,7 +35,7 @@
    FORM FIELDS:
      1. User Type         (Customer / Staff toggle — visible to both
                            Admins and Managers; selecting Staff clears
-                           GroupName, selecting Customer clears StaffRole.
+                           GroupId, selecting Customer clears StaffRole.
                            Selected option gets a primary-color tinted
                            background + solid border; unselected is outlined.)
      2. Worker ID         (required, 1-100 chars — login identifier,
@@ -49,13 +49,14 @@
                            roadmap Section 12.5; NO DEFAULT — user must
                            pick explicitly to avoid creating users with
                            the wrong gender.)
-     6. Group Name        (required when Customer, max 100 chars;
-                           HIDDEN when Staff. Two-option toggle: pick
-                           from existing groups (loaded from
-                           GetAllGroupNamesQuery) OR type a new name.
-                           New groups are created implicitly — only the
-                           name is captured here; per-product limits
-                           are set later on the product side.)
+     6. Group             (required when Customer; HIDDEN when Staff.
+                           SALARY FEATURE (Step 8): the field is now a
+                           GroupId (Guid) selected from a 2-column grid of
+                           existing-group cards (loaded from
+                           GetAllCustomerGroupsQuery). The free-text "new
+                           group name" mode is gone — admins must create
+                           new groups via the CreateGroup page first,
+                           then return here to assign the user.)
      7. Staff Role        (Employee / Manager / ReadOnly / Admin
                            dropdown — HIDDEN when Customer)
 
@@ -121,7 +122,8 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Users.Commands.CreateCustomer
 @using TakOne.Application.Users.Commands.CreateStaff
-@using TakOne.Application.Users.Queries.GetAllGroupNames
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
@@ -166,8 +168,8 @@
             }
 
             /* Toggle option base — shared between user-type toggle, group-mode
-                           toggle, and group-list buttons. Selected state is denoted by the
-                           .is-selected class (primary-tinted bg + solid primary border). */
+                                       toggle, and group-list buttons. Selected state is denoted by the
+                                       .is-selected class (primary-tinted bg + solid primary border). */
             .usertype-option {
                 transition: background-color 0.15s ease, border-color 0.15s ease;
             }
@@ -190,9 +192,9 @@
                 }
 
             /* Group-list (existing groups) — 2-column grid of selectable cards.
-                           Each group name gets its own card; clicking selects it (single-
-                           select). Two cards per row keeps the list compact when there are
-                           many groups; long names wrap within their card. */
+                                       Each group name gets its own card; clicking selects it (single-
+                                       select). Two cards per row keeps the list compact when there are
+                                       many groups; long names wrap within their card. */
             .group-list {
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
@@ -200,17 +202,18 @@
             }
 
             /* Group-section invalid state — applied to the outer container
-                           wrapping the entire group-name section (label + Existing/New
-                           toggle + group list OR text box) when the user has tried to
-                           submit without selecting or typing a group name. Mirrors the
-                           .gender-toggle.gender-invalid pattern: red border +
-                           danger-tinted background to draw the eye to the missing
-                           field. Toggled by the conditional class in the markup:
-                           _submitAttempted AND UserType is Customer AND GroupName is
-                           empty/whitespace. The class falls away automatically on
-                           re-render as soon as the user picks an existing group
-                           (SelectExistingGroup sets GroupName) or types in the New-mode
-                           text box (two-way binding updates GroupName per keystroke). */
+                                       wrapping the entire group-name section (label + Existing/New
+                                       toggle + group list) when the user has tried to
+                                       submit without selecting a group. Mirrors the
+                                       .gender-toggle.gender-invalid pattern: red border +
+                                       danger-tinted background to draw the eye to the missing
+                                       field. Toggled by the conditional class in the markup:
+                                       _submitAttempted AND UserType is Customer AND GroupId is
+                                       null/empty. The class falls away automatically on
+                                       re-render as soon as the user picks an existing group
+                                       (SelectExistingGroup sets GroupId). SALARY FEATURE
+                                       (Step 8): the free-text New mode is gone — the form
+                                       now binds to a Guid? GroupId via the group-card grid. */
             .group-section-invalid {
                 border: 2px solid var(--rz-danger, #f87171);
                 border-radius: var(--rz-border-radius-sm, 6px);
@@ -220,8 +223,8 @@
             }
 
             /* Inline error text below the group section (only rendered when the
-                           group is invalid). Color matches the border above. Same
-                           visual style as .gender-error-text. */
+                                       group is invalid). Color matches the border above. Same
+                                       visual style as .gender-error-text. */
             .group-error-text {
                 color: var(--rz-danger, #f87171);
                 font-size: 0.8125rem;
@@ -230,11 +233,11 @@
             }
 
             /* Gender toggle — same visual pattern as the Customer/Staff toggle
-                           above (two RadzenCard buttons side-by-side, one selected at a
-                           time). Uses the same .usertype-option class so the selected
-                           state (primary-tinted bg + solid primary border) is identical.
-                           The .gender-toggle container is a flex row that wraps on narrow
-                           screens, matching .usertype-toggle's behavior. */
+                                       above (two RadzenCard buttons side-by-side, one selected at a
+                                       time). Uses the same .usertype-option class so the selected
+                                       state (primary-tinted bg + solid primary border) is identical.
+                                       The .gender-toggle container is a flex row that wraps on narrow
+                                       screens, matching .usertype-toggle's behavior. */
             .gender-toggle {
                 display: flex;
                 gap: 0.5rem;
@@ -247,14 +250,14 @@
                 }
 
                 /* Gender-invalid state — applied to .gender-toggle when the user
-                           has tried to submit without picking a gender. The red border
-                           + danger-tinted background draws the eye to the toggle so the
-                           user understands what's missing. The EditForm's [Required]
-                           attribute on _model.Gender fires via DataAnnotationsValidator
-                           → OnInvalidSubmit → _submitAttempted = true, which is what
-                           toggles this class. The toggle cards themselves don't render
-                           a validation error natively — this CSS gives us a visible
-                           cue that matches the rest of the form's error style. */
+                                       has tried to submit without picking a gender. The red border
+                                       + danger-tinted background draws the eye to the toggle so the
+                                       user understands what's missing. The EditForm's [Required]
+                                       attribute on _model.Gender fires via DataAnnotationsValidator
+                                       → OnInvalidSubmit → _submitAttempted = true, which is what
+                                       toggles this class. The toggle cards themselves don't render
+                                       a validation error natively — this CSS gives us a visible
+                                       cue that matches the rest of the form's error style. */
                 .gender-toggle.gender-invalid {
                     border: 2px solid var(--rz-danger, #f87171);
                     border-radius: var(--rz-border-radius-sm, 6px);
@@ -264,7 +267,7 @@
                 }
 
             /* Inline error text under the toggle (only rendered when gender
-                           is invalid). Color matches the border above. */
+                                       is invalid). Color matches the border above. */
             .gender-error-text {
                 color: var(--rz-danger, #f87171);
                 font-size: 0.8125rem;
@@ -473,7 +476,7 @@
                                    the value lives in _model — even if the DOM input element is
                                    re-rendered on Type change, the model retains the value and
                                    the next render restores it. All other RadzenTextBoxes on
-                                   this page (WorkerId, FullName, GroupName) already use
+                                   this page (WorkerId, FullName) already use
                                    @bind-Value with no issues. *@
                                 <RadzenTextBox @bind-Value="_model.InitialPassword"
                                                Type="@(_showPassword ? "text" : "password")"
@@ -557,131 +560,80 @@
                         }
                     </div>
 
-                    @* ── Group Name (Customer only) ──
+                    @* ── Group (Customer only) ──
                        Required for Customer (enforced server-side by the
                        validator and Domain invariant). Hidden for Staff —
-                       staff users have null GroupName by design.
+                       staff users have null GroupId by design.
 
-                       UX: Two-option toggle (Existing / New) — same visual
-                       style as the Customer/Staff toggle above.
-                         - Existing mode: shows all available groups (loaded
-                           from GetAllGroupNamesQuery) as selectable cards
-                           in a 2-column grid. Single-select — clicking one
-                           selects it; clicking another switches selection.
-                         - New mode: shows a text box for typing a new group
-                           name. New groups are created implicitly — only the
-                           name is captured here. Per-product purchase limits
-                           for the new group are set later on the product
-                           side (CreateProduct / ProductDetail pages).
-                       Switching modes clears the GroupName so the user
-                       must explicitly pick or type one in the new mode. *@
+                       UX: 2-column grid of selectable cards (existing groups).
+                       SALARY FEATURE (Step 8): the Existing/New toggle is
+                       gone — groups are now first-class aggregates
+                       (CustomerGroup). The admin must create new groups
+                       via the CreateGroup page first; this page only
+                       assigns a user to an EXISTING group. If no groups
+                       exist yet, the section shows an empty-state message
+                       + a "Create new group" link button. Selecting a
+                       group card sets _model.GroupId (Guid). *@
                     @if (_model.UserType == UserType.Customer)
                     {
-                        var groupIsInvalid = _submitAttempted && string.IsNullOrWhiteSpace(_model.GroupName);
+                        var groupIsInvalid = _submitAttempted
+                            && (_model.GroupId is null || _model.GroupId == Guid.Empty);
                         <div class="@(groupIsInvalid ? "group-section-invalid" : "")">
                             <RadzenText Text="@Loc["FieldGroupName"]"
                                         TextStyle="TextStyle.Caption"
                                         Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;" />
-                            <div class="usertype-toggle">
-                                <RadzenCard Variant="@(_model.GroupMode == GroupMode.Existing ? Variant.Filled : Variant.Outlined)"
-                                            Class="@GetToggleClass(_model.GroupMode == GroupMode.Existing)"
-                                            Style="@GetToggleBorderStyle(_model.GroupMode == GroupMode.Existing)"
-                                            @onclick="@(() => OnGroupModeChanged(GroupMode.Existing))">
-                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                        <RadzenIcon Icon="folder_open" Style="@GetToggleIconStyle(_model.GroupMode == GroupMode.Existing)" />
-                                        <div>
-                                            <RadzenText Text="@Loc["GroupModeExisting"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.GroupMode == GroupMode.Existing)" />
-                                            <RadzenText Text="@Loc["GroupModeExistingHint"]"
-                                                        TextStyle="TextStyle.Caption"
-                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
-                                        </div>
-                                    </RadzenStack>
-                                </RadzenCard>
 
-                                <RadzenCard Variant="@(_model.GroupMode == GroupMode.New ? Variant.Filled : Variant.Outlined)"
-                                            Class="@GetToggleClass(_model.GroupMode == GroupMode.New)"
-                                            Style="@GetToggleBorderStyle(_model.GroupMode == GroupMode.New)"
-                                            @onclick="@(() => OnGroupModeChanged(GroupMode.New))">
-                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                        <RadzenIcon Icon="create_new_folder" Style="@GetToggleIconStyle(_model.GroupMode == GroupMode.New)" />
-                                        <div>
-                                            <RadzenText Text="@Loc["GroupModeNew"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_model.GroupMode == GroupMode.New)" />
-                                            <RadzenText Text="@Loc["GroupModeNewHint"]"
-                                                        TextStyle="TextStyle.Caption"
-                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
-                                        </div>
-                                    </RadzenStack>
-                                </RadzenCard>
-                            </div>
-
-                            @* Existing mode — 2-column grid of group buttons *@
-                            @if (_model.GroupMode == GroupMode.Existing)
-                            {
-                                <div style="margin-top: 0.75rem;">
-                                    @if (!_availableGroups.Any())
-                                    {
-                                        <RadzenText TextStyle="TextStyle.Body2"
-                                                    Style="color: var(--rz-text-secondary-color);">
-                                            @Loc["NoExistingGroups"]
-                                        </RadzenText>
-                                    }
-                                    else
-                                    {
-                                        <div class="group-list">
-                                            @foreach (var group in _availableGroups)
-                                            {
-                                                var groupName = group;  // closure capture for the lambda
-                                                var isSelected = _model.GroupName == groupName;
-                                                <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
-                                                            Class="@GetToggleClass(isSelected)"
-                                                            Style="@GetToggleBorderStyle(isSelected)"
-                                                            @onclick="@(() => SelectExistingGroup(groupName))">
-                                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
-                                                                 JustifyContent="JustifyContent.Center" Gap="0.5rem">
-                                                        <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
-                                                                    Style="@GetToggleIconStyle(isSelected)" />
-                                                        <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
-                                                                    Style="@GetToggleTextStyle(isSelected)" />
-                                                    </RadzenStack>
-                                                </RadzenCard>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                                <RadzenText TextStyle="TextStyle.Caption"
-                                            Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
-                                    @Loc["ExistingGroupHint"]
-                                </RadzenText>
-                            }
-
-                            @* New mode — text input *@
-                            @if (_model.GroupMode == GroupMode.New)
-                            {
-                                <div style="margin-top: 0.75rem;">
-                                    <RadzenFormField Style="width: 100%;">
-                                        <RadzenTextBox @bind-Value="_model.GroupName"
-                                                       Placeholder="@Loc["FieldNewGroupNamePlaceholder"]"
-                                                       TValue="string"
-                                                       autocomplete="off"
-                                                       Style="width: 100%;" />
-                                    </RadzenFormField>
-                                    <RadzenText TextStyle="TextStyle.Caption"
-                                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
-                                        @Loc["NewGroupHint"]
+                            <div Style="margin-top: 0;">
+                                @if (!_availableGroups.Any())
+                                {
+                                    <RadzenText TextStyle="TextStyle.Body2"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;">
+                                        @Loc["NoExistingGroups"]
                                     </RadzenText>
-                                </div>
-                            }
+                                    <RadzenButton Text="@Loc["ActionCreateGroup"]"
+                                                  Icon="group_add"
+                                                  ButtonStyle="ButtonStyle.Secondary"
+                                                  Variant="Variant.Outlined"
+                                                  Size="ButtonSize.Small"
+                                                  Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+                                }
+                                else
+                                {
+                                    <div class="group-list">
+                                        @foreach (var group in _availableGroups)
+                                        {
+                                            var groupId = group.Id;  // closure capture for the lambda
+                                            var groupName = group.Name;  // display only
+                                            var isSelected = _model.GroupId == groupId;
+                                            <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                        Class="@GetToggleClass(isSelected)"
+                                                        Style="@GetToggleBorderStyle(isSelected)"
+                                                        @onclick="@(() => SelectExistingGroup(groupId))">
+                                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                                                             JustifyContent="JustifyContent.Center" Gap="0.5rem">
+                                                    <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
+                                                                Style="@GetToggleIconStyle(isSelected)" />
+                                                    <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
+                                                                Style="@GetToggleTextStyle(isSelected)" />
+                                                </RadzenStack>
+                                            </RadzenCard>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                @Loc["ExistingGroupHint"]
+                            </RadzenText>
 
                             @* Inline error — shown when the user has tried to submit
-                               without selecting (Existing mode) or typing (New mode)
-                               a group name. Mirrors the .gender-error-text pattern:
-                               red text below the field, color-matched to the
+                               without selecting a group. Mirrors the .gender-error-text
+                               pattern: red text below the field, color-matched to the
                                .group-section-invalid border above. The error clears
-                               automatically on re-render as soon as GroupName becomes
-                               non-empty (via SelectExistingGroup or @bind-Value on
-                               the New-mode text box). The top-of-form _submitError
-                               banner also shows the same message, but this inline
-                               error makes it impossible to miss — the user doesn't
+                               automatically on re-render as soon as GroupId becomes
+                               non-empty (via SelectExistingGroup). The top-of-form
+                               _submitError banner also shows the same message, but this
+                               inline error makes it impossible to miss — the user doesn't
                                need to scroll up to see what went wrong. *@
                             @if (groupIsInvalid)
                             {
@@ -780,7 +732,7 @@
     /// and Staff creation in one flat object — the User Type toggle
     /// determines which fields are shown and which command is dispatched
     /// at submit time. Staff-only fields (StaffRole) and customer-only
-    /// fields (GroupName) are simply ignored when the other type is
+    /// fields (GroupId) are simply ignored when the other type is
     /// selected.
     /// </summary>
     private sealed class CreateUserFormModel
@@ -788,7 +740,7 @@
         // Validation attributes mirror the union of CreateStaffCommandValidator
         // and CreateCustomerCommandValidator rules. Fields used by BOTH
         // validators (WorkerId, FullName, InitialPassword, Gender) get
-        // the shared rules. Fields used by only one (GroupName = customer-only,
+        // the shared rules. Fields used by only one (GroupId = customer-only,
         // StaffRole = staff-only) are validated conditionally in HandleSubmitAsync
         // (the existing manual checks at lines ~600-610 already do this and
         // produce localized Error_GroupNameRequired / Error_StaffRoleRequired
@@ -835,17 +787,16 @@
         // Customer-only — validated conditionally in HandleSubmitAsync
         // (Error_GroupNameRequired). No [Required] here because that would
         // fire even when UserType is Staff.
-        [StringLength(100, ErrorMessage = "Group name cannot exceed 100 characters.")]
-        public string GroupName { get; set; } = string.Empty;
+        // SALARY FEATURE (Step 8): the field type changed from string
+        // GroupName to Guid? GroupId. Groups are now first-class aggregates
+        // (CustomerGroup) selected by Id, not by free-text name. The
+        // "New group" inline-creation flow is gone — admins must create
+        // groups via the CreateGroup page first.
+        public Guid? GroupId { get; set; }
 
-        // Customer-only — tracks which mode the group-name UI is in.
-        // Existing = pick from list of available groups (loaded once on
-        // page init from GetAllGroupNamesQuery). New = type a new name
-        // in a text box. Switching modes clears GroupName so the user
-        // must explicitly pick or type one in the new mode. Defaults to
-        // Existing — if no groups exist yet, OnInitializedAsync flips
-        // this to New so the user isn't stuck looking at an empty list.
-        public GroupMode GroupMode { get; set; } = GroupMode.Existing;
+        // NOTE: the legacy GroupName + GroupMode fields were removed in
+        // Step 8. The form now binds directly to GroupId (selected from
+        // the GetAllCustomerGroupsQuery dropdown grid).
 
         /// <summary>
         /// The selected staff role's string value (e.g. "Employee",
@@ -870,16 +821,10 @@
         Staff
     }
 
-    /// <summary>
-    /// Group name UI mode (Customer-only). Existing = pick from the list
-    /// of available groups (loaded via GetAllGroupNamesQuery). New = type
-    /// a new group name in a text box. See CreateUserFormModel.GroupMode.
-    /// </summary>
-    private enum GroupMode
-    {
-        Existing,
-        New
-    }
+    // SALARY FEATURE (Step 8): the GroupMode enum (Existing/New) was removed.
+    // Groups are now first-class aggregates (CustomerGroup) selected by Id
+    // from a single grid of existing-group cards — there is no "New" mode.
+    // Admins create new groups via the CreateGroup page first.
 
     /// <summary>
     /// Strongly-typed staff-role option for the dropdown. The Value is the
@@ -934,12 +879,13 @@
 
     private List<StaffRoleOption> _staffRoleOptions = new();
 
-    // Existing customer group names — loaded once from GetAllGroupNamesQuery
-    // and rendered as a 2-column grid of selectable cards when the user picks
-    // the "Existing" group-mode option. The user can switch to the "New" mode
-    // to type a new group name that isn't in this list. New groups are created
-    // implicitly when the first customer is assigned to them.
-    private List<string> _availableGroups = new();
+    // Existing customer groups — loaded once from GetAllCustomerGroupsQuery
+    // and rendered as a 2-column grid of selectable cards in the Group section
+    // of the form. SALARY FEATURE (Step 8): the type changed from List<string>
+    // to List<CustomerGroupListItemDto> so each card carries both Id (for
+    // selection) and Name (for display). The "New" mode is gone — admins must
+    // create groups via the CreateGroup page first.
+    private List<CustomerGroupListItemDto> _availableGroups = new();
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -1001,33 +947,25 @@
             };
         }
 
-        // Load existing group names. These are rendered as a 2-column grid of
-        // selectable cards when the user picks the "Existing" group-mode option.
-        // Failure is non-fatal — the list will be empty and the user is guided
-        // to switch to "New" mode to type a new name.
+        // Load existing customer groups. Rendered as a 2-column grid of
+        // selectable cards in the Group section of the form (Customer only).
+        // Failure is non-fatal — the list will be empty and the Group section
+        // shows a "no groups exist yet" message + a link to /Admin/Groups/Create.
         try
         {
-            var groupsResult = await MessageBus.InvokeAsync<Result<List<string>>>(new GetAllGroupNamesQuery());
+            var groupsResult = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = false });
             if (groupsResult.IsSuccess && groupsResult.Value is not null)
             {
                 _availableGroups = groupsResult.Value
-                    .Where(g => !string.IsNullOrWhiteSpace(g))
-                    .OrderBy(g => g)
+                    .OrderBy(g => g.Name, StringComparer.CurrentCulture)
                     .ToList();
             }
         }
         catch
         {
             // Non-fatal — leave _availableGroups as empty list.
-            _availableGroups = new List<string>();
-        }
-
-        // If no existing groups exist, default to "New" mode so the user isn't
-        // stuck looking at an empty list. (User can still switch back to Existing
-        // manually — they'll just see the "no existing groups" message.)
-        if (_availableGroups.Count == 0)
-        {
-            _model.GroupMode = GroupMode.New;
+            _availableGroups = new List<CustomerGroupListItemDto>();
         }
 
         // Note: Managers used to be locked to Customer here (Phase 6.2).
@@ -1041,9 +979,8 @@
 
     /// <summary>
     /// Toggles between Customer and Staff user types. Clears the
-    /// type-specific fields (GroupName + GroupMode for Staff, StaffRole
-    /// for Customer) so the form doesn't carry stale values across the
-    /// toggle.
+    /// type-specific fields (GroupId for Staff, StaffRole for Customer)
+    /// so the form doesn't carry stale values across the toggle.
     /// </summary>
     private Task OnUserTypeChanged(UserType newType)
     {
@@ -1053,8 +990,10 @@
 
         if (newType == UserType.Staff)
         {
-            _model.GroupName = string.Empty;
-            _model.GroupMode = GroupMode.Existing;  // reset to default
+            // SALARY FEATURE (Step 8): the legacy GroupName + GroupMode
+            // fields are gone — just clear GroupId when switching to Staff
+            // (staff users have no group).
+            _model.GroupId = null;
 
             // Manager scope (Phase 6.3): when a Manager switches to Staff,
             // force StaffRole to Employee (they can't pick anything else
@@ -1076,33 +1015,19 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Toggles between Existing (pick from list) and New (type a name)
-    /// group-name modes. Clears the GroupName so the user must explicitly
-    /// pick or type one in the new mode — prevents stale values from
-    /// carrying across the toggle.
-    /// </summary>
-    private Task OnGroupModeChanged(GroupMode newMode)
-    {
-        if (_model.GroupMode == newMode) return Task.CompletedTask;
-
-        _model.GroupMode = newMode;
-        _model.GroupName = string.Empty;  // force fresh selection/entry
-
-        // Clear any stale submit error from a previous attempt.
-        _submitError = string.Empty;
-        return Task.CompletedTask;
-    }
+    // SALARY FEATURE (Step 8): OnGroupModeChanged was removed — the
+    // "Existing/New" toggle is gone. The Group section now shows only
+    // a single grid of existing-group cards (no New mode).
 
     /// <summary>
-    /// Sets the GroupName to the given existing-group name. Called when
-    /// the user clicks one of the group buttons in Existing mode. Only
-    /// one group can be selected at a time — clicking a different button
-    /// overwrites GroupName with the new selection.
+    /// Sets the GroupId to the given existing-group Id. Called when
+    /// the user clicks one of the group buttons in the Group section.
+    /// Only one group can be selected at a time — clicking a different
+    /// button overwrites GroupId with the new selection.
     /// </summary>
-    private Task SelectExistingGroup(string groupName)
+    private Task SelectExistingGroup(Guid groupId)
     {
-        _model.GroupName = groupName;
+        _model.GroupId = groupId;
         _submitError = string.Empty;  // clear stale error after a fresh pick
         return Task.CompletedTask;
     }
@@ -1139,9 +1064,11 @@
 
     // Toggle helper methods — each takes a `bool selected` parameter so the
     // SAME helpers can be reused for:
-    //   - The User Type toggle (Customer / Staff) — pass `(_model.UserType == X)`
-    //   - The Group Mode toggle (Existing / New)  — pass `(_model.GroupMode == X)`
-    //   - The Existing-group buttons list          — pass `(_model.GroupName == group)`
+    //   - The User Type toggle (Customer / Staff)  — pass `(_model.UserType == X)`
+    //   - The Existing-group buttons list           — pass `(_model.GroupId == group.Id)`
+    //
+    // SALARY FEATURE (Step 8): the Group Mode toggle (Existing / New) is gone
+    // — only the User Type toggle and the Existing-group buttons list remain.
     //
     // WHY HELPERS (not inline ternaries):
     //   The original markup used `@{ var selected = ... }` + nested ternaries
@@ -1227,8 +1154,11 @@
             return;
         }
 
-        // Customer requires a non-empty GroupName.
-        if (_model.UserType == UserType.Customer && string.IsNullOrWhiteSpace(_model.GroupName))
+        // Customer requires a non-empty GroupId. SALARY FEATURE (Step 8):
+        // the field changed from string GroupName to Guid? GroupId — the
+        // validation now checks for null/empty Guid instead of whitespace.
+        if (_model.UserType == UserType.Customer
+            && (_model.GroupId is null || _model.GroupId.Value == Guid.Empty))
         {
             _submitError = Loc["Error_GroupNameRequired"];
             return;
@@ -1249,10 +1179,13 @@
 
             if (_model.UserType == UserType.Customer)
             {
+                // SALARY FEATURE (Step 8): the command takes GroupId (Guid)
+                // instead of GroupName (string). The pre-check above already
+                // ensured _model.GroupId is non-null and non-empty.
                 var command = new CreateCustomerCommand(
                     WorkerId: _model.WorkerId.Trim(),
                     FullName: _model.FullName.Trim(),
-                    GroupName: _model.GroupName.Trim(),
+                    GroupId: _model.GroupId!.Value,
                     Email: string.Empty,
                     InitialPassword: _model.InitialPassword,
                     Gender: _model.Gender.Value);

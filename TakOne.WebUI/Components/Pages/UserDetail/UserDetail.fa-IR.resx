@@ -228,30 +228,12 @@
     <value>نام کامل جدید را وارد کنید (۱ تا ۲۰۰ نویسه):</value>
   </data>
 
-  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group-name field) -->
-  <data name="GroupModeExisting" xml:space="preserve">
-    <value>گروه موجود</value>
-  </data>
-  <data name="GroupModeExistingHint" xml:space="preserve">
-    <value>انتخاب از بین گروه‌های از پیش موجود</value>
-  </data>
-  <data name="GroupModeNew" xml:space="preserve">
-    <value>گروه جدید</value>
-  </data>
-  <data name="GroupModeNewHint" xml:space="preserve">
-    <value>وارد کردن نام گروهی جدید</value>
-  </data>
+  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group section) -->
   <data name="NoExistingGroups" xml:space="preserve">
     <value>هنوز گروهی وجود ندارد.</value>
   </data>
   <data name="ExistingGroupHint" xml:space="preserve">
     <value>برای انتخاب، روی یک گروه کلیک کنید.</value>
-  </data>
-  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
-    <value>مثلاً مشتریان ویژه</value>
-  </data>
-  <data name="NewGroupHint" xml:space="preserve">
-    <value>گروه‌های جدید به‌طور ضمنی ایجاد می‌شوند — سقف خرید آن‌ها را بعداً در صفحه محصول تنظیم کنید.</value>
   </data>
 
   <!-- Edit Full Name modal -->
@@ -415,5 +397,9 @@
   </data>
   <data name="HelpPanel_ResetPassword" xml:space="preserve">
     <value>بازنشانی گذرواژه — گذرواژه جدیدی برای کاربر تعیین می‌کند (فقط مدیر سیستم، نه خود).</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>ایجاد گروه جدید</value>
+    <comment>Step 8: link button shown in the change-group panel when no existing groups exist.</comment>
   </data>
 </root>

@@ -38,7 +38,7 @@
           Dispatches UpdateProductDetailsCommand with the new values
           (PictureUrl is passed as the existing value — unchanged).
        3. Per-group purchase limits editor:
-          - Loads ALL existing group names via GetAllGroupNamesQuery
+          - Loads ALL existing customer groups via GetAllCustomerGroupsQuery
             (every existing group must have a limit OR be explicitly
             set to "no limit" by leaving the field empty + clicking
             "Remove limit").
@@ -124,7 +124,8 @@
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
 @using TakOne.Application.Sales.Commands.CreateOrAppendSale
-@using TakOne.Application.Users.Queries.GetAllGroupNames
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
@@ -180,8 +181,8 @@
                 }
 
             /* "Change photo" button — overlaid on the picture bottom-right
-                                       corner. Only shown to staff. Uses RadzenButton underneath
-                                       but is positioned via a wrapper. */
+                                                   corner. Only shown to staff. Uses RadzenButton underneath
+                                                   but is positioned via a wrapper. */
             .change-photo-overlay {
                 position: absolute;
                 inset-inline-end: 0.5rem;
@@ -315,8 +316,8 @@
             }
 
             /* Picture upload section — dropzone + preview card.
-                                       Mirrors CreateProduct.razor's picture-dropzone styles so the
-                                       two pages share a consistent upload UI. */
+                                                   Mirrors CreateProduct.razor's picture-dropzone styles so the
+                                                   two pages share a consistent upload UI. */
             .upload-section {
                 display: flex;
                 flex-direction: column;
@@ -457,11 +458,11 @@
                 }
 
             /* Back button row — mirrors the detail-grid columns so the
-                           button stays aligned with the START of the info column
-                           (right above the breadcrumb) in both LTR and RTL modes.
-                           The button cell uses flex + justify-content: flex-start so
-                           the button sizes to its content instead of stretching to
-                           the full cell width. */
+                                       button stays aligned with the START of the info column
+                                       (right above the breadcrumb) in both LTR and RTL modes.
+                                       The button cell uses flex + justify-content: flex-start so
+                                       the button sizes to its content instead of stretching to
+                                       the full cell width. */
             .back-button-row {
                 display: grid;
                 grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -614,7 +615,7 @@
 
                    NOTE: _myPurchaseLimit is now populated from
                    _product.MyPurchaseLimit (set by GetProductByIdQueryHandler
-                   via Product.GetPurchaseLimitForGroup(currentUser.GroupName)).
+                   via Product.GetPurchaseLimitForGroup(currentUser.GroupId)).
                    Before this fix, _myPurchaseLimit was hardcoded to null
                    because ProductDto didn't expose the field — so the
                    selector's Max was always 999999, letting customers SELECT
@@ -747,20 +748,15 @@
                                 <div class="limit-row">
                                     <RadzenFormField Text="@Loc["FieldLimitGroup"]"
                                                      Style="flex: 1 1 200px; min-width: 160px;">
-                                        @if (row.IsExistingGroup)
-                                        {
-                                            <RadzenText TextStyle="TextStyle.Body1"
-                                                        Style="display: block; padding: 0.5rem 0; font-weight: 600;">
-                                                @row.GroupName
-                                            </RadzenText>
-                                        }
-                                        else
-                                        {
-                                            <RadzenTextBox @bind-Value="row.GroupName"
-                                                           TValue="string"
-                                                           Placeholder="@Loc["LimitGroupPlaceholder"]"
-                                                           Style="width: 100%;" />
-                                        }
+                                        @* SALARY FEATURE (Step 8): all rows are existing-group
+                                           rows now (no more "Add custom group name" flow).
+                                           The group NAME is read-only display; only the limit
+                                           is editable. The GroupId is what gets passed to the
+                                           Set/Remove command. *@
+                                        <RadzenText TextStyle="TextStyle.Body1"
+                                                    Style="display: block; padding: 0.5rem 0; font-weight: 600;">
+                                            @row.GroupName
+                                        </RadzenText>
                                     </RadzenFormField>
                                     <RadzenFormField Text="@Loc["FieldLimitValue"]"
                                                      Style="flex: 0 1 140px; min-width: 100px;">
@@ -785,40 +781,34 @@
                                                   ButtonStyle="ButtonStyle.Primary"
                                                   Variant="Variant.Outlined"
                                                   Size="ButtonSize.Small"
-                                                  Disabled="@(!row.Limit.HasValue || string.IsNullOrWhiteSpace(row.GroupName) || row.IsSaving)"
+                                                  Disabled="@(!row.Limit.HasValue || row.GroupId == Guid.Empty || row.IsSaving)"
                                                   Click="@(() => HandleSaveLimitAsync(row))" />
-                                    @if (!row.IsCustom)
-                                    {
-                                        <RadzenButton Text="@Loc["RemoveLimit"]"
-                                                      Icon="delete"
-                                                      ButtonStyle="ButtonStyle.Danger"
-                                                      Variant="Variant.Text"
-                                                      Size="ButtonSize.Small"
-                                                      Disabled="@(!row.HasExistingLimit || row.IsSaving)"
-                                                      Click="@(() => HandleRemoveLimitAsync(row))" />
-                                    }
-                                    else
-                                    {
-                                        <RadzenButton Icon="delete"
-                                                      ButtonStyle="ButtonStyle.Danger"
-                                                      Variant="Variant.Text"
-                                                      Size="ButtonSize.Small"
-                                                      Click="@(() => _limitRows.Remove(row))"
-                                                      AriaLabel="@Loc["RemoveLimit"]" />
-                                    }
+                                    <RadzenButton Text="@Loc["RemoveLimit"]"
+                                                  Icon="delete"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  Variant="Variant.Text"
+                                                  Size="ButtonSize.Small"
+                                                  Disabled="@(!row.HasExistingLimit || row.IsSaving)"
+                                                  Click="@(() => HandleRemoveLimitAsync(row))" />
                                 </div>
                             }
                         }
 
-                        <div style="margin-top: 0.75rem;">
-                            <RadzenButton Text="@Loc["AddCustomGroupRow"]"
-                                          Icon="group_add"
-                                          ButtonStyle="ButtonStyle.Secondary"
-                                          Variant="Variant.Outlined"
-                                          Size="ButtonSize.Small"
-                                          Disabled="@_isLoadingGroups"
-                                          Click="@AddCustomLimitRow" />
-                        </div>
+                        @* SALARY FEATURE (Step 8): the "Add custom group" button is gone —
+                           admins must create groups via the CreateGroup page first.
+                           When no existing groups are present, the empty-state message
+                           shows a link to /Admin/Groups/Create. *@
+                        @if (!_isLoadingGroups && _limitRows.Count == 0)
+                        {
+                            <div style="margin-top: 0.75rem;">
+                                <RadzenButton Text="@Loc["ActionCreateGroup"]"
+                                              Icon="group_add"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Size="ButtonSize.Small"
+                                              Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+                            </div>
+                        }
                     </div>
                 }
             </div>
@@ -984,8 +974,8 @@
     // ── Purchase-limit editor state ──
 
     /// <summary>
-    /// One row per group, existing or custom. Loaded once on page init
-    /// by combining GetAllGroupNamesQuery (every existing group) with
+    /// One row per group. Loaded once on page init
+    /// by combining GetAllCustomerGroupsQuery (every existing group) with
     /// the product's existing limits (so each row shows its current
     /// value, or an empty input if no limit is set yet).
     /// </summary>
@@ -996,28 +986,30 @@
     /// One row in the per-group purchase-limit editor. Each row maps to
     /// either a SetProductPurchaseLimitCommand (when "Save" is clicked
     /// with a non-empty limit) or a RemoveProductPurchaseLimitCommand
-    /// (when "Remove" is clicked — only available for existing-group
-    /// rows that currently have a limit).
+    /// (when "Remove" is clicked — only available for rows that currently
+    /// have a limit).
+    ///
+    /// SALARY FEATURE (Step 8): the row now carries GroupId (Guid FK) and
+    /// GroupName (display-only string). The "Add custom group name" flow
+    /// is gone — admins must create groups via the CreateGroup page first,
+    /// so every limit row references a real CustomerGroup row.
     /// </summary>
     private sealed class LimitRow
     {
-        public string GroupName { get; set; } = string.Empty;
+        /// <summary>
+        /// The customer group Id this limit applies to. Set once at row
+        /// creation (from CustomerGroupListItemDto.Id or
+        /// ProductPurchaseLimitDto.GroupId). Never mutated by the UI.
+        /// </summary>
+        public Guid GroupId { get; init; }
+
+        /// <summary>
+        /// The customer group's DISPLAY NAME (read from the source DTO).
+        /// Used only for rendering — never passed to the command.
+        /// </summary>
+        public string GroupName { get; init; } = string.Empty;
+
         public int? Limit { get; set; }
-
-        /// <summary>
-        /// True for rows seeded from GetAllGroupNamesQuery (every existing
-        /// group must always be shown — name is read-only, row can't be
-        /// deleted, but the limit can be set/changed/removed).
-        /// False for rows added via "Add custom group" (name is editable,
-        /// row can be deleted via the trash icon).
-        /// </summary>
-        public bool IsExistingGroup { get; set; }
-
-        /// <summary>
-        /// True for custom (new) rows added via the "Add custom group"
-        /// button. False for existing-group rows.
-        /// </summary>
-        public bool IsCustom => !IsExistingGroup;
 
         /// <summary>
         /// True if this group currently has a limit set on this product
@@ -1156,53 +1148,66 @@
     }
 
     /// <summary>
-    /// Loads all existing customer group names + seeds one LimitRow per
-    /// group (existing-group rows). For each row that matches an existing
-    /// limit on this product, pre-populates the Limit + sets HasExistingLimit
-    /// so the Remove button is enabled.
+    /// Loads all active customer groups + seeds one LimitRow per group.
+    /// For each row that matches an existing limit on this product,
+    /// pre-populates the Limit + sets HasExistingLimit so the Remove
+    /// button is enabled. Also seeds rows for any existing limit whose
+    /// GroupId doesn't appear in the GetAllCustomerGroupsQuery result
+    /// (e.g. the group was deactivated but the limit remains — the row
+    /// is shown so the admin can remove the stale limit).
     /// </summary>
     private async Task LoadGroupNamesAsync()
     {
         _isLoadingGroups = true;
         try
         {
-            var result = await MessageBus.InvokeAsync<Result<List<string>>>(
-                new GetAllGroupNamesQuery());
+            // Include inactive groups so we can surface stale limit rows
+            // (limits set for a group that was later deactivated). The
+            // admin can then remove the stale limit.
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = true });
 
-            var groupNames = (result.IsSuccess && result.Value is not null)
+            var groups = (result.IsSuccess && result.Value is not null)
                 ? result.Value
-                : new List<string>();
+                : new List<CustomerGroupListItemDto>();
 
             // Build a lookup of existing limits on this product for quick
-            // matching by group name (case-sensitive, matching the domain).
+            // matching by GroupId.
             var existingLimits = _product?.PurchaseLimits ?? new List<ProductPurchaseLimitDto>();
-            var existingByGroup = existingLimits.ToDictionary(l => l.GroupName, l => l.Limit, StringComparer.Ordinal);
+            var existingByGroupId = existingLimits
+                .Where(l => l.GroupId != Guid.Empty)
+                .ToDictionary(l => l.GroupId, l => l.Limit);
 
-            foreach (var name in groupNames)
+            var seenGroupIds = new HashSet<Guid>();
+
+            // Seed one row per existing group (active OR inactive — see
+            // IncludeInactive=true above).
+            foreach (var group in groups.OrderBy(g => g.Name, StringComparer.CurrentCulture))
             {
-                var hasLimit = existingByGroup.TryGetValue(name, out var limit);
+                var hasLimit = existingByGroupId.TryGetValue(group.Id, out var limit);
                 _limitRows.Add(new LimitRow
                 {
-                    GroupName = name,
+                    GroupId = group.Id,
+                    GroupName = group.Name,
                     Limit = hasLimit ? limit : null,
-                    IsExistingGroup = true,
                     HasExistingLimit = hasLimit
                 });
+                seenGroupIds.Add(group.Id);
             }
 
-            // Also add custom rows for any product limit whose group name
-            // doesn't exist in GetAllGroupNamesQuery's result (e.g. the
-            // group was deleted but the limit remains, or the limit was
-            // set for a forward-looking group name that has no users yet).
+            // Defensive: surface any existing limit whose GroupId doesn't
+            // match a row in GetAllCustomerGroupsQuery's result. This
+            // shouldn't happen (groups are soft-deleted, not hard-deleted),
+            // but if it does, the admin can remove the orphan limit.
             foreach (var limit in existingLimits)
             {
-                if (!groupNames.Contains(limit.GroupName, StringComparer.Ordinal))
+                if (!seenGroupIds.Contains(limit.GroupId))
                 {
                     _limitRows.Add(new LimitRow
                     {
-                        GroupName = limit.GroupName,
+                        GroupId = limit.GroupId,
+                        GroupName = limit.GroupName ?? "(unknown group)",
                         Limit = limit.Limit,
-                        IsExistingGroup = true, // treat as existing — limit is set
                         HasExistingLimit = true
                     });
                 }
@@ -1528,30 +1533,18 @@
     // ── Purchase-limit editor handlers ─────────────────────────────────
 
     /// <summary>
-    /// Adds a new custom (empty) row to the limits editor. The user types
-    /// a group name that doesn't exist yet (forward-looking — a limit can
-    /// be set for a group before any users are in it). Custom rows can be
-    /// removed via the trash icon; existing-group rows cannot.
-    /// </summary>
-    private void AddCustomLimitRow()
-    {
-        _limitRows.Add(new LimitRow
-        {
-            GroupName = string.Empty,
-            Limit = null,
-            IsExistingGroup = false
-        });
-    }
-
-    /// <summary>
     /// Saves a single limit row. Dispatches SetProductPurchaseLimitCommand
     /// (which adds or replaces the limit for the given group). On success,
     /// marks the row as HasExistingLimit=true so the Remove button becomes
     /// available.
+    ///
+    /// SALARY FEATURE (Step 8): the command takes GroupId (Guid) instead of
+    /// GroupName (string). The GroupId comes from the LimitRow (set at row
+    /// creation from CustomerGroupListItemDto.Id).
     /// </summary>
     private async Task HandleSaveLimitAsync(LimitRow row)
     {
-        if (_product is null || string.IsNullOrWhiteSpace(row.GroupName) || !row.Limit.HasValue)
+        if (_product is null || row.GroupId == Guid.Empty || !row.Limit.HasValue)
         {
             return;
         }
@@ -1561,7 +1554,7 @@
         {
             var command = new SetProductPurchaseLimitCommand(
                 ProductId: _product.Id,
-                GroupName: row.GroupName.Trim(),
+                GroupId: row.GroupId,
                 Limit: row.Limit.Value);
 
             var result = await MessageBus.InvokeAsync<Result>(command);
@@ -1569,7 +1562,6 @@
             if (result.IsSuccess)
             {
                 row.HasExistingLimit = true;
-                row.IsExistingGroup = true; // once saved, treat as existing — name becomes read-only
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["LimitSaved"], row.GroupName, row.Limit.Value),
                     summary: Loc["LimitSavedTitle"]);
@@ -1595,10 +1587,13 @@
     /// On success, clears the limit value + sets HasExistingLimit=false so the
     /// Remove button greys out (but the row stays so the user can re-set the
     /// limit if they change their mind).
+    ///
+    /// SALARY FEATURE (Step 8): the command takes GroupId (Guid) instead of
+    /// GroupName (string).
     /// </summary>
     private async Task HandleRemoveLimitAsync(LimitRow row)
     {
-        if (_product is null || string.IsNullOrWhiteSpace(row.GroupName))
+        if (_product is null || row.GroupId == Guid.Empty)
         {
             return;
         }
@@ -1608,7 +1603,7 @@
         {
             var command = new RemoveProductPurchaseLimitCommand(
                 ProductId: _product.Id,
-                GroupName: row.GroupName.Trim());
+                GroupId: row.GroupId);
 
             var result = await MessageBus.InvokeAsync<Result>(command);
 

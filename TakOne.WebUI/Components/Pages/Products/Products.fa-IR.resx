@@ -344,4 +344,9 @@
   <data name="SubmitEmptyCart" xml:space="preserve">
     <value>سبد شما خالی است. قبل از ثبت، حداقل یک کالا اضافه کنید.</value>
   </data>
+  <!-- Step 10d — CartConflict هنگامی تولید می‌شود که سبد توسط یک نشست همزمان
+       تغییر یافته (یا ثبت شده) باشد. مشتری فقط باید صفحه را به‌روزرسانی کند. -->
+  <data name="CartConflict" xml:space="preserve">
+    <value>سبد شما توسط نشست دیگری تغییر یافت. برای ادامه، صفحه را به‌روزرسانی کنید.</value>
+  </data>
 </root>

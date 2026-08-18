@@ -152,30 +152,12 @@
   <data name="FieldGroupName" xml:space="preserve">
     <value>Group name</value>
   </data>
-  <!-- Group-mode toggle labels + hints (replaces the old dropdown-only design). -->
-  <data name="GroupModeExisting" xml:space="preserve">
-    <value>Existing group</value>
-  </data>
-  <data name="GroupModeExistingHint" xml:space="preserve">
-    <value>Pick from groups already created</value>
-  </data>
-  <data name="GroupModeNew" xml:space="preserve">
-    <value>New group</value>
-  </data>
-  <data name="GroupModeNewHint" xml:space="preserve">
-    <value>Type a name for a new group</value>
-  </data>
+  <!-- Group-section labels + hints. -->
   <data name="NoExistingGroups" xml:space="preserve">
-    <value>No existing groups yet. Switch to “New group” to create one.</value>
+    <value>No existing groups yet. Click “Create new group” to make one.</value>
   </data>
   <data name="ExistingGroupHint" xml:space="preserve">
     <value>Required for customers. Pick one group from the list. Customers never see this value.</value>
-  </data>
-  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
-    <value>e.g. VIP Customers</value>
-  </data>
-  <data name="NewGroupHint" xml:space="preserve">
-    <value>Type a name for the new group. Per-product purchase limits are set later on the product side. Customers never see this value.</value>
   </data>
 
   <data name="FieldStaffRole" xml:space="preserve">
@@ -277,5 +259,9 @@
   </data>
   <data name="HelpInitialPassword" xml:space="preserve">
     <value>Communicate the initial password to the user out-of-band. They will use it to log in for the first time.</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>Create new group</value>
+    <comment>Step 8: link button shown in the Group section when no existing groups exist.</comment>
   </data>
 </root>

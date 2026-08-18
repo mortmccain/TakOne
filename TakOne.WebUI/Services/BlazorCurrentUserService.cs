@@ -34,7 +34,7 @@ namespace TakOne.WebUI.Services;
 /// was rejected with "Authentication required." — even though the user
 /// WAS logged in. The developer worked around this by NOT decorating
 /// circuit-called queries with <c>[RequireRoles]</c> (see the comment
-/// on <c>GetAllGroupNamesQuery</c>), which is exactly the fail-open
+/// on <c>GetAllCustomerGroupsQuery</c>), which is exactly the fail-open
 /// pattern that Issue #08 is about.
 /// </para>
 /// <para>

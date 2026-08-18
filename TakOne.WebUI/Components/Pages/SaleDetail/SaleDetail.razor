@@ -91,7 +91,6 @@
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
-@using TakOne.WebUI.Components.CancelConfirmationDialog
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<SaleDetail> Loc
@@ -1010,7 +1009,7 @@
         object? confirmed;
         try
         {
-            confirmed = await DialogService.OpenAsync<CancelConfirmationDialog>(
+            confirmed = await DialogService.OpenAsync<Components.Dialogs.CancelConfirmationDialog.CancelConfirmationDialog>(
                 Loc["CancelDialogTitle"],
                 new Dictionary<string, object?> { { "SaleNumber", _sale.DisplayNumber } },
                 new Radzen.DialogOptions

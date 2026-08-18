@@ -106,7 +106,7 @@
     <value>افزودن این کالا به سبد امکان‌پذیر نبود. لطفاً دوباره تلاش کنید.</value>
   </data>
   <data name="MyPurchaseLimitHint" xml:space="preserve">
-    <value>حداکثر {0} عدد در هر سفارش برای گروه شما.</value>
+    <value>حداکثر {0} عدد در هر سفارش برای حساب شما.</value>
   </data>
   <data name="StaffEditTitle" xml:space="preserve">
     <value>ویرایش کارمند</value>
@@ -218,5 +218,9 @@
   </data>
   <data name="RemoveImage" xml:space="preserve">
     <value>حذف</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>ایجاد گروه جدید</value>
+    <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
   </data>
 </root>

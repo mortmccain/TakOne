@@ -1245,6 +1245,17 @@
         {
             return Loc["SubmitEmptyCart"];
         }
+        // Step 10d — CartConflict is produced when AddItemToSale /
+        // UpdateSaleLineItem / RemoveSaleLineItem / SubmitSale detects
+        // that the sale was mutated (or submitted) by a concurrent
+        // invocation between the initial load and the cart-lock acquire.
+        // The customer just needs to refresh the page — localized message
+        // is intentionally generic ("your cart was modified, refresh to
+        // continue").
+        if (CartConflictErrors.TryParse(error))
+        {
+            return Loc["CartConflict"];
+        }
         return error;
     }
 

@@ -12,10 +12,11 @@
 
    BACKEND CONTRACT:
      - Load: GetUserByIdQuery { UserId } → Result<UserDto>
-       - Returns the UserDto (Id, WorkerId, FullName, Gender, GroupName?,
-         IsActive, Email? [currently always null — TODO in handler], Roles list).
-       - GroupName is populated for Admin/Manager viewers (any target) AND
-         for Employee viewers when the target is a Customer. Otherwise null.
+       - Returns the UserDto (Id, WorkerId, FullName, Gender, GroupId?,
+         GroupName?, IsActive, Email? [currently always null — TODO in handler], Roles list).
+       - GroupId + GroupName are populated for Admin/Manager viewers (any
+         target) AND for Employee viewers when the target is a Customer.
+         Otherwise null. Customers never see the word "group" in any UI string.
        - Returns Result.Failure("User '...' was not found.") for both
          genuinely-missing users AND viewers-not-allowed-to-see (the
          canonical "never leak existence" pattern, same as GetSaleByIdQuery).
@@ -28,12 +29,17 @@
      - Remove role: RemoveUserRoleCommand(UserId, Role) → Result
        - [RequireRoles(Admin)]. Handler rejects self-removal of own Admin
          role (defense-in-depth). Validator: same as Assign.
-     - Assign to group: AssignUserToGroupCommand(UserId, GroupName) → Result
+     - Assign to group: AssignUserToGroupCommand(UserId, GroupId) → Result
        - [RequireRoles(Employee, Manager, Admin)]. Handler enforces caller-
          scope rules: Admin → any target; Manager → Employee/Customer
          (not self, not other managers/admins); Employee → Customer only
          (not self, not other employees/managers/admins). Validator:
-         GroupName non-empty, ≤ 100 chars.
+         GroupId must be a non-empty Guid that references an existing
+         CustomerGroup row.
+         SALARY FEATURE (Step 8): the command now takes Guid GroupId instead
+         of string GroupName. The UI selects from existing groups via
+         GetAllCustomerGroupsQuery — free-text group names are no longer
+         supported.
      - Remove from group: RemoveUserFromGroupCommand(UserId) → Result
        - [RequireRoles(Manager, Admin)]. Validator: UserId non-empty.
      - Activate: ActivateUserCommand(UserId) → Result
@@ -99,11 +105,12 @@
      - Change group / Assign to group (Phase 6.6 rework): the green button
        is labeled "Change group" when the user has a group, or "Assign to
        group" when they don't. Clicking it opens an inline panel with the
-       SAME UI as CreateUser.razor's group-name field — two toggle cards
-       (Existing / New), a 2-column grid of existing-group buttons in
-       Existing mode, and a textbox in New mode. Save dispatches
-       AssignUserToGroupCommand. Only shown when CanChangeGroup returns
-       true for the current viewer + target.
+       SAME UI as CreateUser.razor's group field — a 2-column grid of
+       existing-group cards. SALARY FEATURE (Step 8): the Existing/New
+       toggle was removed — groups are first-class aggregates, so new
+       groups must be created via the CreateGroup page first. Save dispatches
+       AssignUserToGroupCommand (passing the selected GroupId). Only shown
+       when CanChangeGroup returns true for the current viewer + target.
      - Remove from group: direct button click (with a JS confirm() because
        it's destructive — removes the user's purchase-limit group). Only
        shown when the user has a group AND the viewer can change the group
@@ -132,7 +139,8 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Queries.GetUserById
-@using TakOne.Application.Users.Queries.GetAllGroupNames
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
 @using TakOne.Application.Users.Commands.UpdateUserFullName
 @using TakOne.Application.Users.Commands.AssignUserRole
 @using TakOne.Application.Users.Commands.RemoveUserRole
@@ -144,7 +152,6 @@
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
-@using TakOne.WebUI.Components.DeactivateUserDialog
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<UserDetail> Loc
@@ -159,8 +166,8 @@
 <HeadContent>
     <style>
             /* Layout — 12-col grid on desktop/tablet, stacks on mobile.
-                                                               Left = profile + roles + group cards (wider); right = sticky action panel.
-                                                               Mirrors SaleDetail.razor's .detail-grid structure. */
+                                                                           Left = profile + roles + group cards (wider); right = sticky action panel.
+                                                                           Mirrors SaleDetail.razor's .detail-grid structure. */
             .detail-grid {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -174,7 +181,7 @@
                     gap: 1rem;
                 }
                     /* On mobile, action panel comes FIRST so help + role-scope
-                                                                       context is visible before the user scrolls to the cards. */
+                                                                                   context is visible before the user scrolls to the cards. */
                     .detail-grid .detail-action-panel {
                         order: -1;
                     }
@@ -224,7 +231,7 @@
             }
 
             /* Scope badge (large) in the action panel header — same shape
-                                                               as SaleDetail.razor's .status-badge-large. */
+                                                                           as SaleDetail.razor's .status-badge-large. */
             .status-badge-large {
                 display: inline-flex;
                 align-items: center;
@@ -238,9 +245,9 @@
             }
 
             /* Per-scope background colors (semantic):
-                                                               - Admin   → primary  (highest privilege — visually distinct)
-                                                               - Manager → info     (mid privilege)
-                                                               - Viewer  → base     (read-only) */
+                                                                           - Admin   → primary  (highest privilege — visually distinct)
+                                                                           - Manager → info     (mid privilege)
+                                                                           - Viewer  → base     (read-only) */
             .scope-bg-admin {
                 background: rgba(63, 81, 181, 0.18);
                 color: #1a237e;
@@ -342,9 +349,9 @@
                 }
 
             /* Constrain the Radzen button icon container so wider Material
-                                       glyphs can't overflow the button's left padding or overlap the
-                                       button text. Lets the icon shrink to its natural glyph width
-                                       and keeps it vertically centered. */
+                                                   glyphs can't overflow the button's left padding or overlap the
+                                                   button text. Lets the icon shrink to its natural glyph width
+                                                   and keeps it vertically centered. */
             .change-group-btn .rz-button-icon {
                 width: auto;
                 min-width: 0;
@@ -354,12 +361,12 @@
             }
 
             /* ── Group change panel (Phase 6.6) ──
-                                                   Mirrors CreateUser.razor's group-name UI: two toggle cards
-                                                   (Existing / New) + a 2-column grid of existing-group buttons
-                                                   (Existing mode) OR a textbox (New mode). The toggle cards
-                                                   use the same .toggle-option / .is-selected pattern as
-                                                   CreateUser.razor's .usertype-option, so the visual style
-                                                   is identical. */
+                                                               Mirrors CreateUser.razor's group-name UI: two toggle cards
+                                                               (Existing / New) + a 2-column grid of existing-group buttons
+                                                               (Existing mode) OR a textbox (New mode). The toggle cards
+                                                               use the same .toggle-option / .is-selected pattern as
+                                                               CreateUser.razor's .usertype-option, so the visual style
+                                                               is identical. */
             .toggle-option {
                 transition: background-color 0.15s ease, border-color 0.15s ease;
             }
@@ -408,12 +415,12 @@
                 }
 
             /* ── Edit Full Name modal ──
-                                                               Inline modal overlay + dialog. Renders above all other
-                                                               content via position:fixed + z-index. Backdrop is a
-                                                               semi-transparent dark layer that dims the underlying page
-                                                               (matches Radzen Dialog's visual weight). The dialog itself
-                                                               is a Radzen-styled card with max-width to keep it compact
-                                                               on desktop and full-width (minus margins) on mobile. */
+                                                                           Inline modal overlay + dialog. Renders above all other
+                                                                           content via position:fixed + z-index. Backdrop is a
+                                                                           semi-transparent dark layer that dims the underlying page
+                                                                           (matches Radzen Dialog's visual weight). The dialog itself
+                                                                           is a Radzen-styled card with max-width to keep it compact
+                                                                           on desktop and full-width (minus margins) on mobile. */
             .modal-overlay {
                 position: fixed;
                 inset: 0;
@@ -543,7 +550,7 @@
             }
 
             /* On small screens, modal footer buttons stretch full-width
-                                                               and stack vertically for easier thumb-tapping. */
+                                                                           and stack vertically for easier thumb-tapping. */
             @@media (max-width: 576px) {
                 .modal-footer {
                     flex-direction: column-reverse;
@@ -555,7 +562,7 @@
             }
 
             /* Password row inside the Reset Password modal — textbox on
-                                                   the left (flex-grow), show/hide toggle button on the right. */
+                                                               the left (flex-grow), show/hide toggle button on the right. */
             .modal-password-row {
                 display: flex;
                 gap: 0.5rem;
@@ -956,98 +963,56 @@
                         }
                         else
                         {
-                            @* Expanded state — show the CreateUser-style group picker.
-                               Two toggle cards (Existing / New), then the corresponding
-                               panel (grid of existing groups OR a textbox for a new name),
-                               then Save / Cancel buttons. Mirrors CreateUser.razor's
-                               group-name field exactly. *@
-                            <div class="toggle-row" Style="margin-top: 0.75rem;">
-                                <RadzenCard Variant="@(_groupMode == GroupMode.Existing ? Variant.Filled : Variant.Outlined)"
-                                            Class="@GetToggleClass(_groupMode == GroupMode.Existing)"
-                                            Style="@GetToggleBorderStyle(_groupMode == GroupMode.Existing)"
-                                            @onclick="@(() => OnGroupModeChanged(GroupMode.Existing))">
-                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                        <RadzenIcon Icon="folder_open" Style="@GetToggleIconStyle(_groupMode == GroupMode.Existing)" />
-                                        <div>
-                                            <RadzenText Text="@Loc["GroupModeExisting"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_groupMode == GroupMode.Existing)" />
-                                            <RadzenText Text="@Loc["GroupModeExistingHint"]"
-                                                        TextStyle="TextStyle.Caption"
-                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
-                                        </div>
-                                    </RadzenStack>
-                                </RadzenCard>
-
-                                <RadzenCard Variant="@(_groupMode == GroupMode.New ? Variant.Filled : Variant.Outlined)"
-                                            Class="@GetToggleClass(_groupMode == GroupMode.New)"
-                                            Style="@GetToggleBorderStyle(_groupMode == GroupMode.New)"
-                                            @onclick="@(() => OnGroupModeChanged(GroupMode.New))">
-                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                                        <RadzenIcon Icon="create_new_folder" Style="@GetToggleIconStyle(_groupMode == GroupMode.New)" />
-                                        <div>
-                                            <RadzenText Text="@Loc["GroupModeNew"]" TextStyle="TextStyle.Subtitle1" Style="@GetToggleTextStyle(_groupMode == GroupMode.New)" />
-                                            <RadzenText Text="@Loc["GroupModeNewHint"]"
-                                                        TextStyle="TextStyle.Caption"
-                                                        Style="color: var(--rz-text-secondary-color); margin: 0;" />
-                                        </div>
-                                    </RadzenStack>
-                                </RadzenCard>
-                            </div>
-
-                            @if (_groupMode == GroupMode.Existing)
-                            {
-                                <div Style="margin-top: 0.75rem;">
-                                    @if (!_availableGroups.Any())
-                                    {
-                                        <RadzenText TextStyle="TextStyle.Body2"
-                                                    Style="color: var(--rz-text-secondary-color);">
-                                            @Loc["NoExistingGroups"]
-                                        </RadzenText>
-                                    }
-                                    else
-                                    {
-                                        <div class="group-list">
-                                            @foreach (var group in _availableGroups)
-                                            {
-                                                var groupName = group;  // closure capture for the lambda
-                                                var isSelected = _pendingGroupName == groupName;
-                                                <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
-                                                            Class="@GetToggleClass(isSelected)"
-                                                            Style="@GetToggleBorderStyle(isSelected)"
-                                                            @onclick="@(() => SelectExistingGroup(groupName))">
-                                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
-                                                                 JustifyContent="JustifyContent.Center" Gap="0.5rem">
-                                                        <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
-                                                                    Style="@GetToggleIconStyle(isSelected)" />
-                                                        <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
-                                                                    Style="@GetToggleTextStyle(isSelected)" />
-                                                    </RadzenStack>
-                                                </RadzenCard>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                                <RadzenText TextStyle="TextStyle.Caption"
-                                            Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
-                                    @Loc["ExistingGroupHint"]
-                                </RadzenText>
-                            }
-                            else
-                            {
-                                <div Style="margin-top: 0.75rem;">
-                                    <RadzenFormField Style="width: 100%;">
-                                        <RadzenTextBox @bind-Value="_pendingGroupName"
-                                                       Placeholder="@Loc["FieldNewGroupNamePlaceholder"]"
-                                                       TValue="string"
-                                                       autocomplete="off"
-                                                       Disabled="@_isBusy"
-                                                       Style="width: 100%;" />
-                                    </RadzenFormField>
-                                    <RadzenText TextStyle="TextStyle.Caption"
-                                                Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
-                                        @Loc["NewGroupHint"]
+                            @* Expanded state — show a 2-column grid of existing-group
+                               cards. SALARY FEATURE (Step 8): the Existing/New toggle
+                               is gone — groups are now first-class aggregates, so the
+                               admin must create new groups via the CreateGroup page
+                               first. If no groups exist, the panel shows an empty-state
+                               message + a "Create new group" link button that navigates
+                               to /Admin/Groups/Create. *@
+                            <div Style="margin-top: 0.75rem;">
+                                @if (!_availableGroups.Any())
+                                {
+                                    <RadzenText TextStyle="TextStyle.Body2"
+                                                Style="color: var(--rz-text-secondary-color); display: block; margin-bottom: 0.5rem;">
+                                        @Loc["NoExistingGroups"]
                                     </RadzenText>
-                                </div>
-                            }
+                                    <RadzenButton Text="@Loc["ActionCreateGroup"]"
+                                                  Icon="group_add"
+                                                  ButtonStyle="ButtonStyle.Secondary"
+                                                  Variant="Variant.Outlined"
+                                                  Size="ButtonSize.Small"
+                                                  Disabled="@_isBusy"
+                                                  Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+                                }
+                                else
+                                {
+                                    <div class="group-list">
+                                        @foreach (var group in _availableGroups)
+                                        {
+                                            var groupId = group.Id;  // closure capture for the lambda
+                                            var groupName = group.Name;  // display only
+                                            var isSelected = _pendingGroupId == groupId;
+                                            <RadzenCard Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                        Class="@GetToggleClass(isSelected)"
+                                                        Style="@GetToggleBorderStyle(isSelected)"
+                                                        @onclick="@(() => SelectExistingGroup(groupId))">
+                                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center"
+                                                             JustifyContent="JustifyContent.Center" Gap="0.5rem">
+                                                    <RadzenIcon Icon="@(isSelected ? "check_circle" : "radio_button_unchecked")"
+                                                                Style="@GetToggleIconStyle(isSelected)" />
+                                                    <RadzenText Text="@groupName" TextStyle="TextStyle.Body1"
+                                                                Style="@GetToggleTextStyle(isSelected)" />
+                                                </RadzenStack>
+                                            </RadzenCard>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.5rem;">
+                                @Loc["ExistingGroupHint"]
+                            </RadzenText>
 
                             <div class="group-change-actions">
                                 <RadzenButton Text="@Loc["ActionCancelGroupChange"]"
@@ -1062,7 +1027,7 @@
                                               ButtonStyle="ButtonStyle.Success"
                                               Variant="Variant.Filled"
                                               Size="ButtonSize.Small"
-                                              Disabled="@(_isBusy || string.IsNullOrWhiteSpace(_pendingGroupName))"
+                                              Disabled="@(_isBusy || _pendingGroupId is null || _pendingGroupId == Guid.Empty)"
                                               Click="@ConfirmChangeGroupAsync" />
                             </div>
                         }
@@ -1535,36 +1500,27 @@
     private bool _isChangeGroupPanelOpen;
 
     /// <summary>
-    /// Group name UI mode — mirrors CreateUser.razor's GroupMode enum.
-    /// Existing = pick from the list of available groups (loaded via
-    /// GetAllGroupNamesQuery). New = type a new group name in a text box.
-    /// See the _pendingGroupName field remark for the selection flow.
+    /// The pending group Id selection. Set by clicking one of the group
+    /// buttons in the inline change-group panel (SelectExistingGroup).
+    /// Reset to null when the panel opens, when the panel closes
+    /// (saved or cancelled). SALARY FEATURE (Step 8): changed from a
+    /// string _pendingGroupName to a Guid? _pendingGroupId — groups are
+    /// now first-class aggregates (CustomerGroup) selected by Id, not
+    /// by free-text name. The "New group" inline-creation mode is gone
+    /// (admins use the CreateGroup page first, then return here to
+    /// assign the user to the new group).
     /// </summary>
-    private GroupMode _groupMode = GroupMode.Existing;
+    private Guid? _pendingGroupId;
 
     /// <summary>
-    /// The pending group name selection/entry. In Existing mode, this is
-    /// set by clicking one of the group buttons (SelectExistingGroup).
-    /// In New mode, this is bound to the textbox via @bind-Value. Reset
-    /// when the panel opens, when the mode changes, or when the panel
-    /// closes (saved or cancelled).
+    /// The list of existing customer groups, loaded once on page
+    /// init from GetAllCustomerGroupsQuery. Rendered as a 2-column grid of
+    /// selectable cards when the change-group panel is open.
+    /// SALARY FEATURE (Step 8): type changed from List&lt;string&gt; to
+    /// List&lt;CustomerGroupListItemDto&gt; so each card carries both Id
+    /// (for selection) and Name (for display).
     /// </summary>
-    private string _pendingGroupName = string.Empty;
-
-    /// <summary>
-    /// The list of existing customer group names, loaded once on page
-    /// init from GetAllGroupNamesQuery. Rendered as a 2-column grid of
-    /// selectable cards when the change-group panel is open in Existing
-    /// mode. Mirrors CreateUser.razor's _availableGroups field.
-    /// </summary>
-    private List<string> _availableGroups = new();
-
-    /// <summary>
-    /// Group name UI mode (mirrors CreateUser.razor's GroupMode enum).
-    /// Existing = pick from the list of available groups. New = type a
-    /// new group name in a text box. See _groupMode field.
-    /// </summary>
-    private enum GroupMode { Existing, New }
+    private List<CustomerGroupListItemDto> _availableGroups = new();
 
     // ── Derived permission flags ───────────────────────────────────────
 
@@ -1749,28 +1705,27 @@
 
         try
         {
-            // Load existing customer group names in parallel with the user
+            // Load existing customer groups in parallel with the user
             // (so the change-group panel doesn't have to wait when opened).
             // Non-fatal on failure — _availableGroups stays empty, which
-            // just means the Existing mode shows "No existing groups" and
-            // the user has to use the New mode.
+            // just means the panel shows "No existing groups" + a link to
+            // the CreateGroup page.
             try
             {
-                var groupsResult = await MessageBus.InvokeAsync<Result<List<string>>>(
-                    new GetAllGroupNamesQuery());
+                var groupsResult = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                    new GetAllCustomerGroupsQuery { IncludeInactive = false });
 
                 if (groupsResult.IsSuccess && groupsResult.Value is not null)
                 {
                     _availableGroups = groupsResult.Value
-                        .Where(g => !string.IsNullOrWhiteSpace(g))
-                        .OrderBy(g => g)
+                        .OrderBy(g => g.Name, StringComparer.CurrentCulture)
                         .ToList();
                 }
             }
             catch
             {
                 // Non-fatal — see comment above.
-                _availableGroups = new List<string>();
+                _availableGroups = new List<CustomerGroupListItemDto>();
             }
 
             await LoadUserAsync();
@@ -2088,92 +2043,74 @@
     }
 
     /// <summary>
-    /// Opens the inline Change Group panel. Pre-selects Existing mode and
-    /// clears any pending group name. Called when the user clicks the green
-    /// "Change group" / "Assign to group" button on the Group card.
+    /// Opens the inline Change Group panel. Clears any pending group Id.
+    /// Called when the user clicks the green "Change group" / "Assign to
+    /// group" button on the Group card. SALARY FEATURE (Step 8): the
+    /// "New group" mode is gone — admins must create groups via the
+    /// CreateGroup page first, then assign users to them here.
     /// </summary>
     private Task OpenChangeGroupPanel()
     {
         if (_user is null || _isBusy || !CanChangeGroup()) return Task.CompletedTask;
 
-        // If no existing groups exist, default to New mode so the user isn't
-        // stuck staring at "No existing groups" with no recourse (same UX as
-        // CreateUser.razor's OnInitializedAsync fallback).
-        _groupMode = _availableGroups.Count == 0 ? GroupMode.New : GroupMode.Existing;
-        _pendingGroupName = string.Empty;
+        _pendingGroupId = null;
         _isChangeGroupPanelOpen = true;
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// Closes the inline Change Group panel without saving. Clears the
-    /// pending group name and resets the mode to Existing (the default).
+    /// pending group Id.
     /// </summary>
     private Task CancelChangeGroup()
     {
         if (_isBusy) return Task.CompletedTask;
 
         _isChangeGroupPanelOpen = false;
-        _pendingGroupName = string.Empty;
-        _groupMode = GroupMode.Existing;
+        _pendingGroupId = null;
         return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Switches between Existing and New group-name modes. Clears the
-    /// pending group name so the user must explicitly pick or type one in
-    /// the new mode. Mirrors CreateUser.razor's OnGroupModeChanged.
-    /// </summary>
-    private Task OnGroupModeChanged(GroupMode newMode)
-    {
-        if (_isBusy) return Task.CompletedTask;
-        if (_groupMode == newMode) return Task.CompletedTask;
-
-        _groupMode = newMode;
-        _pendingGroupName = string.Empty;  // force fresh selection/entry
-        return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Sets the pending group name to the given existing-group name. Called
-    /// when the user clicks one of the group buttons in Existing mode. Only
+    /// Sets the pending GroupId to the given existing-group Id. Called
+    /// when the user clicks one of the group buttons in the panel. Only
     /// one group can be selected at a time — clicking a different button
-    /// overwrites the pending selection. Mirrors CreateUser.razor's
-    /// SelectExistingGroup.
+    /// overwrites the pending selection.
+    ///
+    /// SALARY FEATURE (Step 8): the parameter changed from a string group
+    /// name to a Guid groupId — groups are now first-class aggregates
+    /// selected by Id.
     /// </summary>
-    private Task SelectExistingGroup(string groupName)
+    private Task SelectExistingGroup(Guid groupId)
     {
         if (_isBusy) return Task.CompletedTask;
-        _pendingGroupName = groupName;
+        _pendingGroupId = groupId;
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// Save handler for the inline Change Group panel. Validates the pending
-    /// group name; if valid, dispatches AssignUserToGroupCommand via
+    /// group Id; if set, dispatches AssignUserToGroupCommand via
     /// ExecuteActionAsync (which toasts success/failure and reloads the
     /// user). On success, the panel closes. On validation failure, the panel
     /// stays open and the inline error is shown via toast.
+    ///
+    /// SALARY FEATURE (Step 8): the command takes GroupId (Guid) instead of
+    /// GroupName (string).
     /// </summary>
     private async Task ConfirmChangeGroupAsync()
     {
         if (_user is null || _isBusy || !CanChangeGroup()) return;
 
-        // Defense-in-depth: the Save button is disabled when the pending
-        // name is empty, but this check guards against a race.
-        if (string.IsNullOrWhiteSpace(_pendingGroupName))
+        // Defense-in-depth: the Save button is disabled when no group is
+        // selected, but this check guards against a race.
+        if (_pendingGroupId is null || _pendingGroupId.Value == Guid.Empty)
         {
             await Toast.Warning(Loc["GroupNameLengthError"], summary: Loc["ErrorTitle"]);
             return;
         }
 
-        var groupName = _pendingGroupName.Trim();
-
-        if (groupName.Length > 100)
-        {
-            await Toast.Warning(Loc["GroupNameLengthError"], summary: Loc["ErrorTitle"]);
-            return;
-        }
+        var groupId = _pendingGroupId.Value;
 
         // Close the panel IMMEDIATELY so the user sees acknowledgment —
         // the actual save happens via ExecuteActionAsync, which sets
@@ -2183,12 +2120,11 @@
         await ExecuteActionAsync(
             Loc["ActionChangeGroup"],
             () => MessageBus.InvokeAsync<Result>(
-                new AssignUserToGroupCommand(_user.Id, groupName)));
+                new AssignUserToGroupCommand(_user.Id, groupId)));
 
         // Clear pending state after the action completes (success or
         // failure — either way, the panel is closed).
-        _pendingGroupName = string.Empty;
-        _groupMode = GroupMode.Existing;
+        _pendingGroupId = null;
     }
 
     /// <summary>
@@ -2263,7 +2199,7 @@
         object? confirmed;
         try
         {
-            confirmed = await DialogService.OpenAsync<DeactivateUserDialog>(
+            confirmed = await DialogService.OpenAsync<Components.Dialogs.DeactivateUserDialog.DeactivateUserDialog>(
                 Loc["DeactivateDialogTitle"],
                 new Dictionary<string, object?>
                 {

@@ -74,7 +74,7 @@ public sealed class SubmitSaleCommandHandler
             logger.LogWarning(
                 "SubmitSale: after re-load, sale {SaleId} creator changed from {OrigCreator} to {NewCreator}.",
                 sale.Id, currentUser.UserId, sale.CreatedByUserId);
-            return Result.Failure("This cart was modified by another session. Refresh and try again.");
+            return Result.Failure(CartConflictErrors.Format());
         }
 
         if (sale.Status != Domain.Sales.Enums.SaleStatus.Draft)
@@ -83,8 +83,7 @@ public sealed class SubmitSaleCommandHandler
             logger.LogInformation(
                 "SubmitSale: sale {SaleId} is no longer Draft after re-load (status = {Status}). A concurrent invocation likely already submitted it.",
                 sale.Id, sale.Status);
-            return Result.Failure(
-                "This cart was already submitted. Refresh the page.");
+            return Result.Failure(CartConflictErrors.Format());
         }
 
         // ------------------------------------------------------------------

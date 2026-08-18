@@ -109,8 +109,7 @@ public sealed class AddItemToSaleCommandHandler
             logger.LogWarning(
                 "AddItemToSale: sale {SaleId} changed state after acquiring cart lock (was Draft, now {Status}).",
                 command.SaleId, sale?.Status.ToString() ?? "<null>");
-            return Result.Failure(
-                "This cart was modified by another session. Refresh the page and try again.");
+            return Result.Failure(CartConflictErrors.Format());
         }
 
         // ------------------------------------------------------------------

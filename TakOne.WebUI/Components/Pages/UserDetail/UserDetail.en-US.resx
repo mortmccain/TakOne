@@ -227,30 +227,12 @@
     <value>Enter the new full name (1-200 characters):</value>
   </data>
 
-  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group-name field) -->
-  <data name="GroupModeExisting" xml:space="preserve">
-    <value>Existing group</value>
-  </data>
-  <data name="GroupModeExistingHint" xml:space="preserve">
-    <value>Pick from groups that already exist</value>
-  </data>
-  <data name="GroupModeNew" xml:space="preserve">
-    <value>New group</value>
-  </data>
-  <data name="GroupModeNewHint" xml:space="preserve">
-    <value>Type a brand-new group name</value>
-  </data>
+  <!-- Group change panel (Phase 6.6 — mirrors CreateUser.razor's group section) -->
   <data name="NoExistingGroups" xml:space="preserve">
     <value>No existing groups yet.</value>
   </data>
   <data name="ExistingGroupHint" xml:space="preserve">
     <value>Click a group to select it.</value>
-  </data>
-  <data name="FieldNewGroupNamePlaceholder" xml:space="preserve">
-    <value>e.g. VIP customers</value>
-  </data>
-  <data name="NewGroupHint" xml:space="preserve">
-    <value>New groups are created implicitly — set their purchase limits later on the product page.</value>
   </data>
 
   <!-- Edit Full Name modal -->
@@ -414,5 +396,9 @@
   </data>
   <data name="HelpPanel_ResetPassword" xml:space="preserve">
     <value>Reset password — sets a new password for the user (Admin only, not self).</value>
+  </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>Create new group</value>
+    <comment>Step 8: link button shown in the change-group panel when no existing groups exist.</comment>
   </data>
 </root>

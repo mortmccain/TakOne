@@ -238,4 +238,8 @@
   <data name="Error_CustomLimitsMissing" xml:space="preserve">
     <value>{0} گروه جدید بدون سقف</value>
   </data>
+  <data name="ActionCreateGroup" xml:space="preserve">
+    <value>ایجاد گروه جدید</value>
+    <comment>Step 8: link button shown in the empty-groups state on the purchase-limits editor.</comment>
+  </data>
 </root>

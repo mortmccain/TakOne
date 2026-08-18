@@ -71,7 +71,8 @@
 @using TakOne.Application.Products.Commands.CreateProduct
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetActiveCategories
-@using TakOne.Application.Users.Queries.GetAllGroupNames
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
@@ -122,17 +123,17 @@
                 }
 
             /* RTL fallback for any RadzenNumeric that might appear on
-                                           this page in the future. The price-amount and initial-stock
-                                           fields now use native <input type="number" dir="ltr"> which
-                                           doesn't need this rule (the dir attribute on a native input
-                                           is respected by the browser for both caret AND insertion
-                                           position). But if a future RadzenNumeric is added, this
-                                           rule at least forces LTR direction on the inner input.
-                                           NOTE: this CSS alone is NOT enough to fix the RadzenNumeric
-                                           RTL caret bug — Radzen's JS mishandles caret position even
-                                           with direction:ltr applied. The real fix is to use a native
-                                           input with dir="ltr", as the price-amount and initial-stock
-                                           fields do. This rule is kept as defense-in-depth. */
+                               this page in the future. The price-amount and initial-stock
+                               fields now use native <input type="number" dir="ltr"> which
+                               doesn't need this rule (the dir attribute on a native input
+                               is respected by the browser for both caret AND insertion
+                               position). But if a future RadzenNumeric is added, this
+                               rule at least forces LTR direction on the inner input.
+                               NOTE: this CSS alone is NOT enough to fix the RadzenNumeric
+                               RTL caret bug — Radzen's JS mishandles caret position even
+                               with direction:ltr applied. The real fix is to use a native
+                               input with dir="ltr", as the price-amount and initial-stock
+                               fields do. This rule is kept as defense-in-depth. */
             .create-grid .rz-numeric .rz-textbox {
                 direction: ltr;
                 text-align: left;
@@ -177,7 +178,7 @@
             }
 
             /* Dropzone — a label element wrapping a visually-hidden InputFile.
-                                                               Clicking anywhere on the label triggers the file picker. */
+                                                   Clicking anywhere on the label triggers the file picker. */
             .picture-dropzone {
                 display: block;
                 cursor: pointer;
@@ -219,7 +220,7 @@
                 align-items: center;
                 gap: 0.75rem;
                 /* Let the label receive the click; otherwise the inner
-                                                                   elements would steal it from the file input. */
+                                                       elements would steal it from the file input. */
                 pointer-events: none;
             }
 
@@ -603,11 +604,15 @@
 
                         @* ── Per-group purchase limits editor ──
                            Shows ALL existing customer groups with a limit input
-                           for each (default empty). Every group MUST have a
-                           limit set — submit fails with a toast if any are
-                           missing. Staff can also add new group names
-                           (forward-looking — a limit can be set for a group
-                           that doesn't have any users yet).
+                           for each, pre-filled with the domain default (1).
+                           The user can override any value — the handler's
+                           auto-default loop will replace the default with the
+                           user-specified override (or leave it at 1 if the
+                           user keeps the default).
+                           SALARY FEATURE (Step 8): the "Add custom group name"
+                           flow is gone — admins must create groups via the
+                           CreateGroup page first. Every limit row references
+                           a real CustomerGroup row.
                            The Product aggregate owns the domain value-object
                            creation (CustomerGroupPurchaseLimit) — the command
                            only carries a flat DTO and the handler delegates
@@ -628,10 +633,22 @@
                             }
                             else if (_model.PurchaseLimits.Count == 0)
                             {
-                                <RadzenText TextStyle="TextStyle.Body2"
-                                            Style="color: var(--rz-text-secondary-color); padding: 0.5rem 0;">
-                                    @Loc["NoLimitRows"]
-                                </RadzenText>
+                                <div style="padding: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <RadzenText TextStyle="TextStyle.Body2"
+                                                Style="color: var(--rz-text-secondary-color);">
+                                        @Loc["NoLimitRows"]
+                                    </RadzenText>
+                                    @* SALARY FEATURE (Step 8): when no groups exist, the admin
+                                       can't set per-group limits here. They can still create the
+                                       product (the handler's auto-default loop is a no-op when
+                                       there are no groups). Provide a link to create a group first. *@
+                                    <RadzenButton Text="@Loc["ActionCreateGroup"]"
+                                                  Icon="group_add"
+                                                  ButtonStyle="ButtonStyle.Secondary"
+                                                  Variant="Variant.Outlined"
+                                                  Size="ButtonSize.Small"
+                                                  Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+                                </div>
                             }
                             else
                             {
@@ -639,30 +656,19 @@
                                     @for (var i = 0; i < _model.PurchaseLimits.Count; i++)
                                     {
                                         var row = _model.PurchaseLimits[i];
-                                        var rowIndex = i;
-                                        var isExistingGroup = !row.IsCustom;
                                         <div style="display: flex; align-items: end; gap: 0.5rem; flex-wrap: wrap;">
                                             <RadzenFormField Text="@Loc["FieldLimitGroup"]"
                                                              Style="flex: 1 1 200px; min-width: 160px;">
-                                                @if (isExistingGroup)
-                                                {
-                                                    @* Existing group — read-only display (no editing the name,
-                                                       just the limit). This guarantees every existing group
-                                                       gets a limit set. *@
-                                                    <RadzenText TextStyle="TextStyle.Body1"
-                                                                Style="display: block; padding: 0.5rem 0; font-weight: 600;">
-                                                        @row.GroupName
-                                                    </RadzenText>
-                                                }
-                                                else
-                                                {
-                                                    @* Custom (new) group — editable text field so staff can
-                                                       type a name that doesn't exist yet. *@
-                                                    <RadzenTextBox @bind-Value="row.GroupName"
-                                                                   Placeholder="@Loc["LimitGroupPlaceholder"]"
-                                                                   TValue="string"
-                                                                   Style="width: 100%;" />
-                                                }
+                                                @* Existing group — read-only display (no editing the name,
+                                                   just the limit). SALARY FEATURE (Step 8): all rows are
+                                                   existing-group rows now (the "Add custom group name"
+                                                   flow was removed — admins must create groups via the
+                                                   CreateGroup page first). The group NAME is display-only;
+                                                   the GroupId is what gets passed to the command. *@
+                                                <RadzenText TextStyle="TextStyle.Body1"
+                                                            Style="display: block; padding: 0.5rem 0; font-weight: 600;">
+                                                    @row.GroupName
+                                                </RadzenText>
                                             </RadzenFormField>
                                             <RadzenFormField Text="@Loc["FieldLimitValue"]"
                                                              Style="flex: 0 1 120px; min-width: 100px;">
@@ -673,35 +679,10 @@
                                                                Placeholder="@Loc["LimitValuePlaceholder"]"
                                                                Style="width: 100%;" />
                                             </RadzenFormField>
-                                            @if (!isExistingGroup)
-                                            {
-                                                @* Only custom (new) rows can be removed. Existing-group
-                                                   rows are mandatory and can't be deleted from this UI
-                                                   (delete the group itself from user management instead). *@
-                                                <RadzenButton Icon="delete"
-                                                              ButtonStyle="ButtonStyle.Danger"
-                                                              Variant="Variant.Text"
-                                                              Size="ButtonSize.Small"
-                                                              Click="@(() => RemovePurchaseLimitRow(row))"
-                                                              AriaLabel="@Loc["RemoveLimitRow"]" />
-                                            }
                                         </div>
                                     }
                                 </div>
                             }
-
-                            @* "Add new group" — placed BELOW the list. Existing groups are
-                               always shown automatically (loaded once on page init), so there's
-                               no "Add limit" button at the top. This button only adds a custom
-                               row for a NEW group name that doesn't exist yet (forward-looking —
-                               a limit can be set for a group before any users are in it). *@
-                            <RadzenButton Text="@Loc["AddNewGroupRow"]"
-                                          Icon="group_add"
-                                          ButtonStyle="ButtonStyle.Secondary"
-                                          Variant="Variant.Outlined"
-                                          Size="ButtonSize.Small"
-                                          Disabled="@_isLoadingGroups"
-                                          Click="@AddPurchaseLimitRow" />
                         </div>
 
                         @* Form actions *@
@@ -774,28 +755,41 @@
 
     /// <summary>
     /// One row in the per-group purchase-limit editor. Bound to the UI
-    /// (read-only text for existing groups + RadzenNumeric for the limit,
-    /// or RadzenTextBox + RadzenNumeric for custom/new groups).
+    /// (read-only group-name label + RadzenNumeric for the limit).
     /// Converted to <c>PurchaseLimitInputDto</c> at submit time.
+    ///
+    /// SALARY FEATURE (Step 8):
+    ///   The row now carries <c>GroupId</c> (Guid FK to CustomerGroups.Id)
+    ///   instead of a free-text group name. The <c>GroupName</c> field is
+    ///   DISPLAY-ONLY (read from the source CustomerGroupListItemDto). The
+    ///   "Add custom group name" flow is gone — admins must create groups
+    ///   via the CreateGroup page first, so every limit row references a
+    ///   real CustomerGroup row.
     /// </summary>
     private sealed class PurchaseLimitRow
     {
-        public string GroupName { get; set; } = string.Empty;
+        /// <summary>
+        /// The customer group Id this limit applies to. Set once at row
+        /// creation (from CustomerGroupListItemDto.Id). Never mutated by
+        /// the UI — the group name is read-only, only the Limit is editable.
+        /// </summary>
+        public Guid GroupId { get; init; }
 
         /// <summary>
-        /// The limit value. Null means "not entered yet" — the submit
-        /// handler treats null as a validation error (every group must
-        /// have a limit). Bound to RadzenNumeric with TValue="int?".
+        /// The customer group's DISPLAY NAME (read from
+        /// CustomerGroupListItemDto.Name). Used only for rendering —
+        /// never passed to the command (the command takes GroupId).
+        /// </summary>
+        public string GroupName { get; init; } = string.Empty;
+
+        /// <summary>
+        /// The limit value. Pre-filled with <c>CustomerGroupPurchaseLimit.DefaultLimit</c>
+        /// (1) so the user sees the system default — they can override
+        /// with any value &gt;= 1. The handler's auto-default loop will
+        /// overwrite with this value (effectively a no-op if the user
+        /// keeps 1; a real override if the user changes it).
         /// </summary>
         public int? Limit { get; set; }
-
-        /// <summary>
-        /// True for rows created via "Add limit" (custom/new group names
-        /// that don't exist yet). False for rows seeded from
-        /// GetAllGroupNamesQuery (existing groups — name is read-only,
-        /// row can't be removed).
-        /// </summary>
-        public bool IsCustom { get; set; }
     }
 
     private CreateProductFormModel _model = new();
@@ -807,15 +801,17 @@
     private List<SubSubCategoryDto> _availableSubSubCategories = new();
 
     /// <summary>
-    /// Distinct customer group names that currently exist in the system.
-    /// Loaded once on page init via GetAllGroupNamesQuery. Each name seeds
-    /// a mandatory row in the purchase-limits editor (every existing group
-    /// must have a limit set before the product can be created).
+    /// Distinct customer groups that currently exist in the system.
+    /// Loaded once on page init via GetAllCustomerGroupsQuery. Each group
+    /// seeds a row in the purchase-limits editor (every existing group is
+    /// shown with its default limit pre-filled — the user can override).
+    /// SALARY FEATURE (Step 8): the type changed from List&lt;string&gt; to
+    /// List&lt;CustomerGroupListItemDto&gt; so each row carries both Id and Name.
     /// </summary>
-    private List<string> _existingGroupNames = new();
+    private List<CustomerGroupListItemDto> _existingGroups = new();
 
     /// <summary>
-    /// True while GetAllGroupNamesQuery is in flight. The purchase-limits
+    /// True while GetAllCustomerGroupsQuery is in flight. The purchase-limits
     /// editor shows a "loading" placeholder until the existing-group rows
     /// are seeded (so the user doesn't see an empty list flash before the
     /// real rows appear).
@@ -1148,74 +1144,56 @@
     }
 
     /// <summary>
-    /// Loads the distinct set of customer group names that currently exist
-    /// in the system, then seeds one mandatory row per group in the
-    /// purchase-limits editor (each with an empty limit input — the user
-    /// must fill them all in before submit).
+    /// Loads all active customer groups and seeds one row per group in the
+    /// purchase-limits editor. Each row is pre-filled with the domain
+    /// <c>CustomerGroupPurchaseLimit.DefaultLimit</c> (1) — the user can
+    /// override any value to set a custom limit, or leave it as the default.
+    /// The CreateProductCommandHandler runs its own auto-default loop too,
+    /// so the submitted values act as overrides on top of the default.
     /// </summary>
     private async Task LoadGroupNamesAsync()
     {
         _isLoadingGroups = true;
         try
         {
-            var result = await MessageBus.InvokeAsync<Result<List<string>>>(
-                new GetAllGroupNamesQuery());
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = false });
 
             if (result.IsSuccess && result.Value is not null)
             {
-                _existingGroupNames = result.Value;
+                _existingGroups = result.Value
+                    .OrderBy(g => g.Name, StringComparer.CurrentCulture)
+                    .ToList();
 
-                // Seed one row per existing group. IsCustom=false means
-                // the group name is read-only and the row can't be removed
-                // (every existing group MUST get a limit set).
-                foreach (var name in _existingGroupNames)
+                // Seed one row per existing group. Pre-fill the limit with
+                // the domain default (1) so the user sees the system's
+                // intended default at a glance — they can override any row.
+                // The CreateProductCommandHandler also runs an auto-default
+                // loop, so submitting with all defaults is equivalent to
+                // submitting with no overrides (the auto-default wins).
+                const int defaultLimit = 1; // CustomerGroupPurchaseLimit.DefaultLimit
+                foreach (var group in _existingGroups)
                 {
                     _model.PurchaseLimits.Add(new PurchaseLimitRow
                     {
-                        GroupName = name,
-                        Limit = null, // empty — user must fill in
-                        IsCustom = false
+                        GroupId = group.Id,
+                        GroupName = group.Name,
+                        Limit = defaultLimit
                     });
                 }
             }
-            // Silent failure — if the query fails, the user can still add
-            // custom rows manually via the "Add limit" button.
+            // Silent failure — if the query fails, the user gets an empty
+            // limits editor with a "no groups" message + a link to /CreateGroup.
         }
         catch
         {
-            // Same — silent. The form still works with custom rows only.
+            // Same — silent. The form still works; the product is created
+            // without any per-group limits (the handler's auto-default loop
+            // runs against an empty group list and is a no-op).
         }
         finally
         {
             _isLoadingGroups = false;
-        }
-    }
-
-    // ── Purchase-limit editor handlers ───────────────────────────────────
-
-    /// <summary>
-    /// Adds a new custom (empty) row to the purchase-limits editor. Triggered
-    /// by the "Add new group" button BELOW the existing-groups list. The
-    /// user types a group name that doesn't exist yet (forward-looking —
-    /// a limit can be set for a group before any users are in it). Custom
-    /// rows can be removed; existing-group rows cannot.
-    /// </summary>
-    private void AddPurchaseLimitRow()
-    {
-        _model.PurchaseLimits.Add(new PurchaseLimitRow
-        {
-            GroupName = string.Empty,
-            Limit = null,
-            IsCustom = true
-        });
-    }
-
-    private void RemovePurchaseLimitRow(PurchaseLimitRow row)
-    {
-        // Only custom rows can be removed (existing-group rows are mandatory).
-        if (row.IsCustom)
-        {
-            _model.PurchaseLimits.Remove(row);
         }
     }
 
@@ -1297,51 +1275,36 @@
 
             // ── Phase 2: dispatch the create command ──
             // Build the purchase-limit DTOs from the form rows. Every row
-            // MUST have a limit set — if any are missing, show a toast
-            // error listing the offending groups and abort the submit.
-            // (Existing-group rows are mandatory by design; custom rows
-            //  must have both a name AND a limit.)
-            var missingLimitGroups = _model.PurchaseLimits
-                .Where(r => !r.IsCustom && !r.Limit.HasValue)
-                .Select(r => r.GroupName)
+            // carries a non-empty GroupId (set at row creation) and a Limit
+            // pre-filled with the default (1). The user can change the
+            // limit to any value >= 1 — RadzenNumeric's Min=1 enforces this.
+            //
+            // SALARY FEATURE (Step 8): the DTO field changed from GroupName
+            // (string) to GroupId (Guid). The handler's auto-default loop
+            // (Phase 1 in CreateProductCommandHandler) sets a default of 1
+            // for every active group; the DTOs we send here are OVERRIDES
+            // (Phase 2). Submitting a row with Limit=1 is a no-op (same
+            // as the default); submitting Limit=5 overrides the default.
+            // Groups not listed (none — every group is listed) keep their
+            // default of 1.
+            var missingLimitRows = _model.PurchaseLimits
+                .Where(r => !r.Limit.HasValue || r.Limit.Value < 1)
                 .ToList();
 
-            var missingCustomNames = _model.PurchaseLimits
-                .Where(r => r.IsCustom && string.IsNullOrWhiteSpace(r.GroupName))
-                .ToList();
-
-            var missingCustomLimits = _model.PurchaseLimits
-                .Where(r => r.IsCustom && !r.Limit.HasValue)
-                .ToList();
-
-            if (missingCustomNames.Count > 0)
+            if (missingLimitRows.Count > 0)
             {
-                _submitError = Loc["Error_CustomGroupNameRequired"];
+                // Build a friendly error message listing the groups whose
+                // limit is missing or invalid.
+                var missingNames = missingLimitRows.Select(r => r.GroupName).ToList();
+                _submitError = string.Format(CultureInfo.CurrentCulture, Loc["Error_LimitsRequired"], string.Join("، ", missingNames));
                 return;
             }
 
-            if (missingLimitGroups.Count > 0 || missingCustomLimits.Count > 0)
-            {
-                // Build a friendly error message listing the groups that
-                // are missing a limit. For existing groups, list their
-                // names; for custom rows, just count them.
-                var allMissing = new List<string>(missingLimitGroups);
-                if (missingCustomLimits.Count > 0)
-                {
-                    allMissing.Add(string.Format(CultureInfo.CurrentCulture, Loc["Error_CustomLimitsMissing"], missingCustomLimits.Count));
-                }
-                _submitError = string.Format(CultureInfo.CurrentCulture, Loc["Error_LimitsRequired"], string.Join("، ", allMissing));
-                return;
-            }
-
-            // All rows have a limit — build the DTOs. Skip custom rows
-            // with empty names (defensive — shouldn't reach here due to
-            // the check above, but cheap insurance).
+            // All rows have a valid limit — build the DTOs.
             var limitDtos = _model.PurchaseLimits
-                .Where(r => !string.IsNullOrWhiteSpace(r.GroupName) && r.Limit.HasValue)
                 .Select(r => new PurchaseLimitInputDto
                 {
-                    GroupName = r.GroupName.Trim(),
+                    GroupId = r.GroupId,
                     Limit = r.Limit!.Value
                 })
                 .ToList();
