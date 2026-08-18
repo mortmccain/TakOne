@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using TakOne.Application.Customers.Commands.CreateCustomerGroup;
 
 namespace TakOne.Application.Customers.Commands.UpdateCustomerGroupSalary;
 
@@ -11,7 +12,7 @@ public sealed class UpdateCustomerGroupSalaryCommandValidator : AbstractValidato
 
         RuleFor(x => x.NewSalaryAmount)
             .GreaterThan(0).WithMessage("Salary amount must be greater than zero.")
-            .LessThanOrEqualTo(CreateCustomerGroup.CreateCustomerGroupCommandValidator.MaxSalaryAmount)
-            .WithMessage($"Salary amount cannot exceed {CreateCustomerGroup.CreateCustomerGroupCommandValidator.MaxSalaryAmount:N0}.");
+            .LessThanOrEqualTo(CreateCustomerGroupCommandValidator.MaxSalaryAmount)
+            .WithMessage($"Salary amount cannot exceed {CreateCustomerGroupCommandValidator.MaxSalaryAmount:N0}.");
     }
 }

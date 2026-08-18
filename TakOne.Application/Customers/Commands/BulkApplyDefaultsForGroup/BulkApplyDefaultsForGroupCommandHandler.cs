@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Customers.DTOs;
 using TakOne.Domain.Products.ValueObjects;
 using TakOne.SharedKernel.Common;
 

@@ -39,7 +39,7 @@ public sealed class UpdateCustomerGroupSalaryCommandHandler
         // ------------------------------------------------------------------
         var previousAmount = group.Salary.Amount;
         var currency = group.Salary.Currency;
-        var newSalary = new TakOne.SharedKernel.ValueObjects.Money(command.NewSalaryAmount, currency);
+        var newSalary = new SharedKernel.ValueObjects.Money(command.NewSalaryAmount, currency);
         group.UpdateSalary(newSalary);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

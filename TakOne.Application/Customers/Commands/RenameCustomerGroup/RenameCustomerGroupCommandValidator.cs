@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using TakOne.Application.Customers.Commands.CreateCustomerGroup;
 
 namespace TakOne.Application.Customers.Commands.RenameCustomerGroup;
 
@@ -11,7 +12,7 @@ public sealed class RenameCustomerGroupCommandValidator : AbstractValidator<Rena
 
         RuleFor(x => x.NewName)
             .NotEmpty().WithMessage("New group name is required.")
-            .MaximumLength(CreateCustomerGroup.CreateCustomerGroupCommandValidator.MaxNameLength)
-            .WithMessage($"Group name cannot exceed {CreateCustomerGroup.CreateCustomerGroupCommandValidator.MaxNameLength} characters.");
+            .MaximumLength(CreateCustomerGroupCommandValidator.MaxNameLength)
+            .WithMessage($"Group name cannot exceed {CreateCustomerGroupCommandValidator.MaxNameLength} characters.");
     }
 }

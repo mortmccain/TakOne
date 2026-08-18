@@ -1,4 +1,6 @@
-﻿namespace TakOne.Application.Customers.Commands.BulkApplyDefaultsForGroup;
+﻿using TakOne.Application.Customers.Commands.BulkApplyDefaultsForGroup;
+
+namespace TakOne.Application.Customers.DTOs;
 
 /// <summary>
 /// Result of <see cref="BulkApplyDefaultsForGroupCommand"/>.

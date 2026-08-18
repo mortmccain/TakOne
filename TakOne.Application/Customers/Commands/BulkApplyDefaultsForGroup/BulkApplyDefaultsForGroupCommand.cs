@@ -4,7 +4,7 @@ namespace TakOne.Application.Customers.Commands.BulkApplyDefaultsForGroup;
 
 /// <summary>
 /// Bulk-applies the default per-group purchase limit
-/// (<see cref="TakOne.Domain.Products.ValueObjects.CustomerGroupPurchaseLimit.DefaultLimit"/>,
+/// (<see cref="Domain.Products.ValueObjects.CustomerGroupPurchaseLimit.DefaultLimit"/>,
 /// currently 1) to every Product in the catalog that does NOT already have
 /// a limit row for the given CustomerGroup.
 ///
