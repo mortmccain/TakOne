@@ -49,6 +49,7 @@
 
 @page "/Admin/Groups"
 @attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
@@ -58,6 +59,10 @@
 @using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
 @using TakOne.Application.Customers.DTOs
 @using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Settings.Commands.SetSystemLimitMode
+@using TakOne.Application.Settings.DTOs
+@using TakOne.Application.Settings.Queries.GetSystemSettings
+@using TakOne.Domain.Common.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
@@ -101,6 +106,44 @@
                 justify-content: flex-end;
                 align-items: center;
             }
+
+            /* ── Limit-mode card (Step 12-a) ──
+                           A separate, always-visible (admin-only) card above the groups
+                           table that controls the system-wide purchase-limit mode. Kept
+                           visually distinct from the groups table because it's a different
+                           concern (system policy vs. group management). */
+            .limit-mode-card {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 1.5rem;
+                flex-wrap: wrap;
+            }
+
+            .limit-mode-card-body {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .limit-mode-meta {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.8125rem;
+                margin-top: 0.25rem;
+            }
+
+            .limit-mode-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+            .limit-mode-icon {
+                font-size: 1.5rem;
+                color: var(--rz-primary);
+            }
     </style>
 </HeadContent>
 
@@ -119,6 +162,119 @@
                       Visible="@(_isAdmin || _isManagerOnly)"
                       Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
     </div>
+
+    @* ── Limit-mode card (admin-only, Step 12-a runtime fix) ──
+       The system-wide LimitMode controls whether per-product count limits,
+       monthly salary budgets, or both are enforced. Without this UI the
+       admin had no way to change the mode after the initial install — the
+       mode was stuck on the default CountOnly forever, which meant salary
+       budget was NEVER enforced even when every group had a salary set.
+
+       Visible to Admin only (SetSystemLimitModeCommand is admin-gated
+       server-side). Managers and Employees can see the page (gate above)
+       but the limit-mode card is hidden from them — they're not
+       authorized to change system policy.
+
+       The card renders ABOVE the loading spinner / error banner / groups
+       table because it's a system-level setting distinct from the
+       per-group concerns below. Loading the card is independent of the
+       groups table load — both kick off in parallel from
+       OnInitializedAsync. *@
+    @if (_isAdmin)
+    {
+        <RadzenCard Variant="Variant.Filled" Class="limit-mode-card" Style="padding: 1rem 1.25rem;">
+            @if (_limitModeLoadError is not null)
+            {
+                <RadzenAlert Title="@Loc["LimitModeErrorTitle"]"
+                             Text="@_limitModeLoadError"
+                             AlertStyle="AlertStyle.Warning"
+                             Variant="Variant.Outlined"
+                             ShowIcon="true"
+                             Style="width: 100%;">
+                    <RadzenButton Text="@Loc["LimitModeRetryButton"]"
+                                  Icon="refresh"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Text"
+                                  Click="@LoadLimitModeAsync"
+                                  Style="margin-top: 0.5rem;" />
+                </RadzenAlert>
+            }
+            else if (_currentLimitMode is null)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                    <RadzenProgressBarCircular ShowValue="false"
+                                               Mode="ProgressBarMode.Indeterminate"
+                                               Size="ProgressBarCircularSize.Medium" />
+                    <RadzenText Text="@Loc["LimitModeLoadingText"]"
+                                TextStyle="TextStyle.Body2"
+                                Style="color: var(--rz-text-secondary-color);" />
+                </RadzenStack>
+            }
+            else
+            {
+                <div class="limit-mode-card-body">
+                    <RadzenIcon Icon="tune" Class="limit-mode-icon" />
+                    <div>
+                        <RadzenText Text="@Loc["LimitModeCardTitle"]"
+                                    TextStyle="TextStyle.Subtitle1"
+                                    Style="font-weight: 600; margin: 0;" />
+                        <RadzenText Text="@Loc["LimitModeCardSubtitle"]"
+                                    TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); margin: 0;" />
+                        @if (_limitModeUpdatedAt.HasValue)
+                        {
+                            <div class="limit-mode-meta">
+                                @(string.Format(CultureInfo.CurrentCulture, Loc["LimitModeLastUpdated"],
+                                                _limitModeUpdatedAt.Value.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)))
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="limit-mode-actions">
+                    @* DROPDOWN BINDING (Step 12-c runtime fix):
+                       Originally used RadzenDropDown with TItem="LimitModeOption"
+                       (a complex POCO) + Data=List<LimitModeOption> + TextField="Label"
+                       + ValueProperty="Value". That produced the garbage label
+                       "TakOne.WebUI.Components.Pages.ManageGroups.ManageGroups+LimitModeOption"
+                       in the dropdown list — Radzen 11.1.x's TextField parameter
+                       on a complex-TItem / primitive-TValue dropdown does NOT honor
+                       the property name for item rendering; it falls back to
+                       item.ToString(). The exact same bug is documented in
+                       UserDetail.razor (line ~767) for Radzen 11.1.7.
+
+                       Fix (same pattern as the Status filter on this same page):
+                       Data is List<LimitMode> (raw enum values). The dropdown
+                       value IS the enum — no casting needed. A Template renders
+                       each item's localized label via GetLimitModeLabel so the
+                       admin sees translated text in the dropdown list. A
+                       ValueTemplate renders the SELECTED item's label inside
+                       the dropdown's input box (without it, Radzen falls back
+                       to enum.ToString(), e.g. "CountOnly" instead of the
+                       localized "Per-product count"). ValueProperty/TextField
+                       are dropped because Data is now primitive. *@
+                    <RadzenDropDown @bind-Value="_selectedLimitMode"
+                                    TValue="LimitMode"
+                                    Data="@_limitModeOptions"
+                                    Style="min-width: 220px;"
+                                    Disabled="@_isSavingLimitMode">
+                        <ValueTemplate Context="selectedMode">
+                            <span>@GetLimitModeLabel(selectedMode)</span>
+                        </ValueTemplate>
+                        <Template Context="mode">
+                            <span>@GetLimitModeLabel(mode)</span>
+                        </Template>
+                    </RadzenDropDown>
+                    <RadzenButton Text="@Loc["LimitModeSaveButton"]"
+                                  Icon="save"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Disabled="@(_isSavingLimitMode || _selectedLimitMode == _currentLimitMode)"
+                                  Click="@HandleSaveLimitModeAsync" />
+                </div>
+            }
+        </RadzenCard>
+    }
 
     @* ── Loading spinner ── *@
     @if (_isLoading)
@@ -338,6 +494,27 @@
 
     private RadzenDataGrid<CustomerGroupListItemDto> grid = default!;
 
+    // ── Limit-mode card state (Step 12-a) ────────────────────────────────
+    // Loaded independently from the groups table so a failure in one
+    // doesn't block the other. _currentLimitMode is null while the
+    // GetSystemSettings query is in flight (renders the loading spinner
+    // branch above). _selectedLimitMode is bound to the RadzenDropDown;
+    // the Save button is disabled until it differs from _currentLimitMode.
+    private LimitMode? _currentLimitMode;
+    private LimitMode _selectedLimitMode;
+    private DateTime? _limitModeUpdatedAt;
+    private bool _isSavingLimitMode;
+    private string? _limitModeLoadError;
+
+    // The dropdown options — just the raw enum values. The localized
+    // label is rendered via the dropdown's ItemTemplate (calls
+    // GetLimitModeLabel), NOT via a TextField/ValueProperty pair.
+    // Using List<LimitMode> (not a complex POCO) sidesteps the
+    // Radzen 11.1.x bug where a complex-TItem / primitive-TValue
+    // dropdown falls back to item.ToString() in the rendered list.
+    // See the DROPDOWN BINDING comment above the markup for full context.
+    private List<LimitMode> _limitModeOptions = new();
+
     // Status filter — nullable; null = "no filter" (AllowClear=true on the
     // RadzenDropDown passes null when the user clears). Uses string keys
     // "Active"/"Inactive" (culture-neutral) that are mapped to the actual
@@ -403,8 +580,133 @@
             // buttons hidden — safer fallback if role resolution fails).
         }
 
-        await LoadGroupsAsync();
+        // Build the limit-mode dropdown options — just the raw enum values.
+        // The localized labels are rendered at display time via the
+        // dropdown's ItemTemplate (which calls GetLimitModeLabel), so we
+        // don't need to capture them here. Built in OnInitializedAsync
+        // (not as a field initializer) only for symmetry with the rest of
+        // the limit-mode state; could equally well be a static readonly.
+        if (_isAdmin)
+        {
+            _limitModeOptions = new()
+            {
+                LimitMode.CountOnly,
+                LimitMode.SalaryOnly,
+                LimitMode.Both
+            };
+        }
+
+        // Kick off both loads in parallel — the limit-mode card and the
+        // groups table are independent reads. Each handles its own error
+        // state so a failure in one doesn't block the other.
+        if (_isAdmin)
+        {
+            await Task.WhenAll(LoadGroupsAsync(), LoadLimitModeAsync());
+        }
+        else
+        {
+            await LoadGroupsAsync();
+        }
     }
+
+    // ── Limit-mode card handlers (Step 12-a) ─────────────────────────────
+
+    /// <summary>
+    /// Loads the current system-wide LimitMode + UpdatedAt via
+    /// GetSystemSettingsQuery. Populates _currentLimitMode and
+    /// _selectedLimitMode (initial dropdown selection = current mode).
+    /// </summary>
+    private async Task LoadLimitModeAsync()
+    {
+        _limitModeLoadError = null;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<SystemSettingsDto>>(
+                new GetSystemSettingsQuery());
+
+            if (result.IsSuccess)
+            {
+                _currentLimitMode = result.Value.LimitMode;
+                _selectedLimitMode = result.Value.LimitMode;
+                _limitModeUpdatedAt = result.Value.UpdatedAtUtc;
+            }
+            else
+            {
+                _limitModeLoadError = result.Error ?? Loc["LimitModeLoadError"];
+            }
+        }
+        catch
+        {
+            _limitModeLoadError = Loc["LimitModeLoadError"];
+        }
+    }
+
+    /// <summary>
+    /// Saves the newly-selected LimitMode via SetSystemLimitModeCommand.
+    /// On success, refreshes the cached _currentLimitMode and shows a
+    /// success toast. On failure, shows the error and reverts the
+    /// dropdown to the previous value (so the UI doesn't lie about the
+    /// persisted state).
+    /// </summary>
+    private async Task HandleSaveLimitModeAsync()
+    {
+        if (_isSavingLimitMode || _currentLimitMode is null) return;
+
+        var previousMode = _currentLimitMode.Value;
+        _isSavingLimitMode = true;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SetSystemLimitModeCommand(_selectedLimitMode));
+
+            if (result.IsSuccess)
+            {
+                _currentLimitMode = _selectedLimitMode;
+                _limitModeUpdatedAt = DateTime.UtcNow;
+
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["LimitModeSaveSuccess"],
+                        GetLimitModeLabel(_selectedLimitMode)),
+                    summary: Loc["LimitModeSaveSuccessTitle"]);
+            }
+            else
+            {
+                // Revert the dropdown so the UI reflects the actual
+                // persisted state (the user's selection was rejected).
+                _selectedLimitMode = previousMode;
+
+                await Toast.Error(
+                    result.Error ?? Loc["LimitModeSaveError"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            _selectedLimitMode = previousMode;
+            await Toast.Error(Loc["LimitModeSaveError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSavingLimitMode = false;
+        }
+    }
+
+    /// <summary>
+    /// Returns the localized display label for a LimitMode enum value.
+    /// Used both by the dropdown (each item is rendered with this label)
+    /// and by the success toast (so the admin sees which mode they just
+    /// switched to).
+    /// </summary>
+    private string GetLimitModeLabel(LimitMode mode)
+        => mode switch
+        {
+            LimitMode.CountOnly => Loc["LimitModeCountOnly"],
+            LimitMode.SalaryOnly => Loc["LimitModeSalaryOnly"],
+            LimitMode.Both => Loc["LimitModeBoth"],
+            _ => mode.ToString()
+        };
 
     // ── Data loading ────────────────────────────────────────────────────
 

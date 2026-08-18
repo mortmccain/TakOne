@@ -213,9 +213,6 @@ public sealed class CreateOrAppendSaleCommandHandler
         //    the limit reflects the user's CURRENT group, so the per-product
         //    clamping below is correct without requiring a re-login.
         //
-        //    For staff users, GroupId is null → no per-product cap and no
-        //    currency / salary-budget enforcement.
-        //
         //    The lock acquired above guarantees that no concurrent
         //    invocation is reading this same user's state while we mutate
         //    their cart — the budget check below uses the authoritative
@@ -225,9 +222,41 @@ public sealed class CreateOrAppendSaleCommandHandler
         var groupId = freshUser?.GroupId;
 
         // ------------------------------------------------------------------
+        // 2a. GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        //
+        //     Business rule: a user MUST belong to a CustomerGroup to make
+        //     any purchase. Without a group, there is no salary budget to
+        //     enforce against, no currency constraint, and no per-product
+        //     cap — i.e. unlimited purchases, which defeats the entire
+        //     purpose of the salary/budget feature.
+        //
+        //     This applies to ALL users (staff included). If staff need to
+        //     make test purchases, they must be assigned to a group first.
+        //     The previous "staff bypasses limits" comment was wrong: it
+        //     left a hole that allowed any no-group user (including staff
+        //     and any customer who was never assigned a group) to buy
+        //     without any limit enforcement — the exact bug reported in
+        //     the Step 12-a runtime review.
+        //
+        //     The error uses NoCustomerGroupErrors.Format so the UI layer
+        //     (Products / Cart / SaleDetail / ProductDetail pages) can
+        //     localize it without exposing the internal "customer group"
+        //     concept to the customer.
+        // ------------------------------------------------------------------
+        if (groupId is null)
+        {
+            logger.LogWarning
+                ("CreateOrAppendSale: user {UserId} has no customer group assigned. " +
+                 "Rejecting add-to-cart for product {ProductId} ('{ProductName}').",
+                currentUser.UserId, product.Id, product.Name);
+
+            return Result<Guid>.Failure(NoCustomerGroupErrors.Format());
+        }
+
+        // ------------------------------------------------------------------
         // 2b. CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
         //    A customer whose salary is in IRR cannot buy a product priced
-        //    in USD. Staff (GroupId == null) bypasses.
+        //    in USD. GroupId is guaranteed non-null here (guarded above).
         // ------------------------------------------------------------------
         if (groupId is not null)
         {
@@ -289,8 +318,12 @@ public sealed class CreateOrAppendSaleCommandHandler
         // 2d. Resolve the per-product count limit (replaces inline
         //     product.GetPurchaseLimitForGroup). Returns null when:
         //       - count limits are NOT enforced (mode = SalaryOnly)
-        //       - groupId is null (staff)
         //       - the product has no limit set for the customer's group
+        //
+        //     (groupId is guaranteed non-null here — the 2a guard above
+        //     rejects no-group users before we reach this point. The
+        //     `if (groupId is not null)` wrapper is kept as defense-in-
+        //     depth in case the guard is ever refactored away.)
         //
         //    Outside the retry loop — depends only on product + groupId,
         //    both immutable for the handler's lifetime.

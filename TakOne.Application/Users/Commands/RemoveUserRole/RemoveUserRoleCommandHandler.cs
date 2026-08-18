@@ -1,23 +1,25 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
-namespace TakOne.Application.Users.Commands.RemoveUserFromGroup;
+namespace TakOne.Application.Users.Commands.RemoveUserRole;
 
 /// <summary>
-/// Removes a user from their customer group (domain-only).
+/// Removes an ASP.NET Identity role from a user.
 ///
 /// Not static so <c>ILogger&lt;T&gt;</c> can take it as a type argument.
 /// </summary>
-public sealed class RemoveUserFromGroupCommandHandler
+public sealed class RemoveUserRoleCommandHandler
 {
     public static async Task<Result> HandleAsync
         (
-        RemoveUserFromGroupCommand command,
+        RemoveUserRoleCommand command,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        IUserAccountService userAccountService,
         IUnitOfWork unitOfWork,
-        ILogger<RemoveUserFromGroupCommandHandler> logger,
+        ILogger<RemoveUserRoleCommandHandler> logger,
         CancellationToken cancellationToken
         )
     {
@@ -26,39 +28,63 @@ public sealed class RemoveUserFromGroupCommandHandler
         // ------------------------------------------------------------------
         if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
         {
-            logger.LogWarning("RemoveUserFromGroup: unauthenticated call rejected.");
+            logger.LogWarning("RemoveUserRole: unauthenticated call rejected.");
 
             return Result.Failure("Authentication required.");
         }
 
         // ------------------------------------------------------------------
-        // 1. Load the user.
+        // 1. SELF-REMOVAL GUARD.
+        //    An admin removing the Admin role from themselves would lock
+        //    themselves out if they're the only admin. Reject this case —
+        //    the admin must assign Admin to another user FIRST, then remove
+        //    it from themselves in a separate call.
+        // ------------------------------------------------------------------
+        if (command.Role == Roles.Admin && currentUser.UserId == command.UserId)
+        {
+            logger.LogWarning
+                ("RemoveUserRole: rejected self-removal of Admin role by user {ActorId}.",
+                currentUser.UserId);
+
+            return Result.Failure
+                ("You cannot remove the Admin role from yourself. Assign Admin to another user first, then remove it from yourself.");
+        }
+
+        // ------------------------------------------------------------------
+        // 2. Load the domain User (for audit logging + existence check).
         // ------------------------------------------------------------------
         var user = await userRepository.GetByIdAsync(command.UserId, cancellationToken);
 
         if (user is null)
         {
             logger.LogWarning
-                ("RemoveUserFromGroup: user {UserId} was not found. Requested by user {ActorId}.",
+                ("RemoveUserRole: user {UserId} was not found. Requested by user {ActorId}.",
                 command.UserId, currentUser.UserId);
 
             return Result.Failure($"User '{command.UserId}' was not found.");
         }
 
         // ------------------------------------------------------------------
-        // 2. Delegate to the aggregate. RemoveFromGroup is idempotent —
-        //    sets GroupId to null unconditionally. We persist either way;
-        //    in the no-op case, EF Core simply won't detect any changes
-        //    and SaveChangesAsync is a null-op round-trip.
+        // 3. Delegate to IUserAccountService. The implementation calls
+        //    UserManager.RemoveFromRoleAsync. Idempotent — if the user
+        //    doesn't have the role, returns success.
         // ------------------------------------------------------------------
-        var previousGroupId = user.GroupId;
-        user.RemoveFromGroup();
+        var result = await userAccountService.RemoveFromRoleAsync(user.Id, command.Role, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            logger.LogWarning
+                ("RemoveUserRole: Identity rejected role removal '{Role}' for user {UserId} (worker ID '{WorkerId}'). Reason: {Reason}. Requested by user {ActorId}.",
+                command.Role, user.Id, user.WorkerId, result.Error, currentUser.UserId);
+
+            return result;
+        }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("RemoveUserFromGroup: user {UserId} (worker ID '{WorkerId}') removed from group {PreviousGroupId} by user {ActorId}.",
-            user.Id, user.WorkerId, previousGroupId, currentUser.UserId);
+            ("RemoveUserRole: role '{Role}' removed from user {UserId} (worker ID '{WorkerId}') by user {ActorId}.",
+            command.Role, user.Id, user.WorkerId, currentUser.UserId);
 
         return Result.Success();
     }

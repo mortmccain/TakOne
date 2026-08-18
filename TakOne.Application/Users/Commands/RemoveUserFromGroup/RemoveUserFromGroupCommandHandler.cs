@@ -47,18 +47,18 @@ public sealed class RemoveUserFromGroupCommandHandler
 
         // ------------------------------------------------------------------
         // 2. Delegate to the aggregate. RemoveFromGroup is idempotent —
-        //    sets GroupName to null unconditionally. We persist either way;
+        //    sets GroupId to null unconditionally. We persist either way;
         //    in the no-op case, EF Core simply won't detect any changes
         //    and SaveChangesAsync is a null-op round-trip.
         // ------------------------------------------------------------------
-        var previousGroup = user.GroupName;
+        var previousGroupId = user.GroupId;
         user.RemoveFromGroup();
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("RemoveUserFromGroup: user {UserId} (worker ID '{WorkerId}') removed from group '{PreviousGroup}' by user {ActorId}.",
-            user.Id, user.WorkerId, previousGroup ?? "(none)", currentUser.UserId);
+            ("RemoveUserFromGroup: user {UserId} (worker ID '{WorkerId}') removed from group {PreviousGroupId} by user {ActorId}.",
+            user.Id, user.WorkerId, previousGroupId, currentUser.UserId);
 
         return Result.Success();
     }

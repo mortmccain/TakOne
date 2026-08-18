@@ -1688,6 +1688,15 @@
         {
             return Loc["CartConflict"];
         }
+        // Step 12-a — NoCustomerGroup is produced when the user has no
+        // CustomerGroup assigned. The backend rejects the add-to-cart
+        // outright (defense-in-depth: a no-group user cannot buy anything).
+        // The localized message tells the customer to contact an admin —
+        // the internal "group" concept is never exposed.
+        if (NoCustomerGroupErrors.TryParse(error))
+        {
+            return Loc["NoCustomerGroup"];
+        }
         return error;
     }
 
@@ -1699,6 +1708,14 @@
     /// </summary>
     private string? LocalizeReorderError(string? error)
     {
+        // Step 12-a — a no-group user cannot reorder either. The backend
+        // rejects the quick-reorder outright (defense-in-depth). Localize
+        // to the same "contact administrator" message used by the
+        // add-to-cart path so the customer sees a consistent error.
+        if (NoCustomerGroupErrors.TryParse(error))
+        {
+            return Loc["NoCustomerGroup"];
+        }
         return error switch
         {
             "QuickReorderNothingToAdd" => Loc["ToastReorderNothingToAdd"],

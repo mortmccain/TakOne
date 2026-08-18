@@ -155,9 +155,39 @@ public sealed class UpdateSaleLineItemCommandHandler
         }
 
         // ------------------------------------------------------------------
+        // GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        //
+        //    Business rule: a user MUST belong to a CustomerGroup for any
+        //    purchase mutation. Without a group, the customer has no
+        //    salary budget / currency / per-product cap to enforce — i.e.
+        //    unlimited mutations, which defeats the salary/budget feature.
+        //
+        //    This applies to ALL customers (staff editing on behalf of a
+        //    customer included — the customer must have a group). If a
+        //    customer has somehow ended up with no group (legacy data,
+        //    admin error), they cannot mutate any cart line until they're
+        //    assigned to one. This blocks the exact bug reported in the
+        //    Step 12-a runtime review: a no-group user could freely
+        //    increase line quantities without any limit enforcement.
+        //
+        //    The error uses NoCustomerGroupErrors.Format so the UI layer
+        //    (Cart page) can localize it without exposing the internal
+        //    "customer group" concept.
+        // ------------------------------------------------------------------
+        if (customer.GroupId is null)
+        {
+            logger.LogWarning
+                ("UpdateSaleLineItem: customer {CustomerId} on sale {SaleId} has no customer group assigned. " +
+                 "Rejecting line update for product {ProductId} ('{ProductName}').",
+                customer.Id, sale.Id, lineItem.ProductId, lineItem.ProductName);
+
+            return Result.Failure(NoCustomerGroupErrors.Format());
+        }
+
+        // ------------------------------------------------------------------
         // CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
         // A customer whose salary is in IRR cannot buy a product priced
-        // in USD. Staff (GroupId == null) bypasses this check.
+        // in USD. GroupId is guaranteed non-null here (guarded above).
         //
         // The price snapshot on the line item is whatever the product's
         // price was WHEN THE LINE WAS ADDED. We use that for the currency

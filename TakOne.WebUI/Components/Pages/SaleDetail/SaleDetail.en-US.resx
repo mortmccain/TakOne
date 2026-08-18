@@ -251,4 +251,11 @@
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value>
   </data>
+  <!-- Step 12-a — shown when the customer on the sale has no CustomerGroup
+       assigned. The internal "group" concept is intentionally hidden — the
+       staff user just sees a "this customer is not configured for purchases"
+       message. -->
+  <data name="NoCustomerGroup" xml:space="preserve">
+    <value>This customer is not configured for purchases. Assign them to a customer group before adding items.</value>
+  </data>
 </root>

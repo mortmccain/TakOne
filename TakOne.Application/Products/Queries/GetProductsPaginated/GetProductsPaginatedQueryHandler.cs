@@ -36,6 +36,7 @@ public sealed class GetProductsPaginatedQueryHandler
         IProductRepository productRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
         ILogger<GetProductsPaginatedQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -182,6 +183,38 @@ public sealed class GetProductsPaginatedQueryHandler
         var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
         var groupId = freshUser?.GroupId;
 
+        // ------------------------------------------------------------------
+        // Resolve the caller's per-product count limit for EACH product on
+        // this page, going through IPurchaseLimitPolicy.GetCountLimitAsync
+        // so that the LimitMode (CountOnly / SalaryOnly / Both) is honored.
+        // This is the Step 12-c runtime fix: previously this method called
+        // product.GetPurchaseLimitForGroup(groupId)?.Limit DIRECTLY inside
+        // the .Select projection, which bypassed the policy and returned
+        // the configured limit even when LimitMode was SalaryOnly — the
+        // Products grid's "+1" button then got disabled at the configured
+        // limit (e.g. 1), preventing the customer from buying more than
+        // 1 unit even though the backend wouldn't have enforced the count
+        // limit in SalaryOnly mode.
+        //
+        // IPurchaseLimitPolicy.GetCountLimitAsync already short-circuits
+        // correctly: returns null when groupId is null, when LimitMode is
+        // SalaryOnly, or when the product has no limit set for this group.
+        //
+        // We resolve all limits up-front into a dictionary so the .Select
+        // projection below stays synchronous (and so we make at most one
+        // policy call per distinct product — typically just one cached
+        // LimitMode read for the whole batch).
+        // ------------------------------------------------------------------
+        var limitByProductId = new Dictionary<Guid, int?>();
+        foreach (var p in paginated.Items)
+        {
+            if (!limitByProductId.ContainsKey(p.Id))
+            {
+                limitByProductId[p.Id] = await purchaseLimitPolicy.GetCountLimitAsync
+                    (p.Id, groupId, cancellationToken);
+            }
+        }
+
         var dtos = paginated.Items
             .Where(p => includeInactive || p.StockQuantity > 0)
             // CATEGORY-DEACTIVATION FILTER:
@@ -259,8 +292,8 @@ public sealed class GetProductsPaginatedQueryHandler
                     SubSubCategoryName = subSubName,
                     SubSubCategoryIsActive = subSubActive,
 
-                    MyPurchaseLimit = groupId is not null
-                        ? p.GetPurchaseLimitForGroup(groupId.Value)?.Limit
+                    MyPurchaseLimit = limitByProductId.TryGetValue(p.Id, out var lim)
+                        ? lim
                         : null
                 };
             })

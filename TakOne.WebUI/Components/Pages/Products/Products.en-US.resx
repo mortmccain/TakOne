@@ -350,4 +350,10 @@
   <data name="CartConflict" xml:space="preserve">
     <value>Your cart was modified by another session. Refresh the page to continue.</value>
   </data>
+  <!-- Step 12-a — shown when a user without a customer group tries to buy.
+       The internal "group" concept is intentionally hidden — the customer
+       just sees a "contact administrator" message. -->
+  <data name="NoCustomerGroup" xml:space="preserve">
+    <value>Your account is not configured for purchases. Please contact an administrator.</value>
+  </data>
 </root>

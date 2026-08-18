@@ -13,7 +13,7 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260815102445_InitialCreate")]
+    [Migration("20260818100744_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -246,6 +246,82 @@ namespace TakOne.Infrastructure.Migrations
                     b.ToTable("SubSubCategories", (string)null);
                 });
 
+            modelBuilder.Entity("TakOne.Domain.Common.Entities.SystemSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LimitMode")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .IsUnique();
+
+                    b.ToTable("SystemSettings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_SystemSettings_Id_IsSingleton", "[Id] = '00000000-0000-0000-0000-000000000000'");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000000"),
+                            LimitMode = 1,
+                            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
+            modelBuilder.Entity("TakOne.Domain.Customers.Entities.CustomerGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.ComplexProperty(typeof(Dictionary<string, object>), "Salary", "TakOne.Domain.Customers.Entities.CustomerGroup.Salary#Money", b1 =>
+                        {
+                            b1.IsRequired();
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("decimal(18,2)")
+                                .HasColumnName("Salary_Amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("nvarchar(3)")
+                                .HasColumnName("Salary_Currency");
+                        });
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("CustomerGroups", (string)null);
+                });
+
             modelBuilder.Entity("TakOne.Domain.Products.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -473,9 +549,8 @@ namespace TakOne.Infrastructure.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
-                    b.Property<string>("GroupName")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -487,7 +562,7 @@ namespace TakOne.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GroupName");
+                    b.HasIndex("GroupId");
 
                     b.HasIndex("IsActive");
 
@@ -652,10 +727,8 @@ namespace TakOne.Infrastructure.Migrations
 
                             SqlServerPropertyBuilderExtensions.UseIdentityColumn(b1.Property<int>("Id"));
 
-                            b1.Property<string>("GroupName")
-                                .IsRequired()
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)");
+                            b1.Property<Guid>("GroupId")
+                                .HasColumnType("uniqueidentifier");
 
                             b1.Property<int>("Limit")
                                 .HasColumnType("int");
@@ -665,10 +738,18 @@ namespace TakOne.Infrastructure.Migrations
 
                             b1.HasKey("Id");
 
-                            b1.HasIndex("ProductId", "GroupName")
+                            b1.HasIndex("GroupId");
+
+                            b1.HasIndex("ProductId", "GroupId")
                                 .IsUnique();
 
                             b1.ToTable("ProductPurchaseLimits", (string)null);
+
+                            b1.HasOne("TakOne.Domain.Customers.Entities.CustomerGroup", null)
+                                .WithMany()
+                                .HasForeignKey("GroupId")
+                                .OnDelete(DeleteBehavior.Restrict)
+                                .IsRequired();
 
                             b1.WithOwner()
                                 .HasForeignKey("ProductId");
@@ -713,6 +794,14 @@ namespace TakOne.Infrastructure.Migrations
                         .WithMany("LineItems")
                         .HasForeignKey("SaleId")
                         .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("TakOne.Domain.Users.User", b =>
+                {
+                    b.HasOne("TakOne.Domain.Customers.Entities.CustomerGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("TakOne.Domain.Categories.Entities.Category", b =>

@@ -78,8 +78,14 @@ public sealed class SystemSettingsRepository : ISystemSettingsRepository
         //     both try to create it, the unique index on Id rejects the
         //     second INSERT, and the next read picks up the first row.
         //
-        // We catch the DbUpdateException from a unique-constraint violation
-        // (concurrent create) by re-querying. This is rare but handled.
+        // We catch the DbUpdateException from any constraint violation
+        // (unique-index OR CHECK-constraint) by re-querying with
+        // FirstOrDefaultAsync (NOT FirstAsync — that throws "Sequence
+        // contains no elements" if the row still isn't there, which is
+        // exactly the runtime bug reported in the Step 12-a logs).
+        // If the re-query STILL returns null, we throw a clear, actionable
+        // InvalidOperationException instead of letting the caller
+        // cascade-fail with a less informative error.
         // ------------------------------------------------------------------
         settings = SystemSettings.CreateDefault();
         _db.SystemSettings.Add(settings);
@@ -91,18 +97,39 @@ public sealed class SystemSettingsRepository : ISystemSettingsRepository
         catch (DbUpdateException)
         {
             // ------------------------------------------------------------------
-            // Concurrent create — another request beat us to it. Re-query
-            // to get the row the other request created. Detach our local
-            // tracked copy first so we don't pollute the change tracker
-            // with a duplicate entity.
+            // Concurrent create OR a CHECK-constraint anomaly — another
+            // request may have beat us to it, OR (more rarely) something
+            // about the INSERT violated the singleton CHECK constraint
+            // (e.g. the row already exists with a slightly different
+            // EF-tracked state). Detach our local tracked copy first so
+            // we don't pollute the change tracker with a duplicate entity,
+            // then re-query.
             // ------------------------------------------------------------------
             var localEntry = _db.ChangeTracker
                 .Entries<SystemSettings>()
                 .FirstOrDefault(e => e.Entity.Id == SystemSettings.SingletonId);
             localEntry?.State = EntityState.Detached;
 
+            // Re-query with FirstOrDefaultAsync (NOT FirstAsync — the row
+            // may legitimately not exist yet if the concurrent INSERT was
+            // rolled back, or if the CHECK constraint rejected our INSERT
+            // for a reason we don't know about). If the row IS there now,
+            // we use it. If it's STILL null, we throw a clear error — the
+            // caller (typically SystemSettingsService → cache factory)
+            // would otherwise propagate a less-informative "Sequence
+            // contains no elements" exception up the call stack.
             settings = await _db.SystemSettings
-                .FirstAsync(s => s.Id == SystemSettings.SingletonId, cancellationToken);
+                .FirstOrDefaultAsync(s => s.Id == SystemSettings.SingletonId, cancellationToken);
+
+            if (settings is null)
+            {
+                throw new InvalidOperationException(
+                    "SystemSettings singleton row could not be loaded after INSERT failed. " +
+                    "The CHECK constraint CK_SystemSettings_Id_IsSingleton requires " +
+                    "Id = '00000000-0000-0000-0000-000000000000' — verify the row exists " +
+                    "in the SystemSettings table and matches that constraint, or re-run " +
+                    "the EF Core migration to seed the singleton row.");
+            }
         }
 
         return settings;

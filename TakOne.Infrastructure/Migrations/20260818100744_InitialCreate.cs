@@ -67,6 +67,23 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "CustomerGroups",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Salary_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
+                    Salary_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_CustomerGroups", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "DataProtectionKeys",
                 columns: table => new
                 {
@@ -143,19 +160,17 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Users",
+                name: "SystemSettings",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    WorkerId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    FullName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    GroupName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    Gender = table.Column<int>(type: "int", nullable: false, defaultValue: 0)
+                    LimitMode = table.Column<int>(type: "int", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.PrimaryKey("PK_SystemSettings", x => x.Id);
+                    table.CheckConstraint("CK_SystemSettings_Id_IsSingleton", "[Id] = '00000000-0000-0000-0000-000000000000'");
                 });
 
             migrationBuilder.CreateTable(
@@ -285,18 +300,46 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    WorkerId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    FullName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    Gender = table.Column<int>(type: "int", nullable: false, defaultValue: 0)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Users_CustomerGroups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "CustomerGroups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ProductPurchaseLimits",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    GroupName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Limit = table.Column<int>(type: "int", nullable: false),
                     ProductId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ProductPurchaseLimits", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ProductPurchaseLimits_CustomerGroups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "CustomerGroups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_ProductPurchaseLimits_Products_ProductId",
                         column: x => x.ProductId,
@@ -349,6 +392,11 @@ namespace TakOne.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.InsertData(
+                table: "SystemSettings",
+                columns: new[] { "Id", "LimitMode", "UpdatedAt" },
+                values: new object[] { new Guid("00000000-0000-0000-0000-000000000000"), 1, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc) });
+
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
                 table: "AspNetRoleClaims",
@@ -395,9 +443,25 @@ namespace TakOne.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProductPurchaseLimits_ProductId_GroupName",
+                name: "IX_CustomerGroups_IsActive",
+                table: "CustomerGroups",
+                column: "IsActive");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CustomerGroups_Name",
+                table: "CustomerGroups",
+                column: "Name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductPurchaseLimits_GroupId",
                 table: "ProductPurchaseLimits",
-                columns: new[] { "ProductId", "GroupName" },
+                column: "GroupId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductPurchaseLimits_ProductId_GroupId",
+                table: "ProductPurchaseLimits",
+                columns: new[] { "ProductId", "GroupId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -478,9 +542,15 @@ namespace TakOne.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Users_GroupName",
+                name: "IX_SystemSettings_Id",
+                table: "SystemSettings",
+                column: "Id",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_GroupId",
                 table: "Users",
-                column: "GroupName");
+                column: "GroupId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_IsActive",
@@ -528,6 +598,9 @@ namespace TakOne.Infrastructure.Migrations
                 name: "SubSubCategories");
 
             migrationBuilder.DropTable(
+                name: "SystemSettings");
+
+            migrationBuilder.DropTable(
                 name: "Users");
 
             migrationBuilder.DropTable(
@@ -544,6 +617,9 @@ namespace TakOne.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "SubCategories");
+
+            migrationBuilder.DropTable(
+                name: "CustomerGroups");
 
             migrationBuilder.DropTable(
                 name: "Categories");

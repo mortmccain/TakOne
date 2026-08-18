@@ -211,9 +211,33 @@ public sealed class AddItemToSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
+        // GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        //
+        //    Business rule: a customer MUST belong to a CustomerGroup for
+        //    any purchase mutation (including staff adding items to a
+        //    draft on the customer's behalf). Without a group, the
+        //    customer has no salary budget / currency / per-product cap
+        //    to enforce — i.e. unlimited mutations, which defeats the
+        //    entire salary/budget feature.
+        //
+        //    The error uses NoCustomerGroupErrors.Format so the UI layer
+        //    (SaleDetail page) can localize it without exposing the
+        //    internal "customer group" concept to the staff user.
+        // ------------------------------------------------------------------
+        if (customer.GroupId is null)
+        {
+            logger.LogWarning
+                ("AddItemToSale: customer {CustomerId} on sale {SaleId} has no customer group assigned. " +
+                 "Rejecting add-item for product {ProductId} ('{ProductName}').",
+                customer.Id, sale.Id, product.Id, product.Name);
+
+            return Result.Failure(NoCustomerGroupErrors.Format());
+        }
+
+        // ------------------------------------------------------------------
         // CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
         // A customer whose salary is in IRR cannot buy a product priced
-        // in USD. Staff (GroupId == null) bypasses this check.
+        // in USD. GroupId is guaranteed non-null here (guarded above).
         // ------------------------------------------------------------------
         if (customer.GroupId is not null)
         {

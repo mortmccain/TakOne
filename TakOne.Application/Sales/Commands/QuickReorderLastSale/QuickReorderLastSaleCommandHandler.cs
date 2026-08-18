@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
@@ -126,9 +127,6 @@ public sealed class QuickReorderLastSaleCommandHandler
         //     the per-product clamping below is correct without requiring
         //     a re-login.
         //
-        //     For staff users, GroupId is null → no per-product cap and
-        //     no currency / salary-budget enforcement.
-        //
         //     Resolve the salary budget info ONCE here (when budget is
         //     enforced) so we can clamp the per-line qty against the
         //     remaining budget across the entire reorder batch. The
@@ -139,6 +137,27 @@ public sealed class QuickReorderLastSaleCommandHandler
         // ------------------------------------------------------------------
         var freshUser = await userRepository.GetByIdAsync(currentUser.UserId, cancellationToken);
         var groupId = freshUser?.GroupId;
+
+        // ------------------------------------------------------------------
+        // 2b-1. GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        //
+        //       Business rule: a user MUST belong to a CustomerGroup to
+        //       make any purchase. Reject upfront with a culture-neutral
+        //       error so the UI can localize it without exposing the
+        //       "customer group" concept to the end user.
+        //
+        //       See NoCustomerGroupErrors.cs for the rationale and the
+        //       matching UI-side TryParse hook.
+        // ------------------------------------------------------------------
+        if (groupId is null)
+        {
+            logger.LogWarning
+                ("QuickReorderLastSale: user {UserId} has no customer group assigned. " +
+                 "Rejecting quick-reorder of last sale {LastSaleId}.",
+                currentUser.UserId, lastSale.Id);
+
+            return Result<Guid>.Failure(NoCustomerGroupErrors.Format());
+        }
 
         var salaryBudgetEnforced = groupId is not null
             && await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken);

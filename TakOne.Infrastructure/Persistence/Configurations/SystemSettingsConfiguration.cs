@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TakOne.Domain.Common.Entities;
+using TakOne.Domain.Common.Enums;
 
 namespace TakOne.Infrastructure.Persistence.Configurations;
 
@@ -68,6 +69,28 @@ public sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Syste
         builder.HasKey(s => s.Id);
 
         // ------------------------------------------------------------------
+        // VALUE GENERATION STRATEGY:
+        //   EXPLICITLY tell EF Core that the Id is set by the application
+        //   (SystemSettings.SingletonId == Guid.Empty) and that EF Core MUST
+        //   NOT generate a value during SaveChanges.
+        //
+        //   WITHOUT this, EF Core's default for a Guid PK is
+        //   ValueGeneratedOnAdd, which triggers SequentialGuidValueGenerator
+        //   when the property value equals the CLR default (Guid.Empty).
+        //   Since our singleton row IS Guid.Empty by design, EF Core would
+        //   silently replace it with a freshly-generated Guid on INSERT,
+        //   and the INSERT would then fail the
+        //   CK_SystemSettings_Id_IsSingleton CHECK constraint below
+        //   (which requires Id == '00000000-0000-0000-0000-000000000000').
+        //
+        //   ValueGeneratedNever is metadata-only — it doesn't change the
+        //   database schema, just EF Core's runtime behaviour. The Id column
+        //   stays a plain uniqueidentifier PK with the singleton CHECK
+        //   constraint + unique index.
+        // ------------------------------------------------------------------
+        builder.Property(s => s.Id).ValueGeneratedNever();
+
+        // ------------------------------------------------------------------
         // Scalar columns
         // ------------------------------------------------------------------
         // LimitMode stored as int (EF Core's default enum mapping).
@@ -83,5 +106,38 @@ public sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Syste
         // it obvious at the schema level that this table can only ever have
         // one row.
         builder.HasIndex(s => s.Id).IsUnique();
+
+        // ------------------------------------------------------------------
+        // SEED DATA (Step 12-b runtime fix):
+        //   Seed the singleton row at migration time so the
+        //   SystemSettingsRepository.GetOrCreateAsync lazy-create path is
+        //   NEVER hit on a fresh install. The lazy-create path has
+        //   historically been a source of CHECK-constraint violations and
+        //   "Sequence contains no elements" cascade failures (see
+        //   SystemSettingsRepository.GetOrCreateAsync inline doc for the
+        //   full forensic trail). Seeding eliminates the entire failure
+        //   mode — the row exists by the time the app boots.
+        //
+        //   Values mirror SystemSettings.CreateDefault():
+        //     - Id         = Guid.Empty (matches CK_SystemSettings_Id_IsSingleton)
+        //     - LimitMode  = CountOnly (= 1; the fresh-install default)
+        //     - UpdatedAt  = 2025-01-01T00:00:00Z (a fixed sentinel so
+        //                    admins can tell "factory default, never
+        //                    changed" from "actually updated just now"
+        //                    when they look at the timestamp in the UI).
+        //
+        //   HasData is the EF Core idiomatic way to seed — it's reflected
+        //   in the model snapshot so future migrations don't drift.
+        //   Anonymous-typed to keep this configuration file decoupled
+        //   from the SystemSettings.Load factory (which is a Domain-layer
+        //   concern — Infrastructure shouldn't call Domain factories
+        //   directly per the Clean Architecture layering rules).
+        // ------------------------------------------------------------------
+        builder.HasData(new
+        {
+            Id = Guid.Empty,
+            LimitMode = LimitMode.CountOnly,
+            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        });
     }
 }

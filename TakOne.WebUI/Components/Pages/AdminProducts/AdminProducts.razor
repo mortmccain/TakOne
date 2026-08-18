@@ -72,6 +72,7 @@
 
 @page "/Admin/Products"
 @attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
@@ -99,7 +100,7 @@
 <HeadContent>
     <style>
             /* Page header — mirrors AdminUsers.razor's .admin-header layout
-                                   so the two pages read as members of the same family. */
+                                               so the two pages read as members of the same family. */
             .admin-header {
                 display: flex;
                 align-items: center;
@@ -148,9 +149,9 @@
             }
 
             /* Category-name cell — when the referenced category is deactivated,
-                           we render the name followed by a small red "(deactivated)" badge.
-                           The flex layout keeps the name + badge on one line and lets them
-                           wrap gracefully on narrow viewports. */
+                                       we render the name followed by a small red "(deactivated)" badge.
+                                       The flex layout keeps the name + badge on one line and lets them
+                                       wrap gracefully on narrow viewports. */
             .cat-cell {
                 display: inline-flex;
                 align-items: center;

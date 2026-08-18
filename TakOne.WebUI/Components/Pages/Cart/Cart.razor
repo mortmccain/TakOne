@@ -98,7 +98,7 @@
 <HeadContent>
     <style>
             /* Two-column layout: line items left, summary right.
-                                               On tablet/mobile, summary collapses below the items. */
+                                                           On tablet/mobile, summary collapses below the items. */
             .cart-layout {
                 display: grid;
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
@@ -113,10 +113,10 @@
             }
 
             /* ── Line item card ──
-                                               Each line item is its own RadzenCard with a grid layout:
-                                                 [picture] [info] [qty + actions]
-                                               On mobile, the picture shrinks and the layout collapses to
-                                               a vertical stack with actions wrapping below. */
+                                                           Each line item is its own RadzenCard with a grid layout:
+                                                             [picture] [info] [qty + actions]
+                                                           On mobile, the picture shrinks and the layout collapses to
+                                                           a vertical stack with actions wrapping below. */
             .cart-line {
                 display: grid;
                 grid-template-columns: 80px minmax(0, 1fr) auto;
@@ -193,15 +193,15 @@
             }
 
             /* Qty selector — a plain <input type="number" class="rz-textbox qty-input">
-                                       rather than a RadzenNumeric. WHY: RadzenNumeric's internal JS
-                                       mishandles caret position in RTL (fa-IR) mode — the cursor looks
-                                       like it's at the end of the value, but typing inserts the
-                                       character at the BEGINNING (turning a "1" + typed "0" into "01"
-                                       instead of "10"). A native input with dir="ltr" bypasses
-                                       Radzen's JS entirely and handles caret position AND character
-                                       insertion correctly in both LTR and RTL page contexts. Same fix
-                                       as CreateProduct.razor's PriceAmount / InitialStockQuantity
-                                       fields. We lose the spinner arrows but gain correct behavior. */
+                                                   rather than a RadzenNumeric. WHY: RadzenNumeric's internal JS
+                                                   mishandles caret position in RTL (fa-IR) mode — the cursor looks
+                                                   like it's at the end of the value, but typing inserts the
+                                                   character at the BEGINNING (turning a "1" + typed "0" into "01"
+                                                   instead of "10"). A native input with dir="ltr" bypasses
+                                                   Radzen's JS entirely and handles caret position AND character
+                                                   insertion correctly in both LTR and RTL page contexts. Same fix
+                                                   as CreateProduct.razor's PriceAmount / InitialStockQuantity
+                                                   fields. We lose the spinner arrows but gain correct behavior. */
             .cart-line .qty-input {
                 width: 90px;
                 text-align: left;
@@ -235,8 +235,8 @@
             }
 
             /* Summary panel — sticky on desktop so it stays in view while
-                                               the user scrolls long carts. On mobile it just sits at the
-                                               bottom of the page (no sticky — would cover content). */
+                                                           the user scrolls long carts. On mobile it just sits at the
+                                                           bottom of the page (no sticky — would cover content). */
             .cart-summary {
                 position: sticky;
                 top: 1rem;
@@ -1255,6 +1255,16 @@
         if (CartConflictErrors.TryParse(error))
         {
             return Loc["CartConflict"];
+        }
+        // Step 12-a — NoCustomerGroup is produced when the customer
+        // associated with the sale has no CustomerGroup assigned. The
+        // backend rejects the mutation outright (defense-in-depth: a
+        // no-group customer cannot buy anything). The localized message
+        // tells the customer to contact an admin — the internal "group"
+        // concept is never exposed.
+        if (NoCustomerGroupErrors.TryParse(error))
+        {
+            return Loc["NoCustomerGroup"];
         }
         return error;
     }

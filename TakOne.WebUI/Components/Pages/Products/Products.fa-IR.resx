@@ -349,4 +349,10 @@
   <data name="CartConflict" xml:space="preserve">
     <value>سبد شما توسط نشست دیگری تغییر یافت. برای ادامه، صفحه را به‌روزرسانی کنید.</value>
   </data>
+  <!-- Step 12-a — shown when a user without a customer group tries to buy.
+       The internal "group" concept is intentionally hidden — the customer
+       just sees a "contact administrator" message. -->
+  <data name="NoCustomerGroup" xml:space="preserve">
+    <value>حساب شما برای خرید پیکربندی نشده است. لطفاً با مدیر سامانه تماس بگیرید.</value>
+  </data>
 </root>

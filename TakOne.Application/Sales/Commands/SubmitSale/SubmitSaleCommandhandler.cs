@@ -139,6 +139,35 @@ public sealed class SubmitSaleCommandHandler
                 "The customer associated with this sale could not be found. Contact an administrator.");
         }
 
+        // ------------------------------------------------------------------
+        // GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        //
+        //    Business rule: a user MUST belong to a CustomerGroup to
+        //    submit any sale. Without a group, the customer has no salary
+        //    budget / currency / per-product cap to enforce — the sale
+        //    would escape all purchase-limit checks at the final submit
+        //    step, defeating the entire salary/budget feature.
+        //
+        //    This applies to ALL customers (staff submitting on behalf of
+        //    a customer included — the customer must have a group). It
+        //    blocks the exact bug reported in the Step 12-a runtime
+        //    review: a no-group user could submit sales without any
+        //    limit enforcement.
+        //
+        //    The error uses NoCustomerGroupErrors.Format so the UI layer
+        //    (Cart page) can localize it without exposing the internal
+        //    "customer group" concept.
+        // ------------------------------------------------------------------
+        if (customer.GroupId is null)
+        {
+            logger.LogWarning
+                ("SubmitSale: customer {CustomerId} on sale {SaleId} has no customer group assigned. " +
+                 "Rejecting submit.",
+                customer.Id, sale.Id);
+
+            return Result.Failure(NoCustomerGroupErrors.Format());
+        }
+
         if (sale.LineItems.Count > 0)
         {
             var lineProductIds = sale.LineItems.Select(li => li.ProductId).Distinct().ToList();

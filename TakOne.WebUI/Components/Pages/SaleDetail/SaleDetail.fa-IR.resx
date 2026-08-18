@@ -249,4 +249,9 @@
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value>
   </data>
+  <!-- Step 12-a — shown when the customer on the sale has no CustomerGroup
+       assigned. The internal "group" concept is intentionally hidden. -->
+  <data name="NoCustomerGroup" xml:space="preserve">
+    <value>این مشتری برای خرید پیکربندی نشده است. پیش از افزودن کالا، او را به یک گروه مشتریان اختصاص دهید.</value>
+  </data>
 </root>

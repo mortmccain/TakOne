@@ -22,6 +22,7 @@ public sealed class GetProductByIdQueryHandler
         ICurrentUserService currentUser,
         IProductRepository productRepository,
         IUserRepository userRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
         ILogger<GetProductByIdQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -120,9 +121,20 @@ public sealed class GetProductByIdQueryHandler
             // customers whose group has no specific limit set on this product.
             // The ProductDetail page uses this to clamp the quantity selector
             // so the customer cannot even SELECT more than their group allows.
-            MyPurchaseLimit = groupId is not null
-                ? product.GetPurchaseLimitForGroup(groupId.Value)?.Limit
-                : null
+            //
+            // Step 12-c runtime fix: route through IPurchaseLimitPolicy so
+            // the LimitMode is honored. Previously this called
+            // product.GetPurchaseLimitForGroup(groupId)?.Limit DIRECTLY,
+            // which bypassed the policy and returned the configured limit
+            // even when LimitMode was SalaryOnly — the UI then clamped the
+            // qty selector to the limit (e.g. 1), preventing the customer
+            // from selecting more than 1 unit even though the backend
+            // wouldn't have enforced the count limit in SalaryOnly mode.
+            // The policy already short-circuits correctly: returns null
+            // when groupId is null, when LimitMode is SalaryOnly, or when
+            // the product has no limit set for this group.
+            MyPurchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
+                (product.Id, groupId, cancellationToken)
         };
 
         return Result<ProductDto>.Success(dto);

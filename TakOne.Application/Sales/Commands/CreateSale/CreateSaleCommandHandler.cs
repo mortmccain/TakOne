@@ -24,6 +24,7 @@ public sealed class CreateSaleCommandHandler
         IUserRepository userRepository,
         IProductRepository productRepository,
         ISaleRepository saleRepository,
+        IPurchaseLimitPolicy purchaseLimitPolicy,
         IUnitOfWork unitOfWork,
         ILogger<CreateSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -127,12 +128,18 @@ public sealed class CreateSaleCommandHandler
             // this product). The Sale aggregate expects the raw int? — so we
             // unwrap .Limit here. A null GroupId (staff buying as themselves
             // for themselves) means no limit applies.
-            int? purchaseLimit = null;
-            if (customer.GroupId is not null)
-            {
-                var limitVo = product.GetPurchaseLimitForGroup(customer.GroupId.Value);
-                purchaseLimit = limitVo?.Limit;
-            }
+            //
+            // Step 12-c runtime fix: route through IPurchaseLimitPolicy so
+            // the LimitMode is honored. The policy returns null when
+            // LimitMode == SalaryOnly (count limits are off in that mode),
+            // so the Sale aggregate's EnsurePurchaseLimitRespected will
+            // skip the check. Without this routing, the limit was always
+            // resolved from the product regardless of mode, which meant
+            // staff creating a sale on behalf of a customer got the count
+            // limit enforced even in SalaryOnly mode — the exact bug the
+            // user reported (couldn't add more than 1 unit to a cart).
+            int? purchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
+                (product.Id, customer.GroupId, cancellationToken);
 
             // SNAPSHOT THE PRICE — pass a NEW Money instance, NOT product.Price
             // by reference. See CreateOrAppendSaleCommandHandler for the full

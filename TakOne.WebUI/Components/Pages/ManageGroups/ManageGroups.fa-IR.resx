@@ -155,4 +155,56 @@
     <value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
 
+  <!-- ── Limit-mode card (Step 12-a) ──
+       Used by the admin-only card at the top of the page that lets the
+       admin change the system-wide LimitMode. Keys are prefixed with
+       "LimitMode" so they're easy to find. -->
+  <data name="LimitModeCardTitle" xml:space="preserve">
+    <value>حالت محدودیت خرید</value>
+  </data>
+  <data name="LimitModeCardSubtitle" xml:space="preserve">
+    <value>تعیین می‌کند که کدام محدودیت‌های خرید برای همهٔ مشتریان در سراسر سیستم اعمال شود.</value>
+  </data>
+  <data name="LimitModeLastUpdated" xml:space="preserve">
+    <value>آخرین به‌روزرسانی: {0}</value>
+  </data>
+  <data name="LimitModeLoadingText" xml:space="preserve">
+    <value>در حال بارگذاری تنظیمات…</value>
+  </data>
+  <data name="LimitModeErrorTitle" xml:space="preserve">
+    <value>بارگذاری تنظیمات ناموفق بود</value>
+  </data>
+  <data name="LimitModeLoadError" xml:space="preserve">
+    <value>بارگذاری تنظیمات سیستم ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="LimitModeRetryButton" xml:space="preserve">
+    <value>تلاش مجدد</value>
+  </data>
+
+  <!-- LimitMode enum values — localized display names. Used both in the
+       dropdown options and in the success toast (so the admin sees which
+       mode they just switched to). -->
+  <data name="LimitModeCountOnly" xml:space="preserve">
+    <value>فقط محدودیت تعداد</value>
+  </data>
+  <data name="LimitModeSalaryOnly" xml:space="preserve">
+    <value>فقط بودجهٔ حقوق</value>
+  </data>
+  <data name="LimitModeBoth" xml:space="preserve">
+    <value>تعداد + بودجهٔ حقوق</value>
+  </data>
+
+  <data name="LimitModeSaveButton" xml:space="preserve">
+    <value>اعمال</value>
+  </data>
+  <data name="LimitModeSaveSuccessTitle" xml:space="preserve">
+    <value>حالت محدودیت به‌روزرسانی شد</value>
+  </data>
+  <data name="LimitModeSaveSuccess" xml:space="preserve">
+    <value>سیستم اکنون در حالت «{0}» قرار دارد. خریدهای جدید بلافاصله تابع این حالت هستند.</value>
+  </data>
+  <data name="LimitModeSaveError" xml:space="preserve">
+    <value>به‌روزرسانی حالت محدودیت ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
 </root>
