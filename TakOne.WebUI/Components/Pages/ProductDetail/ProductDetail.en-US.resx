@@ -251,4 +251,43 @@
   <data name="StockSetSuccess" xml:space="preserve">
     <value>Stock for "{0}" set to {1}.</value>
   </data>
+  <data name="CategoryEditorTitle" xml:space="preserve">
+    <value>Category assignment</value>
+  </data>
+  <data name="CategoryEditorLoading" xml:space="preserve">
+    <value>Loading categories…</value>
+  </data>
+  <data name="CategoryEditorEmpty" xml:space="preserve">
+    <value>No categories exist yet. Create one on the Categories page first.</value>
+  </data>
+  <data name="CategoryEditorHint" xml:space="preserve">
+    <value>Reassign this product to a different existing category. New categories must be created on the Categories page first.</value>
+  </data>
+  <data name="FieldCategory" xml:space="preserve">
+    <value>Category *</value>
+  </data>
+  <data name="FieldSubCategory" xml:space="preserve">
+    <value>Sub-category</value>
+  </data>
+  <data name="FieldSubSubCategory" xml:space="preserve">
+    <value>Sub-sub-category</value>
+  </data>
+  <data name="CategoryPlaceholder" xml:space="preserve">
+    <value>— Select a category —</value>
+  </data>
+  <data name="CategoryOptionalPlaceholder" xml:space="preserve">
+    <value>— Optional —</value>
+  </data>
+  <data name="SaveCategory" xml:space="preserve">
+    <value>Save category</value>
+  </data>
+  <data name="CategoryRequiredError" xml:space="preserve">
+    <value>Category is required.</value>
+  </data>
+  <data name="CategorySavedTitle" xml:space="preserve">
+    <value>Category updated</value>
+  </data>
+  <data name="CategorySaved" xml:space="preserve">
+    <value>Product category has been updated.</value>
+  </data>
 </root>

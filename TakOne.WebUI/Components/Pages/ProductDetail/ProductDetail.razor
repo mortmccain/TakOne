@@ -119,11 +119,13 @@
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductById
 @using TakOne.Application.Products.Commands.UpdateProductDetails
+@using TakOne.Application.Products.Commands.UpdateProductCategory
 @using TakOne.Application.Products.Commands.SetProductPurchaseLimit
 @using TakOne.Application.Products.Commands.RemoveProductPurchaseLimit
 @using TakOne.Application.Products.Commands.SetProductStock
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
+@using TakOne.Application.Categories.Queries.GetActiveCategories
 @using TakOne.Application.Customers.Queries.GetAllCustomerGroups
 @using TakOne.Application.Customers.DTOs
 @using TakOne.SharedKernel.Common
@@ -179,6 +181,27 @@
                     font-size: 8rem;
                     color: var(--rz-text-secondary-color);
                 }
+
+            /* Left-column wrapper — holds the picture AND the staff-only
+                                                           photo-editor card (when open) stacked vertically. Putting
+                                                           both inside one wrapper (instead of leaving the photo
+                                                           editor as a sibling of .detail-picture inside the grid)
+                                                           keeps them in the SAME grid cell, so the editor appears
+                                                           flush against the bottom of the picture with no gap
+                                                           (the grid's align-items: start would otherwise push the
+                                                           editor down to row 2, leaving a vertical gap equal to
+                                                           the difference between the picture's height and the
+                                                           info column's height).
+
+                                                           Max-width matches .detail-picture so the editor card
+                                                           doesn't sprawl wider than the picture on wide screens. */
+            .detail-picture-column {
+                display: flex;
+                flex-direction: column;
+                gap: 1rem;
+                max-width: 480px;
+                width: 100%;
+            }
 
             /* "Change photo" button — overlaid on the picture bottom-right
                                                                corner. Only shown to staff. Uses RadzenButton underneath
@@ -431,6 +454,21 @@
                     flex: 0 0 auto;
                 }
 
+            /* Category editor — three dropdowns in a row, mirroring
+                                                           CreateProduct.razor's .category-row. Wraps on narrow
+                                                           screens (each dropdown takes full width below 768px). */
+            .category-row {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.75rem;
+            }
+
+            @@media (max-width: 768px) {
+                .category-row {
+                    grid-template-columns: 1fr;
+                }
+            }
+
             /* Back button row — mirrors the detail-grid columns so the
                                                    button stays aligned with the START of the info column
                                                    (right above the breadcrumb) in both LTR and RTL modes.
@@ -516,31 +554,138 @@
     else
     {
         <div class="detail-grid">
-            @* LEFT — picture (or placeholder) + staff-only "Change photo" button *@
-            <div class="detail-picture">
-                @if (!string.IsNullOrWhiteSpace(_product.PictureUrl))
-                {
-                    <img src="@_product.PictureUrl" alt="@_product.Name" loading="lazy" />
-                }
-                else
-                {
-                    <RadzenIcon Icon="inventory_2" />
-                }
+            @* LEFT — picture (or placeholder) + staff-only "Change photo" button.
+               Wrapped in .detail-picture-column so the photo-editor card (when
+               open) stacks flush below the picture in the SAME grid cell —
+               see the CSS comment on .detail-picture-column for why wrapping
+               matters (otherwise the editor would land in row 2 of the grid,
+               pushed down by the info column's height). *@
+            <div class="detail-picture-column">
+                <div class="detail-picture">
+                    @if (!string.IsNullOrWhiteSpace(_product.PictureUrl))
+                    {
+                        <img src="@_product.PictureUrl" alt="@_product.Name" loading="lazy" />
+                    }
+                    else
+                    {
+                        <RadzenIcon Icon="inventory_2" />
+                    }
 
-                @* Staff-only "Change photo" overlay button — opens the same dropzone
-                   UI used on CreateProduct.razor. Only rendered for staff (Admin /
-                   Manager / Employee) — same role check as the rest of the staff
-                   edit section below. *@
-                @if (_canEdit)
+                    @* Staff-only "Change photo" overlay button — opens the same dropzone
+                       UI used on CreateProduct.razor. Only rendered for staff (Admin /
+                       Manager / Employee) — same role check as the rest of the staff
+                       edit section below. *@
+                    @if (_canEdit)
+                    {
+                        <div class="change-photo-overlay">
+                            <RadzenButton Text="@Loc["ChangePhoto"]"
+                                          Icon="photo_camera"
+                                          ButtonStyle="ButtonStyle.Secondary"
+                                          Variant="Variant.Filled"
+                                          Size="ButtonSize.Small"
+                                          Click="@(() => _isPhotoEditorOpen = true)" />
+                        </div>
+                    }
+                </div>
+
+                @* ── Photo editor (inline card under the picture) ──
+                   Opens when staff clicks "Change Photo" on the picture above.
+                   Rendered INSIDE the .detail-picture-column wrapper so it
+                   stacks flush against the bottom of the picture (no gap from
+                   the grid's row layout). Mirrors the CreateProduct.razor
+                   picture dropzone + preview card UI. The user picks a file,
+                   sees a preview, then clicks "Save photo" to:
+                     1. Upload the new file via IFileStorage.SaveAsync.
+                     2. Hard-delete the OLD file via IFileStorage.DeleteAsync.
+                     3. Dispatch UpdateProductDetailsCommand with the new PictureUrl.
+                   Cancel closes the editor without saving. Same validation rules
+                   as CreateProduct: JPEG/PNG/WebP only, 5 MB max. *@
+                @if (_isPhotoEditorOpen && _canEdit)
                 {
-                    <div class="change-photo-overlay">
-                        <RadzenButton Text="@Loc["ChangePhoto"]"
-                                      Icon="photo_camera"
-                                      ButtonStyle="ButtonStyle.Secondary"
-                                      Variant="Variant.Filled"
-                                      Size="ButtonSize.Small"
-                                      Click="@(() => _isPhotoEditorOpen = true)" />
-                    </div>
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem; border-top: 2px solid var(--rz-primary);">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 1rem;">
+                            <RadzenIcon Icon="photo_camera" Style="color: var(--rz-primary);" />
+                            <RadzenText Text="@Loc["ChangePhotoTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin: 0;" />
+                            <RadzenButton Icon="close"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Text"
+                                          Size="ButtonSize.Small"
+                                          Style="margin-inline-start: auto;"
+                                          Click="@(() => _isPhotoEditorOpen = false)"
+                                          AriaLabel="@Loc["ClosePhotoEditor"]" />
+                        </RadzenStack>
+
+                        <div class="upload-section">
+                            @if (_selectedFile is null)
+                            {
+                                <label class="picture-dropzone">
+                                    <InputFile OnChange="@OnInputFileChange"
+                                               accept="image/jpeg,image/png,image/webp"
+                                               class="picture-dropzone-input" />
+                                    <div class="picture-dropzone-body">
+                                        <RadzenIcon Icon="cloud_upload"
+                                                    Style="font-size: 2.5rem; color: var(--rz-primary);" />
+                                        <div class="picture-dropzone-text">
+                                            <span class="picture-dropzone-title">@Loc["UploadDropzoneTitle"]</span>
+                                            <span class="picture-dropzone-hint">@Loc["UploadDropzoneHint"]</span>
+                                        </div>
+                                    </div>
+                                </label>
+                            }
+                            else
+                            {
+                                <div class="upload-card">
+                                    @if (!string.IsNullOrEmpty(_previewDataUrl))
+                                    {
+                                        <img src="@_previewDataUrl" alt="preview" class="upload-preview" />
+                                    }
+                                    else
+                                    {
+                                        <div class="upload-preview-placeholder">
+                                            <RadzenIcon Icon="image" />
+                                        </div>
+                                    }
+                                    <div class="upload-info">
+                                        <div class="file-name">@_selectedFile.Name</div>
+                                        <div class="file-size">@FormatBytes(_selectedFile.Size)</div>
+                                    </div>
+                                    <RadzenButton Text="@Loc["RemoveImage"]"
+                                                  Icon="delete"
+                                                  ButtonStyle="ButtonStyle.Danger"
+                                                  Variant="Variant.Outlined"
+                                                  Click="@RemoveSelectedImage" />
+                                </div>
+                                <RadzenText TextStyle="TextStyle.Caption"
+                                            Style="color: var(--rz-text-secondary-color); display: block;">
+                                    @Loc["PictureHint"]
+                                </RadzenText>
+                            }
+
+                            @if (!string.IsNullOrEmpty(_uploadError))
+                            {
+                                <RadzenAlert Title="@Loc["UploadErrorTitle"]"
+                                             Text="@_uploadError"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Filled"
+                                             ShowIcon="true" />
+                            }
+
+                            <div class="edit-actions">
+                                <RadzenButton Text="@Loc["CancelPhotoEditor"]"
+                                              Icon="close"
+                                              ButtonStyle="ButtonStyle.Light"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(_isSavingPhoto)"
+                                              Click="@(() => _isPhotoEditorOpen = false)" />
+                                <RadzenButton Text="@Loc["SavePhoto"]"
+                                              Icon="save"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(_selectedFile is null || _selectedFileBytes is null || _isSavingPhoto)"
+                                              Click="@HandleSavePhotoAsync" />
+                            </div>
+                        </div>
+                    </RadzenCard>
                 }
             </div>
 
@@ -637,6 +782,99 @@
                                           Disabled="@(_isSavingDetails || string.IsNullOrWhiteSpace(_editName))"
                                           Click="@HandleSaveDetailsAsync" />
                         </div>
+
+                        @* ── Category editor section ──
+                           Lets staff reassign the product to a different Category /
+                           SubCategory / SubSubCategory. Only EXISTING (active)
+                           categories are offered — there's no "create new" affordance
+                           here; categories are managed on /Admin/Categories.
+
+                           The three dropdowns cascade: picking a Category filters
+                           the SubCategory dropdown to that Category's children,
+                           picking a SubCategory filters the SubSubCategory dropdown.
+                           Switching Category clears Sub + SubSub; switching Sub
+                           clears SubSub. Same UX as CreateProduct.razor.
+
+                           On Save, dispatches UpdateProductCategoryCommand — the
+                           handler validates the hierarchy server-side and the
+                           domain enforces "SubSub requires Sub" (so the UI can't
+                           leave the aggregate in an inconsistent state). The
+                           command requires Employee / Manager / Admin, matching
+                           the page's _canEdit gate (same role set). *@
+                        <div class="staff-section-title" style="margin-top: 1.5rem;">
+                            <RadzenIcon Icon="category" />
+                            <span>@Loc["CategoryEditorTitle"]</span>
+                        </div>
+
+                        @if (_isLoadingCategories)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["CategoryEditorLoading"]
+                            </RadzenText>
+                        }
+                        else if (_categories.Count == 0)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["CategoryEditorEmpty"]
+                            </RadzenText>
+                        }
+                        else
+                        {
+                            <div class="category-row">
+                                <RadzenFormField Text="@Loc["FieldCategory"]" Style="width: 100%;">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Value="_editCategoryId"
+                                                    Data="_categories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    Placeholder="@Loc["CategoryPlaceholder"]"
+                                                    ValueChanged="@OnEditCategoryChanged"
+                                                    Disabled="@_isSavingCategory"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+
+                                <RadzenFormField Text="@Loc["FieldSubCategory"]" Style="width: 100%;">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Value="_editSubCategoryId"
+                                                    Data="_availableSubCategories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Placeholder="@Loc["CategoryOptionalPlaceholder"]"
+                                                    ValueChanged="@OnEditSubCategoryChanged"
+                                                    Disabled="@(_isSavingCategory || _editCategoryId == null)"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+
+                                <RadzenFormField Text="@Loc["FieldSubSubCategory"]" Style="width: 100%;">
+                                    <RadzenDropDown TValue="Guid?"
+                                                    Value="_editSubSubCategoryId"
+                                                    Data="_availableSubSubCategories"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    AllowClear="true"
+                                                    Placeholder="@Loc["CategoryOptionalPlaceholder"]"
+                                                    Disabled="@(_isSavingCategory || _editSubCategoryId == null)"
+                                                    Style="width: 100%;" />
+                                </RadzenFormField>
+                            </div>
+
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color); display: block; margin-top: 0.25rem;">
+                                @Loc["CategoryEditorHint"]
+                            </RadzenText>
+
+                            <div class="edit-actions">
+                                <RadzenButton Text="@Loc["SaveCategory"]"
+                                              Icon="save"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(_isSavingCategory || _editCategoryId == null)"
+                                              Click="@HandleSaveCategoryAsync" />
+                            </div>
+                        }
 
                         @* ── Stock-set section ──
                            Lets staff set the product's stock to an EXACT value
@@ -822,103 +1060,6 @@
             </div>
         </div>
     }
-
-    @* ── Photo editor (modal-like card) ──
-       Opens when staff clicks "Change Photo" on the picture. Mirrors the
-       CreateProduct.razor picture dropzone + preview card UI. The user
-       picks a file, sees a preview, then clicks "Save photo" to:
-         1. Upload the new file via IFileStorage.SaveAsync.
-         2. Hard-delete the OLD file via IFileStorage.DeleteAsync.
-         3. Dispatch UpdateProductDetailsCommand with the new PictureUrl.
-       Cancel closes the editor without saving. Same validation rules as
-       CreateProduct: JPEG/PNG/WebP only, 5 MB max. *@
-    @if (_isPhotoEditorOpen && _product is not null)
-    {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 1.5rem; margin-top: 1rem; border-top: 2px solid var(--rz-primary);">
-            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Style="margin-bottom: 1rem;">
-                <RadzenIcon Icon="photo_camera" Style="color: var(--rz-primary);" />
-                <RadzenText Text="@Loc["ChangePhotoTitle"]" TextStyle="TextStyle.H6" Style="font-weight: 600; margin: 0;" />
-                <RadzenButton Icon="close"
-                              ButtonStyle="ButtonStyle.Light"
-                              Variant="Variant.Text"
-                              Size="ButtonSize.Small"
-                              Style="margin-inline-start: auto;"
-                              Click="@(() => _isPhotoEditorOpen = false)"
-                              AriaLabel="@Loc["ClosePhotoEditor"]" />
-            </RadzenStack>
-
-            <div class="upload-section">
-                @if (_selectedFile is null)
-                {
-                    <label class="picture-dropzone">
-                        <InputFile OnChange="@OnInputFileChange"
-                                   accept="image/jpeg,image/png,image/webp"
-                                   class="picture-dropzone-input" />
-                        <div class="picture-dropzone-body">
-                            <RadzenIcon Icon="cloud_upload"
-                                        Style="font-size: 2.5rem; color: var(--rz-primary);" />
-                            <div class="picture-dropzone-text">
-                                <span class="picture-dropzone-title">@Loc["UploadDropzoneTitle"]</span>
-                                <span class="picture-dropzone-hint">@Loc["UploadDropzoneHint"]</span>
-                            </div>
-                        </div>
-                    </label>
-                }
-                else
-                {
-                    <div class="upload-card">
-                        @if (!string.IsNullOrEmpty(_previewDataUrl))
-                        {
-                            <img src="@_previewDataUrl" alt="preview" class="upload-preview" />
-                        }
-                        else
-                        {
-                            <div class="upload-preview-placeholder">
-                                <RadzenIcon Icon="image" />
-                            </div>
-                        }
-                        <div class="upload-info">
-                            <div class="file-name">@_selectedFile.Name</div>
-                            <div class="file-size">@FormatBytes(_selectedFile.Size)</div>
-                        </div>
-                        <RadzenButton Text="@Loc["RemoveImage"]"
-                                      Icon="delete"
-                                      ButtonStyle="ButtonStyle.Danger"
-                                      Variant="Variant.Outlined"
-                                      Click="@RemoveSelectedImage" />
-                    </div>
-                    <RadzenText TextStyle="TextStyle.Caption"
-                                Style="color: var(--rz-text-secondary-color); display: block;">
-                        @Loc["PictureHint"]
-                    </RadzenText>
-                }
-
-                @if (!string.IsNullOrEmpty(_uploadError))
-                {
-                    <RadzenAlert Title="@Loc["UploadErrorTitle"]"
-                                 Text="@_uploadError"
-                                 AlertStyle="AlertStyle.Danger"
-                                 Variant="Variant.Filled"
-                                 ShowIcon="true" />
-                }
-
-                <div class="edit-actions">
-                    <RadzenButton Text="@Loc["CancelPhotoEditor"]"
-                                  Icon="close"
-                                  ButtonStyle="ButtonStyle.Light"
-                                  Variant="Variant.Outlined"
-                                  Disabled="@(_isSavingPhoto)"
-                                  Click="@(() => _isPhotoEditorOpen = false)" />
-                    <RadzenButton Text="@Loc["SavePhoto"]"
-                                  Icon="save"
-                                  ButtonStyle="ButtonStyle.Primary"
-                                  Variant="Variant.Filled"
-                                  Disabled="@(_selectedFile is null || _selectedFileBytes is null || _isSavingPhoto)"
-                                  Click="@HandleSavePhotoAsync" />
-                </div>
-            </div>
-        </RadzenCard>
-    }
 </RadzenStack>
 
 @code {
@@ -958,6 +1099,28 @@
     private int? _editStock;
     private bool _isSavingStock;
     private bool _showStockError;
+
+    // ── Category editor state (staff-only) ──
+    //
+    // Holds the user's selections for the three-level category cascade.
+    // _editCategoryId is required (every product must belong to a Category);
+    // _editSubCategoryId / _editSubSubCategoryId are nullable (a product can
+    // live at the Category level only, or at the Category/Sub level only).
+    //
+    // The cascade is identical to CreateProduct's category picker:
+    //   - _categories            → ALL active categories (loaded once)
+    //   - _availableSubCategories → filtered to the selected Category's children
+    //   - _availableSubSubCategories → filtered to the selected SubCategory's children
+    // Switching the Category resets Sub + SubSub; switching Sub resets SubSub.
+
+    private List<CategoryDto> _categories = new();
+    private List<SubCategoryDto> _availableSubCategories = new();
+    private List<SubSubCategoryDto> _availableSubSubCategories = new();
+    private Guid? _editCategoryId;
+    private Guid? _editSubCategoryId;
+    private Guid? _editSubSubCategoryId;
+    private bool _isLoadingCategories;
+    private bool _isSavingCategory;
 
     // ── Photo editor state ──
     //
@@ -1053,9 +1216,17 @@
                 _editName = _product.Name;
                 _editDescription = _product.Description;
 
+                // Seed the category-editor cascade with the product's current
+                // assignment so the dropdowns open showing the current
+                // Category / SubCategory / SubSubCategory instead of blanks.
+                _editCategoryId = _product.CategoryId;
+                _editSubCategoryId = _product.SubCategoryId;
+                _editSubSubCategoryId = _product.SubSubCategoryId;
+
                 var categoryTask = LoadCategoryHierarchyAsync();
                 var groupsTask = _canEdit ? LoadGroupNamesAsync() : Task.CompletedTask;
-                await Task.WhenAll(categoryTask, groupsTask);
+                var categoriesTask = _canEdit ? LoadCategoriesAsync() : Task.CompletedTask;
+                await Task.WhenAll(categoryTask, groupsTask, categoriesTask);
             }
         }
         finally
@@ -1148,6 +1319,60 @@
         catch
         {
             // Swallow — breadcrumb is purely a UI nicety.
+        }
+    }
+
+    /// <summary>
+    /// Loads the active category tree for the staff-only category editor.
+    /// Populates _categories (all active Categories) and — if the product
+    /// currently has a Category / SubCategory selected — also populates
+    /// _availableSubCategories / _availableSubSubCategories so the dropdowns
+    /// show the right child options on first render (otherwise the Sub
+    /// dropdown would be empty until the user re-picks the Category).
+    ///
+    /// Non-fatal: if the load fails, the editor just shows an empty list
+    /// and the user can't change the category until they refresh.
+    /// </summary>
+    private async Task LoadCategoriesAsync()
+    {
+        _isLoadingCategories = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess && result.Value is not null)
+            {
+                _categories = result.Value;
+
+                // If the product currently has a CategoryId, seed the Sub
+                // dropdown's available options from that Category's children
+                // so the user sees the current SubCategory pre-selected on
+                // first render (rather than the dropdown being empty until
+                // they re-pick the Category).
+                if (_editCategoryId is not null
+                    && _categories.FirstOrDefault(c => c.Id == _editCategoryId.Value) is { } currentCat)
+                {
+                    _availableSubCategories = currentCat.SubCategories;
+
+                    // Same for SubSub: if a Sub is selected, find its parent
+                    // SubCategory and seed the SubSub dropdown from its children.
+                    if (_editSubCategoryId is not null
+                        && _availableSubCategories.FirstOrDefault(sc => sc.Id == _editSubCategoryId.Value) is { } currentSub)
+                    {
+                        _availableSubSubCategories = currentSub.SubSubCategories;
+                    }
+                }
+            }
+            // Non-fatal — editor shows empty list on failure.
+        }
+        catch
+        {
+            // Swallow — the category editor will just show empty dropdowns.
+        }
+        finally
+        {
+            _isLoadingCategories = false;
         }
     }
 
@@ -1375,6 +1600,131 @@
         finally
         {
             _isSavingDetails = false;
+        }
+    }
+
+    // ── Category cascade handlers (staff-only) ──────────────────────────
+
+    /// <summary>
+    /// Fired when the user changes the top-level Category dropdown in the
+    /// category editor. Resets Sub + SubSub selections (because the old
+    /// Sub no longer belongs to the new Category — keeping it would be an
+    /// invalid hierarchy), and refreshes _availableSubCategories from the
+    /// newly selected Category's children. _availableSubSubCategories is
+    /// cleared (no Sub selected → no SubSub list).
+    ///
+    /// Mirrors CreateProduct.razor's OnCategoryChanged.
+    /// </summary>
+    private Task OnEditCategoryChanged(Guid? categoryId)
+    {
+        _editCategoryId = categoryId;
+        _editSubCategoryId = null;
+        _editSubSubCategoryId = null;
+
+        _availableSubCategories = categoryId is null
+            ? new()
+            : _categories.FirstOrDefault(c => c.Id == categoryId.Value)?.SubCategories ?? new();
+
+        _availableSubSubCategories = new();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Fired when the user changes the SubCategory dropdown. Resets the
+    /// SubSub selection (the old SubSub no longer belongs to the new Sub),
+    /// and refreshes _availableSubSubCategories from the newly selected
+    /// SubCategory's children.
+    ///
+    /// Mirrors CreateProduct.razor's OnSubCategoryChanged.
+    /// </summary>
+    private Task OnEditSubCategoryChanged(Guid? subCategoryId)
+    {
+        _editSubCategoryId = subCategoryId;
+        _editSubSubCategoryId = null;
+
+        _availableSubSubCategories = subCategoryId is null
+            ? new()
+            : _availableSubCategories.FirstOrDefault(sc => sc.Id == subCategoryId.Value)?.SubSubCategories ?? new();
+
+        return Task.CompletedTask;
+    }
+
+    // ── Save category (staff-only) ─────────────────────────────────────
+
+    /// <summary>
+    /// Saves the product's category assignment. Dispatches
+    /// <see cref="UpdateProductCategoryCommand"/> with the three selected
+    /// ids. The handler validates the hierarchy server-side (Category
+    /// exists, Sub belongs to Category, SubSub belongs to Sub) and the
+    /// domain enforces "SubSub requires Sub" — defense-in-depth so the
+    /// UI can't leave the aggregate in an inconsistent state.
+    ///
+    /// On success, updates _product locally (so the breadcrumb +
+    /// category-hierarchy chip refresh without a full reload) and re-runs
+    /// LoadCategoryHierarchyAsync to refresh the displayed hierarchy string.
+    /// </summary>
+    private async Task HandleSaveCategoryAsync()
+    {
+        if (_product is null) return;
+        // Category is required at the domain level — without it, UpdateCategory
+        // throws. Guard here so we don't dispatch a doomed command.
+        if (_editCategoryId is null || _editCategoryId == Guid.Empty)
+        {
+            await Toast.Error(Loc["CategoryRequiredError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isSavingCategory = true;
+        try
+        {
+            var command = new UpdateProductCategoryCommand(
+                ProductId: _product.Id,
+                CategoryId: _editCategoryId.Value,
+                SubCategoryId: _editSubCategoryId,
+                SubSubCategoryId: _editSubSubCategoryId);
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                // Reflect the change locally so the breadcrumb + category
+                // hierarchy chip refresh without a full reload. ProductDto
+                // is a class (not a record), so we create a new instance
+                // copying all fields and overwriting the category trio.
+                _product = new ProductDto
+                {
+                    Id = _product.Id,
+                    Name = _product.Name,
+                    Description = _product.Description,
+                    PictureUrl = _product.PictureUrl,
+                    Price = _product.Price,
+                    StockQuantity = _product.StockQuantity,
+                    CategoryId = _editCategoryId.Value,
+                    SubCategoryId = _editSubCategoryId,
+                    SubSubCategoryId = _editSubSubCategoryId,
+                    PurchaseLimits = _product.PurchaseLimits
+                };
+
+                // Re-load the hierarchy string so the breadcrumb + chip show
+                // the new Category / Sub / SubSub names immediately.
+                await LoadCategoryHierarchyAsync();
+
+                await Toast.Success(
+                    Loc["CategorySaved"],
+                    summary: Loc["CategorySavedTitle"]);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSavingCategory = false;
         }
     }
 

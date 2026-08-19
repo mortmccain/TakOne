@@ -61,6 +61,7 @@
 @attribute [Authorize(Roles = "Admin,Manager")]
 @using System.ComponentModel.DataAnnotations
 @using System.Globalization
+@using System.Text
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using Wolverine
@@ -122,16 +123,16 @@
             }
 
             /* Help panel on the right — same pattern as CreateUser.razor.
-                           Sticky on desktop so it stays visible while the user scrolls
-                           the form on small screens. */
+                                       Sticky on desktop so it stays visible while the user scrolls
+                                       the form on small screens. */
             .help-panel {
                 position: sticky;
                 top: 1rem;
             }
 
                 /* Section title — small heading inside the help card with
-                               a leading icon. Mirrors the .section-title pattern used
-                               on the Settings page's cards. */
+                                           a leading icon. Mirrors the .section-title pattern used
+                                           on the Settings page's cards. */
                 .help-panel .section-title {
                     display: flex;
                     align-items: center;
@@ -158,8 +159,8 @@
             }
 
             /* RTL fallback for RadzenNumeric — the inner input is forced
-                           LTR so the caret + digit grouping reads correctly in both
-                           LTR and RTL layouts. Same pattern as CreateProduct.razor. */
+                                       LTR so the caret + digit grouping reads correctly in both
+                                       LTR and RTL layouts. Same pattern as CreateProduct.razor. */
             .salary-row .rz-numeric .rz-textbox {
                 direction: ltr;
                 text-align: left;
@@ -227,7 +228,40 @@
                     @* ── Salary Amount + Currency ──
                        Side-by-side row: amount takes the remaining space,
                        currency is fixed 220px. Same .salary-row pattern as
-                       CreateProduct.razor's .price-row. *@
+                       CreateProduct.razor's .price-row.
+
+                       AMOUNT TEXTBOX:
+                         We use a RadzenTextBox bound to a STRING field
+                         (_salaryAmountText), NOT a RadzenNumeric bound
+                         to a decimal. Three reasons:
+                           1. IRR amounts are whole Rial — we never want
+                              to show 2 decimal digits. RadzenNumeric
+                              with TValue=decimal defaults to 2 decimals
+                              and there's no clean way to make Decimals
+                              conditional on the currency at runtime.
+                           2. We need thousands separators (N0 format).
+                              RadzenNumeric.Format="N0" DOES add them,
+                              BUT only when the input is NOT focused —
+                              and even then .NET's NativeDigits is
+                              informational-only (see CultureFormat.cs
+                              header comment), so the digits come out
+                              ASCII in fa-IR mode.
+                           3. We need Persian digits (۰-۹) when the UI
+                              culture is fa-IR. The only reliable way
+                              to get Persian digits out of .NET is the
+                              manual swap in CultureFormat.ToCultureDigits.
+                              That swap has to happen on a STRING we
+                              control — not inside RadzenNumeric.
+                         So: bind a string, format on blur, parse on
+                         focus. The user edits the raw invariant number
+                         while the input is focused (easy typing, no
+                         separators to fight with), and sees the
+                         formatted (thousand-separated, Persian-digit)
+                         form when not editing. NOTE: the format is
+                         re-evaluated whenever the currency dropdown
+                         changes (OnSalaryCurrencyChanged) so switching
+                         between IRR (N0) and USD (N2) re-formats the
+                         displayed amount appropriately. *@
                     <div>
                         <RadzenText Text="@Loc["FieldSalary"]"
                                     TextStyle="TextStyle.Caption"
@@ -235,11 +269,12 @@
 
                         <div class="salary-row">
                             <RadzenFormField Text="@Loc["FieldAmount"]" Class="salary-amount" Style="width: 100%;">
-                                <RadzenNumeric @bind-Value="_model.SalaryAmount"
-                                               TValue="decimal"
-                                               Min="0"
-                                               Step="1000"
-                                               Style="width: 100%;" />
+                                <RadzenTextBox @bind-Value="_salaryAmountText"
+                                               TValue="string"
+                                               Style="width: 100%; direction: ltr; text-align: left;"
+                                               Placeholder="@Loc["FieldAmountPlaceholder"]"
+                                               @onfocus="OnSalaryAmountFocus"
+                                               @onblur="OnSalaryAmountBlur" />
                             </RadzenFormField>
 
                             <RadzenFormField Text="@Loc["FieldCurrency"]" Class="salary-currency" Style="width: 100%;">
@@ -251,6 +286,7 @@
                                                 AllowCustomValue="true"
                                                 AllowFiltering="true"
                                                 Placeholder="@Loc["CurrencyPlaceholder"]"
+                                                Change="@(args => OnSalaryCurrencyChanged(args?.ToString()))"
                                                 Style="width: 100%;" />
                             </RadzenFormField>
                         </div>
@@ -270,12 +306,17 @@
                                       Disabled="@_isSubmitting"
                                       Click="@(() => Navigation.NavigateTo("/Admin/Groups", forceLoad: false))" />
 
-                        <RadzenButton Text="@Loc["CreateButton"]"
-                                      Icon="check"
-                                      ButtonType="ButtonType.Submit"
+                        <RadzenButton ButtonType="ButtonType.Submit"
                                       ButtonStyle="ButtonStyle.Primary"
                                       Variant="Variant.Filled"
                                       Disabled="@_isSubmitting">
+                            @* ChildContent (this @if block) takes precedence over
+                               the Text= and Icon= parameters on RadzenButton —
+                               once any child content exists, Radzen stops rendering
+                               Text/Icon. So we render the icon + text EXPLICITLY
+                               here, swapping to a spinner while submitting. This
+                               is the only way to keep the button text visible
+                               AND show an inline spinner during submit. *@
                             @if (_isSubmitting)
                             {
                                 <RadzenProgressBarCircular ShowValue="false"
@@ -283,6 +324,11 @@
                                                            Size="ProgressBarCircularSize.Small"
                                                            Style="margin-inline-end: 0.5rem;" />
                             }
+                            else
+                            {
+                                <RadzenIcon Icon="check" Style="margin-inline-end: 0.5rem;" />
+                            }
+                            <span>@Loc["CreateButton"]</span>
                         </RadzenButton>
                     </div>
                 </div>
@@ -345,6 +391,27 @@
 
     private bool _isSubmitting;
     private string? _submitError;
+
+    /// <summary>
+    /// The text shown in the Salary Amount textbox. Bound to a STRING (not a
+    /// decimal) so we can format it ourselves: thousands separators + Persian
+    /// digits (in fa-IR mode) + 0 decimal places when the currency is IRR.
+    /// See the comment block above the textbox in the markup for the full
+    /// rationale of why RadzenNumeric + decimal wasn't suitable.
+    ///
+    /// SYNC CONTRACT:
+    ///   - On focus: parsed to a decimal, then re-stored as the raw invariant
+    ///     string (e.g. "1234567") so the user can edit easily without
+    ///     fighting separators.
+    ///   - On blur: parsed to a decimal, then re-stored as the formatted
+    ///     display value (e.g. "1,234,567" in en-US, "۱٬۲۳۴٬۵۶۷" in fa-IR),
+    ///     AND propagated to _model.SalaryAmount for form submission.
+    ///   - On currency change: re-formatted (because IRR uses N0, others N2).
+    ///   - On submit (HandleSubmitAsync): re-parsed from text to decimal
+    ///     defensively, in case the user clicked Save while the textbox was
+    ///     still focused (so onblur hadn't fired yet).
+    /// </summary>
+    private string _salaryAmountText = string.Empty;
 
     /// <summary>
     /// The most common ISO 4217 currency codes — identical to
@@ -410,6 +477,23 @@
             _model.Name = _model.Name.Trim();
             _model.SalaryCurrency = _model.SalaryCurrency.Trim().ToUpperInvariant();
 
+            // Defensive re-parse of the salary textbox. Normally OnBlur
+            // fires before the submit button's click handler does, but a
+            // JS-initiated submit or Enter-key submit could race. Parsing
+            // here too guarantees _model.SalaryAmount reflects whatever
+            // the user typed, even if OnBlur hasn't run yet.
+            //
+            // If parsing fails (user typed garbage), we leave _model.SalaryAmount
+            // alone — DataAnnotationsValidator's [Range] attribute will catch
+            // an out-of-range value, and the OnInvalidSubmit handler will
+            // surface the validation error. We DON'T set SalaryAmount to 0
+            // because that would mask the real "invalid input" issue with
+            // a misleading "amount 0" success.
+            if (TryParseAmount(_salaryAmountText, out var parsedAmount))
+            {
+                _model.SalaryAmount = parsedAmount;
+            }
+
             var command = new CreateCustomerGroupCommand(
                 _model.Name,
                 _model.SalaryAmount,
@@ -451,5 +535,130 @@
     {
         _submitError = null;
         return Task.CompletedTask;
+    }
+
+    // ── Salary amount textbox helpers ────────────────────────────────────
+
+    /// <summary>
+    /// Formats a decimal salary amount for DISPLAY in the textbox (i.e.
+    /// when the input is NOT focused). Returns a string with:
+    ///   - Persian digits (۰-۹) when the UI culture is fa-IR, ASCII (0-9)
+    ///     otherwise — via <see cref="CultureFormat.ToCultureDigits"/>.
+    ///   - Thousands separators ("," in en-US, "٬" in fa-IR — also handled
+    ///     by ToCultureDigits since the .NET N0 format produces commas
+    ///     and ToCultureDigits swaps them).
+    ///   - 0 decimal places when the currency is IRR (whole-Rial — Iran's
+    ///     currency has no fractional unit in practice for salary values).
+    ///     2 decimal places for other currencies (USD, EUR, etc.).
+    /// </summary>
+    private string FormatSalaryForDisplay(decimal amount)
+    {
+        var isIrr = string.Equals(_model.SalaryCurrency, "IRR",
+            StringComparison.OrdinalIgnoreCase);
+        // N0 = no decimals, with thousands separators.
+        // N2 = 2 decimal places, with thousands separators.
+        // InvariantCulture produces ASCII digits + comma separators; we then
+        // run ToCultureDigits to swap them for Persian digits + ٬ separator
+        // when the UI culture is fa-IR.
+        var fmt = isIrr ? "N0" : "N2";
+        return CultureFormat.ToCultureDigits(
+            amount.ToString(fmt, CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Parses a string the user typed into the salary amount textbox into
+    /// a decimal. Accepts:
+    ///   - ASCII digits "0"-"9"
+    ///   - Persian digits "۰"-"۹" (converted to ASCII before parsing)
+    ///   - Thousands separators "," and "٬" (ignored)
+    ///   - Decimal separator "." (ASCII) or "٫" (Persian) — both converted
+    ///     to "." for the InvariantCulture parser
+    ///   - Leading/trailing whitespace (trimmed)
+    /// Returns false on any parse failure (caller decides what to do —
+    /// usually leaves _model.SalaryAmount alone and lets validation catch
+    /// the bad input).
+    /// </summary>
+    private static bool TryParseAmount(string? input, out decimal amount)
+    {
+        amount = 0m;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+
+        // Normalize: strip separators, convert Persian digits/decimal-point
+        // to ASCII equivalents, then parse with InvariantCulture.
+        var sb = new StringBuilder(input.Length);
+        foreach (var c in input.Trim())
+        {
+            if (c == ',' || c == '٬') continue;       // thousands separator
+            if (c == '٫') sb.Append('.');              // Persian decimal point
+            else if (c >= '۰' && c <= '۹')
+                sb.Append((char)('0' + (c - '۰')));    // Persian digit → ASCII
+            else sb.Append(c);
+        }
+
+        return decimal.TryParse(sb.ToString(),
+            NumberStyles.Number, CultureInfo.InvariantCulture, out amount);
+    }
+
+    /// <summary>
+    /// Fired when the salary amount textbox gains focus. Switches the
+    /// displayed text from the formatted (thousand-separated, Persian-digit)
+    /// form to the raw invariant number so the user can edit easily
+    /// without fighting separators. If the current text doesn't parse
+    /// (e.g. user typed garbage that we couldn't format on a previous
+    /// blur), we leave the text alone so the user can see what they typed.
+    /// </summary>
+    private void OnSalaryAmountFocus()
+    {
+        if (TryParseAmount(_salaryAmountText, out var amount))
+        {
+            // InvariantCulture produces ASCII digits + "." decimal separator
+            // — the safest form for free-text editing. No thousands separators
+            // (they'd just get in the way while typing).
+            _salaryAmountText = amount.ToString(CultureInfo.InvariantCulture);
+        }
+        // else: leave the text alone so the user can fix whatever they typed.
+    }
+
+    /// <summary>
+    /// Fired when the salary amount textbox loses focus. Parses the current
+    /// text to a decimal, propagates it to <see cref="CreateGroupForm.SalaryAmount"/>
+    /// (so the form's [Range] validation can fire on the real value), and
+    /// re-formats the displayed text with thousand separators + Persian
+    /// digits (in fa-IR) + 0 decimals (in IRR). If parsing fails, we leave
+    /// both the text and _model.SalaryAmount alone — DataAnnotationsValidator
+    /// will surface a validation error via the [Required] + [Range] attrs.
+    /// </summary>
+    private void OnSalaryAmountBlur()
+    {
+        if (TryParseAmount(_salaryAmountText, out var amount))
+        {
+            _model.SalaryAmount = amount;
+            _salaryAmountText = FormatSalaryForDisplay(amount);
+        }
+        // else: leave text + SalaryAmount alone — validation will fire on submit.
+    }
+
+    /// <summary>
+    /// Fired when the salary currency dropdown changes. The new currency
+    /// code is propagated to <see cref="CreateGroupForm.SalaryCurrency"/>
+    /// (redundant with @bind-Value, but eliminates any timing ambiguity
+    /// with binding propagation — same pattern as EditGroup's status filter).
+    /// Then the displayed amount is re-formatted, because IRR uses N0 (no
+    /// decimals) and other currencies use N2 (2 decimals) — switching
+    /// currency while the textbox shows a formatted value would otherwise
+    /// leave stale precision.
+    /// </summary>
+    private void OnSalaryCurrencyChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            _model.SalaryCurrency = value.Trim().ToUpperInvariant();
+        }
+
+        // Re-format the displayed amount under the new currency.
+        if (TryParseAmount(_salaryAmountText, out var amount))
+        {
+            _salaryAmountText = FormatSalaryForDisplay(amount);
+        }
     }
 }

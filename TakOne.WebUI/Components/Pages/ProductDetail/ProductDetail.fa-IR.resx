@@ -255,4 +255,43 @@
   <data name="StockSetSuccess" xml:space="preserve">
     <value>موجودی «{0}» برابر {1} تنظیم شد.</value>
   </data>
+  <data name="CategoryEditorTitle" xml:space="preserve">
+    <value>تخصیص دسته‌بندی</value>
+  </data>
+  <data name="CategoryEditorLoading" xml:space="preserve">
+    <value>در حال بارگذاری دسته‌بندی‌ها…</value>
+  </data>
+  <data name="CategoryEditorEmpty" xml:space="preserve">
+    <value>هنوز دسته‌بندی‌ای ثبت نشده. ابتدا یک دسته‌بندی در صفحهٔ دسته‌بندی‌ها ایجاد کنید.</value>
+  </data>
+  <data name="CategoryEditorHint" xml:space="preserve">
+    <value>این محصول را به یک دسته‌بندی موجود دیگر تخصیص دهید. دسته‌بندی‌های جدید باید ابتدا در صفحهٔ دسته‌بندی‌ها ایجاد شوند.</value>
+  </data>
+  <data name="FieldCategory" xml:space="preserve">
+    <value>دسته‌بندی *</value>
+  </data>
+  <data name="FieldSubCategory" xml:space="preserve">
+    <value>زیردسته</value>
+  </data>
+  <data name="FieldSubSubCategory" xml:space="preserve">
+    <value>زیرِ زیردسته</value>
+  </data>
+  <data name="CategoryPlaceholder" xml:space="preserve">
+    <value>— یک دسته‌بندی انتخاب کنید —</value>
+  </data>
+  <data name="CategoryOptionalPlaceholder" xml:space="preserve">
+    <value>— اختیاری —</value>
+  </data>
+  <data name="SaveCategory" xml:space="preserve">
+    <value>ذخیره دسته‌بندی</value>
+  </data>
+  <data name="CategoryRequiredError" xml:space="preserve">
+    <value>انتخاب دسته‌بندی الزامی است.</value>
+  </data>
+  <data name="CategorySavedTitle" xml:space="preserve">
+    <value>دسته‌بندی به‌روزرسانی شد</value>
+  </data>
+  <data name="CategorySaved" xml:space="preserve">
+    <value>دسته‌بندی محصول به‌روزرسانی شد.</value>
+  </data>
 </root>
