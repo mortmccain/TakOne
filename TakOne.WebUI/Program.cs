@@ -839,6 +839,29 @@ if (app.Environment.IsDevelopment() || defaultAdminOptions.Enabled)
 }
 
 // ==================================================================================================================================
+//                                                          STATIC WEB ASSETS
+// ==================================================================================================================================
+// Map static web assets — the .NET 8+ API that serves URLs under
+// `/_content/{LibraryName}/...` from referenced Razor class libraries.
+//
+// WHY THIS IS NEEDED:
+//   Radzen.Blazor is a Razor class library that exposes its CSS + JS via
+//   `_content/Radzen.Blazor/Radzen.Blazor.css` and similar paths. The
+//   Blazor pages also reference `/_content/Radzen.Blazor/Radzen.Blazor.js`.
+//   Without `MapStaticAssets()`, those URLs return 404 and the entire UI
+//   renders unstyled (Radzen components need their CSS to look right).
+//   `app.UseStaticFiles()` (called above) only serves files from the
+//   physical `wwwroot/` directory; it does NOT serve the static web
+//   assets manifest that the SDK generates for referenced RCLs.
+//
+// WHY THIS IS CALLED LATE:
+//   `MapStaticAssets()` is a terminal-adjacent call (it registers
+//   endpoint routes). It must run AFTER `UseRouting` + `UseAuthorization`
+//   (which are above), but BEFORE `app.Run()`. The .NET 10 default
+//   template calls it right before `app.Run()`.
+app.MapStaticAssets();
+
+// ==================================================================================================================================
 //                                                          RUN
 // ==================================================================================================================================
 
