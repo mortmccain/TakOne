@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Radzen;
@@ -21,6 +22,21 @@ using TakOne.WebUI.Services.Logging;
 using Wolverine;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Enable static web assets (serves `/_content/{Library}/...` URLs from
+// referenced Razor class libraries like Radzen.Blazor). In .NET 8+ this is
+// usually automatic in Development (via the SDK's `Microsoft.AspNetCore.StaticWebAssets`
+// pack), but in a Production Docker container, `app.MapStaticAssets()` (called
+// later) only works if the runtime manifest was emitted at publish time.
+//
+// `UseStaticWebAssets()` is the explicit, environment-agnostic API — it tells
+// the host to load the static web assets manifest regardless of environment.
+// Without it, the Docker Production container serves every `/_content/Radzen.Blazor/*`
+// request as 404, and the UI renders unstyled.
+//
+// (Call this BEFORE any services are added so the manifest is loaded into
+// the config pipeline before components try to resolve asset URLs.)
+builder.WebHost.UseStaticWebAssets();
 
 // ==================================================================================================================================
 //                                                          SERVICES

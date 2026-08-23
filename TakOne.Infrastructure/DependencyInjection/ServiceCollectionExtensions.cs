@@ -364,22 +364,36 @@ public static class ServiceCollectionExtensions
             options.Cookie.Name = "TakOne.Auth";
             options.Cookie.HttpOnly = true;
 
-            // SecurePolicy: Always in production (HTTPS-only), SameAsRequest
-            // in Development so the cookie works over HTTP when the dev
-            // HTTPS cert isn't trusted (common on first-run dev machines).
+            // SecurePolicy: Always when the app is serving HTTPS directly,
+            // SameAsRequest when it isn't (Development + HTTP-only Docker).
             //
-            // SYMPTOM if this is Always in dev and the developer hits the
-            // app over HTTP: login POST succeeds, cookie is Set on the
-            // response with the Secure flag, but the browser refuses to
-            // send it back on the next (HTTP) request. The user is
-            // immediately redirected back to /Account/Login with the
-            // info-style "LoginRequired" banner — looks like "login failed
-            // with no error".
+            // SYMPTOM if this is Always while the app is reached over HTTP:
+            // login POST succeeds, cookie is Set on the response with the
+            // Secure flag, but the browser refuses to send it back on the
+            // next (HTTP) request. The user is immediately redirected back
+            // to /Account/Login with the info-style "LoginRequired" banner
+            // — looks like "login failed with no error".
             //
-            // We capture hostEnvironment at registration time (passed in
-            // from Program.cs). Production keeps SecurePolicy.Always
-            // (hardened).
-            options.Cookie.SecurePolicy = hostEnvironment.IsDevelopment()
+            // Two HTTP-only scenarios:
+            //   1. Development       — `dotnet run` over HTTP (dev HTTPS
+            //                          cert not trusted on first run).
+            //   2. HTTP-only Docker  — `docker compose up` with no TLS
+            //                          cert mounted, exposed on port 8080.
+            //                          See the matching gate in Program.cs
+            //                          on `app.UseHttpsRedirection()` (also
+            //                          gated to Development only).
+            //
+            // In both cases we use SameAsRequest so the cookie is sent back
+            // over HTTP. Production deployments that terminate TLS at a
+            // reverse proxy (Caddy / Nginx) should set
+            // `TakOne:Auth:EnforceSecureCookie=true` in appsettings and add
+            // `app.UseForwardedHeaders(...)` so the app sees the proxy's
+            // X-Forwarded-Proto=https and SameAsRequest becomes HTTPS.
+            var enforceSecureCookie = configuration
+                .GetSection("TakOne:Auth:EnforceSecureCookie")
+                .Get<bool?>() ?? false; // safe default: don't enforce
+
+            options.Cookie.SecurePolicy = (hostEnvironment.IsDevelopment() || !enforceSecureCookie)
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;
 
