@@ -356,7 +356,24 @@ app.UseRequestLocalization();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
+    // HSTS + HTTPS redirection are intentionally DISABLED for the Docker
+    // deployment, which is HTTP-only on port 8080 (no TLS cert is mounted).
+    // Enabling HSTS or UseHttpsRedirection here would cause redirect loops
+    // and broken navigation — every request would be 307-redirected to an
+    // HTTPS port that nothing is listening on.
+    //
+    // For a public-facing deployment, the correct pattern is to put a
+    // reverse proxy (Caddy / Nginx / Traefik) in front that terminates
+    // TLS on 443 and forwards plain HTTP to this container on 8080. The
+    // reverse proxy sets `X-Forwarded-Proto=https`, and we'd then re-enable:
+    //     app.UseHsts();
+    //     app.UseHttpsRedirection();
+    // together with `app.UseForwardedHeaders(...)` so the app trusts the
+    // proxy's forwarded scheme header. See DEPLOYMENT.md for the planned
+    // reverse-proxy step.
+    //
+    // app.UseHsts();          // DISABLED — no TLS in Docker compose setup
+    // app.UseHttpsRedirection();  // DISABLED — same reason (see line ~367)
 }
 
 // NOTE: the method is `UseStatusCodePagesWithReExecute` (capital R, capital E)
@@ -364,7 +381,24 @@ if (!app.Environment.IsDevelopment())
 // parameter on this overload (that parameter exists on
 // UseExceptionHandler, not on the status-code pages APIs).
 app.UseStatusCodePagesWithReExecute("/not-found");
-app.UseHttpsRedirection();
+
+// HTTPS redirection — DISABLED for the Docker deployment (HTTP-only).
+// In Development (running via `dotnet run` with launchSettings.json's
+// HTTPS endpoint on port 7xxx), we DO want HTTPS redirection so the
+// dev experience matches a real TLS-terminated prod setup. In Production
+// (Docker container exposing only HTTP 8080), HTTPS redirection causes
+// every request to 307-redirect to an HTTPS port nobody is listening on,
+// breaking the whole UI.
+//
+// If you later put a TLS-terminating reverse proxy in front and want
+// HTTPS-only inside the container, re-enable this AND add
+// `app.UseForwardedHeaders(...)` so the app trusts the proxy's
+// X-Forwarded-Proto header.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseStaticFiles();
 
 app.UseRouting();
