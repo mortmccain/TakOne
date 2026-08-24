@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>محصولات — تک‌وان</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری...</value></data>
+  <data name="BudgetRemaining" xml:space="preserve"><value>بودجه ماهانه باقی‌مانده</value></data>
+  <data name="BudgetUsed" xml:space="preserve"><value>استفاده شده</value></data>
+  <data name="NoBudget" xml:space="preserve"><value>—</value></data>
+  <data name="Categories" xml:space="preserve"><value>دسته‌بندی‌ها</value></data>
+  <data name="AllCategories" xml:space="preserve"><value>همه</value></data>
+  <data name="HeroBadge" xml:space="preserve"><value>ویژه کارکنان</value></data>
+  <data name="HeroTitle" xml:space="preserve"><value>تنها در اوج، تک ماکارون</value></data>
+  <data name="HeroButton" xml:space="preserve"><value>سفارش های من</value></data>
+  <data name="NoProducts" xml:space="preserve"><value>محصولی یافت نشد.</value></data>
+  <data name="StockOut" xml:space="preserve"><value>ناموجود</value></data>
+  <data name="StockLow" xml:space="preserve"><value>رو به اتمام</value></data>
+  <data name="StockIn" xml:space="preserve"><value>موجود</value></data>
+  <data name="Add" xml:space="preserve"><value>افزودن</value></data>
+  <data name="AddedToCart" xml:space="preserve"><value>به سبد اضافه شد.</value></data>
+  <data name="AddedToCartTitle" xml:space="preserve"><value>افزوده شد</value></data>
+  <data name="AddError" xml:space="preserve"><value>اضافه کردن به سبد ناموفق بود.</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>خطا</value></data>
+  <data name="QuickReorder" xml:space="preserve"><value>سفارش سریع</value></data>
+  <data name="ReorderSuccess" xml:space="preserve"><value>سفارش قبلی با موفقیت تکرار شد.</value></data>
+  <data name="ReorderSuccessTitle" xml:space="preserve"><value>تکرار شد</value></data>
+  <data name="ReorderError" xml:space="preserve"><value>تکرار سفارش ناموفق بود.</value></data>
+  <data name="SupportTitle" xml:space="preserve"><value>پشتیبانی فنی</value></data>
+  <data name="SupportHours" xml:space="preserve"><value>ساعات پاسخگویی: ۸ تا ۱۷</value></data>
+  <data name="Call" xml:space="preserve"><value>تماس</value></data>
+  <data name="Version" xml:space="preserve"><value>نسخه ۱.۰.۰ • تک ماکارون © ۱۴۰۳</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+  <data name="AddButtonText" xml:space="preserve"><value>افزودن</value></data>
+  <data name="AddButtonLimitReached" xml:space="preserve"><value>به سقف خرید رسیده‌اید</value></data>
+  <data name="AddButtonLimitReachedTitle" xml:space="preserve"><value>به سقف خرید این محصول رسیده‌اید</value></data>
+  <data name="AddButtonSalaryReached" xml:space="preserve"><value>به سقف بودجه رسیدید</value></data>
+  <data name="AddButtonSalaryReachedTitle" xml:space="preserve"><value>افزودن این کالا از بودجهٔ ماهانهٔ حقوق شما فراتر می‌رود.</value></data>
+  <data name="AddButtonStockOut" xml:space="preserve"><value>ناموجود</value></data>
+  <data name="AddButtonReadOnly" xml:space="preserve"><value>فقط مشاهده</value></data>
+  <data name="AddButtonReadOnlyTitle" xml:space="preserve"><value>حساب شما فقط قابل مشاهده است و امکان ثبت سفارش ندارد.</value></data>
+  <data name="ToastAddedToCart" xml:space="preserve"><value>به سبد اضافه شد.</value></data>
+  <data name="ToastAddFailed" xml:space="preserve"><value>افزودن به سبد ناموفق بود.</value></data>
+  <data name="ToastAddError" xml:space="preserve"><value>خطای غیرمنتظره هنگام افزودن به سبد.</value></data>
+  <data name="ToastQtyMin" xml:space="preserve"><value>تعداد باید حداقل ۱ باشد.</value></data>
+  <data name="ToastLimitReached" xml:space="preserve"><value>به سقف خرید این محصول رسیده‌اید.</value></data>
+  <data name="ToastQtyClamped" xml:space="preserve"><value>تنها {0} عدد دیگر می‌توانید اضافه کنید — به این مقدار تنظیم شد.</value></data>
+  <data name="ToastSalaryReached" xml:space="preserve"><value>به سقف بودجهٔ ماهانهٔ حقوق رسیده‌اید.</value></data>
+</root>

@@ -1,0 +1,195 @@
+﻿@* BottomNav.razor — role-aware bottom navigation bar for mobile pages.
+   Renders different nav items based on:
+     1. The user's role (Customer vs Admin/Manager/Employee)
+     2. The current page (which "section" they're in)
+
+   CUSTOMER (always 4 items):
+     Products | My Orders | Cart | Settings
+
+   ADMIN/MANAGER/EMPLOYEE — items change based on current page:
+     In Dashboard:     Dashboard(selected) | Products | Admin Products | Admin Users | Settings
+     In Products:      Dashboard | Products(selected) | Orders | Cart | Settings
+     In Admin Products: Dashboard | Admin Products(selected) | Admin Categories | Settings
+     In Admin Users:   Dashboard | Admin Users(selected) | Customer Groups | Settings
+
+   The "section" is determined by the current URL path.
+*@
+
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@using System.Security.Claims
+@using TakOne.Application.Common.Authorization
+
+<nav class="bottom-nav">
+    @foreach (var item in _navItems)
+    {
+        <a href="@item.Href"
+           class="nav-item @(item.IsActive ? "active" : "")"
+           @onclick:preventDefault
+           @onclick="() => NavigateTo(item.Href)">
+            <div class="nav-indicator"></div>
+            @if (item.ShowBadge)
+            {
+                <div class="nav-icon-wrapper">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        @item.SvgPath
+                    </svg>
+                    <span class="nav-badge">۵</span>
+                </div>
+            }
+            else
+            {
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    @item.SvgPath
+                </svg>
+            }
+            <span class="nav-label">@item.Label</span>
+        </a>
+    }
+</nav>
+
+@code {
+    private List<NavItem> _navItems = new();
+
+    private bool _isAdmin;
+    private bool _isManager;
+    private bool _isEmployee;
+    private bool _isCustomer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _isAdmin = user.IsInRole(Roles.Admin);
+            _isManager = user.IsInRole(Roles.Manager);
+            _isEmployee = user.IsInRole(Roles.Employee);
+            _isCustomer = user.IsInRole(Roles.Customer) && !_isAdmin && !_isManager && !_isEmployee;
+        }
+        catch { }
+
+        BuildNavItems();
+    }
+
+    private void BuildNavItems()
+    {
+        _navItems.Clear();
+
+        var currentPath = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0];
+        // Normalize: remove leading slash, trailing slash
+        currentPath = currentPath.Trim('/').TrimEnd('/');
+
+        if (_isCustomer)
+        {
+            // Customer always sees the same 4 items regardless of page
+            _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, IsActive(currentPath, "m/Products")));
+            _navItems.Add(new NavItem("My Orders", "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
+            _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
+            _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+        }
+        else
+        {
+            // Staff: determine which "section" based on current path
+            if (IsActive(currentPath, "m/Dashboard") || currentPath == "" || currentPath == "/")
+            {
+                // Dashboard section
+                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, true));
+                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, false));
+                _navItems.Add(new NavItem("Admin Products", "/Admin/Products", NavIcon.AdminProducts, false));
+                _navItems.Add(new NavItem("Admin Users", "/Admin/Users", NavIcon.AdminUsers, false));
+                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+            }
+            else if (IsActive(currentPath, "m/Products") || IsActive(currentPath, "Products"))
+            {
+                // Products section
+                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, true));
+                _navItems.Add(new NavItem("Orders", "/Sales", NavIcon.Orders, false));
+                _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, false, ShowBadge: true));
+                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+            }
+            else if (IsActive(currentPath, "Admin/Products"))
+            {
+                // Admin Products section
+                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem("Admin Products", "/Admin/Products", NavIcon.AdminProducts, true));
+                _navItems.Add(new NavItem("Admin Categories", "/Admin/Categories", NavIcon.AdminCategories, false));
+                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+            }
+            else if (IsActive(currentPath, "Admin/Users"))
+            {
+                // Admin Users section
+                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem("Admin Users", "/Admin/Users", NavIcon.AdminUsers, true));
+                _navItems.Add(new NavItem("Customer Groups", "/Admin/Groups", NavIcon.CustomerGroups, false));
+                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+            }
+            else
+            {
+                // Fallback for other pages (Sales, Cart, Settings, etc.)
+                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, IsActive(currentPath, "")));
+                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, false));
+                _navItems.Add(new NavItem("Orders", "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
+                _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
+                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+            }
+        }
+    }
+
+    private static bool IsActive(string currentPath, string checkPath)
+    {
+        currentPath = currentPath.Trim('/').TrimEnd('/').ToLowerInvariant();
+        checkPath = checkPath.Trim('/').TrimEnd('/').ToLowerInvariant();
+        if (string.IsNullOrEmpty(checkPath)) return string.IsNullOrEmpty(currentPath);
+        return currentPath == checkPath || currentPath.StartsWith(checkPath + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void NavigateTo(string href)
+    {
+        Navigation.NavigateTo(href, forceLoad: false);
+    }
+
+    // ── Data structures ─────────────────────────────────────────────────
+
+    private sealed record NavItem(
+        string Label,
+        string Href,
+        Microsoft.AspNetCore.Components.MarkupString SvgPath,
+        bool IsActive,
+        bool ShowBadge = false);
+
+    // ── SVG icon paths (inline so no external dependency) ────────────────
+    // Each is the inner content of a <svg> element (paths/rects/etc).
+    // Using MarkupString so Blazor renders raw SVG without escaping.
+
+    private static class NavIcon
+    {
+        public static readonly Microsoft.AspNetCore.Components.MarkupString Dashboard =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString Products =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString Orders =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString Cart =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString Profile =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString AdminProducts =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.45 3.348-1.267 3.532a48.583 48.583 0 01-8.376.875M5 14.5L3.598 15.902c-1.232 1.232-.45 3.348 1.267 3.532a48.583 48.583 0 008.376.875'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString AdminCategories =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 8.25V6zm9.75 0A2.25 2.25 0 0115.75 3.75H18A2.25 2.25 0 0120.25 6v2.25a2.25 2.25 0 01-2.25 2.25h-2.25A2.25 2.25 0 0113.5 8.25V6zm-9.75 9.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zm9.75 0a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString AdminUsers =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z'/>";
+
+        public static readonly Microsoft.AspNetCore.Components.MarkupString CustomerGroups =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a4 4 0 11-8 0 4 4 0 018 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'/>";
+    }
+}

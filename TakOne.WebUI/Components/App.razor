@@ -121,6 +121,17 @@
         keep the browser's native find-in-page behavior. *@
     <script src="js/products.js?v=4"></script>
 
+    @* Mobile CSS — global styles for mobile pages + layout. Loaded on
+       every page so the mobile CSS is available when the mobile redirect
+       fires. Uses plain class names (no scoped CSS) so child components
+       like BottomNav are styled correctly. *@
+    <link rel="stylesheet" href="css/mobile.css?v=1" />
+
+    @* Mobile device detection — redirects mobile users from /Products
+       to /m/Products (the mobile version). Runs on DOMContentLoaded.
+       See wwwroot/js/mobile.js for the redirect logic. *@
+    <script src="js/mobile.js?v=1"></script>
+
     @* Chart.js — VENDORED locally (same pattern as SignalR).
        Used by the redesigned Dashboard page (Dashboard.razor) for the
        4 charts (line, donut, bar, pie). dashboard.js (below) wraps the

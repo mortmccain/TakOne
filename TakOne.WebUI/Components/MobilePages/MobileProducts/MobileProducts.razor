@@ -1,0 +1,597 @@
+﻿@* MobileProducts.razor — mobile version of the Products (shop) page.
+   Route: /m/Products
+   Layout: MobileLayout
+
+   PORTS ALL PC Products page features:
+     - Per-product qty selector (− value +)
+     - Grayed-out Add button (stock out, limit reached, salary reached, read-only)
+     - Salary budget cap on qty max + Add button
+     - Purchase limit cap on qty max + Add button
+     - Read-only user check (ReadOnly role without shopping roles)
+     - Quick reorder button
+     - Cart reload after add (so remaining limits reflect reality)
+*@
+
+@page "/m/Products"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetActiveCartForUser
+@using TakOne.Application.Sales.Commands.CreateOrAppendSale
+@using TakOne.Application.Sales.Commands.QuickReorderLastSale
+@using TakOne.Application.Sales.Queries.GetCustomerShopStats
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizerFactory LocalizerFactory
+@inject ILoggerFactory LoggerFactory
+@inject ToastService Toast
+
+<PageTitle>@_loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@_loc["Loading"]</p>
+    </div>
+}
+else
+{
+    @* ── 1. Budget / salary card ── *@
+    <div class="m-budget-card">
+        <div class="m-budget-content">
+            <div class="m-budget-info">
+                <p class="m-budget-label">@_loc["BudgetRemaining"]</p>
+                <p class="m-budget-amount">@FormatBudgetAmount()</p>
+                @if (_budgetConsumedPercent > 0)
+                {
+                    <div class="m-budget-bar-container">
+                        <div class="m-budget-bar-info">
+                            <span>@_loc["BudgetUsed"]</span>
+                            <span>@CultureFormat.FormatPercent(_budgetConsumedPercent, 0)</span>
+                        </div>
+                        <div class="m-budget-bar-track">
+                            <div class="m-budget-bar-fill" style="width: @($"{_budgetConsumedPercent:P0}")"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="m-budget-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.75rem; height: 1.75rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m3.75 0h7.5M3 5.25h18a.75.75 0 01.75.75v12a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z" />
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    @* ── 2. Category chips ── *@
+    <div class="m-section">
+        <div class="m-section-header">
+            <h2 class="m-section-title">@_loc["Categories"]</h2>
+        </div>
+        <div class="m-cat-scroll">
+            <button class="m-cat-chip @(_selectedCategoryId is null ? "active" : "")"
+                    @onclick="() => SelectCategory(null)">
+                <div class="m-cat-icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.5rem; height: 1.5rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                </div>
+                <span class="m-cat-label">@_loc["AllCategories"]</span>
+            </button>
+            @foreach (var cat in _categories)
+            {
+                <button class="m-cat-chip @(_selectedCategoryId == cat.Id ? "active" : "")"
+                        @onclick="() => SelectCategory(cat.Id)">
+                    <div class="m-cat-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.5rem; height: 1.5rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                        </svg>
+                    </div>
+                    <span class="m-cat-label">@cat.Name</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ── 3. Hero banner ── *@
+    <div class="m-hero">
+        <div class="m-hero-content">
+            <span class="m-hero-badge">
+                <span class="m-pulse-dot"></span>
+                @_loc["HeroBadge"]
+            </span>
+            <h3 class="m-hero-title">@_loc["HeroTitle"]</h3>
+            <button class="m-hero-btn" @onclick="GoToMyOrders">
+                @_loc["HeroButton"]
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 12px; height: 12px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    @* ── 4. Product list (1 column, with qty selector + grayed-out logic) ── *@
+    <div class="m-products">
+        @if (_products.Count == 0)
+        {
+            <p class="m-empty">@_loc["NoProducts"]</p>
+        }
+        else
+        {
+            @foreach (var product in _products)
+            {
+                var remaining = GetRemainingForProduct(product);
+                var qty = GetQtyForProduct(product.Id);
+                var limitReached = remaining <= 0;
+                var stockOut = product.StockQuantity <= 0;
+                var budget = _cart?.BudgetInfo;
+                var unitPrice = product.Price?.Amount ?? 0m;
+                var salaryReached = budget is not null
+                    && (qty * unitPrice) > budget.Remaining;
+                var disabled = limitReached || stockOut || salaryReached || _isAddingAny;
+
+                <div class="m-product-card">
+                    <div class="m-product-image" @onclick="() => GoToProduct(product.Id)">
+                        @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                        {
+                            <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                        }
+                        else
+                        {
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="color: var(--tm-gray);">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                            </svg>
+                        }
+                        @if (stockOut)
+                        {
+                            <span class="m-stock-badge m-stock-out">@_loc["StockOut"]</span>
+                        }
+                        else if (product.StockQuantity <= 10)
+                        {
+                            <span class="m-stock-badge m-stock-low">@_loc["StockLow"]</span>
+                        }
+                        else
+                        {
+                            <span class="m-stock-badge m-stock-in">@_loc["StockIn"]</span>
+                        }
+                    </div>
+                    <div class="m-product-body">
+                        <h4 class="m-product-name" @onclick="() => GoToProduct(product.Id)">@product.Name</h4>
+                        <p class="m-product-price">@FormatPrice(product.Price)</p>
+
+                        <div class="m-product-actions">
+                            <div class="m-qty-selector">
+                                <button type="button" class="m-qty-btn"
+                                        disabled="@(qty <= 1 || _isReadOnly)"
+                                        @onclick="(() => DecrementQty(product.Id))">
+                                    −
+                                </button>
+                                <span class="m-qty-value">@CultureFormat.FormatDigits(qty)</span>
+                                <button type="button" class="m-qty-btn"
+                                        disabled="@(qty >= GetQtyMaxForProduct(product) || _isReadOnly)"
+                                        @onclick="(() => IncrementQty(product.Id))">
+                                    +
+                                </button>
+                            </div>
+
+                            @if (_isReadOnly)
+                            {
+                                <button type="button" class="m-add-btn m-add-btn-full" disabled
+                                        title="@_loc["AddButtonReadOnlyTitle"]">
+                                    @_loc["AddButtonReadOnly"]
+                                </button>
+                            }
+                            else if (limitReached && !stockOut)
+                            {
+                                <button type="button" class="m-add-btn m-add-btn-full" disabled
+                                        title="@_loc["AddButtonLimitReachedTitle"]">
+                                    @_loc["AddButtonLimitReached"]
+                                </button>
+                            }
+                            else if (salaryReached && !stockOut)
+                            {
+                                <button type="button" class="m-add-btn m-add-btn-full" disabled
+                                        title="@_loc["AddButtonSalaryReachedTitle"]">
+                                    @_loc["AddButtonSalaryReached"]
+                                </button>
+                            }
+                            else if (stockOut)
+                            {
+                                <button type="button" class="m-add-btn m-add-btn-full" disabled>
+                                    @_loc["AddButtonStockOut"]
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="m-add-btn"
+                                        disabled="@_isAddingAny"
+                                        @onclick="() => AddToCartAsync(product)">
+                                    @if (_isAddingAny)
+                                    {
+                                        <span>…</span>
+                                    }
+                                    else
+                                    {
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 16px; height: 16px;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        <span>@_loc["AddButtonText"]</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @* ── 5. Quick reorder button ── *@
+    <div class="m-reorder-section">
+        <button class="m-reorder-btn" disabled="@(_isReordering || _isReadOnly)" @onclick="QuickReorderAsync">
+            @if (_isReordering)
+            {
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+            }
+            else
+            {
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 18px; height: 18px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+            }
+            @_loc["QuickReorder"]
+        </button>
+    </div>
+
+    @* ── 6. Support card ── *@
+    <div class="m-support-card">
+        <div class="m-support-icon">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 20px; height: 20px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+            </svg>
+        </div>
+        <div class="m-support-text">
+            <p class="m-support-title">@_loc["SupportTitle"]</p>
+            <p class="m-support-hours">@_loc["SupportHours"]</p>
+        </div>
+        <a href="tel:0211234" class="m-support-call-btn">@_loc["Call"]</a>
+    </div>
+
+    <div class="m-footer">@_loc["Version"]</div>
+}
+
+@code {
+    // ── Localizer (uses IStringLocalizerFactory with explicit base name —
+    //    same pattern as ChangePassword.razor, to sidestep a Razor
+    //    source-generator quirk with components in subfolders) ──
+    private IStringLocalizer _loc = default!;
+
+    // ── State ──
+    private List<ProductListItemDto> _products = new();
+    private List<CategoryDto> _categories = new();
+    private Guid? _selectedCategoryId;
+    private string _searchTerm = string.Empty;
+    private bool _isLoading = true;
+    private bool _isReadOnly;
+
+    // Cart + budget state (loaded from GetActiveCartForUserQuery)
+    private CartDto? _cart;
+
+    // Per-product quantity selector state. Keyed by ProductId.
+    private readonly Dictionary<Guid, int> _qtyByProduct = new();
+
+    // GLOBAL add-to-cart guard (prevents concurrent CreateOrAppendSaleCommand)
+    private bool _isAddingAny;
+    private bool _isReordering;
+
+    // Budget info for the salary card display
+    private decimal _budgetSalary;
+    private decimal _budgetConsumed;
+    private string _budgetCurrency = "IRR";
+    private decimal _budgetConsumedPercent => _budgetSalary > 0 ? Math.Min(1m, _budgetConsumed / _budgetSalary) : 0m;
+
+    // ── Lifecycle ──
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initialize localizer with explicit base name (same pattern as
+        // ChangePassword.razor — sidesteps Razor source-generator quirk
+        // where IStringLocalizer<T> doesn't find resources for components
+        // in subfolders).
+        _loc = LocalizerFactory.Create(
+            "TakOne.WebUI.Components.MobilePages.MobileProducts",
+            "TakOne.WebUI");
+
+        // Read search term from query string
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("search", out var searchValue))
+        {
+            _searchTerm = searchValue.ToString();
+        }
+
+        // Determine if user is read-only (same logic as PC Products page)
+        var canShop = CurrentUser.IsInRole(Roles.Customer)
+                      || CurrentUser.IsInRole(Roles.Employee)
+                      || CurrentUser.IsInRole(Roles.Manager)
+                      || CurrentUser.IsInRole(Roles.Admin);
+        _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly) && !canShop;
+
+        try
+        {
+            await Task.WhenAll(LoadProductsAsync(), LoadCategoriesAsync(), LoadCartAsync());
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ──
+
+    private async Task LoadProductsAsync()
+    {
+        try
+        {
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = 1,
+                PageSize = 50,
+                SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                CategoryId = _selectedCategoryId
+            };
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+            _products = result.Items.ToList();
+
+            // Initialize qty selectors to 1 for new products
+            foreach (var p in _products)
+            {
+                if (!_qtyByProduct.ContainsKey(p.Id))
+                    _qtyByProduct[p.Id] = 1;
+            }
+        }
+        catch { }
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(new GetActiveCategoriesQuery());
+            if (result.IsSuccess) _categories = result.Value;
+        }
+        catch { }
+    }
+
+    private async Task LoadCartAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CartDto?>>(new GetActiveCartForUserQuery());
+            if (result.IsSuccess && result.Value is not null)
+            {
+                _cart = result.Value;
+                _budgetConsumed = _cart.Total?.Amount ?? 0m;
+                _budgetCurrency = _cart.Total?.Currency ?? "IRR";
+                _budgetSalary = _cart.BudgetInfo?.Salary.Amount ?? 0m;
+                if (_cart.BudgetInfo is not null)
+                    _budgetCurrency = _cart.BudgetInfo.Salary.Currency;
+            }
+            else
+            {
+                _cart = null;
+            }
+        }
+        catch
+        {
+            _cart = null;
+        }
+    }
+
+    // ── Category selection ──
+
+    private async Task SelectCategory(Guid? categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        _isLoading = true;
+        await LoadProductsAsync();
+        _isLoading = false;
+    }
+
+    // ── Qty selector helpers (ported from PC Products page) ──
+
+    private int GetQtyForProduct(Guid productId)
+        => _qtyByProduct.TryGetValue(productId, out var q) ? q : 1;
+
+    private int GetQtyMaxForProduct(ProductListItemDto product)
+    {
+        var remaining = GetRemainingForProduct(product);
+        var cap = product.MyPurchaseLimit.HasValue
+            ? Math.Min(remaining, product.StockQuantity)
+            : product.StockQuantity;
+        var max = Math.Max(1, cap);
+
+        if (_cart?.BudgetInfo is { } budget && product.Price is { } price)
+        {
+            var unitPrice = price.Amount;
+            if (unitPrice > 0m)
+            {
+                var salaryMax = (int)Math.Floor(budget.Remaining / unitPrice);
+                max = Math.Min(max, Math.Max(1, salaryMax));
+            }
+        }
+
+        return max;
+    }
+
+    private int GetRemainingForProduct(ProductListItemDto product)
+    {
+        var inCart = _cart?.LineItems
+            .Where(li => li.ProductId == product.Id)
+            .Sum(li => li.Quantity) ?? 0;
+
+        var remainingStock = Math.Max(0, product.StockQuantity - inCart);
+
+        if (!product.MyPurchaseLimit.HasValue)
+            return remainingStock;
+
+        var remainingLimit = Math.Max(0, product.MyPurchaseLimit.Value - inCart);
+        return Math.Min(remainingStock, remainingLimit);
+    }
+
+    private void IncrementQty(Guid productId)
+    {
+        var current = GetQtyForProduct(productId);
+        var product = _products.FirstOrDefault(p => p.Id == productId);
+        if (product is null) return;
+        var max = GetQtyMaxForProduct(product);
+        if (current < max)
+            _qtyByProduct[productId] = current + 1;
+    }
+
+    private void DecrementQty(Guid productId)
+    {
+        var current = GetQtyForProduct(productId);
+        if (current > 1)
+            _qtyByProduct[productId] = current - 1;
+    }
+
+    // ── Add to cart (ported from PC Products page) ──
+
+    private async Task AddToCartAsync(ProductListItemDto product)
+    {
+        if (_isAddingAny) return;
+
+        var qty = GetQtyForProduct(product.Id);
+        if (qty < 1)
+        {
+            await Toast.Warning(_loc["ToastQtyMin"]);
+            return;
+        }
+
+        var remaining = GetRemainingForProduct(product);
+        if (remaining <= 0)
+        {
+            await Toast.Warning(_loc["ToastLimitReached"]);
+            return;
+        }
+        if (qty > remaining)
+        {
+            qty = remaining;
+            await Toast.Info(string.Format(CultureInfo.CurrentCulture, _loc["ToastQtyClamped"], CultureFormat.FormatDigits(remaining)));
+        }
+
+        var budget = _cart?.BudgetInfo;
+        if (budget is not null)
+        {
+            var unitPrice = product.Price?.Amount ?? 0m;
+            var lineTotal = unitPrice * qty;
+            if (lineTotal > budget.Remaining)
+            {
+                await Toast.Warning(_loc["ToastSalaryReached"]);
+                return;
+            }
+        }
+
+        _isAddingAny = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateOrAppendSaleCommand(product.Id, qty));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(_loc["ToastAddedToCart"]);
+                await LoadCartAsync();
+                _qtyByProduct[product.Id] = 1;
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? _loc["ToastAddFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(_loc["ToastAddError"]);
+        }
+        finally
+        {
+            _isAddingAny = false;
+        }
+    }
+
+    // ── Quick reorder ──
+
+    private async Task QuickReorderAsync()
+    {
+        if (_isReordering || _isReadOnly) return;
+        _isReordering = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(new QuickReorderLastSaleCommand());
+            if (result.IsSuccess)
+            {
+                await Toast.Success(_loc["ReorderSuccess"], summary: _loc["ReorderSuccessTitle"]);
+                await LoadCartAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? _loc["ReorderError"], summary: _loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(_loc["ReorderError"], summary: _loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isReordering = false;
+        }
+    }
+
+    // ── Navigation ──
+
+    private void GoToProduct(Guid productId)
+        => Navigation.NavigateTo($"/Products/{productId}", forceLoad: false);
+
+    private void GoToMyOrders()
+        => Navigation.NavigateTo("/Sales", forceLoad: false);
+
+    // ── Formatting ──
+
+    private string FormatPrice(MoneyDto? price)
+    {
+        if (price is null) return "—";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
+        var amount = CultureFormat.ToCultureDigits(displayAmount.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? _loc["TomanUnit"] : price.Currency;
+        return $"{amount} {unit}";
+    }
+
+    private string FormatBudgetAmount()
+    {
+        if (_budgetSalary <= 0) return _loc["NoBudget"];
+        var isIrr = string.Equals(_budgetCurrency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var remaining = isIrr ? (_budgetSalary - _budgetConsumed) / 10m : (_budgetSalary - _budgetConsumed);
+        var amount = CultureFormat.ToCultureDigits(Math.Max(0, remaining).ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? _loc["TomanUnit"] : _budgetCurrency;
+        return $"{amount} {unit}";
+    }
+}
