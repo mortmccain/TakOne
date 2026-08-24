@@ -1,0 +1,45 @@
+﻿@* RemoveGroupDialog.razor — confirmation modal for removing a user from
+   their customer group. Mirrors RemoveRoleDialog.razor (no countdown).
+
+   OPENED BY:
+     UserDetail.razor's HandleRemoveGroupAsync via
+     DialogService.OpenAsync<RemoveGroupDialog>. The parent passes:
+       - UserDisplayName (string — the user's FullName)
+       - GroupName (string — the group's display name)
+     Returns true if confirmed, false/null otherwise.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<Components.Dialogs.RemoveGroupDialog.RemoveGroupDialog> Loc
+
+<div class="remove-group-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="remove-group-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@UserDisplayName</strong>.
+            @Loc["BodyGroup"]
+            <strong>@GroupName</strong>.
+            @Loc["BodyBlock"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@Loc["ButtonYes"]"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string UserDisplayName { get; set; } = string.Empty;
+    [Parameter] public string GroupName { get; set; } = string.Empty;
+}

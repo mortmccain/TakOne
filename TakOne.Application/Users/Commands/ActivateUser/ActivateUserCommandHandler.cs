@@ -6,9 +6,24 @@ using TakOne.SharedKernel.Common;
 namespace TakOne.Application.Users.Commands.ActivateUser;
 
 /// <summary>
-/// Reactivates a previously deactivated user (domain-only).
+/// Reactivates a previously deactivated user.
 ///
-/// Not static so <c>ILogger&lt;T&gt;</c> can take it as a type argument.
+/// <b>DOMAIN + IDENTITY SYNC:</b>
+/// <para>
+/// Same bug-fix pattern as <c>DeactivateUserCommandHandler</c> — this
+/// handler updates BOTH the Domain <c>User.IsActive</c> flag (via the
+/// aggregate's <c>Activate()</c> method) AND the Identity
+/// <c>ApplicationUser.IsActive</c> flag (via
+/// <c>IUserAccountService.SetUserActiveStatusAsync</c>). Without the
+/// Identity-side update, the <c>Login.razor</c> pre-check that reads
+/// <c>appUser.IsActive</c> would still see <c>false</c> (from when the
+/// user was deactivated) and reject the login — making reactivation a
+/// no-op.
+/// </para>
+/// <para>
+/// The previous version of this handler was documented as "domain-only"
+/// (a known limitation). This version closes that hole.
+/// </para>
 /// </summary>
 public sealed class ActivateUserCommandHandler
 {
@@ -17,6 +32,7 @@ public sealed class ActivateUserCommandHandler
         ActivateUserCommand command,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        IUserAccountService userAccountService,
         IUnitOfWork unitOfWork,
         ILogger<ActivateUserCommandHandler> logger,
         CancellationToken cancellationToken
@@ -100,13 +116,44 @@ public sealed class ActivateUserCommandHandler
 
         // ------------------------------------------------------------------
         // 4. Delegate to the aggregate. Activate is idempotent.
+        //    This sets Domain.User.IsActive = true (in the Domain Users
+        //    table). The change is tracked by EF Core and will be committed
+        //    by SaveChangesAsync below.
         // ------------------------------------------------------------------
         user.Activate();
+
+        // ------------------------------------------------------------------
+        // 5. SYNC THE IDENTITY-SIDE IsActive FLAG.
+        //
+        //    Same bug-fix pattern as DeactivateUserCommandHandler. Without
+        //    this call, ApplicationUser.IsActive (in AspNetUsers) stays at
+        //    false (from when the user was deactivated), and the Login.razor
+        //    pre-check would reject the user's next login attempt — making
+        //    reactivation a no-op.
+        //
+        //    SetUserActiveStatusAsync also refreshes the SecurityStamp,
+        //    which is a no-op for reactivation (user has no existing
+        //    session to invalidate) but harmless + symmetric.
+        // ------------------------------------------------------------------
+        var identityResult = await userAccountService.SetUserActiveStatusAsync(
+            command.UserId, isActive: true, cancellationToken);
+
+        if (!identityResult.IsSuccess)
+        {
+            logger.LogWarning
+                ("ActivateUser: SetUserActiveStatusAsync failed for user {UserId}. " +
+                 "Domain-side Activate() will be rolled back with the next SaveChanges " +
+                 "(no transaction commit). Errors: {Errors}. Requested by user {ActorId}.",
+                command.UserId, identityResult.Error ?? "unknown", currentUser.UserId);
+
+            return identityResult;
+        }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
-            ("ActivateUser: user {UserId} (worker ID '{WorkerId}') activated by user {ActorId}.",
+            ("ActivateUser: user {UserId} (worker ID '{WorkerId}') activated by user {ActorId}. " +
+             "Both Domain and Identity IsActive flags set to true.",
             user.Id, user.WorkerId, currentUser.UserId);
 
         return Result.Success();

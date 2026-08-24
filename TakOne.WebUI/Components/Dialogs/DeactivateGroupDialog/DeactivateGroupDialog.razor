@@ -1,0 +1,92 @@
+﻿@* DeactivateGroupDialog.razor — second-step confirmation modal for
+   customer-group deactivation. Mirrors DeactivateUserDialog.razor's
+   structure exactly (same 3-second countdown pattern).
+
+   OPENED BY:
+     ManageGroups.razor's HandleDeactivateAsync and EditGroup.razor's
+     HandleDeactivateAsync, via DialogService.OpenAsync<DeactivateGroupDialog>.
+     The parent passes one parameter: GroupName (string). The dialog
+     returns true if the user confirmed, false/null otherwise.
+
+   WHY A CUSTOM DIALOG (not JS confirm()):
+     The previous implementation called window.confirm() with a long
+     sentence, which gave a sparse native browser popup that:
+       - Doesn't match the app's Radzen styling (looks foreign in both
+         light/dark themes).
+       - Renders in the browser's locale, not the app's en-US/fa-IR culture.
+       - Has no friction against reflex confirmations.
+     The user's spec asks for the same in-app popup pattern as the
+     user-deactivation flow (DeactivateUserDialog.razor), INCLUDING the
+     3-second countdown on the confirm button.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<Components.Dialogs.DeactivateGroupDialog.DeactivateGroupDialog> Loc
+@implements IDisposable
+
+<div class="deactivate-group-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="deactivate-group-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@GroupName</strong>.
+            @Loc["BodyBlock"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@ButtonText"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Disabled="@(countdown > 0)"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string GroupName { get; set; } = string.Empty;
+
+    private int countdown = 3;
+    private CancellationTokenSource? _cts;
+
+    // Button text shows the countdown while it's ticking, then becomes the
+    // plain "Yes, I'm sure" once the button is enabled. The format string
+    // is localized so fa-IR can render the digits in Persian.
+    private string ButtonText =>
+        countdown > 0
+            ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Loc["ButtonYesCounting"], countdown)
+            : Loc["ButtonYesReady"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        try
+        {
+            for (int i = 3; i > 0; i--)
+            {
+                countdown = i;
+                await InvokeAsync(StateHasChanged);
+                var token = _cts.Token;
+                await Task.Delay(1000, token);
+            }
+            countdown = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* expected on dialog close */ }
+        catch (ObjectDisposedException) { /* race with Dispose */ }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+    }
+}

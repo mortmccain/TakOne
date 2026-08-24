@@ -276,6 +276,12 @@
     <value>«{1}» از گروه «{0}» حذف شود؟ این کار سقف خرید او را بازنشانی می‌کند.</value>
     <comment>{0} = نام گروه؛ {1} = نام کامل کاربر</comment>
   </data>
+  <data name="RemoveRoleDialogTitle" xml:space="preserve">
+    <value>تأیید حذف نقش</value>
+  </data>
+  <data name="RemoveGroupDialogTitle" xml:space="preserve">
+    <value>تأیید حذف از گروه</value>
+  </data>
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
     <comment>{0} = نام کامل کاربر؛ {1} = شناسه کارگری کاربر</comment>

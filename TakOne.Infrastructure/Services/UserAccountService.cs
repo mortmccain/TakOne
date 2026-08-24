@@ -661,6 +661,102 @@ public sealed class UserAccountService : IUserAccountService
         return Result.Success();
     }
 
+    /// <inheritdoc />
+    /// <summary>
+    /// Sets <c>ApplicationUser.IsActive</c> AND refreshes the
+    /// <c>SecurityStamp</c> (which invalidates any outstanding auth cookies
+    /// for the user — kicking active sessions out within
+    /// <c>SecurityStampValidatorOptions.ValidationInterval</c> seconds).
+    ///
+    /// See <see cref="IUserAccountService.SetUserActiveStatusAsync"/> for
+    /// the full rationale of why this method exists.
+    /// </summary>
+    public async Task<Result> SetUserActiveStatusAsync(
+        Guid userId,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // 1. Load the ApplicationUser. We use FindByIdAsync (not FindByNameAsync)
+        //    because we have the user's Id, not their UserName. FindByIdAsync
+        //    is also faster — it's a PK lookup, no normalization needed.
+        // ------------------------------------------------------------------
+        var appUser = await _userManager.FindByIdAsync(userId.ToString());
+
+        if (appUser is null)
+        {
+            _logger.LogWarning(
+                "UserAccountService.SetUserActiveStatusAsync: ApplicationUser not found " +
+                "for userId {UserId}. Cannot set IsActive={IsActive}.",
+                userId, isActive);
+            return Result.Failure($"User '{userId}' was not found.");
+        }
+
+        // ------------------------------------------------------------------
+        // 2. Idempotent short-circuit. If the flag is already at the
+        //    requested value, return success WITHOUT touching the
+        //    SecurityStamp. This prevents log spam from repeated
+        //    deactivation/activation calls (e.g. user clicks Deactivate
+        //    twice in quick succession).
+        // ------------------------------------------------------------------
+        if (appUser.IsActive == isActive)
+        {
+            _logger.LogDebug(
+                "UserAccountService.SetUserActiveStatusAsync: no-op — ApplicationUser " +
+                "IsActive is already {IsActive} for userId {UserId}.",
+                isActive, userId);
+            return Result.Success();
+        }
+
+        // ------------------------------------------------------------------
+        // 3. Update the IsActive flag.
+        // ------------------------------------------------------------------
+        appUser.IsActive = isActive;
+        var updateResult = await _userManager.UpdateAsync(appUser);
+        if (!updateResult.Succeeded)
+        {
+            var error = FlattenErrors(updateResult);
+            _logger.LogWarning(
+                "UserAccountService.SetUserActiveStatusAsync: UpdateAsync failed " +
+                "for userId {UserId}. IsActive={IsActive}. Errors: {Errors}.",
+                userId, isActive, error);
+            return Result.Failure(error);
+        }
+
+        // ------------------------------------------------------------------
+        // 4. Refresh the SecurityStamp. This is the CRITICAL step that
+        //    invalidates the user's existing auth cookies.
+        //
+        //    HOW IT WORKS:
+        //      - The auth cookie contains the user's SecurityStamp at the
+        //        time of sign-in.
+        //      - SecurityStampValidator (configured below with a 30s
+        //        validation interval) periodically re-loads the user's
+        //        SecurityStamp from the DB and compares it to the one in
+        //        the cookie. If they differ, the cookie is rejected and
+        //        the user is signed out.
+        //      - UpdateSecurityStampAsync generates a NEW Guid for the
+        //        stamp, persists it to AspNetUsers, and the next
+        //        SecurityStampValidator check (within 30s) will reject
+        //        the user's existing cookie.
+        //
+        //    For deactivation (isActive=false): this kicks the user out
+        //    of any active sessions within 30s.
+        //
+        //    For activation (isActive=true): no-op (user couldn't log in
+        //    while deactivated, so they have no session). We do it anyway
+        //    for symmetry + defense-in-depth.
+        // ------------------------------------------------------------------
+        await _userManager.UpdateSecurityStampAsync(appUser);
+
+        _logger.LogInformation(
+            "UserAccountService.SetUserActiveStatusAsync: IsActive set to {IsActive} " +
+            "for userId {UserId}. SecurityStamp refreshed.",
+            isActive, userId);
+
+        return Result.Success();
+    }
+
     /// <summary>
     /// Flattens an <c>IdentityResult</c>'s Errors collection into a single
     /// semicolon-joined string for surface-friendly error messages.

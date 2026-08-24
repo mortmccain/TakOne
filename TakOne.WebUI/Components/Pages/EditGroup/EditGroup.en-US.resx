@@ -214,6 +214,9 @@
   <data name="DeactivateSuccess" xml:space="preserve">
     <value>"{0}" has been deactivated.</value>
   </data>
+  <data name="DeactivateDialogTitle" xml:space="preserve">
+    <value>Confirm group deactivation</value>
+  </data>
   <data name="ActivateSuccessTitle" xml:space="preserve">
     <value>Group activated</value>
   </data>

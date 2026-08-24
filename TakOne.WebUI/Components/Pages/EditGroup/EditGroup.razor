@@ -75,12 +75,14 @@
 @using TakOne.Application.Customers.DTOs
 @using TakOne.Application.Customers.Queries.GetCustomerGroupById
 @using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Components.Dialogs.DeactivateGroupDialog
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<EditGroup> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject Radzen.DialogService DialogService
 @inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -134,7 +136,7 @@
             }
 
             /* Summary card — read-only label/value pairs in a 2-col grid.
-                                       Mirrors Settings.razor's .profile-grid pattern. */
+                                                   Mirrors Settings.razor's .profile-grid pattern. */
             .profile-grid {
                 display: grid;
                 grid-template-columns: minmax(120px, auto) 1fr;
@@ -159,7 +161,7 @@
             }
 
             /* Section title — small heading inside a card with a leading icon.
-                                       Mirrors Settings.razor's .section-title pattern. */
+                                                   Mirrors Settings.razor's .section-title pattern. */
             .section-title {
                 display: flex;
                 align-items: center;
@@ -191,17 +193,17 @@
             }
 
             /* RTL fallback for RadzenNumeric — the inner input is forced
-                                       LTR so the caret + digit grouping reads correctly in both
-                                       LTR and RTL layouts. */
+                                                   LTR so the caret + digit grouping reads correctly in both
+                                                   LTR and RTL layouts. */
             .salary-row .rz-numeric .rz-textbox {
                 direction: ltr;
                 text-align: left;
             }
 
             /* Currency-read-only pill — shown next to the salary amount
-                                       field to communicate "you can edit the amount, but the
-                                       currency is locked". Mirrors the .salary-currency span
-                                       pattern used on the ManageGroups list page. */
+                                                   field to communicate "you can edit the amount, but the
+                                                   currency is locked". Mirrors the .salary-currency span
+                                                   pattern used on the ManageGroups list page. */
             .currency-locked-pill {
                 display: inline-flex;
                 align-items: center;
@@ -877,10 +879,35 @@
         if (_group is null) return;
         if (_isSubmitting) return;
 
-        var confirmed = await JS.InvokeAsync<bool>("confirm",
-            string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivate"], _group.Name));
+        // Custom in-app confirmation dialog (DeactivateGroupDialog) with a
+        // 3-second countdown — same pattern as DeactivateUserDialog and the
+        // ManageGroups page. Replaces the old window.confirm() call.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateGroupDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "GroupName", _group.Name }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,
+                    ShowClose = true,
+                });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
-        if (!confirmed) return;
+        if (confirmed is not true) return;
 
         _isSubmitting = true;
         try

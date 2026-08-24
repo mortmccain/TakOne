@@ -493,6 +493,7 @@ app.Use(async (context, next) =>
         var isStaticAsset =
             path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/_blazor", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/_content", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/css", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/js", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/lib", StringComparison.OrdinalIgnoreCase) ||

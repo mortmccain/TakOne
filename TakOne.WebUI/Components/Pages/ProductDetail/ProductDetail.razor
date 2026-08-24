@@ -183,18 +183,18 @@
                 }
 
             /* Left-column wrapper — holds the picture AND the staff-only
-                                                           photo-editor card (when open) stacked vertically. Putting
-                                                           both inside one wrapper (instead of leaving the photo
-                                                           editor as a sibling of .detail-picture inside the grid)
-                                                           keeps them in the SAME grid cell, so the editor appears
-                                                           flush against the bottom of the picture with no gap
-                                                           (the grid's align-items: start would otherwise push the
-                                                           editor down to row 2, leaving a vertical gap equal to
-                                                           the difference between the picture's height and the
-                                                           info column's height).
+                                                                       photo-editor card (when open) stacked vertically. Putting
+                                                                       both inside one wrapper (instead of leaving the photo
+                                                                       editor as a sibling of .detail-picture inside the grid)
+                                                                       keeps them in the SAME grid cell, so the editor appears
+                                                                       flush against the bottom of the picture with no gap
+                                                                       (the grid's align-items: start would otherwise push the
+                                                                       editor down to row 2, leaving a vertical gap equal to
+                                                                       the difference between the picture's height and the
+                                                                       info column's height).
 
-                                                           Max-width matches .detail-picture so the editor card
-                                                           doesn't sprawl wider than the picture on wide screens. */
+                                                                       Max-width matches .detail-picture so the editor card
+                                                                       doesn't sprawl wider than the picture on wide screens. */
             .detail-picture-column {
                 display: flex;
                 flex-direction: column;
@@ -204,8 +204,8 @@
             }
 
             /* "Change photo" button — overlaid on the picture bottom-right
-                                                               corner. Only shown to staff. Uses RadzenButton underneath
-                                                               but is positioned via a wrapper. */
+                                                                           corner. Only shown to staff. Uses RadzenButton underneath
+                                                                           but is positioned via a wrapper. */
             .change-photo-overlay {
                 position: absolute;
                 inset-inline-end: 0.5rem;
@@ -313,8 +313,8 @@
             }
 
             /* Picture upload section — dropzone + preview card.
-                                                               Mirrors CreateProduct.razor's picture-dropzone styles so the
-                                                               two pages share a consistent upload UI. */
+                                                                           Mirrors CreateProduct.razor's picture-dropzone styles so the
+                                                                           two pages share a consistent upload UI. */
             .upload-section {
                 display: flex;
                 flex-direction: column;
@@ -455,8 +455,8 @@
                 }
 
             /* Category editor — three dropdowns in a row, mirroring
-                                                           CreateProduct.razor's .category-row. Wraps on narrow
-                                                           screens (each dropdown takes full width below 768px). */
+                                                                       CreateProduct.razor's .category-row. Wraps on narrow
+                                                                       screens (each dropdown takes full width below 768px). */
             .category-row {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -470,11 +470,11 @@
             }
 
             /* Back button row — mirrors the detail-grid columns so the
-                                                   button stays aligned with the START of the info column
-                                                   (right above the breadcrumb) in both LTR and RTL modes.
-                                                   The button cell uses flex + justify-content: flex-start so
-                                                   the button sizes to its content instead of stretching to
-                                                   the full cell width. */
+                                                               button stays aligned with the START of the info column
+                                                               (right above the breadcrumb) in both LTR and RTL modes.
+                                                               The button cell uses flex + justify-content: flex-start so
+                                                               the button sizes to its content instead of stretching to
+                                                               the full cell width. */
             .back-button-row {
                 display: grid;
                 grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -781,6 +781,70 @@
                                           Variant="Variant.Filled"
                                           Disabled="@(_isSavingDetails || string.IsNullOrWhiteSpace(_editName))"
                                           Click="@HandleSaveDetailsAsync" />
+                        </div>
+
+                        @* ── Price editor section ──
+                           Lets staff change the product's price. Uses a STRING-bound
+                           RadzenTextBox (not RadzenNumeric) so we can format it ourselves:
+                           thousands separators + Persian digits + 0 decimals for IRR.
+                           Mirrors the salary-amount pattern on EditGroup.razor.
+
+                           The currency is LOCKED (shown as a read-only pill) — changing
+                           currency would invalidate already-purchased products priced in
+                           the old currency. To use a different currency, the product must
+                           be deactivated and a new one created.
+
+                           On Save, dispatches UpdateProductDetailsCommand with the new
+                           price + the EXISTING name/description/picture (we don't touch
+                           those here). *@
+                        <div class="staff-section-title" style="margin-top: 1.5rem;">
+                            <RadzenIcon Icon="sell" />
+                            <span>@Loc["PriceEditorTitle"]</span>
+                        </div>
+
+                        @* Current price display — read-only, for reference.
+                           Uses FormatMoneyRial (NOT FormatPrice/FormatMoneyToman) because
+                           the price textbox below expects the user to enter the amount in
+                           RIAL (the raw DB amount). The top-of-page price display uses
+                           Toman (÷10) for customer-facing readability, but here we need the
+                           staff member to see the SAME unit they'll be typing. *@
+                        <div style="border: 1px solid var(--rz-base-border-color);
+                            border-left: 4px solid var(--rz-primary);
+                            border-radius: var(--tm-radius, 0);
+                            padding: 0.75rem 1rem;
+                            background: var(--rz-component-background-color, var(--rz-base-background-color));
+                            margin-bottom: 0.5rem;">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                <RadzenText TextStyle="TextStyle.Caption" Style="color: var(--rz-text-secondary-color);">
+                                    @Loc["PriceCurrentLabel"]
+                                </RadzenText>
+                                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; font-variant-numeric: tabular-nums;">
+                                    @CultureFormat.FormatMoneyRial(_product.Price)
+                                </RadzenText>
+                            </RadzenStack>
+                        </div>
+
+                        <div class="edit-row">
+                            <RadzenFormField Text="@Loc["PriceNewLabel"]" Style="width: 100%;">
+                                <RadzenTextBox @bind-Value="_editPriceText"
+                                               TValue="string"
+                                               Style="width: 100%; direction: ltr; text-align: left;"
+                                               Placeholder="@Loc["PriceNewPlaceholder"]"
+                                               @onfocus="OnEditPriceFocus"
+                                               @onblur="OnEditPriceBlur" />
+                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Caption"
+                                        Style="color: var(--rz-text-secondary-color);">
+                                @Loc["PriceHint"]
+                            </RadzenText>
+                        </div>
+                        <div class="edit-actions">
+                            <RadzenButton Text="@Loc["SavePrice"]"
+                                          Icon="save"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Variant="Variant.Filled"
+                                          Disabled="@(_isSavingPrice)"
+                                          Click="@HandleSavePriceAsync" />
                         </div>
 
                         @* ── Category editor section ──
@@ -1090,6 +1154,17 @@
     private string _editDescription = string.Empty;
     private bool _isSavingDetails;
 
+    // ── Price editor state (staff-only) ──
+    //
+    // Holds the user's input for the "Change price" field. Mirrors the
+    // salary-amount pattern on EditGroup.razor / CreateGroup.razor — we
+    // bind a STRING (not a decimal) so we can format it ourselves
+    // (thousands separators + Persian digits + 0 decimals for IRR).
+    // See EditGroup.razor for the full rationale.
+
+    private string _editPriceText = string.Empty;
+    private bool _isSavingPrice;
+
     // ── Stock-set editor state (staff-only) ──
     //
     // Holds the user's input for the "Set stock" field. Null = empty (no
@@ -1215,6 +1290,11 @@
             {
                 _editName = _product.Name;
                 _editDescription = _product.Description;
+
+                // Seed the price-editor textbox with the product's current
+                // price (formatted with thousands separators + Persian digits
+                // in fa-IR mode + 0 decimals for IRR — see FormatPriceForDisplay).
+                _editPriceText = FormatPriceForDisplay(_product.Price.Amount, _product.Price.Currency);
 
                 // Seed the category-editor cascade with the product's current
                 // assignment so the dropdowns open showing the current
@@ -1647,6 +1727,157 @@
             : _availableSubCategories.FirstOrDefault(sc => sc.Id == subCategoryId.Value)?.SubSubCategories ?? new();
 
         return Task.CompletedTask;
+    }
+
+    // ── Save price (staff-only) ───────────────────────────────────────
+
+    /// <summary>
+    /// Saves the product's price. Dispatches <see cref="UpdateProductDetailsCommand"/>
+    /// with the new price + the EXISTING name, description, and picture URL
+    /// (we don't touch those here — they have their own editors).
+    ///
+    /// The price textbox is a STRING (not a decimal) so we can format it
+    /// with thousands separators + Persian digits. On blur, the text is
+    /// parsed to a decimal and re-formatted for display. On submit, we
+    /// parse again defensively (in case the user clicked Save while the
+    /// textbox was still focused).
+    ///
+    /// The currency CANNOT be changed here — it's locked to whatever the
+    /// product was originally created with (changing currency would
+    /// invalidate already-purchased products priced in the old currency).
+    /// </summary>
+    private async Task HandleSavePriceAsync()
+    {
+        if (_product is null) return;
+
+        if (!TryParseAmount(_editPriceText, out var parsedAmount) || parsedAmount <= 0)
+        {
+            await Toast.Error(Loc["PriceRequiredError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isSavingPrice = true;
+        try
+        {
+            var command = new UpdateProductDetailsCommand(
+                ProductId: _product.Id,
+                Name: _product.Name,
+                Description: _product.Description,
+                PictureUrl: _product.PictureUrl,
+                Price: new MoneyDto
+                {
+                    Amount = parsedAmount,
+                    Currency = _product.Price.Currency
+                });
+
+            var result = await MessageBus.InvokeAsync<Result>(command);
+
+            if (result.IsSuccess)
+            {
+                // Reflect the change locally so the displayed price refreshes
+                // without a full reload.
+                _product = new ProductDto
+                {
+                    Id = _product.Id,
+                    Name = _product.Name,
+                    Description = _product.Description,
+                    PictureUrl = _product.PictureUrl,
+                    Price = new MoneyDto
+                    {
+                        Amount = parsedAmount,
+                        Currency = _product.Price.Currency
+                    },
+                    StockQuantity = _product.StockQuantity,
+                    CategoryId = _product.CategoryId,
+                    SubCategoryId = _product.SubCategoryId,
+                    SubSubCategoryId = _product.SubSubCategoryId,
+                    PurchaseLimits = _product.PurchaseLimits
+                };
+
+                // Re-format the textbox with the new value (so the user
+                // sees the formatted version, not whatever they typed).
+                _editPriceText = FormatPriceForDisplay(parsedAmount, _product.Price.Currency);
+
+                await Toast.Success(Loc["PriceSaved"], summary: Loc["PriceSavedTitle"]);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSavingPrice = false;
+        }
+    }
+
+    // ── Price textbox helpers ────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a decimal price amount for DISPLAY in the price textbox.
+    /// Mirrors EditGroup.razor's FormatSalaryForDisplay: N0 for IRR
+    /// (0 decimals, whole Rial), N2 for other currencies (2 decimals).
+    /// Then runs through CultureFormat.ToCultureDigits so digits become
+    /// Persian (۰-۹) and separator becomes ٬ in fa-IR mode.
+    /// </summary>
+    private static string FormatPriceForDisplay(decimal amount, string currency)
+    {
+        var isIrr = string.Equals(currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var fmt = isIrr ? "N0" : "N2";
+        return CultureFormat.ToCultureDigits(
+            amount.ToString(fmt, CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Parses a string the user typed into the price textbox into a decimal.
+    /// Accepts ASCII digits, Persian digits, comma/٬ thousands separators,
+    /// and ./٫ decimal separators. Same logic as EditGroup.TryParseAmount.
+    /// </summary>
+    private static bool TryParseAmount(string? input, out decimal amount)
+    {
+        amount = 0m;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+
+        var sb = new System.Text.StringBuilder(input.Length);
+        foreach (var c in input.Trim())
+        {
+            if (c == ',' || c == '٬') continue;
+            if (c == '٫') sb.Append('.');
+            else if (c >= '۰' && c <= '۹')
+                sb.Append((char)('0' + (c - '۰')));
+            else sb.Append(c);
+        }
+
+        return decimal.TryParse(sb.ToString(),
+            NumberStyles.Number, CultureInfo.InvariantCulture, out amount);
+    }
+
+    /// <summary>
+    /// Fired when the price textbox gains focus. Switches the displayed
+    /// text to the raw invariant number for easy editing.
+    /// </summary>
+    private void OnEditPriceFocus()
+    {
+        if (TryParseAmount(_editPriceText, out var amount))
+        {
+            _editPriceText = amount.ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    /// <summary>
+    /// Fired when the price textbox loses focus. Parses the text,
+    /// re-formats it for display.
+    /// </summary>
+    private void OnEditPriceBlur()
+    {
+        if (_product is not null && TryParseAmount(_editPriceText, out var amount))
+        {
+            _editPriceText = FormatPriceForDisplay(amount, _product.Price.Currency);
+        }
     }
 
     // ── Save category (staff-only) ─────────────────────────────────────

@@ -64,6 +64,7 @@
 @using TakOne.Application.Settings.Queries.GetSystemSettings
 @using TakOne.Domain.Common.Enums
 @using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Components.Dialogs.DeactivateGroupDialog
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
@@ -108,10 +109,10 @@
             }
 
             /* ── Limit-mode card (Step 12-a) ──
-                           A separate, always-visible (admin-only) card above the groups
-                           table that controls the system-wide purchase-limit mode. Kept
-                           visually distinct from the groups table because it's a different
-                           concern (system policy vs. group management). */
+                                       A separate, always-visible (admin-only) card above the groups
+                                       table that controls the system-wide purchase-limit mode. Kept
+                                       visually distinct from the groups table because it's a different
+                                       concern (system policy vs. group management). */
             .limit-mode-card {
                 display: flex;
                 align-items: center;
@@ -774,14 +775,37 @@
     {
         if (_isBusyGroupId.HasValue) return;
 
-        // Confirmation dialog — reuses the simple JS confirm pattern.
-        // Deactivation is reversible (re-run Activate), but it blocks
-        // users in this group from making new purchases, so a quick
-        // confirmation is appropriate.
-        var confirmed = await JS.InvokeAsync<bool>("confirm",
-            string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivate"], group.Name));
+        // Custom in-app confirmation dialog (DeactivateGroupDialog) with a
+        // 3-second countdown on the confirm button — same pattern as
+        // DeactivateUserDialog. Replaces the old window.confirm() call,
+        // which gave a sparse native browser popup that didn't match the
+        // app's styling and had no friction against reflex confirmations.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateGroupDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "GroupName", group.Name }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,
+                    ShowClose = true,
+                });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
+            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
-        if (!confirmed) return;
+        if (confirmed is not true) return;
 
         _isBusyGroupId = group.Id;
         try

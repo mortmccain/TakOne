@@ -1,0 +1,50 @@
+﻿@* RemoveRoleDialog.razor — confirmation modal for removing a role from a user.
+   Mirrors DeactivateUserDialog.razor's structure but WITHOUT the 3-second
+   countdown (role removal is low-risk + instantly reversible via re-assign).
+
+   OPENED BY:
+     UserDetail.razor's HandleRemoveRoleAsync via
+     DialogService.OpenAsync<RemoveRoleDialog>. The parent passes:
+       - UserDisplayName (string — the user's FullName)
+       - RoleLabel (string — the localized role label, e.g. "Customer")
+     Returns true if confirmed, false/null otherwise.
+
+   WHY A CUSTOM DIALOG (not JS confirm()):
+     Same reason as DeactivateUserDialog — the native browser confirm()
+     popup doesn't match the app's Radzen styling and has no localization.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<Components.Dialogs.RemoveRoleDialog.RemoveRoleDialog> Loc
+
+<div class="remove-role-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="remove-role-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@UserDisplayName</strong>.
+            @Loc["BodyRole"]
+            <strong>@RoleLabel</strong>.
+            @Loc["BodyBlock"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@Loc["ButtonYes"]"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    [Parameter] public string UserDisplayName { get; set; } = string.Empty;
+    [Parameter] public string RoleLabel { get; set; } = string.Empty;
+}

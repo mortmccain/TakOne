@@ -435,6 +435,59 @@ public static class ServiceCollectionExtensions
         });
 
         // ------------------------------------------------------------------
+        // SecurityStampValidator — makes Identity re-validate the user's
+        // SecurityStamp against the database on every request, and reject
+        // the cookie if the stamp has changed. This is what kicks a
+        // deactivated user out of an existing session within
+        // ValidationInterval seconds (instead of waiting up to
+        // CookieExpiryHours = 8h for the cookie to naturally expire).
+        //
+        // WHY 30 SECONDS:
+        //   Default is 30 MINUTES — way too slow. If an admin deactivates
+        //   an active user, the user could keep browsing for half an hour
+        //   before being kicked out. 30 seconds is fast enough to feel
+        //   immediate (next page navigation kicks them out) while not
+        //   hammering the DB on every request. Combined with the
+        //   IClaimsTransformation check (FullNameClaimsTransformation
+        //   also rejects deactivated users), this gives us belt-and-suspenders:
+        //     - SecurityStampValidator: rejects cookies whose stamp changed
+        //       (works for ANY reason the stamp was bumped: deactivation,
+        //       password change, password reset, etc.)
+        //     - FullNameClaimsTransformation: rejects cookies whose
+        //       ApplicationUser.IsActive = false (works specifically for
+        //       deactivation, with its own 30s cache).
+        //
+        // HOW DEACTIVATION FLOWS THROUGH THE STACK NOW:
+        //   1. Admin clicks Deactivate on /Admin/Users.
+        //   2. DeactivateUserCommandHandler runs:
+        //        a. user.Deactivate()           → Domain User.IsActive = false
+        //        b. userAccountService.SetUserActiveStatusAsync(false)
+        //           → ApplicationUser.IsActive = false
+        //           → UpdateSecurityStampAsync  → SecurityStamp changes
+        //        c. unitOfWork.SaveChangesAsync() → commits both rows
+        //   3. User's next request hits SecurityStampValidator:
+        //        a. Validator reads SecurityStamp from cookie.
+        //        b. Validator reads SecurityStamp from DB (now different).
+        //        c. Mismatch → validator signs the user out → cookie cleared.
+        //   4. User is redirected to /Account/Login.
+        //   5. If they try to log back in, Login.razor's pre-check reads
+        //      ApplicationUser.IsActive (which is now false) → "invalid
+        //      credentials" error.
+        //
+        // WHY BOTH MECHANISMS:
+        //   SecurityStampValidator alone would handle everything, but it
+        //   has a 30s blind spot (the validation interval). The
+        //   IClaimsTransformation check closes that blind spot with its
+        //   own 30s cache — they have the same latency, but the
+        //   transformation runs on every request (not periodically), so
+        //   even mid-interval it catches the deactivation as soon as its
+        //   own cache expires.
+        services.Configure<SecurityStampValidatorOptions>(options =>
+        {
+            options.ValidationInterval = TimeSpan.FromSeconds(30);
+        });
+
+        // ------------------------------------------------------------------
         // 4. Repository registrations.
         //
         //    All Scoped — they depend on the scoped ApplicationDbContext.

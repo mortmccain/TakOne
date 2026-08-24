@@ -290,4 +290,31 @@
   <data name="CategorySaved" xml:space="preserve">
     <value>Product category has been updated.</value>
   </data>
+  <data name="PriceEditorTitle" xml:space="preserve">
+    <value>Price</value>
+  </data>
+  <data name="PriceCurrentLabel" xml:space="preserve">
+    <value>Current price</value>
+  </data>
+  <data name="PriceNewLabel" xml:space="preserve">
+    <value>New price</value>
+  </data>
+  <data name="PriceNewPlaceholder" xml:space="preserve">
+    <value>e.g. 50000</value>
+  </data>
+  <data name="PriceHint" xml:space="preserve">
+    <value>Enter the new price. The currency cannot be changed — to use a different currency, deactivate this product and create a new one.</value>
+  </data>
+  <data name="SavePrice" xml:space="preserve">
+    <value>Save price</value>
+  </data>
+  <data name="PriceRequiredError" xml:space="preserve">
+    <value>Enter a valid price (must be greater than zero).</value>
+  </data>
+  <data name="PriceSavedTitle" xml:space="preserve">
+    <value>Price updated</value>
+  </data>
+  <data name="PriceSaved" xml:space="preserve">
+    <value>Product price has been updated.</value>
+  </data>
 </root>

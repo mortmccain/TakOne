@@ -294,4 +294,31 @@
   <data name="CategorySaved" xml:space="preserve">
     <value>دسته‌بندی محصول به‌روزرسانی شد.</value>
   </data>
+  <data name="PriceEditorTitle" xml:space="preserve">
+    <value>قیمت</value>
+  </data>
+  <data name="PriceCurrentLabel" xml:space="preserve">
+    <value>قیمت فعلی</value>
+  </data>
+  <data name="PriceNewLabel" xml:space="preserve">
+    <value>قیمت جدید</value>
+  </data>
+  <data name="PriceNewPlaceholder" xml:space="preserve">
+    <value>مثلاً ۵٬۰۰۰٬۰۰۰</value>
+  </data>
+  <data name="PriceHint" xml:space="preserve">
+    <value>قیمت جدید را وارد کنید. واحد پول قابل تغییر نیست — برای استفاده از واحد پول دیگر، این محصول را غیرفعال کرده و محصول جدیدی ایجاد کنید.</value>
+  </data>
+  <data name="SavePrice" xml:space="preserve">
+    <value>ذخیره قیمت</value>
+  </data>
+  <data name="PriceRequiredError" xml:space="preserve">
+    <value>قیمت معتبر وارد کنید (باید بزرگتر از صفر باشد).</value>
+  </data>
+  <data name="PriceSavedTitle" xml:space="preserve">
+    <value>قیمت به‌روزرسانی شد</value>
+  </data>
+  <data name="PriceSaved" xml:space="preserve">
+    <value>قیمت محصول به‌روزرسانی شد.</value>
+  </data>
 </root>

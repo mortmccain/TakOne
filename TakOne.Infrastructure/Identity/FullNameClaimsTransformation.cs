@@ -10,11 +10,12 @@ namespace TakOne.Infrastructure.Identity;
 
 /// <summary>
 /// Enriches every authenticated <see cref="ClaimsPrincipal"/> with the CURRENT
-/// <c>FullName</c> claim, read from the Domain Users table.
+/// <c>FullName</c> claim, read from the Domain Users table — AND rejects
+/// principals whose <c>IsActive</c> flag is <c>false</c>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>WHY THIS EXISTS — the "stale cookie" bug:</b>
+/// <b>RESPONSIBILITY #1 — the "stale cookie" FullName bug:</b>
 /// </para>
 /// <para>
 /// <c>Login.razor</c> bakes the <c>FullName</c> claim into the auth cookie at
@@ -39,27 +40,52 @@ namespace TakOne.Infrastructure.Identity;
 /// re-sign-in); only the in-memory principal for THIS request is enriched.
 /// </para>
 /// <para>
+/// <b>RESPONSIBILITY #2 — the "deactivated user still logged in" bug:</b>
+/// </para>
+/// <para>
+/// The <c>IsActive</c> check in <c>Login.razor</c> only runs at LOGIN time.
+/// Once the cookie is issued (valid for <c>CookieExpiryHours</c>, default 8h),
+/// the user stays "logged in" even if an admin deactivates them mid-session.
+/// ASP.NET Identity's <c>SecurityStampValidator</c> would normally catch this,
+/// but (a) it isn't configured in this app, and (b) <c>DeactivateUserCommandHandler</c>
+/// doesn't update the <c>SecurityStamp</c> — so even if it WERE configured, it
+/// wouldn't trigger on deactivation.
+/// </para>
+/// <para>
+/// <b>HOW THIS FIXES IT:</b>
+/// On every authenticated request, we fetch <c>IsActive</c> from the
+/// ApplicationUser table (cached for 30s). If <c>IsActive == false</c>, we
+/// return a new <see cref="ClaimsPrincipal"/> with NO identities — which makes
+/// <c>principal.Identity.IsAuthenticated</c> return <c>false</c>. The
+/// authorization middleware then treats the request as anonymous and
+/// redirects to /Account/Login. The user sees the login page (no explicit
+/// "you were deactivated" message — they just appear logged out). When they
+/// try to log back in, the <c>Login.razor</c> pre-check catches the
+/// deactivation and shows "invalid credentials".
+/// </para>
+/// <para>
+/// <b>WHY NOT A SEPARATE MIDDLEWARE?</b>
+/// A dedicated <c>DeactivatedUserMiddleware</c> would be architecturally
+/// cleaner (separation of concerns), but this transformation already runs on
+/// every authenticated request, already has the scoped DbContext + cache
+/// pattern set up, and already pays the DB-lookup cost. Adding a second
+/// component would double the DB hits. Folding both responsibilities into one
+/// lookup is the pragmatic choice.
+/// </para>
+/// <para>
 /// <b>CACHING:</b>
 /// Without caching, this would hit the DB on every single authenticated
 /// request (page navigation, API call, SignalR message, etc.). We cache the
-/// FullName per-user in <see cref="IMemoryCache"/> for 30 seconds. This
-/// means:
+/// FullName + IsActive pair per-user in <see cref="IMemoryCache"/> for 30
+/// seconds. This means:
 /// <list type="bullet">
 ///   <item>At most ONE DB lookup per user per 30 seconds.</item>
-///   <item>If the admin changes a user's name, that user sees the new name
-///       within 30 seconds (on their next request after the cache expires)
-///       — no re-login required.</item>
+///   <item>If the admin deactivates a user, that user's existing session is
+///       rejected within 30 seconds (on their next request after the cache
+///       expires) — no re-login required to enforce the deactivation.</item>
 ///   <item>If the cache entry is evicted (memory pressure), the next request
 ///       simply re-reads from the DB — correctness is never compromised.</item>
 /// </list>
-/// </para>
-/// <para>
-/// <b>WHY NOT JUST FIX LOGIN.razor?</b>
-/// Fixing the Login fallback (to not bake "ADMIN-0001") would prevent NEW
-/// stale cookies, but it wouldn't fix EXISTING stale cookies — users with a
-/// stale cookie would still see the wrong name until they re-login. This
-/// transformation fixes both new AND existing stale cookies, and also keeps
-/// the FullName current if the admin changes a user's name after login.
 /// </para>
 /// <para>
 /// <b>REGISTRATION:</b>
@@ -73,8 +99,9 @@ namespace TakOne.Infrastructure.Identity;
 public sealed class FullNameClaimsTransformation : IClaimsTransformation
 {
     /// <summary>
-    /// Cache TTL — 30 seconds. Balances freshness (admin name changes visible
-    /// within 30s) against DB load (at most one lookup per user per 30s).
+    /// Cache TTL — 30 seconds. Balances freshness (admin name changes +
+    /// deactivations visible within 30s) against DB load (at most one lookup
+    /// per user per 30s).
     /// </summary>
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
 
@@ -93,8 +120,9 @@ public sealed class FullNameClaimsTransformation : IClaimsTransformation
     }
 
     /// <summary>
-    /// Enrich the principal with the current FullName claim. Called by the
-    /// auth middleware on every authenticated request.
+    /// Enrich the principal with the current FullName claim AND reject
+    /// deactivated users. Called by the auth middleware on every authenticated
+    /// request.
     /// </summary>
     public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
@@ -109,46 +137,110 @@ public sealed class FullNameClaimsTransformation : IClaimsTransformation
         if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var userId))
             return principal;
 
-        // ── Fetch the current FullName (from cache or DB) ──────────────
-        var cacheKey = $"fullname:{userId}";
-        if (!_cache.TryGetValue(cacheKey, out string? currentFullName) || string.IsNullOrEmpty(currentFullName))
+        // ── Fetch the current FullName + IsActive (from cache or DB) ──
+        var cacheKey = $"user_state:{userId}";
+        if (!_cache.TryGetValue(cacheKey, out UserState? state) || state is null)
         {
             // IMemoryCache doesn't resolve scoped services, so we create a
             // scope to get a fresh ApplicationDbContext for this lookup.
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            // Project just the FullName column — avoids loading the entire
+            // Project just the columns we need — avoids loading the entire
             // User entity. AsNoTracking because we never mutate this row here.
-            currentFullName = await db.DomainUsers
-                .AsNoTracking()
-                .Where(u => u.Id == userId)
-                .Select(u => u.FullName)
-                .FirstOrDefaultAsync();
+            //
+            // We query ApplicationUser (not DomainUser) for IsActive AND
+            // MustChangePassword because those are Identity-side flags.
+            // The FullName comes from DomainUser as before.
+            var fetched = await (
+                from du in db.DomainUsers.AsNoTracking().Where(u => u.Id == userId)
+                join au in db.Users.AsNoTracking() on du.Id equals au.Id
+                select new { du.FullName, au.IsActive, au.MustChangePassword }
+            ).FirstOrDefaultAsync();
 
-            // If the Domain User row doesn't exist (shouldn't happen, but
-            // defense-in-depth), fall back to the UserName claim rather than
-            // baking an empty string. We DON'T cache this fallback so the
-            // next request will re-check the DB (in case the row appears
-            // later — e.g. the seeder hadn't completed yet).
-            if (string.IsNullOrEmpty(currentFullName))
+            if (fetched is null)
             {
+                // DomainUser OR ApplicationUser row is missing — shouldn't
+                // happen (they share a PK), but defense-in-depth.
                 _logger.LogWarning(
-                    "FullNameClaimsTransformation: DomainUser not found for UserId={UserId}. " +
+                    "FullNameClaimsTransformation: DomainUser/ApplicationUser not found for UserId={UserId}. " +
                     "Falling back to UserName claim for this request (NOT cached). " +
-                    "This usually means the DomainUser row is missing — check the seeder.",
+                    "This usually means the row is missing — check the seeder.",
                     userId);
-                currentFullName = principal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+                var fallbackName = principal.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
                 // Return early WITHOUT caching — next request will re-check the DB.
-                return EnrichPrincipal(principal, currentFullName);
+                return EnrichPrincipal(principal, fallbackName);
             }
 
-            // Cache the successful lookup.
-            _cache.Set(cacheKey, currentFullName, CacheTtl);
+            state = new UserState(fetched.FullName, fetched.IsActive, fetched.MustChangePassword);
+            _cache.Set(cacheKey, state, CacheTtl);
         }
 
-        return EnrichPrincipal(principal, currentFullName);
+        // ── Reject deactivated users ──
+        // Return a new ClaimsPrincipal with NO identities. This makes
+        // principal.Identity.IsAuthenticated return false, so the authorization
+        // middleware treats the request as anonymous and redirects to
+        // /Account/Login. The cookie itself is NOT cleared (that would require
+        // SignInManager.SignOutAsync, which IClaimsTransformation can't call),
+        // but the user can't access anything until they re-authenticate — and
+        // when they try, Login.razor's IsActive pre-check will catch them.
+        if (!state.IsActive)
+        {
+            _logger.LogInformation(
+                "FullNameClaimsTransformation: rejecting deactivated user UserId={UserId}. " +
+                "Existing cookie is being ignored for this request (user appears anonymous).",
+                userId);
+            return new ClaimsPrincipal();
+        }
+
+        // ── Sync the must_change_password claim with the DB ──
+        // The claim on the cookie can be stale — e.g. the MustChangePassword
+        // flag was set to true on the DB row AFTER the cookie was issued
+        // (by an admin resetting the password), or the flag was cleared on
+        // the DB row but the cookie still carries the claim (user changed
+        // their password in another tab). We sync the claim here so the
+        // MustChangePasswordRedirectMiddleware (in Program.cs) sees the
+        // CURRENT DB state, not a stale cookie claim.
+        //
+        // If MustChangePassword is true on the DB: ADD the claim (if missing).
+        // If MustChangePassword is false on the DB: REMOVE the claim (if present).
+        // This runs on every authenticated request (within the 30s cache),
+        // so the middleware never sees a stale claim for more than 30s.
+        var mcpClaim = principal.FindFirst("must_change_password");
+        if (state.MustChangePassword && mcpClaim is null)
+        {
+            // DB says the user must change their password, but the cookie
+            // doesn't have the claim. Add it to the transformed principal
+            // so the middleware redirects them to /Account/ChangePassword.
+            var enriched = EnrichPrincipalWithClaim(principal, "must_change_password", "true");
+            _logger.LogInformation(
+                "FullNameClaimsTransformation: added must_change_password claim for UserId={UserId} " +
+                "(DB flag is true but cookie claim was missing). The MustChangePassword middleware will redirect.",
+                userId);
+            return enriched;
+        }
+        if (!state.MustChangePassword && mcpClaim is not null)
+        {
+            // DB says the user has already changed their password, but the
+            // cookie still carries the stale claim. Strip it from the
+            // transformed principal so the middleware doesn't redirect.
+            var stripped = StripClaimFromPrincipal(principal, "must_change_password");
+            _logger.LogInformation(
+                "FullNameClaimsTransformation: stripped stale must_change_password claim for UserId={UserId} " +
+                "(DB flag is false but cookie still had the claim).",
+                userId);
+            return stripped;
+        }
+
+        return EnrichPrincipal(principal, state.FullName);
     }
+
+    /// <summary>
+    /// Cached per-user state: FullName (for claim enrichment) + IsActive
+    /// (for deactivation enforcement) + MustChangePassword (for forced-
+    /// password-change middleware sync).
+    /// </summary>
+    private sealed record UserState(string FullName, bool IsActive, bool MustChangePassword);
 
     /// <summary>
     /// Returns a new <see cref="ClaimsPrincipal"/> with the <c>FullName</c>
@@ -179,6 +271,50 @@ public sealed class FullNameClaimsTransformation : IClaimsTransformation
 
         // Return a new principal with the cloned identity plus any other
         // identities the original principal had (rare, but preserves them).
+        var newPrincipal = new ClaimsPrincipal(clone);
+        foreach (var otherIdentity in principal.Identities.Skip(1))
+            newPrincipal.AddIdentity(otherIdentity);
+
+        return newPrincipal;
+    }
+
+    /// <summary>
+    /// Returns a new <see cref="ClaimsPrincipal"/> with an ADDITIONAL claim
+    /// of the given type + value. Used to add <c>must_change_password</c>
+    /// when the DB says the flag is true but the cookie doesn't carry it.
+    /// </summary>
+    private static ClaimsPrincipal EnrichPrincipalWithClaim(
+        ClaimsPrincipal principal, string claimType, string claimValue)
+    {
+        var identity = principal.Identities.FirstOrDefault();
+        if (identity is null)
+            return principal;
+
+        var clone = identity.Clone();
+        clone.AddClaim(new Claim(claimType, claimValue));
+
+        var newPrincipal = new ClaimsPrincipal(clone);
+        foreach (var otherIdentity in principal.Identities.Skip(1))
+            newPrincipal.AddIdentity(otherIdentity);
+
+        return newPrincipal;
+    }
+
+    /// <summary>
+    /// Returns a new <see cref="ClaimsPrincipal"/> with ALL claims of the
+    /// given type REMOVED. Used to strip a stale <c>must_change_password</c>
+    /// claim when the DB says the flag is false but the cookie still carries it.
+    /// </summary>
+    private static ClaimsPrincipal StripClaimFromPrincipal(
+        ClaimsPrincipal principal, string claimType)
+    {
+        var identity = principal.Identities.FirstOrDefault();
+        if (identity is null)
+            return principal;
+
+        var claims = identity.Claims.Where(c => c.Type != claimType).ToList();
+        var clone = new ClaimsIdentity(claims, identity.AuthenticationType, identity.NameClaimType, identity.RoleClaimType);
+
         var newPrincipal = new ClaimsPrincipal(clone);
         foreach (var otherIdentity in principal.Identities.Skip(1))
             newPrincipal.AddIdentity(otherIdentity);

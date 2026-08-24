@@ -213,4 +213,75 @@ public interface IUserAccountService
         string currentPassword,
         string newPassword,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the Identity-side <c>IsActive</c> flag on
+    /// <c>ApplicationUser</c> AND refreshes the user's <c>SecurityStamp</c>.
+    ///
+    /// <b>WHY THIS EXISTS — the "deactivated user can still log in" bug:</b>
+    /// The Domain <c>User.IsActive</c> flag and the Identity
+    /// <c>ApplicationUser.IsActive</c> flag are stored in SEPARATE tables
+    /// (<c>Users</c> and <c>AspNetUsers</c>), with separate columns. The
+    /// Domain layer's <c>User.Deactivate()</c> only updates the Domain
+    /// row — it has no knowledge of <c>ApplicationUser</c>. Without this
+    /// method, <c>DeactivateUserCommandHandler</c> had no way to update
+    /// the Identity-side flag, so the <c>Login.razor</c> pre-check that
+    /// reads <c>appUser.IsActive</c> (from <c>AspNetUsers</c>) always
+    /// saw <c>true</c>, and a deactivated user could log in from any
+    /// device anywhere.
+    ///
+    /// <b>WHAT THE CALLER DOES:</b>
+    /// <list type="number">
+    ///   <item>
+    ///     Call <c>IUserRepository.GetByIdAsync(userId)</c> + the Domain
+    ///     aggregate's <c>Deactivate()</c> / <c>Activate()</c> method
+    ///     (sets Domain <c>User.IsActive</c>).
+    ///   </item>
+    ///   <item>
+    ///     Call THIS method with the SAME <c>isActive</c> value, to sync
+    ///     the Identity-side <c>ApplicationUser.IsActive</c> column AND
+    ///     refresh the <c>SecurityStamp</c> (which invalidates any
+    ///     outstanding auth cookies for the user — kicking active
+    ///     sessions out within <c>SecurityStampValidatorOptions.ValidationInterval</c>
+    ///     seconds, default 30s in this app).
+    ///   </item>
+    ///   <item>
+    ///     Call <c>IUnitOfWork.SaveChangesAsync()</c> (commits both the
+    ///     Domain and Identity rows in one transaction — they share the
+    ///     same <c>ApplicationDbContext</c>).
+    ///   </item>
+    /// </list>
+    ///
+    /// <b>SECURITY STAMP REFRESH:</b>
+    /// For <c>isActive=false</c> (deactivation), the SecurityStamp refresh
+    /// is critical — it makes <c>SecurityStampValidator</c> reject the
+    /// user's existing auth cookie on the next request after the
+    /// validation interval elapses. Without this, a deactivated user's
+    /// existing session would persist for up to
+    /// <c>CookieExpiryHours</c> (default 8h).
+    ///
+    /// For <c>isActive=true</c> (reactivation), the SecurityStamp refresh
+    /// is a harmless no-op (the user couldn't log in while deactivated,
+    /// so they have no existing session to invalidate). We do it anyway
+    /// for symmetry — and as defense-in-depth against a future change
+    /// that might allow deactivated users to hold a session.
+    ///
+    /// <b>IDEMPOTENT:</b> If <c>ApplicationUser.IsActive</c> already
+    /// equals the requested value, this method short-circuits to
+    /// <c>Result.Success()</c> without touching the SecurityStamp. This
+    /// prevents log spam from repeated deactivation/activation calls.
+    /// </summary>
+    /// <param name="userId">
+    /// The user's Id (the shared PK on both <c>Domain.User</c> and
+    /// <c>ApplicationUser</c>).
+    /// </param>
+    /// <param name="isActive">
+    /// The desired state: <c>false</c> to deactivate, <c>true</c> to
+    /// reactivate. The Domain-side flag MUST be set to the same value
+    /// by the caller, in the same transaction.
+    /// </param>
+    Task<Result> SetUserActiveStatusAsync(
+        Guid userId,
+        bool isActive,
+        CancellationToken cancellationToken = default);
 }

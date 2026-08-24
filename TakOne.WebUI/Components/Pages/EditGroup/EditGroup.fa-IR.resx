@@ -208,6 +208,9 @@
   <data name="DeactivateSuccess" xml:space="preserve">
     <value>«{0}» غیرفعال شد.</value>
   </data>
+  <data name="DeactivateDialogTitle" xml:space="preserve">
+    <value>تأیید غیرفعال‌سازی گروه</value>
+  </data>
   <data name="ActivateSuccessTitle" xml:space="preserve">
     <value>گروه فعال شد</value>
   </data>

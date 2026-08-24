@@ -275,6 +275,12 @@
     <value>Remove {1} from group "{0}"? This will reset their purchase limits.</value>
     <comment>{0} = group name; {1} = user's full name</comment>
   </data>
+  <data name="RemoveRoleDialogTitle" xml:space="preserve">
+    <value>Confirm role removal</value>
+  </data>
+  <data name="RemoveGroupDialogTitle" xml:space="preserve">
+    <value>Confirm group removal</value>
+  </data>
   <data name="ConfirmDeactivate" xml:space="preserve">
     <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
     <comment>{0} = user's full name; {1} = user's worker ID</comment>
