@@ -1,5 +1,5 @@
-﻿﻿@* MobileLayout.razor — the mobile shell layout for TakOne.
-   Pages opt in via: @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+﻿@* MobileLayout.razor — the mobile shell layout for TakOne.
+   Uses plain HTML (NOT RadzenLayout/RadzenBody) for proper position:fixed.
 *@
 
 @using Microsoft.AspNetCore.Components.Authorization
@@ -18,100 +18,106 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
-@inject ILoggerFactory LoggerFactory
-@inject IStringLocalizerFactory LocalizerFactory
+@inject IStringLocalizer<TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout> Loc
 @attribute [Authorize]
 
-<RadzenLayout>
-    <RadzenBody>
-        <header class="m-header">
-            <div class="m-header-top">
-                <div class="m-brand">
-                    <div class="m-brand-icon">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 3C12 3 8 6 8 10C8 12 9 13 10 13.5C10 13.5 9 12 9 10C9 8 11 6 12 5C13 6 15 8 15 10C15 12 14 13.5 14 13.5C15 13 16 12 16 10C16 6 12 3 12 3Z" fill="#C9A227" />
-                            <ellipse cx="12" cy="17" rx="6" ry="2" fill="#C9A227" opacity="0.6" />
-                            <path d="M12 13V21" stroke="#C9A227" stroke-width="2" stroke-linecap="round" />
-                        </svg>
-                    </div>
-                    <div class="m-brand-text">
-                        <h1 class="m-brand-title">@_loc["BrandTitle"]</h1>
-                        <p class="m-greeting">@GreetingText</p>
-                    </div>
+<div class="m-page">
+    <header class="m-header">
+        <div class="m-header-top">
+            <div class="m-brand">
+                <div class="m-brand-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3C12 3 8 6 8 10C8 12 9 13 10 13.5C10 13.5 9 12 9 10C9 8 11 6 12 5C13 6 15 8 15 10C15 12 14 13.5 14 13.5C15 13 16 12 16 10C16 6 12 3 12 3Z" fill="#C9A227" />
+                        <ellipse cx="12" cy="17" rx="6" ry="2" fill="#C9A227" opacity="0.6" />
+                        <path d="M12 13V21" stroke="#C9A227" stroke-width="2" stroke-linecap="round" />
+                    </svg>
                 </div>
-                <div class="m-header-actions">
-                    <button class="m-icon-btn" @onclick="ToggleThemeAsync" title="@_loc["ThemeToggle"]">
-                        @if (_currentTheme == "tak-dark")
-                        {
-                            <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                            </svg>
-                        }
-                        else
-                        {
-                            <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                            </svg>
-                        }
-                    </button>
-                    <form method="post" action="/Account/SignOut" class="m-logout-form">
-                        <AntiforgeryToken />
-                        <button type="submit" class="m-icon-btn" title="@_loc["Logout"]">
-                            <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-                            </svg>
-                        </button>
-                    </form>
+                <div class="m-brand-text">
+                    <h1 class="m-brand-title">@Loc["BrandTitle"]</h1>
+                    <p class="m-greeting">@GreetingText</p>
                 </div>
             </div>
-            <div class="m-search">
-                <input type="text"
-                       placeholder="@_loc["SearchPlaceholder"]"
-                       @bind="_searchTerm"
-                       @bind:event="oninput"
-                       @onkeypress="OnSearchKeypress" />
-                <svg class="m-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
-                </svg>
-            </div>
-        </header>
-
-        <div class="m-gold-bar">@_loc["GoldBarText"]</div>
-
-        <main class="m-content" style="padding-bottom: @(_cartLineCount > 0 ? "140px" : "72px");">
-            @Body
-        </main>
-
-        @if (_cartLineCount > 0 && _cart is not null)
-        {
-            <div class="m-cart-bar">
-                <div class="m-cart-icon-wrapper">
-                    <svg class="m-cart-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
-                    </svg>
-                    <span class="m-cart-badge">@CultureFormat.FormatNumber(_cartLineCount)</span>
-                </div>
-                <div class="m-cart-info">
-                    <p class="m-cart-label">@_loc["CartTotal"]</p>
-                    <p class="m-cart-amount">@FormatCartTotal()</p>
-                </div>
-                <button class="m-cart-checkout" @onclick="GoToCart">
-                    @_loc["Checkout"]
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 16px; height: 16px;">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
+            <div class="m-header-actions">
+                <button class="m-icon-btn" @onclick="SetCultureAsync" title="@Loc["LanguageToggle"]">
+                    @if (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa")
+                    {
+                        <span class="m-lang-text">EN</span>
+                    }
+                    else
+                    {
+                        <span class="m-lang-text">فا</span>
+                    }
                 </button>
+                <button class="m-icon-btn" @onclick="ToggleThemeAsync" title="@Loc["ThemeToggle"]">
+                    @if (_currentTheme == "tak-dark")
+                    {
+                        <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                    }
+                    else
+                    {
+                        <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                        </svg>
+                    }
+                </button>
+                <form method="post" action="/Account/SignOut" class="m-logout-form">
+                    <AntiforgeryToken />
+                    <button type="submit" class="m-icon-btn" title="@Loc["Logout"]">
+                        <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                        </svg>
+                    </button>
+                </form>
             </div>
-        }
+        </div>
+        <div class="m-search">
+            <input type="text"
+                   placeholder="@Loc["SearchPlaceholder"]"
+                   @bind="_searchTerm"
+                   @bind:event="oninput"
+                   @onkeypress="OnSearchKeypress" />
+            <svg class="m-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+        </div>
+    </header>
 
-        <BottomNav />
-    </RadzenBody>
-    <RadzenDialog />
-    <RadzenNotification />
-</RadzenLayout>
+    <div class="m-gold-bar">@Loc["GoldBarText"]</div>
+
+    <main class="m-content" style="padding-bottom: @(_cartLineCount > 0 ? "140px" : "72px");">
+        @Body
+    </main>
+</div>
+
+@if (_cartLineCount > 0 && _cart is not null)
+{
+    <div class="m-cart-bar">
+        <div class="m-cart-icon-wrapper">
+            <svg class="m-cart-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+            </svg>
+        </div>
+        <div class="m-cart-info">
+            <p class="m-cart-label">@Loc["CartTotal"]</p>
+            <p class="m-cart-amount">@FormatCartTotal()</p>
+        </div>
+        <button class="m-cart-checkout" @onclick="GoToCart">
+            @Loc["Checkout"]
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 16px; height: 16px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+    </div>
+}
+
+<BottomNav CartCount="@_cartLineCount" />
+
+<RadzenDialog />
+<RadzenNotification />
 
 @code {
-    private IStringLocalizer _loc = default!;
     private string _currentTheme = "tak-light";
     private string _searchTerm = string.Empty;
     private CartDto? _cart;
@@ -125,9 +131,9 @@
             var tehranHour = DateTime.UtcNow.AddHours(3.5).Hour;
             var greeting = tehranHour switch
             {
-                < 12 => _loc["GreetingMorning"],
-                < 18 => _loc["GreetingAfternoon"],
-                _ => _loc["GreetingEvening"]
+                < 12 => Loc["GreetingMorning"],
+                < 18 => Loc["GreetingAfternoon"],
+                _ => Loc["GreetingEvening"]
             };
             return string.IsNullOrEmpty(_userFullName)
                 ? greeting
@@ -135,19 +141,17 @@
         }
     }
 
-    protected override void OnInitialized()
-    {
-        // Use IStringLocalizerFactory with explicit base name — this is
-        // the same pattern as ChangePassword.razor, which sidesteps a
-        // Razor source-generator quirk where IStringLocalizer<T> doesn't
-        // always find resources for components in subfolders.
-        _loc = LocalizerFactory.Create(
-            "TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout",
-            "TakOne.WebUI");
-    }
-
     protected override async Task OnInitializedAsync()
     {
+        // Read theme from localStorage IMMEDIATELY so the first render
+        // uses the correct theme (avoids flashing tak-light on refresh).
+        try
+        {
+            _currentTheme = await JS.InvokeAsync<string>("takTheme.get");
+        }
+        catch { }
+
+        // Load user's full name for the greeting
         try
         {
             var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -160,21 +164,8 @@
             }
         }
         catch { }
-    }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try
-            {
-                _currentTheme = await JS.InvokeAsync<string>("takTheme.get");
-                StateHasChanged();
-            }
-            catch { }
-
-            await LoadCartAsync();
-        }
+        await LoadCartAsync();
     }
 
     private async Task LoadCartAsync()
@@ -187,8 +178,13 @@
             {
                 _cart = result.Value;
                 _cartLineCount = _cart.LineItems?.Count ?? 0;
-                StateHasChanged();
             }
+            else
+            {
+                _cart = null;
+                _cartLineCount = 0;
+            }
+            StateHasChanged();
         }
         catch { }
     }
@@ -203,7 +199,7 @@
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchTerm))
         {
-            Navigation.NavigateTo($"/m/Products?search={Uri.EscapeDataString(_searchTerm.Trim())}", forceLoad: false);
+            Navigation.NavigateTo($"/m/Products?search={Uri.EscapeDataString(_searchTerm.Trim())}", forceLoad: true);
         }
     }
 
@@ -212,13 +208,24 @@
         Navigation.NavigateTo("/Cart", forceLoad: false);
     }
 
+    private void SetCultureAsync()
+    {
+        var currentCulture = System.Globalization.CultureInfo.CurrentUICulture.Name;
+        var newCulture = currentCulture == "fa-IR" ? "en-US" : "fa-IR";
+        // Write the culture cookie (same pattern as MainLayout.razor)
+        var cookieValue = $"c={newCulture}|uic={newCulture}";
+        JS.InvokeVoidAsync("eval", $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        // Reload the page so the server picks up the new culture
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
+
     private string FormatCartTotal()
     {
         if (_cart?.Total is null) return "—";
         var isIrr = string.Equals(_cart.Total.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
         var displayAmount = isIrr ? _cart.Total.Amount / 10m : _cart.Total.Amount;
         var amount = CultureFormat.ToCultureDigits(displayAmount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
-        var unit = isIrr ? _loc["TomanUnit"] : _cart.Total.Currency;
+        var unit = isIrr ? Loc["TomanUnit"] : _cart.Total.Currency;
         return $"{amount} {unit}";
     }
 }

@@ -17,8 +17,9 @@
 
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
-@using System.Security.Claims
+@inject Microsoft.Extensions.Localization.IStringLocalizer<BottomNav> Loc
 @using TakOne.Application.Common.Authorization
+@using TakOne.WebUI.Services
 
 <nav class="bottom-nav">
     @foreach (var item in _navItems)
@@ -28,13 +29,13 @@
            @onclick:preventDefault
            @onclick="() => NavigateTo(item.Href)">
             <div class="nav-indicator"></div>
-            @if (item.ShowBadge)
+            @if (item.ShowBadge && CartCount > 0)
             {
                 <div class="nav-icon-wrapper">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         @item.SvgPath
                     </svg>
-                    <span class="nav-badge">۵</span>
+                    <span class="nav-badge">@CultureFormat.FormatNumber(CartCount)</span>
                 </div>
             }
             else
@@ -49,6 +50,8 @@
 </nav>
 
 @code {
+    [Parameter] public int CartCount { get; set; }
+
     private List<NavItem> _navItems = new();
 
     private bool _isAdmin;
@@ -83,10 +86,10 @@
         if (_isCustomer)
         {
             // Customer always sees the same 4 items regardless of page
-            _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, IsActive(currentPath, "m/Products")));
-            _navItems.Add(new NavItem("My Orders", "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
-            _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
-            _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+            _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, IsActive(currentPath, "m/Products")));
+            _navItems.Add(new NavItem(Loc["MyOrders"], "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
+            _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
+            _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
         }
         else
         {
@@ -94,45 +97,45 @@
             if (IsActive(currentPath, "m/Dashboard") || currentPath == "" || currentPath == "/")
             {
                 // Dashboard section
-                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, true));
-                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, false));
-                _navItems.Add(new NavItem("Admin Products", "/Admin/Products", NavIcon.AdminProducts, false));
-                _navItems.Add(new NavItem("Admin Users", "/Admin/Users", NavIcon.AdminUsers, false));
-                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, true));
+                _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, false));
+                _navItems.Add(new NavItem(Loc["AdminProducts"], "/Admin/Products", NavIcon.AdminProducts, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/Admin/Users", NavIcon.AdminUsers, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
             }
             else if (IsActive(currentPath, "m/Products") || IsActive(currentPath, "Products"))
             {
                 // Products section
-                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
-                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, true));
-                _navItems.Add(new NavItem("Orders", "/Sales", NavIcon.Orders, false));
-                _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, false, ShowBadge: true));
-                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, true));
+                _navItems.Add(new NavItem(Loc["Orders"], "/Sales", NavIcon.Orders, false));
+                _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, false, ShowBadge: true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
             }
             else if (IsActive(currentPath, "Admin/Products"))
             {
                 // Admin Products section
-                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
-                _navItems.Add(new NavItem("Admin Products", "/Admin/Products", NavIcon.AdminProducts, true));
-                _navItems.Add(new NavItem("Admin Categories", "/Admin/Categories", NavIcon.AdminCategories, false));
-                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["AdminProducts"], "/Admin/Products", NavIcon.AdminProducts, true));
+                _navItems.Add(new NavItem(Loc["AdminCategories"], "/Admin/Categories", NavIcon.AdminCategories, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
             }
             else if (IsActive(currentPath, "Admin/Users"))
             {
                 // Admin Users section
-                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, false));
-                _navItems.Add(new NavItem("Admin Users", "/Admin/Users", NavIcon.AdminUsers, true));
-                _navItems.Add(new NavItem("Customer Groups", "/Admin/Groups", NavIcon.CustomerGroups, false));
-                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/Admin/Users", NavIcon.AdminUsers, true));
+                _navItems.Add(new NavItem(Loc["CustomerGroups"], "/Admin/Groups", NavIcon.CustomerGroups, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
             }
             else
             {
                 // Fallback for other pages (Sales, Cart, Settings, etc.)
-                _navItems.Add(new NavItem("Dashboard", "/", NavIcon.Dashboard, IsActive(currentPath, "")));
-                _navItems.Add(new NavItem("Products", "/m/Products", NavIcon.Products, false));
-                _navItems.Add(new NavItem("Orders", "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
-                _navItems.Add(new NavItem("Cart", "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
-                _navItems.Add(new NavItem("Settings", "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, IsActive(currentPath, "")));
+                _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, false));
+                _navItems.Add(new NavItem(Loc["Orders"], "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
+                _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
             }
         }
     }

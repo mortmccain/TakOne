@@ -36,17 +36,16 @@
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
-@inject IStringLocalizerFactory LocalizerFactory
-@inject ILoggerFactory LoggerFactory
+@inject IStringLocalizer<MobileProducts> Loc
 @inject ToastService Toast
 
-<PageTitle>@_loc["PageTitle"]</PageTitle>
+<PageTitle>@Loc["PageTitle"]</PageTitle>
 
 @if (_isLoading)
 {
     <div class="m-loading">
         <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@_loc["Loading"]</p>
+        <p>@Loc["Loading"]</p>
     </div>
 }
 else
@@ -55,13 +54,13 @@ else
     <div class="m-budget-card">
         <div class="m-budget-content">
             <div class="m-budget-info">
-                <p class="m-budget-label">@_loc["BudgetRemaining"]</p>
+                <p class="m-budget-label">@Loc["BudgetRemaining"]</p>
                 <p class="m-budget-amount">@FormatBudgetAmount()</p>
                 @if (_budgetConsumedPercent > 0)
                 {
                     <div class="m-budget-bar-container">
                         <div class="m-budget-bar-info">
-                            <span>@_loc["BudgetUsed"]</span>
+                            <span>@Loc["BudgetUsed"]</span>
                             <span>@CultureFormat.FormatPercent(_budgetConsumedPercent, 0)</span>
                         </div>
                         <div class="m-budget-bar-track">
@@ -78,10 +77,24 @@ else
         </div>
     </div>
 
+    @* ── Search filter chip (shows when search is active, with X to clear) ── *@
+    @if (!string.IsNullOrWhiteSpace(_searchTerm))
+    {
+        <div class="m-search-chip">
+            <span>@Loc["SearchResultsFor"]</span>
+            <strong>"@_searchTerm"</strong>
+            <button class="m-search-chip-clear" @onclick="ClearSearch">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 14px; height: 14px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+    }
+
     @* ── 2. Category chips ── *@
     <div class="m-section">
         <div class="m-section-header">
-            <h2 class="m-section-title">@_loc["Categories"]</h2>
+            <h2 class="m-section-title">@Loc["Categories"]</h2>
         </div>
         <div class="m-cat-scroll">
             <button class="m-cat-chip @(_selectedCategoryId is null ? "active" : "")"
@@ -91,7 +104,7 @@ else
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                     </svg>
                 </div>
-                <span class="m-cat-label">@_loc["AllCategories"]</span>
+                <span class="m-cat-label">@Loc["AllCategories"]</span>
             </button>
             @foreach (var cat in _categories)
             {
@@ -113,11 +126,11 @@ else
         <div class="m-hero-content">
             <span class="m-hero-badge">
                 <span class="m-pulse-dot"></span>
-                @_loc["HeroBadge"]
+                @Loc["HeroBadge"]
             </span>
-            <h3 class="m-hero-title">@_loc["HeroTitle"]</h3>
+            <h3 class="m-hero-title">@Loc["HeroTitle"]</h3>
             <button class="m-hero-btn" @onclick="GoToMyOrders">
-                @_loc["HeroButton"]
+                @Loc["HeroButton"]
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 12px; height: 12px;">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
                 </svg>
@@ -129,7 +142,7 @@ else
     <div class="m-products">
         @if (_products.Count == 0)
         {
-            <p class="m-empty">@_loc["NoProducts"]</p>
+            <p class="m-empty">@Loc["NoProducts"]</p>
         }
         else
         {
@@ -159,15 +172,15 @@ else
                         }
                         @if (stockOut)
                         {
-                            <span class="m-stock-badge m-stock-out">@_loc["StockOut"]</span>
+                            <span class="m-stock-badge m-stock-out">@Loc["StockOut"]</span>
                         }
                         else if (product.StockQuantity <= 10)
                         {
-                            <span class="m-stock-badge m-stock-low">@_loc["StockLow"]</span>
+                            <span class="m-stock-badge m-stock-low">@Loc["StockLow"]</span>
                         }
                         else
                         {
-                            <span class="m-stock-badge m-stock-in">@_loc["StockIn"]</span>
+                            <span class="m-stock-badge m-stock-in">@Loc["StockIn"]</span>
                         }
                     </div>
                     <div class="m-product-body">
@@ -192,28 +205,28 @@ else
                             @if (_isReadOnly)
                             {
                                 <button type="button" class="m-add-btn m-add-btn-full" disabled
-                                        title="@_loc["AddButtonReadOnlyTitle"]">
-                                    @_loc["AddButtonReadOnly"]
+                                        title="@Loc["AddButtonReadOnlyTitle"]">
+                                    @Loc["AddButtonReadOnly"]
                                 </button>
                             }
                             else if (limitReached && !stockOut)
                             {
                                 <button type="button" class="m-add-btn m-add-btn-full" disabled
-                                        title="@_loc["AddButtonLimitReachedTitle"]">
-                                    @_loc["AddButtonLimitReached"]
+                                        title="@Loc["AddButtonLimitReachedTitle"]">
+                                    @Loc["AddButtonLimitReached"]
                                 </button>
                             }
                             else if (salaryReached && !stockOut)
                             {
                                 <button type="button" class="m-add-btn m-add-btn-full" disabled
-                                        title="@_loc["AddButtonSalaryReachedTitle"]">
-                                    @_loc["AddButtonSalaryReached"]
+                                        title="@Loc["AddButtonSalaryReachedTitle"]">
+                                    @Loc["AddButtonSalaryReached"]
                                 </button>
                             }
                             else if (stockOut)
                             {
                                 <button type="button" class="m-add-btn m-add-btn-full" disabled>
-                                    @_loc["AddButtonStockOut"]
+                                    @Loc["AddButtonStockOut"]
                                 </button>
                             }
                             else
@@ -230,7 +243,7 @@ else
                                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 16px; height: 16px;">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                                         </svg>
-                                        <span>@_loc["AddButtonText"]</span>
+                                        <span>@Loc["AddButtonText"]</span>
                                     }
                                 </button>
                             }
@@ -254,7 +267,7 @@ else
                     <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                 </svg>
             }
-            @_loc["QuickReorder"]
+            @Loc["QuickReorder"]
         </button>
     </div>
 
@@ -266,21 +279,14 @@ else
             </svg>
         </div>
         <div class="m-support-text">
-            <p class="m-support-title">@_loc["SupportTitle"]</p>
-            <p class="m-support-hours">@_loc["SupportHours"]</p>
+            <p class="m-support-title">@Loc["SupportTitle"]</p>
+            <p class="m-support-hours">@Loc["SupportHours"]</p>
         </div>
-        <a href="tel:0211234" class="m-support-call-btn">@_loc["Call"]</a>
+        <a href="tel:0211234" class="m-support-call-btn">@Loc["Call"]</a>
     </div>
-
-    <div class="m-footer">@_loc["Version"]</div>
 }
 
 @code {
-    // ── Localizer (uses IStringLocalizerFactory with explicit base name —
-    //    same pattern as ChangePassword.razor, to sidestep a Razor
-    //    source-generator quirk with components in subfolders) ──
-    private IStringLocalizer _loc = default!;
-
     // ── State ──
     private List<ProductListItemDto> _products = new();
     private List<CategoryDto> _categories = new();
@@ -307,16 +313,35 @@ else
 
     // ── Lifecycle ──
 
+    private bool _isInitialized;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Don't process parameters until OnInitializedAsync has run
+        // (it loads the initial data). After init, this catches URL
+        // changes (e.g. user typed in the header search bar).
+        if (!_isInitialized) return;
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var newSearch = string.Empty;
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("search", out var searchValue))
+        {
+            newSearch = searchValue.ToString();
+        }
+
+        if (newSearch != _searchTerm)
+        {
+            _searchTerm = newSearch;
+            _isLoading = true;
+            StateHasChanged();
+            await LoadProductsAsync();
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
-        // Initialize localizer with explicit base name (same pattern as
-        // ChangePassword.razor — sidesteps Razor source-generator quirk
-        // where IStringLocalizer<T> doesn't find resources for components
-        // in subfolders).
-        _loc = LocalizerFactory.Create(
-            "TakOne.WebUI.Components.MobilePages.MobileProducts",
-            "TakOne.WebUI");
-
         // Read search term from query string
         var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("search", out var searchValue))
@@ -338,6 +363,7 @@ else
         finally
         {
             _isLoading = false;
+            _isInitialized = true;
         }
     }
 
@@ -385,11 +411,20 @@ else
             if (result.IsSuccess && result.Value is not null)
             {
                 _cart = result.Value;
-                _budgetConsumed = _cart.Total?.Amount ?? 0m;
-                _budgetCurrency = _cart.Total?.Currency ?? "IRR";
-                _budgetSalary = _cart.BudgetInfo?.Salary.Amount ?? 0m;
+                // Budget info comes from BudgetInfo (populated by ISalaryBudgetService),
+                // NOT from Cart.Total. Consumed = all purchases this month (including
+                // submitted sales, not just the draft cart).
                 if (_cart.BudgetInfo is not null)
+                {
+                    _budgetSalary = _cart.BudgetInfo.Salary.Amount;
+                    _budgetConsumed = _cart.BudgetInfo.Consumed;
                     _budgetCurrency = _cart.BudgetInfo.Salary.Currency;
+                }
+                else
+                {
+                    _budgetConsumed = _cart.Total?.Amount ?? 0m;
+                    _budgetCurrency = _cart.Total?.Currency ?? "IRR";
+                }
             }
             else
             {
@@ -408,8 +443,16 @@ else
     {
         _selectedCategoryId = categoryId;
         _isLoading = true;
+        StateHasChanged();
         await LoadProductsAsync();
         _isLoading = false;
+        StateHasChanged();
+    }
+
+    private void ClearSearch()
+    {
+        _searchTerm = string.Empty;
+        Navigation.NavigateTo("/m/Products", forceLoad: false);
     }
 
     // ── Qty selector helpers (ported from PC Products page) ──
@@ -479,20 +522,20 @@ else
         var qty = GetQtyForProduct(product.Id);
         if (qty < 1)
         {
-            await Toast.Warning(_loc["ToastQtyMin"]);
+            await Toast.Warning(Loc["ToastQtyMin"]);
             return;
         }
 
         var remaining = GetRemainingForProduct(product);
         if (remaining <= 0)
         {
-            await Toast.Warning(_loc["ToastLimitReached"]);
+            await Toast.Warning(Loc["ToastLimitReached"]);
             return;
         }
         if (qty > remaining)
         {
             qty = remaining;
-            await Toast.Info(string.Format(CultureInfo.CurrentCulture, _loc["ToastQtyClamped"], CultureFormat.FormatDigits(remaining)));
+            await Toast.Info(string.Format(CultureInfo.CurrentCulture, Loc["ToastQtyClamped"], CultureFormat.FormatDigits(remaining)));
         }
 
         var budget = _cart?.BudgetInfo;
@@ -502,7 +545,7 @@ else
             var lineTotal = unitPrice * qty;
             if (lineTotal > budget.Remaining)
             {
-                await Toast.Warning(_loc["ToastSalaryReached"]);
+                await Toast.Warning(Loc["ToastSalaryReached"]);
                 return;
             }
         }
@@ -517,18 +560,22 @@ else
 
             if (result.IsSuccess)
             {
-                await Toast.Success(_loc["ToastAddedToCart"]);
+                await Toast.Success(Loc["ToastAddedToCart"]);
                 await LoadCartAsync();
                 _qtyByProduct[product.Id] = 1;
+                // Reload the page so MobileLayout's cart bar + BottomNav
+                // badge update with the new cart state. forceLoad:true
+                // triggers a full page refresh.
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
             }
             else
             {
-                await Toast.Error(result.Error ?? _loc["ToastAddFailed"]);
+                await Toast.Error(result.Error ?? Loc["ToastAddFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(_loc["ToastAddError"]);
+            await Toast.Error(Loc["ToastAddError"]);
         }
         finally
         {
@@ -547,17 +594,19 @@ else
             var result = await MessageBus.InvokeAsync<Result>(new QuickReorderLastSaleCommand());
             if (result.IsSuccess)
             {
-                await Toast.Success(_loc["ReorderSuccess"], summary: _loc["ReorderSuccessTitle"]);
+                await Toast.Success(Loc["ReorderSuccess"], summary: Loc["ReorderSuccessTitle"]);
                 await LoadCartAsync();
+                // Reload so MobileLayout's cart bar + BottomNav badge update.
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
             }
             else
             {
-                await Toast.Error(result.Error ?? _loc["ReorderError"], summary: _loc["ErrorTitle"]);
+                await Toast.Error(result.Error ?? Loc["ReorderError"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(_loc["ReorderError"], summary: _loc["ErrorTitle"]);
+            await Toast.Error(Loc["ReorderError"], summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -581,17 +630,17 @@ else
         var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
         var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
         var amount = CultureFormat.ToCultureDigits(displayAmount.ToString("N0", CultureInfo.InvariantCulture));
-        var unit = isIrr ? _loc["TomanUnit"] : price.Currency;
+        var unit = isIrr ? Loc["TomanUnit"] : price.Currency;
         return $"{amount} {unit}";
     }
 
     private string FormatBudgetAmount()
     {
-        if (_budgetSalary <= 0) return _loc["NoBudget"];
+        if (_budgetSalary <= 0) return Loc["NoBudget"];
         var isIrr = string.Equals(_budgetCurrency, "IRR", StringComparison.OrdinalIgnoreCase);
         var remaining = isIrr ? (_budgetSalary - _budgetConsumed) / 10m : (_budgetSalary - _budgetConsumed);
         var amount = CultureFormat.ToCultureDigits(Math.Max(0, remaining).ToString("N0", CultureInfo.InvariantCulture));
-        var unit = isIrr ? _loc["TomanUnit"] : _budgetCurrency;
+        var unit = isIrr ? Loc["TomanUnit"] : _budgetCurrency;
         return $"{amount} {unit}";
     }
 }
