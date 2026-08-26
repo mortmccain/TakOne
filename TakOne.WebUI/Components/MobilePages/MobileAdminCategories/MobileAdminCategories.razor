@@ -215,9 +215,6 @@ else
                             var subIsRenaming = _renamingKey == subKey;
                             var subIsToggling = _busyKey == $"toggle:{subKey}";
                             var subIsRenamingBusy = _busyKey == $"rename:{subKey}";
-                            var subAddMode = $"sub:{cat.Id}";
-                            var subAddActive = _addingMode == subAddMode;
-                            var subAddBusy = _busyKey == $"create:{subAddMode}";
 
                             <div class="m-tree-sub-row @(!sub.IsActive ? "inactive" : "")">
                                 <button class="m-tree-expand"
@@ -303,9 +300,6 @@ else
                                         var ssubIsRenaming = _renamingKey == ssubKey;
                                         var ssubIsToggling = _busyKey == $"toggle:{ssubKey}";
                                         var ssubIsRenamingBusy = _busyKey == $"rename:{ssubKey}";
-                                        var ssubAddMode = $"subsub:{cat.Id}:{sub.Id}";
-                                        var ssubAddActive = _addingMode == ssubAddMode;
-                                        var ssubAddBusy = _busyKey == $"create:{ssubAddMode}";
 
                                         <div class="m-tree-subsub-row @(!ssub.IsActive ? "inactive" : "")">
                                             <span class="m-tree-folder">
@@ -380,7 +374,20 @@ else
                                     @* End-of-group + button for THIS SubCategory's
                                        sub-subs (adds a new SubSubCategory under
                                        THIS SubCategory). Mirrors the desktop
-                                       page's v5 end-of-group pattern. *@
+                                       page's v5 end-of-group pattern. The
+                                       ssubAddActive/ssubAddBusy locals below are
+                                       declared in this scope (after the inner
+                                       ssub @foreach closed but while cat + sub
+                                       are still in scope from the outer sub
+                                       @foreach) so the @if/disabled checks can
+                                       reference simple vars instead of inlining
+                                       an interpolated string inside a
+                                       double-quoted attribute (which Razor
+                                       mis-parses). *@
+                                    @{
+                                        var ssubAddActive = _addingMode == $"subsub:{cat.Id}:{sub.Id}";
+                                        var ssubAddBusy = _busyKey == $"create:subsub:{cat.Id}:{sub.Id}";
+                                    }
                                     @if (ssubAddActive)
                                     {
                                         <div class="m-tree-inline-form">
@@ -388,7 +395,7 @@ else
                                                    value="@_addValue"
                                                    @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
                                                    @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateSubSubAsync(cat.Id, sub.Id); })'
-                                                   placeholder="@Loc["AddSubSubCategoryButton"]' />
+                                                   placeholder='@Loc["AddSubSubCategoryButton"]' />
                                             <button class="m-btn m-btn-primary m-btn-sm"
                                                     disabled="@(ssubAddBusy)"
                                                     @onclick='(() => CommitCreateSubSubAsync(cat.Id, sub.Id))'>
@@ -417,7 +424,16 @@ else
                         }
 
                         @* End-of-group + button for THIS Category's subs
-                           (adds a new SubCategory under THIS Category). *@
+                           (adds a new SubCategory under THIS Category). The
+                           subAddActive/subAddBusy locals below are declared
+                           in this scope (after the sub @foreach closed but
+                           while cat is still in scope from the outer cat
+                           @foreach) so the @if/disabled checks can reference
+                           simple vars. *@
+                        @{
+                            var subAddActive = _addingMode == $"sub:{cat.Id}";
+                            var subAddBusy = _busyKey == $"create:sub:{cat.Id}";
+                        }
                         @if (subAddActive)
                         {
                             <div class="m-tree-inline-form">
@@ -425,7 +441,7 @@ else
                                        value="@_addValue"
                                        @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
                                        @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateSubAsync(cat.Id); })'
-                                       placeholder="@Loc["AddSubCategoryButton"]' />
+                                       placeholder='@Loc["AddSubCategoryButton"]' />
                                 <button class="m-btn m-btn-primary m-btn-sm"
                                         disabled="@(subAddBusy)"
                                         @onclick='(() => CommitCreateSubAsync(cat.Id))'>
@@ -469,7 +485,7 @@ else
                        value="@_addValue"
                        @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
                        @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateCategoryAsync(); })'
-                       placeholder="@Loc["AddFirstCategoryButton"]' />
+                       placeholder='@Loc["AddFirstCategoryButton"]' />
                 <button class="m-btn m-btn-primary m-btn-sm"
                         disabled="@(topAddBusy)"
                         @onclick="CommitCreateCategoryAsync">

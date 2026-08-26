@@ -418,12 +418,12 @@ else
 
             if (result.IsSuccess)
             {
-                Toast.ShowSuccess(Loc["Toast_Success"]);
+                await Toast.Success(Loc["Toast_Success"]);
                 Navigation.NavigateTo("/m/Admin/Users", forceLoad: false);
             }
             else
             {
-                _submitError = result.Error?.Message ?? Loc["Err_Generic"];
+                _submitError = result.Error ?? Loc["Err_Generic"];
             }
         }
         catch (Exception ex)

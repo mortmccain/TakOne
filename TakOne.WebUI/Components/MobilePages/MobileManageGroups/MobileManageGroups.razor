@@ -146,11 +146,11 @@ else
             @Loc["StatusAll"]
         </button>
         <button class="m-tab @(_statusFilter == "Active" ? "active" : "")"
-                @onclick="(() => SetStatusFilter("Active"))">
+                @onclick='(() => SetStatusFilter("Active"))'>
             @Loc["StatusActive"]
         </button>
         <button class="m-tab @(_statusFilter == "Inactive" ? "active" : "")"
-                @onclick="(() => SetStatusFilter("Inactive"))">
+                @onclick='(() => SetStatusFilter("Inactive"))'>
             @Loc["StatusInactive"]
         </button>
     </div>
