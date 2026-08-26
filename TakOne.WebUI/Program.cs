@@ -239,6 +239,24 @@ builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
 // --- WebUI-only services ---
 builder.Services.AddScoped<ToastService>();
 
+// --- Notification system: real-time broadcaster + Blazor refresh bridge ---
+//
+// SignalRNotificationBroadcaster is the WebUI implementation of
+// INotificationBroadcaster (defined in TakOne.Application). Wolverine
+// resolves it when a sale-lifecycle event handler (NotifyOnSaleApproved-
+// EventHandler etc.) calls BroadcastToUserAsync — the impl pings the
+// NotificationHub's user-group. Scoped lifetime so the handler resolves
+// it fresh per-request.
+builder.Services.AddScoped<TakOne.Application.Common.Interfaces.INotificationBroadcaster,
+    TakOne.WebUI.Services.SignalRNotificationBroadcaster>();
+
+// NotificationRefreshService: Scoped Blazor service that bridges the
+// JS-side SignalR connection to .NET events. The layout calls
+// StartAsync() to wire up the connection; MobileNotifications.razor +
+// MainLayout.razor subscribe to RefreshReceived to re-query their data
+// when a real-time push arrives.
+builder.Services.AddScoped<TakOne.WebUI.Services.NotificationRefreshService>();
+
 // --- Login audit logger (Issue #03 — replace DIAG Login leak pattern) ---
 //
 // LoginAuditLogger is the ONLY sanctioned logger for the login flow. It

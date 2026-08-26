@@ -326,9 +326,17 @@ else
     {
         try
         {
-            var query = new GetAllCustomerGroupsQuery();
-            var result = await MessageBus.InvokeAsync<List<CustomerGroupListItemDto>>(query);
-            _groups = result?.Where(g => g.IsActive).ToList() ?? new();
+            // IMPORTANT: the handler returns Result<List<...>>, NOT the bare
+            // List<...>. Asking Wolverine for the bare list throws an
+            // InvalidCastException at runtime, which the catch below would
+            // silently swallow — leaving the customer-group dropdown empty
+            // even when groups exist (same bug class as MobileCreateProduct's
+            // category dropdown). Match the handler's actual return type.
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery());
+            _groups = result.IsSuccess
+                ? result.Value?.Where(g => g.IsActive).ToList() ?? new()
+                : new();
         }
         catch
         {

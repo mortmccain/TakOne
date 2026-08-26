@@ -569,6 +569,23 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICartMutationLock, CartMutationLock>();
 
         // ------------------------------------------------------------------
+        // 5b-2. Per-sale state-transition lock — singleton (must be shared
+        //       across requests like the cart lock). Serializes concurrent
+        //       Submit × Approve × Cancel × MarkAsInvoiced on the SAME sale
+        //       row (race-condition fix). See ISaleStateLock + SaleStateLock
+        //       for the full design.
+        // ------------------------------------------------------------------
+        services.AddSingleton<ISaleStateLock, SaleStateLock>();
+
+        // ------------------------------------------------------------------
+        // 5b-3. Notification repository — Scoped (shares the scoped
+        //       ApplicationDbContext). Used by the sale-lifecycle event
+        //       handlers (NotifyOnSaleSubmittedEventHandler etc.) which
+        //       run inside Wolverine's enrolled EF Core transaction.
+        // ------------------------------------------------------------------
+        services.AddScoped<INotificationRepository, NotificationRepository>();
+
+        // ------------------------------------------------------------------
         // 5c. Claims transformation — keeps FullName claim current.
         //
         //     FullNameClaimsTransformation runs on every authenticated

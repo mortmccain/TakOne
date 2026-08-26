@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using TakOne.Domain.Categories.Entities;
 using TakOne.Domain.Common.Entities;
 using TakOne.Domain.Customers.Entities;
+using TakOne.Domain.Notifications.Entities;
 using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Users;
@@ -141,6 +142,16 @@ public class ApplicationDbContext
     /// so the hot-path purchase-limit checks don't hit the DB.
     /// </summary>
     public DbSet<SystemSettings> SystemSettings { get; set; } = null!;
+
+    /// <summary>
+    /// Notification aggregate root — a single user-targeted notification row
+    /// (e.g. "your order INT-1505-00000042 was approved"). Created
+    /// atomically inside the same EF Core transaction as the triggering
+    /// sale mutation; persisted read state (ReadAtUtc) survives circuit
+    /// restarts and multi-device logins.
+    /// Maps to the <c>Notifications</c> table.
+    /// </summary>
+    public DbSet<Notification> Notifications { get; set; } = null!;
 
     /// <summary>
     /// ASP.NET Core Data Protection key ring. One row per key. The

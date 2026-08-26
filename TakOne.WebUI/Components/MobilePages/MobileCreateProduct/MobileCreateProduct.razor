@@ -334,8 +334,26 @@ else
         _loadError = null;
         try
         {
-            var query = new GetActiveCategoriesQuery();
-            _categories = (await MessageBus.InvokeAsync<List<CategoryDto>>(query)) ?? new();
+            // IMPORTANT: the handler returns Result<List<CategoryDto>>,
+            // NOT List<CategoryDto>. Asking Wolverine for the bare list
+            // would throw an InvalidCastException at runtime, which the
+            // catch below would silently swallow — leaving the dropdown
+            // empty even though categories exist (the bug user reported:
+            // "trying to choose a category shows no categories even
+            // though there are"). Match the handler's actual return type
+            // and unwrap Result.IsSuccess here.
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetActiveCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value ?? new();
+            }
+            else
+            {
+                _categories = new();
+                _loadError = Loc["Err_LoadCategories"];
+            }
         }
         catch
         {

@@ -8,11 +8,20 @@ namespace TakOne.Application.Sales.Commands.CancelSale;
 
 public sealed class CancelSaleCommandHandler
 {
+    /// <summary>
+    /// Maximum retry attempts for the cancel + (optional) stock-restore +
+    /// SaveChanges sequence. Catches <c>DbUpdateConcurrencyException</c>
+    /// (sale row version conflict from a concurrent Approve on the same
+    /// sale) + SQL Server unique-constraint violations.
+    /// </summary>
+    private const int MaxAttempts = 3;
+
     public static async Task<Result> HandleAsync(
         CancelSaleCommand command,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        ISaleStateLock saleStateLock,
         IUnitOfWork unitOfWork,
         ILogger<CancelSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -44,70 +53,119 @@ public sealed class CancelSaleCommandHandler
                 "drafts are disposable carts and are hard-deleted, not cancelled.");
         }
 
-        // Capture the pre-cancel status so we know whether stock restoration
-        // is needed (only Approved sales had stock decremented at Approve time).
-        var wasApproved = sale.Status == SaleStatus.Approved;
-        var stockRestored = false;
-
         // ------------------------------------------------------------------
-        // If the sale was Approved, stock was decremented at Approve time.
-        // Cancellation must restore it. We do this BEFORE calling Cancel()
-        // so that if any product lookup fails, the sale's state is still
-        // untouched in memory.
+        // ACQUIRE PER-SALE STATE-TRANSITION LOCK + RETRY (race-condition fix).
         //
-        // If the sale was Pending (not yet approved), stock was NOT
-        // decremented — no restoration needed.
+        // The critical race here is Cancel × Approve: both staff members
+        // load the sale, both see Pending (or one sees Approved), and the
+        // loser's `wasApproved` snapshot is stale by the time it commits
+        // — causing wrong stock-restoration (e.g. the loser restores
+        // stock for a sale that the winner actually approved-to-Invoiced).
+        //
+        // The lock serializes Cancel against concurrent Submit / Approve
+        // / MarkAsInvoiced on the SAME sale. The retry catches the
+        // residual cross-instance race (multiple app servers hitting the
+        // same DB) via DbUpdateConcurrencyException + unique-constraint
+        // violations. On retry, the lambda RE-LOADS the sale to observe
+        // the new state and RE-COMPUTES wasApproved — so stock-restoration
+        // is always correct against the freshest state.
         // ------------------------------------------------------------------
-        if (wasApproved)
+        await using var _saleStateLockHandle = await saleStateLock.AcquireAsync(
+            sale.Id, cancellationToken);
+
+        try
         {
-            // Load all distinct products on the sale, then increase stock
-            // by the total quantity per product.
-            var productIds = sale.LineItems.Select(li => li.ProductId).Distinct().ToList();
-            var productsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
-
-            foreach (var productId in productIds)
-            {
-                var product = await productRepository.GetByIdAsync(productId, cancellationToken);
-                if (product is null)
+            return await unitOfWork.ExecuteWithRetryAsync(
+                operation: async ct =>
                 {
-                    // Defensive — the product existed when the sale was
-                    // approved. If it's gone now, log and continue; we
-                    // still want to cancel the sale.
-                    logger.LogWarning(
-                        "CancelSale: product {ProductId} on sale {SaleId} no longer exists. " +
-                        "Stock cannot be restored for this product. Sale will still be cancelled.",
-                        productId, sale.Id);
-                    continue;
-                }
+                    // Re-load the sale fresh — a concurrent Submit / Approve
+                    // may have moved the state on between our initial load
+                    // (above) and our acquisition of the lock.
+                    var freshSale = await saleRepository.GetByIdWithLineItemsAsync(
+                        command.SaleId, ct);
+                    if (freshSale is null)
+                    {
+                        return Result.Failure($"Sale '{command.SaleId}' was not found.");
+                    }
 
-                productsById[productId] = product;
-            }
+                    if (freshSale.Status == SaleStatus.Draft)
+                    {
+                        return Result.Failure(
+                            "Draft sales cannot be cancelled. Use the delete-draft command instead — " +
+                            "drafts are disposable carts and are hard-deleted, not cancelled.");
+                    }
 
-            foreach (var line in sale.LineItems)
-            {
-                if (productsById.TryGetValue(line.ProductId, out var product))
-                {
-                    product.IncreaseStock(line.Quantity);
-                    stockRestored = true;
-                }
-            }
+                    // Re-capture the freshest pre-cancel status — this is
+                    // the CRITICAL fix for the Cancel × Approve race.
+                    var wasApproved = freshSale.Status == SaleStatus.Approved;
+                    var stockRestored = false;
+
+                    if (wasApproved)
+                    {
+                        var productIds = freshSale.LineItems
+                            .Select(li => li.ProductId)
+                            .Distinct()
+                            .ToList();
+                        var productsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
+
+                        foreach (var productId in productIds)
+                        {
+                            var product = await productRepository.GetByIdAsync(productId, ct);
+                            if (product is null)
+                            {
+                                logger.LogWarning(
+                                    "CancelSale: product {ProductId} on sale {SaleId} no longer exists. " +
+                                    "Stock cannot be restored for this product. Sale will still be cancelled.",
+                                    productId, freshSale.Id);
+                                continue;
+                            }
+                            productsById[productId] = product;
+                        }
+
+                        foreach (var line in freshSale.LineItems)
+                        {
+                            if (productsById.TryGetValue(line.ProductId, out var product))
+                            {
+                                product.IncreaseStock(line.Quantity);
+                                stockRestored = true;
+                            }
+                        }
+                    }
+
+                    // Delegate to the aggregate. Cancel enforces:
+                    //   - sale is not Draft (defensive — already checked)
+                    //   - sale is not Invoiced (throws — credit note instead)
+                    //   - sale is not already Cancelled (throws)
+                    //   - reason is non-empty (throws)
+                    //   - cancelledByUserId is a non-empty Guid (throws)
+                    // Throws DomainException if any guard fails — caught
+                    // by the outer try/catch and returned as Result.Failure.
+                    freshSale.Cancel(currentUser.UserId, command.Reason);
+
+                    await unitOfWork.SaveChangesAsync(ct);
+
+                    logger.LogInformation(
+                        "CancelSale: sale {SaleId} ({SaleNumber}) cancelled by user {UserId}. Reason: {Reason}. " +
+                        "Stock restored: {StockRestored}.",
+                        freshSale.Id, freshSale.SaleNumber, currentUser.UserId, command.Reason, stockRestored);
+
+                    return Result.Success();
+                },
+                maxAttempts: MaxAttempts,
+                cancellationToken: cancellationToken);
         }
-
-        // Delegate to the aggregate. Cancel enforces:
-        //   - sale is not Draft (defensive — we already checked above)
-        //   - sale is not Invoiced (throws — issue a credit note instead)
-        //   - sale is not already Cancelled (throws)
-        //   - reason is non-empty (throws)
-        //   - cancelledByUserId is a non-empty Guid (throws)
-        sale.Cancel(currentUser.UserId, command.Reason);
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "CancelSale: sale {SaleId} ({SaleNumber}) cancelled by user {UserId}. Reason: {Reason}. " +
-            "Stock restored: {StockRestored}.",
-            sale.Id, sale.SaleNumber, currentUser.UserId, command.Reason, stockRestored);
-
-        return Result.Success();
+        catch (DomainException ex)
+        {
+            // The aggregate's EnsureCancellable() threw — a concurrent
+            // Approve/Cancel moved the sale state (e.g. someone cancelled
+            // it while we were trying to cancel). Surface as a clean
+            // failure (no retry — state has irreversibly moved on).
+            logger.LogWarning(
+                "CancelSale: domain guard failed for sale {SaleId} (likely a concurrent state transition). " +
+                "Message: {Message}",
+                command.SaleId, ex.Message);
+            return Result.Failure(
+                "The sale's state changed before cancellation could complete. Refresh and try again.");
+        }
     }
 }

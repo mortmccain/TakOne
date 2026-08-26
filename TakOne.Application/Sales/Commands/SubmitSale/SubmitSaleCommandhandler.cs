@@ -17,6 +17,7 @@ public sealed class SubmitSaleCommandHandler
         IPurchaseLimitPolicy purchaseLimitPolicy,
         ISalaryBudgetService salaryBudgetService,
         ICartMutationLock cartMutationLock,
+        ISaleStateLock saleStateLock,
         ISaleNumberGenerator saleNumberGenerator,
         IUnitOfWork unitOfWork,
         ILogger<SubmitSaleCommandHandler> logger,
@@ -52,6 +53,24 @@ public sealed class SubmitSaleCommandHandler
         // ------------------------------------------------------------------
         await using var _cartLockHandle = await cartMutationLock.AcquireAsync
             (sale.CustomerId, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // ACQUIRE PER-SALE STATE-TRANSITION LOCK (race-condition fix).
+        //
+        // The cart lock serializes concurrent cart-mutating invocations on
+        // the same customer. But a STAFF member can simultaneously Approve
+        // / Cancel / MarkAsInvoiced the SAME sale (which acquires the
+        // sale-state lock on sale.Id). Without also acquiring the
+        // sale-state lock here, a Submit × Approve race can occur:
+        //   - Staff clicks Approve on sale X.
+        //   - Customer starts Submit on sale X.
+        //   - Both pass their initial guards, both call SaveChangesAsync.
+        //   - The loser's SaveChanges throws DbUpdateConcurrencyException.
+        // Acquiring the sale-state lock here serializes Submit against
+        // any concurrent state-transition on the SAME sale.
+        // ------------------------------------------------------------------
+        await using var _saleStateLockHandle = await saleStateLock.AcquireAsync
+            (sale.Id, cancellationToken);
 
         // Re-load the sale after acquiring the lock — a concurrent
         // invocation may have added / removed lines or even submitted the

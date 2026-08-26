@@ -65,6 +65,9 @@
   <data name="Dashboard" xml:space="preserve">
     <value>Dashboard</value>
   </data>
+  <data name="NotificationsTitle" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
   <data name="Products" xml:space="preserve">
     <value>Products</value>
   </data>

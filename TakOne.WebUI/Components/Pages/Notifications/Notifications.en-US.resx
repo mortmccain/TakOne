@@ -31,8 +31,9 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <data name="PageTitle" xml:space="preserve"><value>Notifications — TakOne</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>Notifications</value></data>
   <data name="PageSubtitle" xml:space="preserve"><value>Your order activity inbox</value></data>
-  <data name="Loading" xml:space="preserve"><value>Loading notifications…</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading…</value></data>
   <data name="RetryButton" xml:space="preserve"><value>Try Again</value></data>
   <data name="Err_Load" xml:space="preserve"><value>Failed to load notifications.</value></data>
   <data name="Err_MarkRead" xml:space="preserve"><value>Failed to mark notifications as read.</value></data>
@@ -64,5 +65,4 @@
   <data name="PrevPage" xml:space="preserve"><value>Previous</value></data>
   <data name="NextPage" xml:space="preserve"><value>Next</value></data>
   <data name="PageFormat" xml:space="preserve"><value>Page {0} of {1}</value></data>
-  <data name="FooterHint" xml:space="preserve"><value>Notifications are scoped to you: customers see their own orders; staff see orders they created, approved, invoiced or cancelled.</value></data>
 </root>

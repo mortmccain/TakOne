@@ -3823,3 +3823,199 @@
 @media (prefers-reduced-motion: reduce) {
     .m-rise-in { animation: none; }
 }
+
+/* ── Round 11: Notification bell badge + notification cards ──── */
+
+/* Bell icon button + unread badge — shown in the mobile header's action
+   row. The badge sits in the top-end corner of the bell — the standard
+   "unread count" affordance on mobile apps. */
+.m-bell-btn {
+    position: relative;
+}
+
+.m-bell-badge {
+    position: absolute;
+    top: -2px;
+    inset-inline-end: -2px;
+    background: #C9A227;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: 0 0 0 2px var(--m-surface, #fff);
+    pointer-events: none;
+}
+
+/* Notifications page (rewritten in Round 11 to read from the real store).
+   Reuses the m-notif-* class family from Round 9's mobile.css v5, plus
+   the few new classes added here for the rewritten page. */
+
+.m-notif-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.m-notif-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--m-text-secondary, #6b7280);
+}
+
+.m-notif-empty-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--m-text, #1f2937);
+    margin: 0;
+}
+
+.m-notif-empty-hint {
+    font-size: 0.85rem;
+    max-width: 20rem;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Notification card — the rewritten page uses button elements for the
+   whole card so the entire surface is tappable. The m-notif-card class
+   existed in Round 9 but is extended here to support the button reset. */
+button.m-notif-card {
+    display: flex;
+    gap: 0.85rem;
+    padding: 0.85rem 1rem;
+    background: var(--m-card, #fff);
+    border: 1px solid var(--m-border, #e5e7eb);
+    border-radius: 0.85rem;
+    cursor: pointer;
+    text-align: inherit;
+    width: 100%;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    font: inherit;
+    color: inherit;
+    position: relative;
+}
+
+button.m-notif-card:hover {
+    border-color: var(--m-gold, #C9A227);
+    background: var(--m-card-hover, #faf6ed);
+}
+
+button.m-notif-card:active {
+    transform: scale(0.98);
+}
+
+button.m-notif-card.m-notif-unread {
+    background: var(--m-card-unread, rgba(201, 162, 39, 0.06));
+    border-color: var(--m-gold-soft, rgba(201, 162, 39, 0.3));
+}
+
+.m-notif-icon {
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.m-notif-icon-submit { background: rgba(0, 100, 250, 0.12); color: #0079b5; }
+.m-notif-icon-approve { background: rgba(15, 157, 88, 0.12); color: #0f9d58; }
+.m-notif-icon-invoice { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
+.m-notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
+.m-notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
+
+.m-notif-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.m-notif-title {
+    font-weight: 600;
+    color: var(--m-text, #1f2937);
+    margin-bottom: 0.2rem;
+    font-size: 0.95rem;
+}
+
+.m-notif-message {
+    color: var(--m-text-secondary, #6b7280);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.m-notif-reason {
+    color: var(--m-text-secondary, #6b7280);
+    font-size: 0.8rem;
+    font-style: italic;
+    margin-top: 0.3rem;
+    padding-inline-start: 0.6rem;
+    border-inline-start: 2px solid var(--m-border, #e5e7eb);
+}
+
+.m-notif-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    font-size: 0.7rem;
+    color: var(--m-text-secondary, #6b7280);
+}
+
+.m-notif-sale {
+    font-weight: 500;
+    color: var(--m-text, #1f2937);
+}
+
+.m-notif-sep {
+    opacity: 0.5;
+}
+
+.m-notif-unread-dot {
+    flex-shrink: 0;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--m-gold, #C9A227);
+    align-self: center;
+}
+
+/* Pagination row */
+.m-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding-bottom: 0.5rem;
+}
+
+.m-pagination-info {
+    color: var(--m-text-secondary, #6b7280);
+    font-size: 0.8rem;
+}
+
+.m-btn-sm {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8rem;
+}
+
+.m-btn-ghost {
+    background: transparent;
+    color: var(--m-text, #1f2937);
+    border: 1px solid var(--m-border, #e5e7eb);
+}
+

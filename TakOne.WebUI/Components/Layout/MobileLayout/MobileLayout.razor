@@ -18,7 +18,11 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
+@inject TakOne.WebUI.Services.NotificationRefreshService NotificationRefresh
 @inject IStringLocalizer<TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout> Loc
+@using TakOne.Application.Notifications.Queries.GetUnreadNotificationCount
+@using TakOne.WebUI.Services
+@implements IDisposable
 @attribute [Authorize]
 
 <div class="m-page">
@@ -42,10 +46,14 @@
                    center derived from the user's sales audit events). Placed
                    first so the three round icon buttons read bell → lang →
                    theme → logout. *@
-                <button class="m-icon-btn" @onclick="GoToNotifications" title="@Loc["Notifications"]" aria-label="@Loc["Notifications"]">
+                <button class="m-icon-btn m-bell-btn" @onclick="GoToNotifications" title="@Loc["Notifications"]" aria-label="@Loc["Notifications"]">
                     <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
                     </svg>
+                    @if (_unreadCount > 0)
+                    {
+                        <span class="m-bell-badge">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+                    }
                 </button>
                 <button class="m-icon-btn" @onclick="SetCultureAsync" title="@Loc["LanguageToggle"]">
                     @if (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa")
@@ -131,6 +139,7 @@
     private string _searchTerm = string.Empty;
     private CartDto? _cart;
     private int _cartLineCount;
+    private int _unreadCount;
     private string _userFullName = string.Empty;
 
     private string GreetingText
@@ -175,6 +184,85 @@
         catch { }
 
         await LoadCartAsync();
+        await LoadUnreadCountAsync();
+
+        // Subscribe to live-refresh events so the bell badge updates when
+        // a new notification arrives via SignalR ReceiveRefresh.
+        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
+    }
+
+    /// <summary>
+    /// Live-refresh callback. Re-queries the unread count + re-renders.
+    /// </summary>
+    /// <remarks>
+    /// async void is the legitimate pattern for event handlers — the
+    /// raiser (NotificationRefreshService) can't await subscribers.
+    /// The try/catch ensures no exception escapes as unobserved.
+    /// </remarks>
+    private async void OnNotificationRefreshReceived()
+    {
+        try
+        {
+            await LoadUnreadCountAsync();
+        }
+        catch
+        {
+            // Silent — the bell badge is best-effort.
+        }
+    }
+
+    /// <summary>
+    /// Best-effort load of the user's unread-notification count for the
+    /// bell badge. Failures leave the badge at its previous value.
+    /// </summary>
+    private async Task LoadUnreadCountAsync()
+    {
+        try
+        {
+            if (!CurrentUser.IsAuthenticated) return;
+
+            var count = await MessageBus.InvokeAsync<int>(
+                new GetUnreadNotificationCountQuery());
+
+            if (count != _unreadCount)
+            {
+                _unreadCount = count;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // Silent — the bell badge is best-effort.
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes from the live-refresh event on layout dispose.
+    /// </summary>
+    public void Dispose()
+    {
+        NotificationRefresh.RefreshReceived -= OnNotificationRefreshReceived;
+    }
+
+    /// <summary>
+    /// After the first render (circuit is live), wire up the SignalR
+    /// connection via the NotificationRefreshService so the bell badge
+    /// receives live updates. Mobile layout doesn't trigger MainLayout's
+    /// StartAsync — both layouts must wire this up independently because
+    /// they're alternative layouts (only one is mounted per request).
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            await NotificationRefresh.StartAsync();
+        }
+        catch
+        {
+            // Non-fatal — mobile UI still works without real-time refresh.
+        }
     }
 
     private async Task LoadCartAsync()

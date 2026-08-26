@@ -7,11 +7,20 @@ namespace TakOne.Application.Sales.Commands.ApproveSale;
 
 public sealed class ApproveSaleCommandHandler
 {
+    /// <summary>
+    /// Maximum retry attempts for the state-transition + SaveChanges
+    /// sequence. Catches <c>DbUpdateConcurrencyException</c> (sale row
+    /// version conflict from a concurrent Submit / Cancel / Approve on
+    /// the same sale) + SQL Server 2627/2601 unique-constraint violations.
+    /// </summary>
+    private const int MaxAttempts = 3;
+
     public static async Task<Result> HandleAsync(
         ApproveSaleCommand command,
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        ISaleStateLock saleStateLock,
         IUnitOfWork unitOfWork,
         ILogger<ApproveSaleCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -34,84 +43,121 @@ public sealed class ApproveSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // Pre-check stock for each line BEFORE calling Approve(). If we call
-        // Approve() first and then fail on stock, the sale's state is
-        // mutated in memory — but since we haven't called SaveChangesAsync
-        // yet, nothing is persisted. Still, doing the checks up front gives
-        // a cleaner error message ("not enough stock for X") instead of a
-        // DomainException mid-loop.
+        // ACQUIRE PER-SALE STATE-TRANSITION LOCK (race-condition fix).
+        //
+        // Serializes Approve against any concurrent Submit / Cancel /
+        // MarkAsInvoiced on the SAME sale row. Without this, the loser of
+        // a concurrent Approve × Cancel race would burn a stock decrement
+        // (or a sale-row UPDATE) on a sale whose state has already moved
+        // on — and the loser's SaveChangesAsync would throw
+        // DbUpdateConcurrencyException, surfacing a generic error toast.
+        //
+        // The lock is acquired AFTER the initial sale load (we need the
+        // sale's Id — but actually we have it from the command) and BEFORE
+        // the pre-stock-check + Approve() mutation. The whole mutation
+        // sequence below runs under the lock + inside the retry loop.
         // ------------------------------------------------------------------
-        // We load each product into a dictionary so we can reuse the same
-        // instance when we decrement stock after Approve() succeeds.
-        var productsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
-        foreach (var line in sale.LineItems)
+        await using var _saleStateLockHandle = await saleStateLock.AcquireAsync(
+            sale.Id, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // Execute the state-transition + stock-decrement + SaveChanges in
+        // a retry loop. Catches DbUpdateConcurrencyException (e.g. a
+        // concurrent Submit on the same sale modified the row version
+        // between our load and our SaveChanges) and unique-constraint
+        // violations. On retry, the lambda re-loads the sale to observe
+        // the new state, and the aggregate's Approve() throws
+        // DomainException ("EnsurePending") if the state has moved on —
+        // which we catch and return as Result.Failure (no further retry).
+        // ------------------------------------------------------------------
+        try
         {
-            if (productsById.ContainsKey(line.ProductId))
-            {
-                // Same product on multiple lines — unlikely (the aggregate
-                // merges them in AddLineItem) but defensive.
-                continue;
-            }
+            return await unitOfWork.ExecuteWithRetryAsync(
+                operation: async ct =>
+                {
+                    // Re-load the sale fresh — a concurrent Submit / Cancel
+                    // may have moved the state on between the initial load
+                    // (above) and our acquisition of the lock.
+                    var freshSale = await saleRepository.GetByIdWithLineItemsAsync(
+                        command.SaleId, ct);
+                    if (freshSale is null)
+                    {
+                        return Result.Failure($"Sale '{command.SaleId}' was not found.");
+                    }
 
-            var product = await productRepository.GetByIdAsync(line.ProductId, cancellationToken);
-            if (product is null)
-            {
-                // Product no longer exists — return a stable, culture-
-                // neutral error code that the UI localizes (via the
-                // CategoryDeactivatedErrors pattern — same UX: the
-                // product is unavailable, remove the line). Previously
-                // this was a hardcoded English string.
-                return Result.Failure(
-                    CategoryDeactivatedErrors.Format(line.ProductName));
-            }
+                    // Pre-check stock for each line. Loaded fresh on every
+                    // retry attempt so a concurrent Approve on a different
+                    // sale (which decremented the same product) is observed.
+                    var freshProductsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
+                    foreach (var line in freshSale.LineItems)
+                    {
+                        if (freshProductsById.ContainsKey(line.ProductId))
+                        {
+                            continue;
+                        }
 
-            // Total quantity across all lines for this product.
-            var totalQuantityForProduct = sale.LineItems
-                .Where(li => li.ProductId == line.ProductId)
-                .Sum(li => li.Quantity);
+                        var product = await productRepository.GetByIdAsync(line.ProductId, ct);
+                        if (product is null)
+                        {
+                            return Result.Failure(
+                                CategoryDeactivatedErrors.Format(line.ProductName));
+                        }
 
-            if (totalQuantityForProduct > product.StockQuantity)
-            {
-                // Not enough stock — return a stable, culture-neutral
-                // error code (StockErrors.Format) so the UI can localize
-                // the message into the user's language. Previously this
-                // was a hardcoded English string that leaked as an
-                // English error toast even in Persian (fa-IR) mode —
-                // the exact bug reported by the user.
-                return Result.Failure(
-                    StockErrors.Format(product.Name, product.StockQuantity, totalQuantityForProduct));
-            }
+                        var totalQuantityForProduct = freshSale.LineItems
+                            .Where(li => li.ProductId == line.ProductId)
+                            .Sum(li => li.Quantity);
 
-            productsById[line.ProductId] = product;
+                        if (totalQuantityForProduct > product.StockQuantity)
+                        {
+                            return Result.Failure(
+                                StockErrors.Format(product.Name, product.StockQuantity, totalQuantityForProduct));
+                        }
+
+                        freshProductsById[line.ProductId] = product;
+                    }
+
+                    // Transition the sale. The aggregate's Approve() calls
+                    // EnsurePending() — throws DomainException if the sale
+                    // was concurrently approved/cancelled between our
+                    // re-load and this call. Caught by the outer try/catch
+                    // below and surfaced as a clean Result.Failure.
+                    freshSale.Approve(currentUser.UserId);
+
+                    // Decrement stock per line (single SaveChanges commits
+                    // the sale status change AND the stock decrements
+                    // atomically — and the notification rows created by
+                    // NotifyOnSaleApprovedEventHandler too, since that
+                    // handler runs in the same Wolverine outbox).
+                    foreach (var line in freshSale.LineItems)
+                    {
+                        var product = freshProductsById[line.ProductId];
+                        product.DecreaseStock(line.Quantity);
+                    }
+
+                    await unitOfWork.SaveChangesAsync(ct);
+
+                    logger.LogInformation(
+                        "ApproveSale: sale {SaleId} ({SaleNumber}) approved by user {UserId}. " +
+                        "Stock decremented for {LineCount} line(s).",
+                        freshSale.Id, freshSale.SaleNumber, currentUser.UserId, freshSale.LineItems.Count);
+
+                    return Result.Success();
+                },
+                maxAttempts: MaxAttempts,
+                cancellationToken: cancellationToken);
         }
-
-        // ------------------------------------------------------------------
-        // Transition the sale to Approved. The aggregate enforces:
-        //   - sale is currently Pending (throws otherwise)
-        //   - total is positive (throws otherwise)
-        //   - approvedByUserId is a non-empty Guid (throws otherwise)
-        // ------------------------------------------------------------------
-        sale.Approve(currentUser.UserId);
-
-        // ------------------------------------------------------------------
-        // Decrement stock for each line. Done AFTER Approve() so we only
-        // mutate products if the sale transition succeeded. The whole
-        // operation (sale status change + product stock decrements) commits
-        // in a single SaveChangesAsync transaction.
-        // ------------------------------------------------------------------
-        foreach (var line in sale.LineItems)
+        catch (DomainException ex)
         {
-            var product = productsById[line.ProductId];
-            product.DecreaseStock(line.Quantity);
+            // The aggregate's EnsurePending() threw — a concurrent
+            // Submit/Approve/Cancel moved the sale state between our
+            // re-load and our Approve() call. Surface as a clean failure
+            // (not a retry — the state has irreversibly moved on).
+            logger.LogWarning(
+                "ApproveSale: domain guard failed for sale {SaleId} (likely a concurrent state transition). " +
+                "Message: {Message}",
+                command.SaleId, ex.Message);
+            return Result.Failure(
+                "The sale's state changed before approval could complete. Refresh and try again.");
         }
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        logger.LogInformation(
-            "ApproveSale: sale {SaleId} ({SaleNumber}) approved by user {UserId}. " +
-            "Stock decremented for {LineCount} line(s).",
-            sale.Id, sale.SaleNumber, currentUser.UserId, sale.LineItems.Count);
-
-        return Result.Success();
     }
 }

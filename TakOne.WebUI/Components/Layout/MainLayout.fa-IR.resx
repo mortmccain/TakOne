@@ -65,6 +65,9 @@
   <data name="Dashboard" xml:space="preserve">
     <value>داشبورد</value>
   </data>
+  <data name="NotificationsTitle" xml:space="preserve">
+    <value>اعلان‌ها</value>
+  </data>
   <data name="Products" xml:space="preserve">
     <value>محصولات</value>
   </data>

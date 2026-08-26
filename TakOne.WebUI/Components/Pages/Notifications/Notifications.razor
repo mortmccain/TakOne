@@ -1,0 +1,419 @@
+@* Notifications.razor — desktop notification center.
+   Route: /Notifications
+   Layout: MainLayout (via App.razor's default layout)
+
+   PURPOSE: desktop counterpart to MobileNotifications.razor. Lists the
+   user's notifications from the real Notification aggregate with:
+     - Paginated list, newest-first (PageSize=20).
+     - "All" vs "Unread" segmented filter.
+     - "Mark all read" action.
+     - Tap to mark-as-read + navigate to the sale detail page.
+     - Live refresh via SignalR ReceiveRefresh.
+*@
+
+@page "/Notifications"
+@attribute [Authorize]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Notifications.DTOs
+@using TakOne.Application.Notifications.Queries.GetNotificationsForUser
+@using TakOne.Application.Notifications.Queries.GetUnreadNotificationCount
+@using TakOne.Application.Notifications.Commands.MarkNotificationAsRead
+@using TakOne.Application.Notifications.Commands.MarkAllNotificationsAsRead
+@using TakOne.Domain.Notifications.Enums
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.Shared
+@implements IDisposable
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<Notifications> Loc
+@inject ToastService Toast
+@inject TakOne.WebUI.Services.NotificationRefreshService NotificationRefresh
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+        .notif-page { padding: 1rem 0 3rem; }
+        .notif-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .notif-header-title { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 auto; min-width: 0; }
+        .notif-header-title h1 { margin: 0; font-size: 1.5rem; font-weight: 600; color: var(--rz-text-color); }
+        .notif-header-title .rz-icon { color: var(--rz-primary); font-size: 1.75rem; }
+        .notif-header-subtitle { color: var(--rz-text-secondary-color); font-size: 0.9rem; margin-top: 0.25rem; }
+        .notif-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .notif-segmented { display: inline-flex; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 8px; padding: 2px; }
+        .notif-segment { border: none; background: transparent; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; color: var(--rz-text-secondary-color); font-size: 0.875rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.15s ease; }
+        .notif-segment:hover { color: var(--rz-text-color); }
+        .notif-segment.active { background: var(--rz-primary); color: var(--rz-primary-text-color); }
+        .notif-segment-badge { background: rgba(255,255,255,0.25); border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.7rem; min-width: 1.2rem; text-align: center; }
+        .notif-segment:not(.active) .notif-segment-badge { background: var(--rz-primary); color: var(--rz-primary-text-color); }
+        .notif-list { display: flex; flex-direction: column; gap: 0.75rem; }
+        .notif-card { display: flex; gap: 1rem; padding: 1rem 1.25rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 10px; cursor: pointer; text-align: inherit; width: 100%; transition: all 0.15s ease; position: relative; }
+        .notif-card:hover { border-color: var(--rz-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .notif-card.notif-unread { background: var(--rz-primary-lighter, rgba(0,100,250,0.04)); border-color: var(--rz-primary-light, rgba(0,100,250,0.2)); }
+        .notif-icon { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .notif-icon-submit { background: rgba(0, 100, 250, 0.12); color: #0079b5; }
+        .notif-icon-approve { background: rgba(15, 157, 88, 0.12); color: #0f9d58; }
+        .notif-icon-invoice { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
+        .notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
+        .notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
+        .notif-body { flex: 1; min-width: 0; }
+        .notif-title { font-weight: 600; color: var(--rz-text-color); margin-bottom: 0.25rem; }
+        .notif-message { color: var(--rz-text-secondary-color); font-size: 0.9rem; line-height: 1.5; }
+        .notif-reason { color: var(--rz-text-secondary-color); font-size: 0.85rem; font-style: italic; margin-top: 0.25rem; padding-left: 0.75rem; border-left: 2px solid var(--rz-border-color); }
+        .notif-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--rz-text-secondary-color); }
+        .notif-sale { font-weight: 500; color: var(--rz-text-color); }
+        .notif-sep { opacity: 0.5; }
+        .notif-unread-dot { flex-shrink: 0; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--rz-primary); align-self: center; }
+        .notif-empty { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 4rem 1rem; color: var(--rz-text-secondary-color); text-align: center; }
+        .notif-empty .rz-icon { font-size: 4rem; opacity: 0.4; }
+        .notif-empty-title { font-size: 1.1rem; font-weight: 500; }
+        .notif-empty-hint { font-size: 0.85rem; max-width: 28rem; }
+        .notif-pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+        .notif-pagination-info { color: var(--rz-text-secondary-color); font-size: 0.85rem; }
+        .notif-skeleton { display: flex; gap: 1rem; padding: 1rem 1.25rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 10px; }
+        .notif-error { padding: 1.25rem; background: rgba(220,53,69,0.08); border: 1px solid rgba(220,53,69,0.3); border-radius: 10px; color: var(--rz-text-color); display: flex; flex-direction: column; gap: 0.75rem; }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem" Class="notif-page">
+    @* ── Back + page header ── *@
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenButton Text="@Loc["Back"]"
+                      Icon="arrow_back"
+                      ButtonStyle="ButtonStyle.Secondary"
+                      Variant="Variant.Outlined"
+                      Click="@GoBack" />
+    </RadzenStack>
+
+    <div class="notif-header">
+        <div class="notif-header-title">
+            <RadzenIcon Icon="notifications" Class="rz-icon" />
+            <div>
+                <h1>@Loc["PageHeading"]</h1>
+                <p class="notif-header-subtitle">@Loc["PageSubtitle"]</p>
+            </div>
+        </div>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="notif-list">
+            @for (var i = 0; i < 5; i++)
+            {
+                <div class="notif-skeleton">
+                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 0.5rem;">
+                        <div style="height: 1rem; background: var(--rz-border-color); border-radius: 4px; width: 40%;"></div>
+                        <div style="height: 0.85rem; background: var(--rz-border-color); border-radius: 4px; width: 70%;"></div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="notif-error">
+            <p>@_loadError</p>
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadAsync" />
+        </div>
+    }
+    else if (_notifications.Count == 0)
+    {
+        <div class="notif-empty">
+            <RadzenIcon Icon="notifications_off" Class="rz-icon" />
+            <p class="notif-empty-title">@Loc["EmptyTitle"]</p>
+            <p class="notif-empty-hint">@Loc["EmptyHint"]</p>
+        </div>
+    }
+    else
+    {
+        @* ── Toolbar: filter + mark-all-read ── *@
+        <div class="notif-toolbar">
+            <div class="notif-segmented" role="tablist">
+                <button type="button" class="notif-segment @(_filterUnreadOnly ? "" : "active")" @onclick="() => SetFilterAsync(false)">
+                    @Loc["FilterAll"]
+                </button>
+                <button type="button" class="notif-segment @(_filterUnreadOnly ? "active" : "")" @onclick="() => SetFilterAsync(true)">
+                    @Loc["FilterUnread"]
+                    @if (_unreadCount > 0)
+                    {
+                        <span class="notif-segment-badge">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+                    }
+                </button>
+            </div>
+            @if (_unreadCount > 0)
+            {
+                <RadzenButton Text="@Loc["MarkAllRead"]"
+                              Icon="done_all"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Disabled="@_isMarkingAllRead"
+                              Click="@MarkAllReadAsync" />
+            }
+        </div>
+
+        @* ── List ── *@
+        <div class="notif-list">
+            @foreach (var n in _notifications)
+            {
+                <button type="button" class="notif-card @(n.IsUnread ? "notif-unread" : "")" @onclick="() => HandleTapAsync(n)">
+                    <div class="notif-icon @GetIconClass(n.Kind)">
+                        <RadzenIcon Icon="@GetIconName(n.Kind)" />
+                    </div>
+                    <div class="notif-body">
+                        <div class="notif-title">@GetTitle(n.Kind)</div>
+                        <div class="notif-message">@GetMessage(n)</div>
+                        @if (!string.IsNullOrEmpty(n.Reason))
+                        {
+                            <div class="notif-reason">@n.Reason</div>
+                        }
+                        <div class="notif-meta">
+                            @if (!string.IsNullOrEmpty(n.SaleDisplayNumber))
+                            {
+                                <span class="notif-sale">@n.SaleDisplayNumber</span>
+                                <span class="notif-sep" aria-hidden="true">·</span>
+                            }
+                            <span>@FormatRelativeTime(n.CreatedAtUtc)</span>
+                        </div>
+                    </div>
+                    @if (n.IsUnread)
+                    {
+                        <div class="notif-unread-dot" aria-label="@Loc["UnreadAriaLabel"]"></div>
+                    }
+                </button>
+            }
+        </div>
+
+        @* ── Pagination ── *@
+        @if (_totalPages > 1)
+        {
+            <div class="notif-pagination">
+                <RadzenButton Text="@Loc["PrevPage"]"
+                              Icon="chevron_left"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Disabled="@(_pageNumber <= 1 || _isLoadingPage)"
+                              Click="@(() => LoadPageAsync(_pageNumber - 1))" />
+                <span class="notif-pagination-info">@string.Format(Loc["PageFormat"], _pageNumber, _totalPages)</span>
+                <RadzenButton Text="@Loc["NextPage"]"
+                              Icon="chevron_right"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Disabled="@(_pageNumber >= _totalPages || _isLoadingPage)"
+                              Click="@(() => LoadPageAsync(_pageNumber + 1))" />
+            </div>
+        }
+    }
+</RadzenStack>
+
+@code {
+    private List<NotificationDto> _notifications = new();
+    private int _pageNumber = 1;
+    private int _totalPages;
+    private int _unreadCount;
+    private bool _filterUnreadOnly;
+    private bool _isLoading = true;
+    private bool _isLoadingPage;
+    private bool _isMarkingAllRead;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+
+        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
+    }
+
+    private async void OnNotificationRefreshReceived()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            // Silent — the list refresh is best-effort.
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var query = new GetNotificationsForUserQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = 20,
+                UnreadOnly = _filterUnreadOnly
+            };
+
+            var page = await MessageBus.InvokeAsync<PaginatedResult<NotificationDto>>(query);
+
+            _notifications = page.Items.ToList();
+            _totalPages = page.TotalPages;
+
+            _unreadCount = await MessageBus.InvokeAsync<int>(
+                new GetUnreadNotificationCountQuery());
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _loadError = Loc["Err_Load"];
+        }
+    }
+
+    private async Task LoadPageAsync(int page)
+    {
+        if (page < 1 || page > _totalPages) return;
+        _pageNumber = page;
+        _isLoadingPage = true;
+        try
+        {
+            await LoadAsync();
+        }
+        finally
+        {
+            _isLoadingPage = false;
+        }
+    }
+
+    private async Task SetFilterAsync(bool unreadOnly)
+    {
+        if (_filterUnreadOnly == unreadOnly) return;
+        _filterUnreadOnly = unreadOnly;
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        _isMarkingAllRead = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<int>>(
+                new MarkAllNotificationsAsReadCommand());
+
+            if (result.IsSuccess)
+            {
+                var count = result.Value;
+                await Toast.Success(
+                    count == 0
+                        ? Loc["Toast_NoUnread"]
+                        : string.Format(Loc["Toast_MarkedAllRead"], count));
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Err_MarkRead"]);
+            }
+        }
+        finally
+        {
+            _isMarkingAllRead = false;
+        }
+    }
+
+    private async Task HandleTapAsync(NotificationDto n)
+    {
+        if (n.IsUnread)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await MessageBus.InvokeAsync<Result>(
+                        new MarkNotificationAsReadCommand(n.Id));
+                    await InvokeAsync(LoadAsync);
+                }
+                catch
+                {
+                    // Silent — best-effort read-state.
+                }
+            });
+        }
+
+        if (n.SaleId.HasValue)
+        {
+            Navigation.NavigateTo($"/Sales/{n.SaleId.Value}", forceLoad: false);
+        }
+    }
+
+    private string GetTitle(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["Title_Submitted"],
+        NotificationKind.SaleApproved => Loc["Title_Approved"],
+        NotificationKind.SaleInvoiced => Loc["Title_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["Title_Cancelled"],
+        _ => Loc["Title_Unknown"]
+    };
+
+    private string GetMessage(NotificationDto n)
+    {
+        var sale = n.SaleDisplayNumber ?? Loc["UnknownSale"];
+        return n.Kind switch
+        {
+            NotificationKind.SaleSubmitted => string.Format(Loc["Message_Submitted_Customer"], sale),
+            NotificationKind.SaleApproved => string.Format(Loc["Message_Approved_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
+            NotificationKind.SaleInvoiced => string.Format(Loc["Message_Invoiced_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
+            NotificationKind.SaleCancelled => string.Format(Loc["Message_Cancelled_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
+            _ => Loc["Message_Unknown"]
+        };
+    }
+
+    private static string GetIconClass(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => "notif-icon-submit",
+        NotificationKind.SaleApproved => "notif-icon-approve",
+        NotificationKind.SaleInvoiced => "notif-icon-invoice",
+        NotificationKind.SaleCancelled => "notif-icon-cancel",
+        _ => "notif-icon-default"
+    };
+
+    private static string GetIconName(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => "shopping_cart",
+        NotificationKind.SaleApproved => "check_circle",
+        NotificationKind.SaleInvoiced => "receipt_long",
+        NotificationKind.SaleCancelled => "cancel",
+        _ => "notifications"
+    };
+
+    private string FormatRelativeTime(DateTimeOffset createdAtUtc)
+    {
+        var delta = DateTimeOffset.UtcNow - createdAtUtc;
+        if (delta.TotalMinutes < 1) return Loc["Time_JustNow"];
+        if (delta.TotalMinutes < 60) return string.Format(Loc["Time_MinutesAgo"], (int)delta.TotalMinutes);
+        if (delta.TotalHours < 24) return string.Format(Loc["Time_HoursAgo"], (int)delta.TotalHours);
+        if (delta.TotalDays < 7) return string.Format(Loc["Time_DaysAgo"], (int)delta.TotalDays);
+        return CultureFormat.ToCultureDigits(createdAtUtc.AddHours(3.5).ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture));
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/", forceLoad: false);
+    }
+
+    public void Dispose()
+    {
+        NotificationRefresh.RefreshReceived -= OnNotificationRefreshReceived;
+    }
+}

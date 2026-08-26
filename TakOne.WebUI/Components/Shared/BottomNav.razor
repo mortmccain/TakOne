@@ -20,6 +20,7 @@
 @inject Microsoft.Extensions.Localization.IStringLocalizer<BottomNav> Loc
 @using TakOne.Application.Common.Authorization
 @using TakOne.WebUI.Services
+@implements IDisposable
 
 <nav class="bottom-nav">
     @foreach (var item in _navItems)
@@ -73,6 +74,29 @@
         catch { }
 
         BuildNavItems();
+
+        // Subscribe to location changes so the active nav item highlights
+        // immediately when the user taps a nav item (no full-page reload).
+        // Without this, the bar's "active" state only updates on next
+        // OnInitializedAsync (i.e. on a hard refresh) — which is the bug
+        // "nav bar doesn't get updated when clicking on another page on it".
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // The user navigated (client-side nav via NavigateTo, NOT a full
+        // page reload). Rebuild the nav items so the active state reflects
+        // the new current URL, then trigger a re-render.
+        BuildNavItems();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        // Unsubscribe to avoid leaking the handler when the layout is
+        // disposed (circuit shutdown, navigation to a non-mobile layout).
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 
     private void BuildNavItems()

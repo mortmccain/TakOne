@@ -37,9 +37,15 @@
 @inject ToastService Toast
 @inject ICurrentUserService CurrentUser
 @inject IStringLocalizer<Products> ProductsLoc
+@inject Wolverine.IMessageBus MessageBus
+@inject TakOne.WebUI.Services.NotificationRefreshService NotificationRefresh
+@inject IStringLocalizer<TakOne.WebUI.Components.Layout.MainLayout> MainLayoutLoc
+@implements IDisposable
 @using System.Globalization
 @using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Notifications.Queries.GetUnreadNotificationCount
 @using TakOne.WebUI.Components.Pages.Products
+@using TakOne.WebUI.Services
 
 <RadzenLayout>
     @* Sidebar with role-gated navigation *@
@@ -179,6 +185,31 @@
                    The user avatar shows the user's initial + role label
                    and navigates to /Settings on click. *@
                 <div class="tm-actions-block">
+                    @* NOTIFICATIONS BELL — desktop top-bar bell icon with
+                       unread-count badge. Pings the NotificationRefreshService
+                       on every ReceiveRefresh (so the badge updates live when
+                       a new notification lands). Visible to ALL
+                       authenticated users (customers see their own-sale
+                       notifications; staff see their-action notifications).
+                       The bell is positioned FIRST in the actions block so
+                       it sits next to the user avatar (in RTL, that's the
+                       leftmost position in the actions row). *@
+                    <AuthorizeView>
+                        <button type="button"
+                                class="tm-icon-button tm-notification-bell"
+                                title="@MainLayoutLoc["NotificationsTitle"]"
+                                aria-label="@MainLayoutLoc["NotificationsTitle"]"
+                                @onclick="GoToNotifications">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="24" height="24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                            </svg>
+                            @if (_unreadCount > 0)
+                            {
+                                <span class="tm-notification-badge">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+                            }
+                        </button>
+                    </AuthorizeView>
+
                     @* Cart icon — visible to everyone EXCEPT ReadOnly.
                        ReadOnly users cannot buy (CreateOrAppendSaleCommand
                        is gated to Admin/Manager/Employee/Customer via
@@ -368,6 +399,13 @@
 
     [Inject] private IStringLocalizer<MainLayout> Localizer { get; set; } = default!;
 
+    /// <summary>
+    /// Live unread-notification count shown as a badge on the bell icon.
+    /// Loaded on init + refreshed via the NotificationRefreshService
+    /// whenever a SignalR ReceiveRefresh event lands.
+    /// </summary>
+    private int _unreadCount;
+
     protected override async Task OnInitializedAsync()
     {
         // The previous MainLayout read the user's display name + role badge
@@ -376,17 +414,20 @@
         // (CurrentUser.FullName, CurrentUser.IsInRole(...)) — same pattern as
         // Products.razor — so there's no auth-state reading to do here anymore.
         //
-        // We keep OnInitializedAsync for the SignalR connection start below.
+        // We keep OnInitializedAsync for the SignalR connection start below
+        // AND for the unread-notification-count load + the live-refresh
+        // subscription.
 
-        // Start the SignalR connection to NotificationHub.
-        try
-        {
-            await JS.InvokeVoidAsync("notificationHub.start");
-        }
-        catch
-        {
-            // Non-fatal — UI still works without real-time, just no push refresh.
-        }
+        // Load the initial unread count for the bell badge. Best-effort —
+        // failures just leave the badge at 0 (the user can still navigate
+        // to /Notifications to see the full list).
+        await LoadUnreadCountAsync();
+
+        // Subscribe to live-refresh events so the badge updates when a
+        // new notification lands. The NotificationRefreshService raises
+        // this event when the SignalR ReceiveRefresh event arrives (the
+        // JS bridge invokes OnReceiveRefresh on the service).
+        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
     }
 
     // Sync the sun/moon toggle icon with the actually-applied theme after
@@ -441,6 +482,90 @@
             // the runtime switch (takTheme.set) would also fail, and that's
             // a separate problem to surface via the error UI.
         }
+
+        // Wire up the SignalR connection + register the .NET callback so
+        // NotificationRefreshService can raise RefreshReceived when a
+        // ReceiveRefresh event arrives. Moved here (from OnInitializedAsync)
+        // because JS interop requires the circuit to be live — same reason
+        // the theme-sync above lives here.
+        try
+        {
+            await NotificationRefresh.StartAsync();
+        }
+        catch
+        {
+            // Non-fatal — UI still works without real-time, just no push
+            // refresh. The persisted notification row is the source of
+            // truth; the user will see new notifications on next page load.
+        }
+    }
+
+    /// <summary>
+    /// Live-refresh callback — invoked by NotificationRefreshService when
+    /// a SignalR ReceiveRefresh event arrives. Re-queries the unread count
+    /// and triggers a re-render so the bell badge updates immediately.
+    /// </summary>
+    /// <remarks>
+    /// <b>async void</b>: the one legitimate use of async void is for
+    /// event handlers — the event raiser (NotificationRefreshService)
+    /// can't await subscribers. The inner try/catch ensures no exception
+    /// escapes as an unobserved-exception (which would crash the process
+    /// if <c>ThrowUnobservedTaskExceptions</c> is ever flipped on).
+    /// </remarks>
+    private async void OnNotificationRefreshReceived()
+    {
+        try
+        {
+            await LoadUnreadCountAsync();
+        }
+        catch
+        {
+            // Silent — the badge is best-effort.
+        }
+    }
+
+    /// <summary>
+    /// Queries the current unread-notification count for the bell badge.
+    /// Best-effort — failures leave the badge at its previous value.
+    /// </summary>
+    private async Task LoadUnreadCountAsync()
+    {
+        try
+        {
+            if (!CurrentUser.IsAuthenticated) return;
+
+            var count = await MessageBus.InvokeAsync<int>(
+                new GetUnreadNotificationCountQuery());
+
+            if (count != _unreadCount)
+            {
+                _unreadCount = count;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // Silent — the badge is a UX nicety, not a correctness
+            // requirement. The /Notifications page re-queries on load.
+        }
+    }
+
+    /// <summary>
+    /// Navigates to the desktop Notifications page (/Notifications) when
+    /// the bell icon is clicked.
+    /// </summary>
+    private void GoToNotifications()
+    {
+        Navigation.NavigateTo("/Notifications", forceLoad: false);
+    }
+
+    /// <summary>
+    /// Unsubscribes from the live-refresh event when the layout is
+    /// disposed (circuit shutdown, navigation to a non-MainLayout route).
+    /// </summary>
+    public void Dispose()
+    {
+        NotificationRefresh.RefreshReceived -= OnNotificationRefreshReceived;
     }
 
     private void ToggleSidebar()
