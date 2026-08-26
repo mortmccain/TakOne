@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileEditGroup.fa-IR.resx — Persian (Farsi) strings for MobileEditGroup.razor.
+
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MobileLayout based on the current culture. Translations
+     mirror the desktop EditGroup.fa-IR.resx verbatim for shared keys
+     (Loading, ErrorTitle, Error_Generic, NotFoundTitle, NotFoundBody,
+     SummaryCardTitle, ColName, ColSalary, ColStatus, ColActiveUsers,
+     ColCreatedAt, ColUpdatedAt, NoActiveUsers, StatusActive,
+     StatusInactive, FieldName, FieldNamePlaceholder, FieldSalary,
+     FieldAmount, FieldCurrency, CurrencyLockedTitle, SalaryHint,
+     CancelButton, SaveButton, ActivateButton, DeactivateButton,
+     ValidationError_NameRequired, ValidationError_AmountRequired,
+     NoChanges, NoChangesTitle, SuccessTitle, SuccessSummary,
+     ConfirmDeactivate, DeactivateSuccessTitle, DeactivateSuccess,
+     ActivateSuccessTitle, ActivateSuccess, BulkDefaultsCardTitle,
+     BulkDefaultsDescription, BulkApplyDefaultsButton,
+     ConfirmBulkApplyDefaults, BulkApplyDefaultsTitle,
+     BulkApplyDefaultsSuccess, BulkApplyDefaultsNoUpdates).
+
+     Mobile-specific keys (PageTitle, PageSubtitle, RetryButton,
+     BackToGroups, Error_FailedToLoad, Error_Unexpected, Version,
+     EditFormCardTitle, ActionsCardTitle, FieldAmountPlaceholder) mirror
+     the conventions in MobileUserDetail.fa-IR.resx +
+     MobileManageGroups.fa-IR.resx.
+
+     Persian digits used in the Version string ("نسخه ۱.۰") and in
+     string.Format placeholders where the {0} is a group name (the name
+     itself stays as-is — it's user-supplied text). Same convention as
+     the sibling mobile detail pages. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve"><value>ویرایش گروه مشتریان — تک‌وان</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>ویرایش جزئیات گروه</value></data>
+  <data name="BackToGroups" xml:space="preserve"><value>بازگشت به گروه‌ها</value></data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری گروه…</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+
+  <!-- Not-found state -->
+  <data name="NotFoundTitle" xml:space="preserve"><value>گروه مشتریان یافت نشد</value></data>
+  <data name="NotFoundBody" xml:space="preserve"><value>گروه مورد نظر وجود ندارد یا شما اجازه مشاهده آن را ندارید.</value></data>
+
+  <!-- Errors -->
+  <data name="ErrorTitle" xml:space="preserve"><value>خطایی رخ داد</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری این گروه ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_Generic" xml:space="preserve"><value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+
+  <!-- Summary card -->
+  <data name="SummaryCardTitle" xml:space="preserve"><value>خلاصه گروه</value></data>
+  <data name="ColName" xml:space="preserve"><value>نام</value></data>
+  <data name="ColSalary" xml:space="preserve"><value>بودجه ماهانه</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>وضعیت</value></data>
+  <data name="ColActiveUsers" xml:space="preserve"><value>مشتریان فعال</value></data>
+  <data name="ColCreatedAt" xml:space="preserve"><value>تاریخ ایجاد</value></data>
+  <data name="ColUpdatedAt" xml:space="preserve"><value>آخرین به‌روزرسانی</value></data>
+  <data name="NoActiveUsers" xml:space="preserve"><value>هیچ مشتری فعالی در این گروه نیست</value></data>
+
+  <!-- Status badges -->
+  <data name="StatusActive" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>غیرفعال</value></data>
+
+  <!-- Edit form card -->
+  <data name="EditFormCardTitle" xml:space="preserve"><value>ویرایش گروه</value></data>
+  <data name="FieldName" xml:space="preserve"><value>نام گروه</value></data>
+  <data name="FieldNamePlaceholder" xml:space="preserve"><value>مثلاً: مدیریت، کارکنان، پیمانکاران</value></data>
+  <data name="FieldSalary" xml:space="preserve"><value>بودجه حقوق ماهانه</value></data>
+  <data name="FieldAmount" xml:space="preserve"><value>مبلغ</value></data>
+  <data name="FieldAmountPlaceholder" xml:space="preserve"><value>۰</value></data>
+  <data name="FieldCurrency" xml:space="preserve"><value>واحد پول</value></data>
+  <data name="CurrencyLockedTitle" xml:space="preserve"><value>واحد پول قفل شده است. برای تغییر واحد پول، این گروه را غیرفعال کرده و گروه جدیدی بسازید.</value></data>
+  <data name="SalaryHint" xml:space="preserve"><value>تغییرات بلافاصله برای خریدهای جدید اعمال می‌شود. مبلغ مصرف‌شده ماه جاری به‌صورت گذشته‌نگر بازمحاسبه نمی‌شود.</value></data>
+
+  <!-- Form actions -->
+  <data name="SaveButton" xml:space="preserve"><value>ذخیره تغییرات</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>انصراف</value></data>
+  <data name="ActivateButton" xml:space="preserve"><value>فعال‌سازی</value></data>
+  <data name="DeactivateButton" xml:space="preserve"><value>غیرفعال‌سازی</value></data>
+
+  <!-- Inline confirm panel (mirrors MobileUserDetail's _confirmingDeactivate pattern) -->
+  <data name="ConfirmDeactivate" xml:space="preserve"><value>گروه «{0}» غیرفعال شود؟ مشتریان این گروه تا فعال‌سازی مجدد نمی‌توانند خرید جدیدی انجام دهند. سفارش‌های ثبت‌شده آن‌ها نگه‌داری می‌شود.</value>
+    <comment>{0} = نام گروه</comment>
+  </data>
+
+  <!-- Actions card (Activate/Deactivate) -->
+  <data name="ActionsCardTitle" xml:space="preserve"><value>اقدامات</value></data>
+
+  <!-- Validation -->
+  <data name="ValidationError_NameRequired" xml:space="preserve"><value>نام گروه الزامی است.</value></data>
+  <data name="ValidationError_NameLength" xml:space="preserve"><value>نام گروه باید ۱ تا ۱۰۰ نویسه باشد.</value></data>
+  <data name="ValidationError_AmountRequired" xml:space="preserve"><value>مبلغ حقوق الزامی است.</value></data>
+  <data name="ValidationError_AmountRange" xml:space="preserve"><value>مبلغ حقوق نمی‌تواند منفی باشد.</value></data>
+
+  <!-- Toasts -->
+  <data name="NoChanges" xml:space="preserve"><value>تغییری برای ذخیره وجود ندارد.</value></data>
+  <data name="NoChangesTitle" xml:space="preserve"><value>تغییری داده نشد</value></data>
+  <data name="SuccessTitle" xml:space="preserve"><value>گروه به‌روزرسانی شد</value></data>
+  <data name="SuccessSummary" xml:space="preserve"><value>گروه مشتریان به‌روزرسانی شد.</value></data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve"><value>گروه غیرفعال شد</value></data>
+  <data name="DeactivateSuccess" xml:space="preserve"><value>«{0}» غیرفعال شد.</value>
+    <comment>{0} = نام گروه</comment>
+  </data>
+  <data name="ActivateSuccessTitle" xml:space="preserve"><value>گروه فعال شد</value></data>
+  <data name="ActivateSuccess" xml:space="preserve"><value>«{0}» فعال شد و مشتریان آن اکنون می‌توانند خرید کنند.</value>
+    <comment>{0} = نام گروه</comment>
+  </data>
+
+  <!-- کارت «اعمال گروهی محدودیت پیش‌فرض» — شکاف «فعال‌سازی مجدد» را می‌بندد. -->
+  <data name="BulkDefaultsCardTitle" xml:space="preserve"><value>اعمال گروهی محدودیت پیش‌فرض</value></data>
+  <data name="BulkDefaultsDescription" xml:space="preserve"><value>محدودیت خرید پیش‌فرض (۱) را به هر محصولی که هنوز محدودیتی برای این گروه ندارد اعمال می‌کند. محصولاتی که قبلاً محدودیت دارند تغییر نمی‌کنند. از این گزینه پس از فعال‌سازی مجدد گروهی که در دوره غیرفعال بودن محصولات جدیدی به کاتالوگ اضافه شده‌اند، استفاده کنید.</value></data>
+  <data name="BulkApplyDefaultsButton" xml:space="preserve"><value>اعمال محدودیت‌های پیش‌فرض</value></data>
+  <data name="ConfirmBulkApplyDefaults" xml:space="preserve"><value>اعمال محدودیت خرید پیش‌فرض (۱) به همه محصولاتی که محدودیتی برای گروه «{0}» ندارند؟ محصولاتی که قبلاً محدودیت دارند تغییر نمی‌کنند. این عملیات برای کاتالوگ‌های بزرگ ممکن است چند ثانیه طول بکشد.</value>
+    <comment>{0} = نام گروه</comment>
+  </data>
+  <data name="BulkApplyDefaultsTitle" xml:space="preserve"><value>اعمال گروهی کامل شد</value></data>
+  <data name="BulkApplyDefaultsSuccess" xml:space="preserve"><value>محدودیت پیش‌فرض {3} به {0} از {1} محصول اعمال شد. {2} محصول قبلاً محدودیت داشته و بدون تغییر باقی ماند.</value>
+    <comment>{0} = تعداد محصولات به‌روزرسانی‌شده، {1} = مجموع محصولات اسکن‌شده، {2} = تعداد محصولات نادیده‌گرفته‌شده، {3} = محدودیت اعمال‌شده</comment>
+  </data>
+  <data name="BulkApplyDefaultsNoUpdates" xml:space="preserve"><value>همه {0} محصول قبلاً محدودیتی برای این گروه دارند. تغییری اعمال نشد.</value>
+    <comment>{0} = مجموع محصولات اسکن‌شده</comment>
+  </data>
+
+  <!-- Footer — Persian digits in the version number -->
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

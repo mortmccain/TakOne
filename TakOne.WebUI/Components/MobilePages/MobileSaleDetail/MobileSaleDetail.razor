@@ -1,0 +1,887 @@
+@* MobileSaleDetail.razor — mobile version of the SaleDetail (order detail) page.
+   Route: /m/Sales/{SaleId}
+   Layout: MobileLayout
+
+   PORTS the desktop SaleDetail.razor features into a mobile-friendly
+   single-column layout:
+     - Page header with back button + sale display number + inline
+       status badge subtitle.
+     - Large status banner (color-coded by status — Draft / Pending /
+       Approved / Invoiced / Cancelled) using the desktop's
+       `.status-bg-*` color tokens so the colors read identically on
+       mobile and desktop.
+     - Sale meta info summary card (customer name, audit-trail
+       timestamps for created / submitted / approved / invoiced /
+       cancelled, with the audit-actor line on the Created entry).
+     - Line items list (one .m-list-item per sale line — clickable
+       product name → /m/Products/{ProductId} when ProductId is
+       available, qty, unit price, line total) formatted as Toman via
+       the local FormatMoney helper (IRR / 10 → Toman, matching the
+       MobileSales list page so a sale reads the same on the list and
+       the detail page).
+     - Total card with grand total (FormatMoney) + line count + total
+       units.
+     - Staff-only action buttons (Approve when Pending, Mark as
+       Invoiced when Approved, Cancel when Pending/Approved) — Cancel
+       uses an inline textarea confirmation form (mirrors
+       MobileCart's _confirmingClear pattern) for the cancellation
+       reason. ReadOnly and Customer roles don't see the action stack
+       at all; the backend enforces [RequireRoles(Employee, Manager,
+       Admin)] on each command as defense-in-depth.
+     - Loading → error → not-found → content state machine (matches
+       the MobileProducts / MobileSales gold-standard pattern).
+
+   BACKEND CONTRACT (same as desktop SaleDetail.razor):
+     - Load: GetSaleByIdQuery { SaleId } → Result<SaleDto>. The handler
+       resolves the current user server-side and rejects customers
+       trying to view other users' sales with a generic "not found"
+       message (avoids leaking existence).
+     - Approve (staff only): ApproveSaleCommand(SaleId) → Result.
+       Pending → Approved. Decrements stock per line.
+       [RequireRoles(Employee, Manager, Admin)].
+     - Mark as invoiced (staff only): MarkAsInvoicedCommand(SaleId) →
+       Result. Approved → Invoiced (terminal).
+       [RequireRoles(Employee, Manager, Admin)].
+     - Cancel (staff only): CancelSaleCommand(SaleId, Reason) →
+       Result. Reachable from Pending or Approved (NOT Draft — use
+       delete-draft via /m/Cart; NOT Invoiced — credit note flow).
+       Reason is required (3-500 chars; enforced by validator).
+       [RequireRoles(Employee, Manager, Admin)].
+
+   ROLE-RESOLUTION PATTERN (matches desktop SaleDetail.razor):
+     _canActOnSales is computed in OnInitializedAsync via
+     AuthStateProvider.GetAuthenticationStateAsync() (NOT via
+     ICurrentUserService.IsInRole). Reason: ICurrentUserService in
+     Blazor Server resolves from IHttpContextAccessor.HttpContext,
+     which is only populated during the INITIAL prerender request —
+     null over the SignalR circuit afterwards. AuthStateProvider is
+     the canonical source of role info for interactive components.
+     ICurrentUserService IS still safe inside Wolverine handlers
+     (where the message bus sets up its own ambient context) — just
+     not in the Blazor UI layer for first-render visibility checks.
+
+   MONEY: FormatMoney mirrors the MobileSales list-page helper (IRR
+   is divided by 10 and labelled "تومان"; non-IRR currencies pass
+   through with their currency code). This means the detail page's
+   grand total reads the SAME as the list page's row total —
+   consistent UX. (The desktop SaleDetail uses FormatMoneyRial which
+   keeps IRR as ریال — mobile deliberately uses Toman for parity with
+   the rest of the mobile surface area.)
+
+   TIMEZONE: FormatTimestamp delegates to CultureFormat.FormatTehranDateTime
+   (Tehran UTC+3:30, no DST since 2022; Jalali calendar + Persian
+   digits in fa-IR mode, Gregorian + ASCII in en-US).
+*@
+
+@page "/m/Sales/{SaleId:guid}"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Errors
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSaleById
+@using TakOne.Application.Sales.Commands.ApproveSale
+@using TakOne.Application.Sales.Commands.MarkAsInvoiced
+@using TakOne.Application.Sales.Commands.CancelSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileSaleDetail> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{CultureFormat.FormatDigits(_sale.DisplayNumber)} — {Loc["PageTitle"]}")</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadSaleAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_sale is null)
+{
+    @* Not-found / not-allowed: the handler returns Result.Failure with a
+       "not found" message for both genuinely-missing sales AND sales the
+       caller isn't allowed to see (defense-in-depth — never leak that the
+       sale exists). Either way the user sees the same friendly message. *@
+    <div class="m-empty">
+        <p>@Loc["NotFoundMessage"]</p>
+        <button class="m-btn m-btn-secondary" @onclick="GoToSales">@Loc["BackToList"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — back button + sale number + inline status badge.
+           The .m-page-header-back wrapper + .m-back-btn class are mobile-
+           detail-specific; the orchestrator adds them to mobile.css in a
+           later pass (until then, the page renders unstyled-but-functional). *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToList"]"
+                title="@Loc["BackToList"]"
+                @onclick="GoToSales">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@CultureFormat.ToCultureDigits(_sale.DisplayNumber)</h1>
+            <p class="m-page-subtitle">@FormatTimestamp(_sale.CreatedAtUtc)</p>
+        </div>
+        <span class="m-badge @GetStatusBadgeClass(_sale.Status)">@GetStatusLabel(_sale.Status)</span>
+    </div>
+
+    @* ── 2. Large status banner — color-coded by status. Uses the desktop's
+           status-bg-* color tokens (rgba background + matching foreground)
+           so a status reads identically on mobile and desktop. The
+           orchestrator adds the .m-status-banner + per-status CSS classes
+           in a later pass; until then the inline class names match the
+           desktop SaleDetail.razor's HeadContent <style> block (those styles
+           are page-scoped on desktop but won't leak to mobile — they're
+           defined inside desktop's <HeadContent>, so the mobile page just
+           needs its own equivalent classes; orchestrator adds them). *@
+    <div class="m-status-banner @GetStatusBannerClass(_sale.Status)">
+        <span class="m-status-banner-icon" aria-hidden="true">
+            @GetStatusIcon(_sale.Status)
+        </span>
+        <span class="m-status-banner-label">@GetStatusLabel(_sale.Status)</span>
+    </div>
+
+    @* ── 3. Cancellation reason panel — only shown when the sale is
+           Cancelled and a reason was recorded. Mirrors the desktop's
+           .cancellation-reason panel (italic, danger-tinted). *@
+    @if (_sale.Status == nameof(SaleStatus.Cancelled)
+         && !string.IsNullOrWhiteSpace(_sale.CancellationReason))
+    {
+        <div class="m-cancellation-reason">
+            <div class="m-cancellation-reason-label">@Loc["CancellationReasonLabel"]</div>
+            <p class="m-cancellation-reason-text">@_sale.CancellationReason</p>
+        </div>
+    }
+
+    @* ── 4. Sale meta info — customer + audit trail. One .m-summary-card
+           with .m-summary-row entries. Rows with no timestamp (e.g. a
+           pending sale that hasn't been approved yet) show "—" muted. *@
+    <div class="m-summary-card">
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["ColCustomer"]</span>
+            <span class="m-summary-value">@_sale.CustomerName</span>
+        </div>
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["AuditCreated"]</span>
+            <span class="m-summary-value">
+                @FormatTimestamp(_sale.CreatedAtUtc)
+                <span class="m-summary-audit-actor">@string.Format(CultureInfo.CurrentCulture, Loc["AuditByFormat"], _sale.CreatedByName)</span>
+            </span>
+        </div>
+        @if (_sale.SubmittedAtUtc.HasValue)
+        {
+            <div class="m-summary-row">
+                <span class="m-summary-label">@Loc["AuditSubmitted"]</span>
+                <span class="m-summary-value">@FormatTimestamp(_sale.SubmittedAtUtc.Value)</span>
+            </div>
+        }
+        @if (_sale.ApprovedAtUtc.HasValue)
+        {
+            <div class="m-summary-row">
+                <span class="m-summary-label">@Loc["AuditApproved"]</span>
+                <span class="m-summary-value">@FormatTimestamp(_sale.ApprovedAtUtc.Value)</span>
+            </div>
+        }
+        else if (_sale.Status == nameof(SaleStatus.Pending))
+        {
+            <div class="m-summary-row">
+                <span class="m-summary-label">@Loc["AuditApproved"]</span>
+                <span class="m-summary-value m-summary-value-pending">@Loc["AuditPending"]</span>
+            </div>
+        }
+        @if (_sale.InvoicedAtUtc.HasValue)
+        {
+            <div class="m-summary-row">
+                <span class="m-summary-label">@Loc["AuditInvoiced"]</span>
+                <span class="m-summary-value">@FormatTimestamp(_sale.InvoicedAtUtc.Value)</span>
+            </div>
+        }
+        @if (_sale.CancelledAtUtc.HasValue)
+        {
+            <div class="m-summary-row">
+                <span class="m-summary-label">@Loc["AuditCancelled"]</span>
+                <span class="m-summary-value">@FormatTimestamp(_sale.CancelledAtUtc.Value)</span>
+            </div>
+        }
+    </div>
+
+    @* ── 5. Line items list — one .m-list-item per sale line. Each shows
+           the product name (clickable → /m/Products/{ProductId} when
+           ProductId is not Guid.Empty; non-clickable for legacy lines
+           without a ProductId), the line # prefix, the quantity, the unit
+           price, and the line total. All money values are formatted via
+           FormatMoney (IRR / 10 → Toman, matching the MobileSales list). *@
+    <div class="m-list">
+        @if (_sale.LineItems.Count == 0)
+        {
+            <p class="m-empty">@Loc["NoLineItems"]</p>
+        }
+        else
+        {
+            @foreach (var line in _sale.LineItems)
+            {
+                var l = line;  // closure-capture for the click handler
+                var canOpenProduct = l.ProductId != Guid.Empty;
+                <div class="m-list-item">
+                    <div class="m-list-item-main">
+                        <div class="m-list-item-title-row">
+                            <span class="m-list-item-line-num">#@CultureFormat.FormatDigits(l.LineNumber)</span>
+                            @if (canOpenProduct)
+                            {
+                                <span class="m-list-item-title m-list-item-title-link"
+                                      role="link"
+                                      tabindex="0"
+                                      @onclick="() => GoToProduct(l.ProductId)">
+                                    @l.ProductName
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="m-list-item-title">@l.ProductName</span>
+                            }
+                        </div>
+                        <div class="m-list-item-subtitle">@Loc["ColQuantity"]: @CultureFormat.FormatNumber(l.Quantity)</div>
+                        <div class="m-list-item-subtitle">@Loc["ColUnitPrice"]: @FormatMoney(l.UnitPrice)</div>
+                        <div class="m-list-item-meta">
+                            <span class="m-list-item-line-total">@Loc["ColLineTotal"]: <strong>@FormatMoney(l.LineTotal)</strong></span>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @* ── 6. Total card — grand total + line count + total units. *@
+    <div class="m-summary-card">
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["TotalLines"]</span>
+            <span class="m-summary-value">@CultureFormat.FormatNumber(_sale.LineItems.Count)</span>
+        </div>
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["TotalUnits"]</span>
+            <span class="m-summary-value">@CultureFormat.FormatNumber(_sale.LineItems.Sum(li => li.Quantity))</span>
+        </div>
+        <div class="m-summary-divider"></div>
+        <div class="m-summary-row">
+            <span class="m-summary-label m-summary-total-label">@Loc["GrandTotal"]</span>
+            <span class="m-summary-total">@FormatMoney(_sale.Total)</span>
+        </div>
+    </div>
+
+    @* ── 7. Staff-only action buttons.
+           Visible only to Employee/Manager/Admin (matches the
+           [RequireRoles] on each command). ReadOnly + Customer can view
+           the sale but can't mutate it — the action stack isn't rendered
+           for them at all (defense-in-depth: the handlers also reject
+           unauthorized dispatches server-side).
+
+           Approve: enabled only when the sale is Pending.
+           Mark as invoiced: enabled only when the sale is Approved.
+           Cancel: enabled only when the sale is Pending or Approved.
+             First click opens the inline cancel form (textarea + Discard/
+             Confirm buttons) — mobile-friendly equivalent of the desktop's
+             two-step Radzen-dialog + countdown flow. The inline pattern
+             matches MobileCart's _confirmingClear UX. *@
+    @if (_canActOnSales)
+    {
+        <div class="m-action-stack">
+            @if (!string.IsNullOrEmpty(_actionError))
+            {
+                <div class="m-action-error">
+                    <p>@_actionError</p>
+                </div>
+            }
+
+            @if (_showCancelForm)
+            {
+                @* Inline cancel form — replaces the Cancel button while
+                   _showCancelForm is true. User enters a reason, then clicks
+                   Confirm to dispatch CancelSaleCommand (with the 3-500 char
+                   length check as defense-in-depth). Discard closes the form
+                   without action. *@
+                <div class="m-cancel-form">
+                    <div class="m-cancel-form-heading">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.732 0 2.815-1.873 1.949-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.008v.008H12v-.008z" />
+                        </svg>
+                        <span>@Loc["CancelFormHeading"] <strong>@CultureFormat.FormatDigits(_sale.DisplayNumber)</strong></span>
+                    </div>
+                    <label class="m-cancel-form-label" for="cancel-reason">@Loc["CancelFormReasonLabel"]</label>
+                    <textarea id="cancel-reason"
+                              class="m-cancel-form-textarea"
+                              rows="3"
+                              placeholder="@Loc["CancelFormReasonPlaceholder"]"
+                              @bind="_cancellationReason"
+                              @bind:event="oninput"
+                              disabled="@_isBusy">
+                    </textarea>
+                    <div class="m-cancel-form-btns">
+                        <button type="button"
+                                class="m-btn m-btn-danger m-btn-block"
+                                disabled="@(string.IsNullOrWhiteSpace(_cancellationReason) || _isBusy)"
+                                @onclick="ExecuteCancellation">
+                            @(_isBusy ? Loc["CancelFormCancelling"] : Loc["CancelFormConfirm"])
+                        </button>
+                        <button type="button"
+                                class="m-btn m-btn-secondary m-btn-block"
+                                disabled="@_isBusy"
+                                @onclick="HideCancelForm">
+                            @Loc["CancelFormDiscard"]
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                @if (_sale.Status == nameof(SaleStatus.Pending))
+                {
+                    <button type="button"
+                            class="m-btn m-btn-primary m-btn-block"
+                            disabled="@_isBusy"
+                            @onclick="HandleApproveAsync">
+                        @(_isBusy ? Loc["ActionWorking"] : Loc["ActionApprove"])
+                    </button>
+                }
+                @if (_sale.Status == nameof(SaleStatus.Approved))
+                {
+                    <button type="button"
+                            class="m-btn m-btn-gold m-btn-block"
+                            disabled="@_isBusy"
+                            @onclick="HandleMarkInvoicedAsync">
+                        @(_isBusy ? Loc["ActionWorking"] : Loc["ActionMarkInvoiced"])
+                    </button>
+                }
+                @if (_canCancel)
+                {
+                    <button type="button"
+                            class="m-btn m-btn-danger m-btn-block"
+                            disabled="@_isBusy"
+                            @onclick="ShowCancelForm">
+                        @Loc["ActionCancel"]
+                    </button>
+                }
+            }
+
+            <button type="button"
+                    class="m-btn m-btn-secondary m-btn-block"
+                    disabled="@_isBusy"
+                    @onclick="GoToSales">
+                @Loc["BackToList"]
+            </button>
+        </div>
+    }
+
+    @* ── 8. Footer — version string *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sale Id from the URL. The @page constraint `{SaleId:guid}` ensures
+    /// only valid Guid strings reach this parameter; malformed URLs hit the
+    /// router's NotFound template instead.
+    /// </summary>
+    [Parameter]
+    public Guid SaleId { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private SaleDto? _sale;
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// True if the current user is in Employee, Manager, or Admin role
+    /// (matches the [RequireRoles] on ApproveSaleCommand, MarkAsInvoicedCommand,
+    /// CancelSaleCommand). Computed synchronously in OnInitializedAsync from
+    /// AuthenticationStateProvider so the action-stack visibility doesn't
+    /// flicker on first render. ReadOnly + Customer roles can view but not act.
+    /// </summary>
+    private bool _canActOnSales;
+
+    /// <summary>
+    /// True while an action (Approve / MarkInvoiced / Cancel) is in flight.
+    /// Disables all action buttons + the cancel form's Confirm/Discard to
+    /// prevent double-clicks and concurrent command dispatch.
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// Inline error message for the action panel. Populated when an action
+    /// fails (e.g. insufficient stock). Cleared on the next successful
+    /// action or when the user opens the inline cancel form.
+    /// </summary>
+    private string _actionError = string.Empty;
+
+    /// <summary>
+    /// True when the inline cancel form is open in the action panel.
+    /// Mutated by ShowCancelForm / HideCancelForm.
+    /// </summary>
+    private bool _showCancelForm;
+
+    /// <summary>
+    /// Bound to the textarea in the inline cancel form. Trimmed and
+    /// length-validated (3-500 chars) before dispatch.
+    /// </summary>
+    private string _cancellationReason = string.Empty;
+
+    /// <summary>
+    /// True if the sale is in a cancellable state (Pending or Approved).
+    /// Drafts are cancellable via DeleteDraftSaleCommand (handled on /m/Cart);
+    /// Invoiced sales require a credit note flow (not implemented in v1).
+    /// Computed from _sale.Status after the load succeeds.
+    /// </summary>
+    private bool _canCancel =>
+        _sale is not null
+        && (_sale.Status == nameof(SaleStatus.Pending) || _sale.Status == nameof(SaleStatus.Approved));
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve _canActOnSales synchronously via AuthStateProvider so the
+        // action stack doesn't flicker on first render. NOTE: we deliberately
+        // do NOT use ICurrentUserService.IsInRole here — in interactive Blazor
+        // Server mode, ICurrentUserService resolves from
+        // IHttpContextAccessor.HttpContext, which is null over the SignalR
+        // circuit (only populated during the initial prerender). The
+        // AuthStateProvider is the canonical source for interactive
+        // components. The Wolverine command handlers also enforce
+        // [RequireRoles] server-side as defense-in-depth.
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _canActOnSales = user.IsInRole(Roles.Admin)
+                         || user.IsInRole(Roles.Manager)
+                         || user.IsInRole(Roles.Employee);
+
+        try
+        {
+            await LoadSaleAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    private async Task LoadSaleAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            await LoadSaleCoreAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Silent-reload variant used by ExecuteActionAsync after a successful
+    /// action. Skips toggling _isLoading so the page doesn't flash the
+    /// full-page loading spinner between a successful action and the
+    /// refreshed content (mirrors the desktop SaleDetail.razor pattern).
+    /// </summary>
+    private async Task ReloadSaleSilentlyAsync()
+    {
+        // NOTE: do NOT touch _isLoading here — that would blank the page
+        // with the loading spinner. We keep _isBusy = true (set by the
+        // caller ExecuteActionAsync) so action buttons stay disabled while
+        // the reload is in flight.
+        try
+        {
+            await LoadSaleCoreAsync();
+        }
+        catch (Exception)
+        {
+            // Silent-reload failures are non-fatal — the action itself
+            // already succeeded and we already toasted success. The next
+            // user interaction (or a manual page refresh) will surface
+            // any persistent load failure via the regular LoadSaleAsync
+            // path.
+        }
+    }
+
+    /// <summary>
+    /// Shared core for both LoadSaleAsync (initial load + retry) and
+    /// ReloadSaleSilentlyAsync (post-action refresh). Sets _sale + _loadError.
+    /// Does NOT touch _isLoading — that's the caller's responsibility.
+    /// </summary>
+    private async Task LoadSaleCoreAsync()
+    {
+        try
+        {
+            var query = new GetSaleByIdQuery { SaleId = SaleId };
+            var result = await MessageBus.InvokeAsync<Result<SaleDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _sale = result.Value;
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message.
+                // For "not found" (covers both genuinely-missing AND
+                // permission-denied), we show the same NotFound UI.
+                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _sale = null;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_GenericLoad"];
+            _sale = null;
+        }
+    }
+
+    // ── Staff actions ──────────────────────────────────────────────────
+
+    private async Task HandleApproveAsync()
+    {
+        if (_sale is null || _isBusy) return;
+
+        // Defensive: button is rendered only when status == Pending, but the
+        // handler also enforces this. Belt-and-suspenders.
+        if (_sale.Status != nameof(SaleStatus.Pending)) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionApprove"],
+            () => MessageBus.InvokeAsync<Result>(new ApproveSaleCommand(_sale.Id)));
+    }
+
+    private async Task HandleMarkInvoicedAsync()
+    {
+        if (_sale is null || _isBusy) return;
+
+        if (_sale.Status != nameof(SaleStatus.Approved)) return;
+
+        await ExecuteActionAsync(
+            Loc["ActionMarkInvoiced"],
+            () => MessageBus.InvokeAsync<Result>(new MarkAsInvoicedCommand(_sale.Id)));
+    }
+
+    // ── Cancel flow (inline two-step, mirrors MobileCart's _confirmingClear) ──
+    //
+    // Step 1: User clicks "Cancel order" → ShowCancelForm() flips
+    //         _showCancelForm to true, which renders the inline cancel form
+    //         (textarea + Discard/Confirm buttons) in place of the action
+    //         buttons.
+    // Step 2: User enters a reason and clicks "Confirm Cancellation" →
+    //         ExecuteCancellation() validates the reason length client-side
+    //         (3-500 chars, matching CancelSaleCommandValidator — defense-
+    //         in-depth) and dispatches CancelSaleCommand via Wolverine. On
+    //         success the inline form is hidden and the sale is silently
+    //         reloaded to refresh the status banner + audit trail.
+
+    /// <summary>
+    /// Step 1 — opens the inline cancel form. Does NOT dispatch any command.
+    /// </summary>
+    private void ShowCancelForm()
+    {
+        if (_sale is null || _isBusy) return;
+        if (!_canCancel) return;
+
+        _showCancelForm = true;
+        _actionError = string.Empty;
+    }
+
+    /// <summary>
+    /// Closes the inline cancel form and clears the entered reason. Called
+    /// when the user clicks "Discard" in the form, or after a successful
+    /// cancellation (so the form doesn't stay open over a now-cancelled sale).
+    /// </summary>
+    private void HideCancelForm()
+    {
+        _showCancelForm = false;
+        _cancellationReason = string.Empty;
+    }
+
+    /// <summary>
+    /// Step 2 — dispatches CancelSaleCommand. Validates the reason length
+    /// client-side first (3-500 chars, matches CancelSaleCommandValidator).
+    /// Reuses ExecuteActionAsync for the busy-state / error / success /
+    /// reload flow. After success, hides the inline form so the user sees
+    /// the cancelled state without the form still being open.
+    /// </summary>
+    private async Task ExecuteCancellation()
+    {
+        if (_sale is null || _isBusy) return;
+
+        var reason = (_cancellationReason ?? string.Empty).Trim();
+
+        // Client-side validation: 3-500 chars (matches CancelSaleCommandValidator).
+        if (reason.Length < 3 || reason.Length > 500)
+        {
+            await Toast.Warning(Loc["CancelReasonLengthError"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        await ExecuteActionAsync(
+            Loc["ActionCancel"],
+            () => MessageBus.InvokeAsync<Result>(new CancelSaleCommand(_sale.Id, reason)));
+
+        // If the action succeeded, ExecuteActionAsync already reloaded the
+        // sale. Hide the inline form so the user sees the cancelled state
+        // without the form still being open. (On failure we keep the form
+        // open so they can retry without re-entering the reason.)
+        if (_sale?.Status == nameof(SaleStatus.Cancelled))
+        {
+            HideCancelForm();
+        }
+    }
+
+    /// <summary>
+    /// Translates stable, culture-neutral error codes (returned by the
+    /// Approve / MarkAsInvoiced / Cancel command handlers) into culture-
+    /// aware messages for the current UI culture. Returns null for any
+    /// error string it doesn't recognize — the caller falls back to the raw
+    /// error or to Error_GenericAction. Mirrors the desktop SaleDetail.razor
+    /// LocalizeError helper verbatim so both pages share a consistent
+    /// localization strategy for command-handler errors.
+    /// </summary>
+    private string? LocalizeError(string? error)
+    {
+        if (StockErrors.TryParse(error, out var stockName, out var stock, out var required))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["StockExceeded"],
+                stockName,
+                stock,
+                required);
+        }
+        if (CategoryDeactivatedErrors.TryParse(error, out var deactivatedName))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["CategoryDeactivated"],
+                deactivatedName);
+        }
+        if (PurchaseLimitErrors.TryParse(error, out var limitName, out var limit))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["PurchaseLimitExceeded"],
+                limitName,
+                limit);
+        }
+        // NoCustomerGroup is produced when the customer on the sale has no
+        // CustomerGroup assigned. The backend rejects the mutation outright.
+        // The localized message tells the staff user to assign the customer
+        // to a group before adding more items.
+        if (NoCustomerGroupErrors.TryParse(error))
+        {
+            return Loc["NoCustomerGroup"];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Common wrapper for the three staff actions: sets _isBusy, clears the
+    /// previous _actionError, dispatches the command, handles success
+    /// (toast + silent reload to refresh status banner + audit trail +
+    /// action-button enabled states) and failure (inline _actionError banner
+    /// + error toast). Mirrors the desktop SaleDetail.razor pattern.
+    /// </summary>
+    private async Task ExecuteActionAsync(string actionName, Func<Task<Result>> dispatch)
+    {
+        _isBusy = true;
+        _actionError = string.Empty;
+
+        try
+        {
+            var result = await dispatch();
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActionSuccessFormat"], actionName),
+                    summary: Loc["ActionSuccessTitle"]);
+
+                // Reload the sale to refresh the status banner, audit trail,
+                // and action-button enabled states. Uses the SILENT reload
+                // (not LoadSaleAsync) so the page doesn't flash the full-page
+                // loading spinner between the toast and the refreshed content.
+                // _isBusy stays true here (set at the top of this method) so
+                // action buttons remain disabled during the reload.
+                await ReloadSaleSilentlyAsync();
+            }
+            else
+            {
+                // result.Error may be a stable, culture-neutral error code
+                // (e.g. StockErrors.Format / CategoryDeactivatedErrors.Format /
+                // PurchaseLimitErrors.Format / NoCustomerGroupErrors.Format)
+                // that needs to be localized into the user's language.
+                // LocalizeError returns null for errors it doesn't recognize —
+                // we fall back to the raw error string, or to Error_GenericAction
+                // if the handler returned no error.
+                _actionError = LocalizeError(result.Error) ?? Loc["Error_GenericAction"];
+                await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            _actionError = Loc["Error_GenericAction"];
+            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────
+
+    private void GoToSales()
+        => Navigation.NavigateTo("/m/Sales", forceLoad: false);
+
+    private void GoToProduct(Guid productId)
+        => Navigation.NavigateTo($"/m/Products/{productId}", forceLoad: false);
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman: IRR is divided by 10 and
+    /// labelled with the localized "Toman" unit; other currencies pass
+    /// through unchanged with their own currency code. Returns "—" for
+    /// null or zero-with-empty-currency amounts (cleaner than "0 تومان"
+    /// on an empty price tag).
+    ///
+    /// Mirrors MobileSales.razor's FormatMoney helper exactly so the
+    /// detail page's grand total reads the SAME as the list page's row
+    /// total — consistent UX between the two pages that link to each
+    /// other.
+    /// </summary>
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0 && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Formats a UTC DateTimeOffset for display in Tehran time, culture-
+    /// aware. Delegates to CultureFormat.FormatTehranDateTime (Tehran =
+    /// UTC + 3:30, no DST since 2022; Jalali calendar + Persian digits
+    /// in fa-IR mode, Gregorian + ASCII in en-US).
+    /// </summary>
+    private static string FormatTimestamp(DateTimeOffset utc)
+        => CultureFormat.FormatTehranDateTime(utc);
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a mobile badge color class (the small inline badge next to the
+    /// sale number in the page header). Same color mapping as MobileSales.
+    /// razor's GetStatusBadgeClass so the badge reads the same on the list
+    /// and the detail page.
+    /// </summary>
+    private static string GetStatusBadgeClass(string? status) => status switch
+    {
+        "Draft" => "m-badge-neutral",
+        "Pending" => "m-badge-warning",
+        "Approved" => "m-badge-info",
+        "Invoiced" => "m-badge-success",
+        "Cancelled" => "m-badge-danger",
+        _ => "m-badge-neutral"
+    };
+
+    /// <summary>
+    /// Returns the CSS class for the large status banner. Uses the
+    /// status-bg-* color tokens defined in the desktop SaleDetail.razor's
+    /// HeadContent <style> block — the orchestrator will add these as
+    /// mobile.css classes in a later pass (page-scoped <HeadContent> styles
+    /// don't leak across pages, so the mobile page needs its own equivalent
+    /// classes; until the orchestrator adds them, the banner renders
+    /// unstyled-but-readable).
+    /// </summary>
+    private static string GetStatusBannerClass(string status) => status switch
+    {
+        "Draft" => "status-bg-draft",
+        "Pending" => "status-bg-pending",
+        "Approved" => "status-bg-approved",
+        "Invoiced" => "status-bg-invoiced",
+        "Cancelled" => "status-bg-cancelled",
+        _ => "status-bg-draft"
+    };
+
+    /// <summary>
+    /// Returns a Material icon name for the large status banner. The icon
+    /// is rendered inside a span with the Material Symbols font family
+    /// (defined globally by Radzen's theme; the class .m-status-banner-icon
+    /// just sets the size + color). Mirrors the desktop GetStatusIcon
+    /// helper verbatim.
+    /// </summary>
+    private static string GetStatusIcon(string status) => status switch
+    {
+        "Draft" => "edit_note",
+        "Pending" => "hourglass_top",
+        "Approved" => "check_circle",
+        "Invoiced" => "receipt_long",
+        "Cancelled" => "cancel",
+        _ => "help_outline"
+    };
+
+    /// <summary>
+    /// Returns a localized label for the sale status. Falls back to the raw
+    /// status string if no localization key matches. Same pattern as the
+    /// desktop SaleDetail.razor GetStatusLabel helper.
+    /// </summary>
+    private string GetStatusLabel(string status)
+    {
+        var key = $"Status{status}";
+        var localized = Loc[key];
+        return localized == key ? status : localized;
+    }
+
+    // ── SaleStatus mirror (for nameof() comparisons) ───────────────────
+    //
+    // Local mirror of the SaleStatus enum value NAMES. Used via nameof()
+    // so the .razor layer is loosely coupled to the domain enum (no
+    // using directive on TakOne.Domain.Sales.Enums needed). Keep these
+    // in sync with TakOne.Domain.Sales.Enums.SaleStatus. Mirrors the
+    // desktop SaleDetail.razor's private SaleStatus mirror class.
+
+    private static class SaleStatus
+    {
+        public const string Draft = "Draft";
+        public const string Pending = "Pending";
+        public const string Approved = "Approved";
+        public const string Invoiced = "Invoiced";
+        public const string Cancelled = "Cancelled";
+    }
+}

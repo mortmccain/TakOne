@@ -1,0 +1,862 @@
+@* MobileUserDetail.razor — mobile version of the UserDetail (staff user
+   detail) page.
+   Route: /m/Admin/Users/{UserId:guid}
+   Layout: MobileLayout
+
+   PORTS a mobile-friendly subset of the desktop UserDetail.razor
+   (2568 lines). The desktop page is a hybrid view + staff management
+   surface (Edit FullName modal, Assign/Remove role dropdown, Change
+   group inline panel, Remove from group, Reset password modal). MOBILE
+   deliberately drops ALL multi-step management affordances — they belong
+   on the desktop /m/Admin/Users surface where there's room for modals +
+   dropdowns + 2-column group-card grids. What mobile keeps:
+
+     - Page header with back button + user's full name + worker-id
+       subtitle (monospace digits via CultureFormat.ToCultureDigits).
+     - Profile summary card (read-only rows):
+         · WorkerId
+         · FullName
+         · Gender (Loc[GetGenderLabel(...)] lookup — same pattern as
+           MobileSettings.razor)
+         · Email (only when non-empty — the DTO's Email is currently
+           always null per the desktop's TODO note, but the row is
+           wired to light up automatically when the handler is extended)
+         · Status badge (.m-badge-success when active, .m-badge-danger
+           when inactive — same color rule as MobileSettings/MobileAdminUsers)
+         · GroupName chip (only when non-null — mirrors desktop's
+           "show group row when GroupName is set" rule)
+         · Roles chips (one .m-badge per role, color-coded by the
+           desktop's GetRoleBadgeStyle mapping: Admin → danger,
+           Manager → warning, Employee → info, ReadOnly → neutral,
+           Customer → success)
+     - Action buttons card (only when CanActivate() returns true —
+       matches the desktop's role-scope rule):
+         · Activate (when user is inactive — non-destructive restore,
+           no confirm)
+         · Deactivate (when user is active — destructive, opens an
+           inline confirm with "Are you sure?" + Confirm/Cancel
+           buttons, mirrors MobileCart's _confirmingClear pattern)
+       Per-action _busyAction string state machine (mirrors
+       MobileAdminCategories's _busyKey): "action:activate" or
+       "action:deactivate" — the finally block only clears the flag
+       when it still matches this action's key (prevents stale resets
+       from a concurrent action).
+     - Empty state (UserNotFound) when the handler returns Result.Failure
+       (covers both genuinely-missing AND not-allowed-to-see — the
+       handler uses a "never leak existence" pattern, same as
+       SaleDetail / ProductDetail).
+     - Footer with Loc["Version"].
+
+   BACKEND CONTRACT (mirrors desktop UserDetail.razor):
+     - Load: GetUserByIdQuery { UserId } → Result<UserDto>.
+       [RequireAuthentication] + viewer-scope rules:
+         · Admin / Manager: may view any user, including GroupName.
+         · Employee: may view any user, but GroupName is hidden.
+         · Customer / ReadOnly: may view ONLY their own profile
+           (the handler returns Result.Failure for other users with
+           a generic "not found" message — defense-in-depth against
+           existence leaking).
+     - Activate: ActivateUserCommand(UserId) → Result.
+       [RequireRoles(Manager, Admin)]. Handler rejects self-activation
+       as defense-in-depth (the UI also hides the button via CanActivate).
+     - Deactivate: DeactivateUserCommand(UserId) → Result.
+       [RequireRoles(Manager, Admin)]. Handler rejects self-deactivation
+       (the UI also hides the button via CanActivate).
+
+   ROLE-RESOLUTION PATTERN (matches desktop UserDetail.razor +
+   MobileAdminUsers.razor):
+     _isAdmin, _isManager, _isEmployee, _currentUserId are computed
+     in OnInitializedAsync via AuthStateProvider.GetAuthenticationStateAsync()
+     — NOT via ICurrentUserService.IsInRole (which returns false for
+     everyone in interactive Blazor Server mode because HttpContext is
+     null over the SignalR circuit). Same pattern as the desktop
+     UserDetail.razor + MobileAdminUsers.razor + MobileSaleDetail.razor.
+     The Wolverine command handlers ALSO enforce [RequireRoles] server-
+     side as defense-in-depth — the UI's CanActivate is a UX gate, not
+     a security boundary.
+
+   ROLE-SCOPE RULE (CanActivate, mirrors desktop verbatim):
+     - Admin    → anyone except self (handler also rejects self).
+     - Manager  → target must be Employee or Customer, AND must NOT be
+                  self, Manager, or Admin.
+     - Employee → cannot activate/deactivate anyone (the command is
+                  [RequireRoles(Manager, Admin)] — Employees are rejected
+                  by the auth middleware before the handler runs).
+
+   NOT PORTED TO MOBILE (per task spec — these belong on desktop):
+     - Edit FullName modal (UpdateUserFullNameCommand).
+     - Assign/Remove role (AssignUserRoleCommand / RemoveUserRoleCommand)
+       — the roles list renders as READ-ONLY chips.
+     - Change group / Assign to group (AssignUserToGroupCommand) — the
+       group renders as a READ-ONLY chip.
+     - Remove from group (RemoveUserFromGroupCommand).
+     - Reset password (ResetUserPasswordCommand).
+
+   ROUTE PARAMETER:
+     `UserId` is a Guid bound from the URL via [Parameter]. The @page
+     constraint `{UserId:guid}` validates the URL segment is parseable
+     as a Guid before this component even loads — a malformed URL gets a
+     404 from the router, not a runtime exception here. Same `:guid`
+     constraint as MobileSaleDetail's `{SaleId:guid}` and
+     MobileProductDetail's `{ProductId:guid}`. The route param name is
+     `UserId` (NOT `Id` like the desktop uses) to mirror the underlying
+     GetUserByIdQuery field name for symmetry with MobileSaleDetail's
+     `SaleId` / MobileProductDetail's `ProductId` naming convention.
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All buttons are regular <button>
+     elements with async @onclick handlers that dispatch commands via
+     Wolverine. The Blazor circuit's anti-forgery token is established
+     at circuit start. No form POST happens. (Same as desktop
+     UserDetail.razor + MobileSaleDetail.razor.)
+*@
+
+@page "/m/Admin/Users/{UserId:guid}"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+
+@using System.Globalization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Application.Users.Commands.ActivateUser
+@using TakOne.Application.Users.Commands.DeactivateUser
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileUserDetail> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(_user is null ? Loc["PageTitle"] : $"{_user.FullName} — {Loc["PageTitle"]}")</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_user is null)
+{
+    @* Not-found / not-allowed: the handler returns Result.Failure with a
+       generic "User '...' was not found." message for both genuinely-missing
+       users AND viewers-not-allowed-to-see (defense-in-depth — never leak
+       that the user exists). Either way the user sees the same friendly
+       message + a Back-to-users button. Same pattern as MobileSaleDetail
+       and MobileProductDetail. *@
+    <div class="m-empty">
+        <p>@Loc["UserNotFound"]</p>
+        <button class="m-btn m-btn-secondary" @onclick="GoToUsers">@Loc["BackToUsers"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — back button + user's full name + worker-id
+           subtitle. The .m-page-header-back wrapper + .m-back-btn +
+           .m-page-header-text classes are mobile-detail-specific (also
+           used by MobileSaleDetail + MobileProductDetail) — the
+           orchestrator adds them to mobile.css in a later pass (until
+           then the page renders unstyled-but-functional). *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToUsers"]"
+                title="@Loc["BackToUsers"]"
+                @onclick="GoToUsers">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@_user.FullName</h1>
+            <p class="m-page-subtitle">@CultureFormat.ToCultureDigits(_user.WorkerId)</p>
+        </div>
+        <span class="m-badge @(_user.IsActive ? "m-badge-success" : "m-badge-danger")">
+            @(_user.IsActive ? Loc["StatusActive"] : Loc["StatusInactive"])
+        </span>
+    </div>
+
+    @* ── 2. Profile summary card — read-only identity fields. Mirrors
+           MobileSettings.razor's .m-summary-card + .m-profile-row
+           pattern. The status badge, gender label, and group chip rules
+           all mirror the desktop UserDetail.razor's profile-card
+           rendering (just laid out vertically for mobile). *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["ProfileCardTitle"]</div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColWorkerId"]</span>
+            <span class="m-profile-value">@CultureFormat.ToCultureDigits(_user.WorkerId)</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColFullName"]</span>
+            <span class="m-profile-value">@_user.FullName</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColGender"]</span>
+            <span class="m-profile-value">@Loc[GetGenderLabel(_user.Gender)]</span>
+        </div>
+
+        @* Email row — only rendered when the handler returned a non-empty
+           Email (currently always null per the desktop's TODO note, but
+           the row is wired so it lights up automatically when the handler
+           is extended to populate it — same guard as MobileSettings.razor. *@
+        @if (!string.IsNullOrWhiteSpace(_user.Email))
+        {
+            <div class="m-profile-row">
+                <span class="m-profile-label">@Loc["ColEmail"]</span>
+                <span class="m-profile-value">@_user.Email</span>
+            </div>
+        }
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColStatus"]</span>
+            <span class="m-profile-value">
+                @if (_user.IsActive)
+                {
+                    <span class="m-badge m-badge-success">@Loc["StatusActive"]</span>
+                }
+                else
+                {
+                    <span class="m-badge m-badge-danger">@Loc["StatusInactive"]</span>
+                }
+            </span>
+        </div>
+
+        @* Group row — only rendered when GroupName is non-empty. The
+           desktop's GetUserByIdQueryHandler clears GroupName for
+           Employee viewers + for Customer/ReadOnly self-viewers, so this
+           row gracefully hides for those scopes. GroupName is populated
+           for Admin/Manager viewers regardless of whether the user is
+           staff or customer — same rule as the desktop's profile card. *@
+        @if (!string.IsNullOrWhiteSpace(_user.GroupName))
+        {
+            <div class="m-profile-row">
+                <span class="m-profile-label">@Loc["ColGroup"]</span>
+                <span class="m-profile-value">
+                    <span class="m-badge m-badge-neutral">@_user.GroupName</span>
+                </span>
+            </div>
+        }
+
+        @* Roles row — read-only chip list. One .m-badge per role, color-
+           coded by the desktop's GetRoleBadgeStyle mapping:
+             Admin → danger, Manager → warning, Employee → info,
+             ReadOnly → neutral, Customer → success.
+           Role management (Assign/Remove) is intentionally dropped on
+           mobile per the task spec — admins use the desktop /Admin/Users
+           surface for that flow. The empty-roles fallback shows the
+           desktop's NoRoles message so the row doesn't read as a UI bug. *@
+        <div class="m-profile-row m-profile-row-stack">
+            <span class="m-profile-label">@Loc["RolesCardTitle"]</span>
+            <span class="m-profile-value m-profile-chips">
+                @if (_user.Roles.Count == 0)
+                {
+                    <span class="m-profile-muted">@Loc["NoRoles"]</span>
+                }
+                else
+                {
+                    @foreach (var role in _user.Roles)
+                    {
+                        <span class="m-badge @GetRoleBadgeClass(role)">@GetRoleLabel(role)</span>
+                    }
+                }
+            </span>
+        </div>
+    </div>
+
+    @* ── 3. Action buttons card — only rendered when CanActivate()
+           returns true for the current viewer + target. Matches the
+           desktop's role-scope rule (Admin → anyone but self; Manager →
+           Employee/Customer targets only, not self/managers/admins;
+           Employee → cannot activate/deactivate anyone — the card is
+           hidden entirely).
+
+           Per-action _busyAction string state machine (mirrors
+           MobileAdminCategories's _busyKey pattern): "action:activate"
+           or "action:deactivate". The finally block only clears the
+           flag when it still matches this action's key — prevents stale
+           resets from a concurrent action. Disabled buttons render a
+           small spinner to acknowledge the click. *@
+    @if (CanActivate())
+    {
+        <div class="m-summary-card">
+            <div class="m-card-section-title">@Loc["ActionsCardTitle"]</div>
+
+            @if (_user.IsActive)
+            {
+                @* Active user → Deactivate (destructive, requires
+                   confirmation). Inline confirm flow mirrors
+                   MobileCart's _confirmingClear pattern: clicking the
+                   Deactivate button opens an inline panel with the
+                   confirm prompt + Confirm/Cancel buttons. No 3-second
+                   countdown like the desktop's DeactivateUserDialog —
+                   mobile keeps the friction minimal but the confirm
+                   step prevents reflex clicks. *@
+                @if (_confirmingDeactivate)
+                {
+                    <div class="m-inline-confirm">
+                        <p class="m-inline-confirm-text">
+                            @string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivateFormat"], _user.FullName)
+                        </p>
+                        <div class="m-inline-confirm-actions">
+                            <button type="button"
+                                    class="m-btn m-btn-secondary m-btn-sm"
+                                    disabled="@(_busyAction == "action:deactivate")"
+                                    @onclick="CancelDeactivate">
+                                @Loc["ConfirmCancel"]
+                            </button>
+                            <button type="button"
+                                    class="m-btn m-btn-danger m-btn-sm"
+                                    disabled="@(_busyAction is not null)"
+                                    @onclick="HandleDeactivateAsync">
+                                @if (_busyAction == "action:deactivate")
+                                {
+                                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                }
+                                else
+                                {
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1rem; height: 1rem;">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                }
+                                @Loc["ConfirmDeactivate"]
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="m-btn m-btn-danger m-btn-block"
+                            disabled="@(_busyAction is not null)"
+                            @onclick="StartDeactivateConfirm">
+                        @if (_busyAction == "action:deactivate")
+                        {
+                            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                        }
+                        else
+                        {
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                            </svg>
+                        }
+                        @Loc["ActionDeactivate"]
+                    </button>
+                }
+            }
+            else
+            {
+                @* Inactive user → Activate (non-destructive, no
+                   confirmation — mirrors the desktop's
+                   HandleActivateAsync and MobileAdminUsers's
+                   HandleActivateAsync). *@
+                <button type="button"
+                        class="m-btn m-btn-primary m-btn-block"
+                        disabled="@(_busyAction is not null)"
+                        @onclick="HandleActivateAsync">
+                    @if (_busyAction == "action:activate")
+                    {
+                        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1.25rem; height: 1.25rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                    }
+                    @Loc["ActionActivate"]
+                </button>
+            }
+        </div>
+    }
+
+    @* ── 4. Footer — version string. Same .m-footer pattern as the other
+           mobile pages. *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// User ID from the route (/m/Admin/Users/{UserId:guid}). Bound by the
+    /// Blazor router — a malformed Guid segment triggers the router's 404
+    /// template before this component loads. The desktop page uses `Id`
+    /// as the param name — mobile mirrors the underlying GetUserByIdQuery
+    /// field name (`UserId`) for symmetry with MobileSaleDetail's `SaleId`
+    /// and MobileProductDetail's `ProductId` naming convention.
+    /// </summary>
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The loaded UserDto (Id, WorkerId, FullName, Gender, GroupId?,
+    /// GroupName?, IsActive, Email?, Roles list). Null when the load
+    /// failed OR when the handler returned Result.Failure (covers both
+    /// genuinely-missing AND viewer-not-allowed — the markup's not-found
+    /// branch handles both cases with the same friendly message).
+    /// </summary>
+    private UserDto? _user;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// Per-action in-flight guard (mirrors MobileAdminCategories's _busyKey
+    /// pattern). Set to "action:activate" or "action:deactivate" while an
+    /// action is in flight; null when idle. The finally block only clears
+    /// the flag when it still matches this action's key — prevents a stale
+    /// reset if a concurrent action somehow interleaves (defense-in-depth
+    /// against the rare race where the user double-taps before the first
+    /// handler's await completes).
+    /// </summary>
+    private string? _busyAction;
+
+    /// <summary>
+    /// True when the inline Deactivate confirmation panel is open. Toggled
+    /// by the Deactivate button (open) and the Cancel button / a successful
+    /// dispatch (close). Mirrors MobileCart's _confirmingClear pattern —
+    /// mobile-friendly alternative to the desktop's 3-second-countdown
+    /// DeactivateUserDialog (which is too heavy for a single-tap UX).
+    /// </summary>
+    private bool _confirmingDeactivate;
+
+    // ── Current-user context (mirrors desktop UserDetail.razor +
+    // MobileAdminUsers.razor) ──────────────────────────────────────────
+
+    /// <summary>
+    /// True if the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false over the
+    /// SignalR circuit because HttpContext is null). Gates the
+    /// Activate/Deactivate UI's CanActivate rule. The Wolverine
+    /// handlers ALSO enforce [RequireRoles(Manager, Admin)] server-side
+    /// as defense-in-depth.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// True if the current user is in the Manager role. Combined with
+    /// _isAdmin to gate the Activate/Deactivate scope (Managers can
+    /// activate/deactivate Employee or Customer targets, but NOT self,
+    /// other Managers, Admins, or ReadOnlys).
+    /// </summary>
+    private bool _isManager;
+
+    /// <summary>
+    /// True if the current user is in the Employee role (and NOT also
+    /// Admin or Manager). Used by CanActivate to deny the
+    /// Activate/Deactivate UI entirely for Employee viewers (the
+    /// command is [RequireRoles(Manager, Admin)] — Employees are
+    /// rejected by the auth middleware before the handler runs).
+    /// </summary>
+    private bool _isEmployee;
+
+    /// <summary>
+    /// The current user's Domain User Id (from the "UserId" claim set
+    /// by our custom IClaimsPrincipalFactory in Infrastructure). Used
+    /// by CanActivate to hide the Activate/Deactivate buttons on the
+    /// viewer's own page (handler also rejects self-action as
+    /// defense-in-depth).
+    /// </summary>
+    private Guid _currentUserId;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Compute _isAdmin, _isManager, _isEmployee, _currentUserId
+        // synchronously via AuthStateProvider so the action-card
+        // visibility doesn't flicker on first render. Same pattern as
+        // desktop UserDetail.razor + MobileAdminUsers.razor.
+        try
+        {
+            await ResolveCurrentUserAsync();
+        }
+        catch
+        {
+            // Non-fatal — _currentUserId stays Guid.Empty (no self-action
+            // gate, which is safe because the handler also rejects self-
+            // activation) and _isAdmin/_isManager/_isEmployee stay false
+            // (the action card stays hidden — safer fallback if role
+            // resolution fails). The handler still enforces [RequireRoles]
+            // server-side.
+        }
+
+        try
+        {
+            await LoadAsync();
+        }
+        catch (Exception)
+        {
+            // Defense-in-depth — LoadAsync swallows its own exceptions
+            // and surfaces a friendly _loadError, but if something
+            // unexpected happens (e.g. AuthStateProvider throws during
+            // role resolution), show the generic error instead of
+            // crashing the circuit.
+            _loadError = Loc["Error_Unexpected"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Auth / role resolution ─────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the current user's Id + role flags from
+    /// AuthenticationStateProvider. The UserId claim is set by our
+    /// custom IClaimsPrincipalFactory in the Infrastructure layer
+    /// (it's the Domain User's Guid Id); fallback to
+    /// ClaimTypes.NameIdentifier for safety. Same pattern as
+    /// desktop UserDetail.razor + MobileAdminUsers.razor.
+    /// </summary>
+    private async Task ResolveCurrentUserAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user?.Identity?.IsAuthenticated != true) return;
+
+        var idClaim = user.FindFirst("UserId")?.Value
+                      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(idClaim, out var parsedId))
+        {
+            _currentUserId = parsedId;
+        }
+
+        _isAdmin = user.IsInRole(Roles.Admin);
+        _isManager = user.IsInRole(Roles.Manager);
+        // Employee-only means "in Employee role AND not also Admin or
+        // Manager". Admins and Managers who happen to also be in the
+        // Employee role are treated as Admin/Manager respectively
+        // (broader scope). Same logic as desktop UserDetail.razor's
+        // _isEmployee field + MobileAdminUsers.razor's _isEmployeeOnly.
+        _isEmployee = !_isAdmin && !_isManager && user.IsInRole(Roles.Employee);
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads the UserDto via GetUserByIdQuery. On success, sets _user +
+    /// clears _loadError. On failure (handler returned Result.Failure OR
+    /// the dispatch threw), sets _loadError and clears _user (the markup's
+    /// not-found branch handles both cases — the handler returns a
+    /// generic "not found" for both genuinely-missing AND not-allowed-to-
+    /// see, so we surface the friendly UserNotFound message instead of
+    /// leaking the existence check).
+    ///
+    /// Also called by the Retry button in the error branch + by the
+    /// post-action ReloadUserSilentlyAsync helper.
+    /// </summary>
+    private async Task LoadAsync()
+    {
+        _loadError = string.Empty;
+        try
+        {
+            var query = new GetUserByIdQuery { UserId = UserId };
+            var result = await MessageBus.InvokeAsync<Result<UserDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _user = result.Value;
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message
+                // (e.g. "User '...' was not found."). For the not-found
+                // case, the markup's _user-is-null branch shows the friendly
+                // Loc["UserNotFound"] message — we don't surface the raw
+                // handler error because it could leak which (missing vs
+                // not-allowed) case occurred.
+                _user = null;
+                _loadError = string.Empty;
+            }
+        }
+        catch (Exception)
+        {
+            _user = null;
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+    }
+
+    /// <summary>
+    /// Silent-reload variant used after a successful Activate/Deactivate.
+    /// Skips toggling _isLoading so the page doesn't flash the full-page
+    /// loading spinner between the success toast and the refreshed content.
+    /// Mirrors desktop UserDetail.razor's ReloadUserSilentlyAsync +
+    /// MobileSaleDetail.razor's ReloadSaleSilentlyAsync pattern. Failures
+    /// are non-fatal — the action already succeeded and we already toasted
+    /// success; the next user interaction (or manual refresh) will surface
+    /// any persistent load failure via the regular LoadAsync path.
+    /// </summary>
+    private async Task ReloadUserSilentlyAsync()
+    {
+        try
+        {
+            var query = new GetUserByIdQuery { UserId = UserId };
+            var result = await MessageBus.InvokeAsync<Result<UserDto>>(query);
+            if (result.IsSuccess)
+            {
+                _user = result.Value;
+            }
+            // else: silent — keep the stale _user (the action did succeed).
+        }
+        catch (Exception)
+        {
+            // Silent — see remark above.
+        }
+    }
+
+    // ── Role-scope rule (mirrors desktop UserDetail.razor's CanActivate) ─
+
+    /// <summary>
+    /// Returns true if the current viewer may activate/deactivate the user
+    /// currently loaded on this page. Mirrors the server-side scope rules
+    /// enforced by ActivateUserCommandHandler / DeactivateUserCommandHandler.
+    ///
+    /// Rules (per the desktop's Phase 6.6 spec):
+    ///   - Admin    → anyone EXCEPT self (handler also rejects self).
+    ///   - Manager  → target must be Employee or Customer, AND must NOT
+    ///                be self, Manager, or Admin.
+    ///   - Employee → cannot activate/deactivate anyone (the command is
+    ///                [RequireRoles(Manager, Admin)] — Employees are
+    ///                rejected by the auth middleware before the handler
+    ///                even runs).
+    ///
+    /// Returns false for _isViewingSelf regardless of role (the handler
+    /// rejects self-activation with "You cannot activate yourself. You
+    /// are already active." — we hide the button for better UX).
+    /// </summary>
+    private bool CanActivate()
+    {
+        if (_user is null) return false;
+
+        // Self-check — viewer is looking at their own page.
+        if (_currentUserId == _user.Id) return false;
+
+        // Admins can activate/deactivate anyone except self (already
+        // checked above).
+        if (_isAdmin) return true;
+
+        // Managers can activate/deactivate Employee or Customer targets,
+        // but NOT other managers, admins, or read-onlys.
+        if (_isManager && !_isAdmin)
+        {
+            var targetIsManager = _user.Roles.Contains(Roles.Manager);
+            var targetIsAdmin = _user.Roles.Contains(Roles.Admin);
+            var targetIsEmployeeOrCustomer = _user.Roles.Contains(Roles.Employee)
+                                          || _user.Roles.Contains(Roles.Customer);
+            return !targetIsManager && !targetIsAdmin && targetIsEmployeeOrCustomer;
+        }
+
+        // Employees (and anyone else) — cannot activate/deactivate anyone.
+        return false;
+    }
+
+    // ── Action handlers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens the inline Deactivate confirmation panel. No dispatch yet —
+    /// the actual DeactivateUserCommand is dispatched by HandleDeactivateAsync
+    /// after the user taps Confirm. Mirrors MobileCart's _confirmingClear
+    /// pattern: a single inline panel with the confirm prompt + Confirm/
+    /// Cancel buttons (mobile-friendly alternative to the desktop's 3-second
+    /// countdown DeactivateUserDialog).
+    /// </summary>
+    private void StartDeactivateConfirm()
+    {
+        if (_busyAction is not null) return;
+        if (!CanActivate() || _user is null || !_user.IsActive) return;
+        _confirmingDeactivate = true;
+    }
+
+    /// <summary>
+    /// Closes the inline Deactivate confirmation panel without dispatching.
+    /// Called by the Cancel button. Silent — no toast (the user explicitly
+    /// chose to abort).
+    /// </summary>
+    private void CancelDeactivate()
+    {
+        if (_busyAction == "action:deactivate") return; // don't allow cancel mid-dispatch
+        _confirmingDeactivate = false;
+    }
+
+    /// <summary>
+    /// Dispatches DeactivateUserCommand. Called by the Confirm button in
+    /// the inline confirmation panel. Sets _busyAction = "action:deactivate"
+    /// (mirrors MobileAdminCategories's _busyKey pattern — the finally block
+    /// only clears the flag when it still matches this action's key, which
+    /// prevents stale resets from a concurrent action). On success: toast
+    /// + close the confirm panel + ReloadUserSilentlyAsync so the status
+    /// badge flips to "Inactive" without a full-page reload. On failure:
+    /// toast the handler's error (or the generic Error_Generic fallback).
+    /// </summary>
+    private async Task HandleDeactivateAsync()
+    {
+        if (_busyAction is not null) return;
+        if (_user is null || !CanActivate() || !_user.IsActive) return;
+
+        var actionKey = "action:deactivate";
+        _busyAction = actionKey;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateUserCommand(_user.Id));
+
+            if (result.IsSuccess)
+            {
+                _confirmingDeactivate = false;
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccessFormat"], _user.FullName),
+                    summary: Loc["ActionSuccessTitle"]);
+                await ReloadUserSilentlyAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            // Only clear the flag when it still matches this action —
+            // prevents a stale reset if a concurrent action somehow
+            // interleaved (defense-in-depth against the rare race).
+            if (_busyAction == actionKey) _busyAction = null;
+        }
+    }
+
+    /// <summary>
+    /// Dispatches ActivateUserCommand. Called by the Activate button
+    /// directly (no confirmation — activation is a non-destructive
+    /// restore, mirrors the desktop's HandleActivateAsync and
+    /// MobileAdminUsers's HandleActivateAsync). Sets _busyAction =
+    /// "action:activate" (same state-machine pattern as Deactivate).
+    /// On success: toast + ReloadUserSilentlyAsync so the status badge
+    /// flips to "Active" without a full-page reload. On failure: toast
+    /// the handler's error.
+    /// </summary>
+    private async Task HandleActivateAsync()
+    {
+        if (_busyAction is not null) return;
+        if (_user is null || !CanActivate() || _user.IsActive) return;
+
+        var actionKey = "action:activate";
+        _busyAction = actionKey;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateUserCommand(_user.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccessFormat"], _user.FullName),
+                    summary: Loc["ActionSuccessTitle"]);
+                await ReloadUserSilentlyAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            if (_busyAction == actionKey) _busyAction = null;
+        }
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Navigates back to the mobile Admin Users list. forceLoad:false —
+    /// in-circuit navigation preserves the MobileLayout shell + BottomNav
+    /// state (matches MobileProductDetail's GoToProducts pattern).
+    /// </summary>
+    private void GoToUsers()
+        => Navigation.NavigateTo("/m/Admin/Users", forceLoad: false);
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the resx KEY for a Gender enum value. The markup wraps
+    /// the call in Loc[...] to look up the localized label. Same pattern
+    /// as MobileSettings.razor's GetGenderLabel (returns the KEY, not
+    /// the localized label — keeps the helper static + side-effect-free).
+    /// </summary>
+    private static string GetGenderLabel(Gender gender) => gender switch
+    {
+        Gender.Male => "GenderMale",
+        Gender.Female => "GenderFemale",
+        _ => "GenderMale"
+    };
+
+    /// <summary>
+    /// Returns the localized label for a role constant. Falls back to the
+    /// raw role name if no translation is defined. Same mapping as the
+    /// desktop UserDetail.razor's GetRoleLabel + CreateUser.razor's role
+    /// labels.
+    /// </summary>
+    private string GetRoleLabel(string role) => role switch
+    {
+        Roles.Admin => Loc["RoleAdmin"],
+        Roles.Manager => Loc["RoleManager"],
+        Roles.Employee => Loc["RoleEmployee"],
+        Roles.ReadOnly => Loc["RoleReadOnly"],
+        Roles.Customer => Loc["RoleCustomer"],
+        _ => role
+    };
+
+    /// <summary>
+    /// Maps a role to a CSS badge class for color coding (mobile
+    /// equivalent of the desktop's GetRoleBadgeStyle — uses the
+    /// .m-badge-* color tokens already established by MobileAdminUsers's
+    /// list page so a role reads the SAME color on the list and the
+    /// detail page). Admin → danger (highest privilege — visually
+    /// distinct), Manager → warning, Employee → info, ReadOnly →
+    /// neutral, Customer → success (buyer role — positive connotation).
+    /// </summary>
+    private static string GetRoleBadgeClass(string role) => role switch
+    {
+        Roles.Admin => "m-badge-danger",
+        Roles.Manager => "m-badge-warning",
+        Roles.Employee => "m-badge-info",
+        Roles.ReadOnly => "m-badge-neutral",
+        Roles.Customer => "m-badge-success",
+        _ => "m-badge-neutral"
+    };
+}

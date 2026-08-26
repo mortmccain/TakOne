@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- صرفت صفحه -->
+  <data name="PageTitle" xml:space="preserve"><value>جزئیات سفارش — تک‌وان</value></data>
+  <data name="BackToList" xml:space="preserve"><value>بازگشت به سفارش‌ها</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+
+  <!-- وضعیت‌ها -->
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری جزئیات سفارش…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>خطایی رخ داد</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>بارگذاری این سفارش ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_GenericAction" xml:space="preserve"><value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="NotFoundMessage" xml:space="preserve"><value>این سفارش وجود ندارد یا شما اجازه مشاهده آن را ندارید.</value></data>
+  <data name="NoLineItems" xml:space="preserve"><value>این سفارش فاقد ردیف کالاست.</value></data>
+
+  <!-- برچسب وضعیت (مشترک با صفحه فهرست سفارش‌ها) -->
+  <data name="StatusDraft" xml:space="preserve"><value>پیش‌نویس</value></data>
+  <data name="StatusPending" xml:space="preserve"><value>در انتظار</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>تأیید شده</value></data>
+  <data name="StatusInvoiced" xml:space="preserve"><value>فاکتور شده</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>لغو شده</value></data>
+
+  <!-- ردپای بررسی (Audit trail) -->
+  <data name="AuditCreated" xml:space="preserve"><value>ایجاد شده</value></data>
+  <data name="AuditSubmitted" xml:space="preserve"><value>ارسال شده</value></data>
+  <data name="AuditApproved" xml:space="preserve"><value>تأیید شده</value></data>
+  <data name="AuditInvoiced" xml:space="preserve"><value>فاکتور شده</value></data>
+  <data name="AuditCancelled" xml:space="preserve"><value>لغو شده</value></data>
+  <data name="AuditPending" xml:space="preserve"><value>در انتظار اقدام</value></data>
+  <data name="AuditByFormat" xml:space="preserve"><value>توسط {0}</value></data>
+
+  <!-- اطلاعات سفارش -->
+  <data name="ColCustomer" xml:space="preserve"><value>مشتری</value></data>
+
+  <!-- پنل دلیل لغو -->
+  <data name="CancellationReasonLabel" xml:space="preserve"><value>دلیل لغو</value></data>
+
+  <!-- ستون‌های فهرست ردیف‌های سفارش -->
+  <data name="ColLineNumber" xml:space="preserve"><value>#</value></data>
+  <data name="ColProduct" xml:space="preserve"><value>محصول</value></data>
+  <data name="ColQuantity" xml:space="preserve"><value>تعداد</value></data>
+  <data name="ColUnitPrice" xml:space="preserve"><value>قیمت واحد</value></data>
+  <data name="ColLineTotal" xml:space="preserve"><value>مبلغ ردیف</value></data>
+
+  <!-- خلاصه مبالغ -->
+  <data name="TotalLines" xml:space="preserve"><value>تعداد محصولات</value></data>
+  <data name="TotalUnits" xml:space="preserve"><value>مجموع واحدها</value></data>
+  <data name="GrandTotal" xml:space="preserve"><value>مبلغ کل</value></data>
+
+  <!-- اقدامات کارکنان -->
+  <data name="ActionApprove" xml:space="preserve"><value>تأیید سفارش</value></data>
+  <data name="ActionMarkInvoiced" xml:space="preserve"><value>ثبت به عنوان فاکتور شده</value></data>
+  <data name="ActionCancel" xml:space="preserve"><value>لغو سفارش</value></data>
+  <data name="ActionWorking" xml:space="preserve"><value>در حال انجام…</value></data>
+
+  <!-- روند لغو — فرم درون‌خطی (معادل موبایل‌پسند روند دوبله‌ای دسکتاپ) -->
+  <data name="CancelReasonLengthError" xml:space="preserve"><value>دلیل لغو باید بین ۳ تا ۵۰۰ کاراکتر باشد.</value></data>
+
+  <!-- فرم درون‌خطی لغو (گام نخست روند لغو) -->
+  <data name="CancelFormHeading" xml:space="preserve"><value>در حال لغو سفارش</value></data>
+  <data name="CancelFormReasonLabel" xml:space="preserve"><value>دلیل لغو *</value></data>
+  <data name="CancelFormReasonPlaceholder" xml:space="preserve"><value>دلیل روشن و مشخص را وارد کنید. برای تمام نقش‌ها الزامی است و به‌صورت دائمی ثبت می‌شود.</value></data>
+  <data name="CancelFormConfirm" xml:space="preserve"><value>تأیید لغو</value></data>
+  <data name="CancelFormCancelling" xml:space="preserve"><value>در حال لغو…</value></data>
+  <data name="CancelFormDiscard" xml:space="preserve"><value>صرف‌نظر</value></data>
+
+  <!-- بازخورد عملیات -->
+  <data name="ActionSuccessTitle" xml:space="preserve"><value>انجام شد</value></data>
+  <data name="ActionSuccessFormat" xml:space="preserve"><value>{0} — سفارش به‌روزرسانی شد.</value></data>
+
+  <!-- پیام‌های خطای محلی‌شده برای کدهای خطای پایدار و مستقل از فرهنگ که
+       توسط هندلرهای دستور Approve / MarkAsInvoiced / Cancel بازگردانده
+       می‌شوند. به LocalizeError در MobileSaleDetail.razor و کمک‌کننده‌های
+       TakOne.Application.Common.Errors (StockErrors،
+       CategoryDeactivatedErrors، PurchaseLimitErrors، NoCustomerGroupErrors)
+       مراجعه کنید. -->
+  <!-- StockExceeded — {0} = نام محصول، {1} = موجودی فعلی، {2} = تعداد درخواستی -->
+  <data name="StockExceeded" xml:space="preserve"><value>موجودی برای تأیید این سفارش کافی نیست. محصول «{0}» {1} عدد موجود دارد، اما سفارش به {2} عدد نیاز دارد.</value></data>
+  <!-- CategoryDeactivated — {0} = نام محصول (دسته‌بندی محصول غیرفعال شده است) -->
+  <data name="CategoryDeactivated" xml:space="preserve"><value>کالای «{0}» دیگر قابل خرید نیست. آن را از سفارش حذف کنید یا با مدیر سیستم تماس بگیرید.</value></data>
+  <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
+  <data name="PurchaseLimitExceeded" xml:space="preserve"><value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value></data>
+  <!-- NoCustomerGroup — نشان داده می‌شود وقتی مشتریِ سفارش گروه مشتریان ندارد. -->
+  <data name="NoCustomerGroup" xml:space="preserve"><value>این مشتری برای خرید پیکربندی نشده است. پیش از افزودن کالا، او را به یک گروه مشتریان اختصاص دهید.</value></data>
+</root>

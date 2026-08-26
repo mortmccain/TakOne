@@ -1772,3 +1772,933 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Round 7 additions — shared mobile-detail page chrome (page-header
+   back button, status banner, breadcrumb, inline confirm) + per-page
+   classes for MobileDashboard / MobileSaleDetail / MobileProductDetail
+   / MobileUserDetail / MobileEditGroup + skeleton loading + pull-to-
+   refresh indicator.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Page header back button (shared by all detail pages) ── */
+.m-page-header-back {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.75rem 1rem 0.5rem;
+}
+
+.m-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.625rem;
+    background: var(--tm-surface, white);
+    border: 1px solid var(--tm-gray-light, #e5e7eb);
+    color: var(--tm-green);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s, transform 0.15s;
+}
+
+.m-back-btn:active { transform: scale(0.95); }
+
+.m-back-btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+/* RTL: flip the chevron so it points right (back direction in RTL) */
+[dir="rtl"] .m-back-btn svg {
+    transform: scaleX(-1);
+}
+
+.m-page-header-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.m-page-header-text .m-page-title {
+    margin: 0;
+    font-size: 1.0625rem;
+}
+
+.m-page-header-text .m-page-subtitle {
+    margin: 0.125rem 0 0;
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Status banner (MobileSaleDetail) ── */
+.m-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin: 0 1rem 0.75rem;
+    padding: 0.875rem 1rem;
+    border-radius: 0.875rem;
+    color: white;
+    font-weight: 700;
+}
+
+.m-status-banner-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.18);
+    border-radius: 50%;
+}
+
+.m-status-banner-icon svg {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.m-status-banner-label {
+    font-size: 0.875rem;
+    line-height: 1.2;
+}
+
+/* Status color tokens — match the desktop Dashboard's .tm-dash-badge-* */
+.m-status-banner.status-draft     { background: #6b7280; }
+.m-status-banner.status-pending   { background: #E8A14A; }
+.m-status-banner.status-approved  { background: #2A9D7E; }
+.m-status-banner.status-invoiced  { background: #5BA8E8; }
+.m-status-banner.status-cancelled { background: #EF6B6B; }
+
+/* ── Cancellation reason box (MobileSaleDetail) ── */
+.m-cancellation-reason {
+    margin: 0 1rem 0.75rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 0.75rem;
+    background: rgba(239, 107, 107, 0.08);
+    border: 1px solid rgba(239, 107, 107, 0.25);
+}
+
+.m-cancellation-reason-label {
+    font-size: 0.6875rem;
+    color: #EF6B6B;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.m-cancellation-reason-text {
+    font-size: 0.8125rem;
+    color: var(--tm-text, #374151);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Line item title row (MobileSaleDetail) ── */
+.m-list-item-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.m-list-item-line-num {
+    font-size: 0.6875rem;
+    color: var(--tm-gold);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.m-list-item-title-link {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--tm-green);
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: start;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.m-list-item-title-link:hover {
+    text-decoration: underline;
+}
+
+.m-list-item-line-total {
+    font-size: 0.8125rem;
+    font-weight: 800;
+    color: var(--tm-green);
+    flex-shrink: 0;
+}
+
+/* ── Audit actor + pending value styling (MobileSaleDetail summary) ── */
+.m-summary-audit-actor {
+    font-weight: 600;
+    color: var(--tm-text, #374151);
+}
+
+.m-summary-value-pending {
+    color: var(--tm-gray, #9ca3af);
+    font-style: italic;
+}
+
+.m-summary-total-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--tm-gray, #6b7280);
+    margin: 0 0 0.25rem;
+}
+
+/* ── Action stack (MobileSaleDetail) ── */
+.m-action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0 1rem 1rem;
+}
+
+.m-action-error {
+    background: rgba(239, 107, 107, 0.1);
+    border: 1px solid rgba(239, 107, 107, 0.3);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.75rem;
+    color: #EF6B6B;
+    margin: 0;
+}
+
+/* ── Inline cancel form (MobileSaleDetail) ── */
+.m-cancel-form {
+    margin: 0 1rem 0.75rem;
+    padding: 0.875rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border: 1px solid var(--tm-gray-light, #e5e7eb);
+    border-radius: 0.75rem;
+}
+
+.m-cancel-form-heading {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--tm-green);
+    margin: 0 0 0.5rem;
+}
+
+.m-cancel-form-label {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    font-weight: 600;
+    margin: 0 0 0.25rem;
+}
+
+.m-cancel-form-textarea {
+    width: 100%;
+    min-height: 4.5rem;
+    resize: vertical;
+    border: 1px solid var(--tm-gray-light, #d1d5db);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    background: var(--tm-surface, white);
+    color: var(--tm-text, #1f2937);
+    outline: none;
+    font-family: inherit;
+}
+
+.m-cancel-form-textarea:focus {
+    border-color: var(--tm-gold);
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
+}
+
+.m-cancel-form-btns {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+}
+
+.m-cancel-form-btns .m-btn {
+    flex: 1;
+}
+
+/* ── Inline confirm pattern (MobileUserDetail / MobileEditGroup) ── */
+.m-inline-confirm {
+    margin-top: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background: rgba(239, 107, 107, 0.06);
+    border: 1px solid rgba(239, 107, 107, 0.25);
+    border-radius: 0.625rem;
+}
+
+.m-inline-confirm-text {
+    font-size: 0.75rem;
+    color: var(--tm-text, #374151);
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+}
+
+.m-inline-confirm-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.m-inline-confirm-actions .m-btn {
+    flex: 1;
+}
+
+/* ── MobileProductDetail classes ── */
+.m-product-image-hero {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 18rem;
+    margin: 0 auto 1rem;
+    border-radius: 1rem;
+    overflow: hidden;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.m-product-image-hero img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.m-product-image-hero svg {
+    width: 4rem;
+    height: 4rem;
+    color: var(--tm-gray, #9ca3af);
+}
+
+.m-product-detail-price-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0 1rem 0.75rem;
+}
+
+.m-product-detail-price {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--tm-green);
+    margin: 0;
+}
+
+.m-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0 1rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.625rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.m-breadcrumb::-webkit-scrollbar { display: none; }
+
+.m-breadcrumb-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--tm-gold);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.m-breadcrumb-link:hover {
+    text-decoration: underline;
+}
+
+.m-breadcrumb-sep {
+    color: var(--tm-gray, #9ca3af);
+    font-weight: 400;
+}
+
+.m-breadcrumb-current {
+    color: var(--tm-text, #374151);
+    font-weight: 600;
+}
+
+.m-product-detail-description {
+    margin: 0 1rem 1rem;
+    padding: 0.75rem 0.875rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--tm-text, #374151);
+}
+
+.m-product-detail-actions {
+    margin: 0 1rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.m-purchase-limit-hint {
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    text-align: center;
+    margin: -0.25rem 0 0;
+}
+
+/* ── MobileUserDetail stacked profile rows + chips ── */
+.m-profile-row-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0 1rem 0.75rem;
+}
+
+.m-profile-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 0.25rem;
+}
+
+.m-profile-chips .m-badge {
+    font-size: 0.625rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.m-profile-muted {
+    color: var(--tm-gray, #9ca3af);
+    font-size: 0.75rem;
+    font-style: italic;
+}
+
+/* ── MobileDashboard classes ── */
+.m-dash-greeting {
+    margin: 0 1rem 0.75rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, rgba(42, 157, 126, 0.10), rgba(212, 175, 55, 0.10));
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.m-dash-greeting-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    background: rgba(42, 157, 126, 0.15);
+    border-radius: 999px;
+    font-size: 0.625rem;
+    color: var(--tm-green);
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.m-dash-greeting-pulse {
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--tm-green);
+    border-radius: 50%;
+    animation: m-dash-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes m-dash-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+}
+
+.m-dash-greeting-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 800;
+    color: var(--tm-text, #1f2937);
+}
+
+.m-dash-greeting-subtitle {
+    margin: 0.125rem 0 0;
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+}
+
+.m-dash-greeting-date {
+    font-size: 0.6875rem;
+    color: var(--tm-gold);
+    font-weight: 700;
+    text-align: end;
+    white-space: nowrap;
+}
+
+/* Mobile 2-col KPI grid (vs desktop's 4-col) */
+.m-dash-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.625rem;
+    margin: 0 1rem 0.75rem;
+}
+
+/* Weekly revenue sparkline bars (pure HTML/CSS, no Chart.js) */
+.m-dash-spark-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.375rem;
+    height: 7.5rem;
+    padding: 0.75rem 0.25rem 0;
+}
+
+.m-dash-spark-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.m-dash-spark-bar-track {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-height: 0.25rem;
+}
+
+.m-dash-spark-bar {
+    width: 70%;
+    max-width: 1.5rem;
+    background: linear-gradient(to top, var(--tm-green), rgba(42, 157, 126, 0.7));
+    border-radius: 0.375rem 0.375rem 0 0;
+    min-height: 0.25rem;
+    transition: height 0.4s ease-out;
+}
+
+.m-dash-spark-bar.last {
+    background: linear-gradient(to top, var(--tm-gold), rgba(212, 175, 55, 0.7));
+}
+
+.m-dash-spark-bar-empty {
+    width: 70%;
+    max-width: 1.5rem;
+    height: 0.25rem;
+    background: var(--tm-gray-light, #e5e7eb);
+    border-radius: 0.375rem 0.375rem 0 0;
+}
+
+.m-dash-spark-day {
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    font-weight: 600;
+}
+
+.m-dash-spark-amt {
+    font-size: 0.5625rem;
+    color: var(--tm-green);
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+/* Recent orders list (mobile-friendly vertical rows, not a table) */
+.m-dash-order-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.m-dash-order-row:last-child { margin-bottom: 0; }
+
+.m-dash-order-avatar {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.m-dash-order-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.m-dash-order-top {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    margin-bottom: 0.125rem;
+}
+
+.m-dash-order-num {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--tm-gold);
+}
+
+.m-dash-order-name {
+    font-size: 0.75rem;
+    color: var(--tm-text, #374151);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.m-dash-order-product {
+    font-size: 0.625rem;
+    color: var(--tm-gray, #6b7280);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.m-dash-order-amount {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--tm-green);
+    flex-shrink: 0;
+}
+
+.m-dash-order-time {
+    font-size: 0.5625rem;
+    color: var(--tm-gray, #9ca3af);
+    flex-shrink: 0;
+}
+
+.m-dash-order-status {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* Top employees list (mobile-friendly rows) */
+.m-dash-employee-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0;
+}
+
+.m-dash-employee-row:not(:last-child) {
+    border-bottom: 1px solid var(--tm-gray-light, #f3f4f6);
+}
+
+.m-dash-employee-rank {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--tm-gray-light, #e5e7eb);
+    color: var(--tm-gray, #6b7280);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+
+.m-dash-employee-rank.gold   { background: linear-gradient(135deg, #D4AF37, #b8860b); color: white; }
+.m-dash-employee-rank.silver { background: linear-gradient(135deg, #C0C0C0, #a8a8a8); color: white; }
+.m-dash-employee-rank.bronze { background: linear-gradient(135deg, #CD7F32, #a0522d); color: white; }
+
+.m-dash-employee-info { flex: 1; min-width: 0; }
+
+.m-dash-employee-name {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--tm-text, #1f2937);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.m-dash-employee-group {
+    font-size: 0.625rem;
+    color: var(--tm-gray, #6b7280);
+    margin: 0;
+}
+
+.m-dash-employee-amount {
+    text-align: end;
+    flex-shrink: 0;
+}
+
+.m-dash-employee-amount-value {
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: var(--tm-green);
+    margin: 0;
+}
+
+.m-dash-employee-amount-label {
+    font-size: 0.5625rem;
+    color: var(--tm-gray, #6b7280);
+    margin: 0;
+}
+
+/* Quick-access cards (mobile) */
+.m-dash-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.625rem;
+    margin: 0 1rem 1rem;
+}
+
+.m-dash-quick-card {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.875rem;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.15s;
+}
+
+.m-dash-quick-card:active { transform: scale(0.98); }
+
+.m-dash-quick-icon {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.625rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.m-dash-quick-icon svg { width: 1.25rem; height: 1.25rem; }
+.m-dash-quick-icon.green { background: rgba(42, 157, 126, 0.15);  color: var(--tm-green); }
+.m-dash-quick-icon.gold  { background: rgba(212, 175, 55, 0.15);  color: var(--tm-gold); }
+
+.m-dash-quick-title {
+    font-size: 0.8125rem;
+    font-weight: 800;
+    color: var(--tm-text, #1f2937);
+    margin: 0;
+}
+
+.m-dash-quick-desc {
+    font-size: 0.5625rem;
+    color: var(--tm-gray, #6b7280);
+    margin: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Skeleton loading placeholders (Round 7 polish)
+   Use these classes in any mobile page's loading branch instead of
+   a plain spinner for a perceived-faster load feel.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.m-skeleton {
+    background: linear-gradient(90deg,
+        rgba(0,0,0,0.04) 0%,
+        rgba(0,0,0,0.10) 50%,
+        rgba(0,0,0,0.04) 100%);
+    background-size: 200% 100%;
+    border-radius: 0.5rem;
+    animation: m-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes m-skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+[dir="rtl"] .m-skeleton {
+    animation-direction: reverse;
+}
+
+.m-skeleton-line {
+    height: 0.75rem;
+    margin: 0.375rem 0;
+}
+
+.m-skeleton-line.short  { width: 40%; }
+.m-skeleton-line.medium { width: 70%; }
+.m-skeleton-line.long   { width: 95%; }
+
+.m-skeleton-card {
+    margin: 0 1rem 0.75rem;
+    padding: 0.875rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.875rem;
+}
+
+.m-skeleton-block {
+    height: 4rem;
+    margin: 0.5rem 0;
+}
+
+.m-skeleton-circle {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Pull-to-refresh indicator (Round 7 polish)
+   Driven by mobile.js — listens for touchstart at scrollTop==0 +
+   touchmove pulling down past a threshold, then triggers a reload.
+   The indicator is a small spinner + localized "Release to refresh"
+   pill that snaps to the top of the viewport.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.m-ptr-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 0;
+    overflow: visible;
+    z-index: 50;
+    pointer-events: none;
+    transition: height 0.2s ease-out;
+}
+
+.m-ptr-indicator.active {
+    height: 3.5rem;
+}
+
+.m-ptr-pill {
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: var(--tm-green);
+    color: white;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.m-ptr-indicator.active .m-ptr-pill {
+    opacity: 1;
+}
+
+.m-ptr-pill svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    animation: m-ptr-spin 1s linear infinite;
+    animation-play-state: paused;
+}
+
+.m-ptr-indicator.refreshing .m-ptr-pill svg {
+    animation-play-state: running;
+}
+
+@keyframes m-ptr-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* ── MobileEditGroup form polish ── */
+.m-form-card {
+    margin: 0 1rem 0.75rem;
+    padding: 0.875rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border-radius: 0.875rem;
+}
+
+.m-form-card .m-field {
+    margin-bottom: 0.75rem;
+}
+
+.m-form-card .m-field:last-child { margin-bottom: 0; }
+
+.m-form-card .m-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.m-form-card .m-input-row .m-input { flex: 1; }
+.m-form-card .m-input-row .m-input-currency { max-width: 4rem; }
+
+.m-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--tm-gray-light, #f3f4f6);
+    font-size: 0.8125rem;
+}
+
+.m-stat-row:last-child { border-bottom: none; }
+
+.m-stat-label { color: var(--tm-gray, #6b7280); font-weight: 600; }
+.m-stat-value { color: var(--tm-text, #1f2937); font-weight: 700; }
+
+/* ── RTL safety for narrow screens (Round 7 additions) ── */
+@media (max-width: 360px) {
+    .m-dash-kpi-grid,
+    .m-dash-quick-grid {
+        grid-template-columns: 1fr;
+    }
+    .m-product-detail-price {
+        font-size: 1.25rem;
+    }
+    .m-status-banner {
+        padding: 0.625rem 0.75rem;
+    }
+    .m-cancel-form-btns,
+    .m-inline-confirm-actions {
+        flex-direction: column;
+    }
+}
+
+/* Respect prefers-reduced-motion: disable shimmer + pulse + spin animations */
+@media (prefers-reduced-motion: reduce) {
+    .m-skeleton,
+    .m-dash-greeting-pulse,
+    .m-ptr-pill svg {
+        animation: none !important;
+    }
+    .m-back-btn:active,
+    .m-dash-quick-card:active {
+        transform: none;
+    }
+}

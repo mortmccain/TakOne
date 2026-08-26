@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileUserDetail.fa-IR.resx — Persian (Farsi) strings for MobileUserDetail.razor.
+
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MobileLayout based on the current culture. Role-name
+     translations match the conventions in UserDetail.fa-IR.resx +
+     CreateUser.fa-IR.resx (Admin → مدیر سیستم, Manager → مدیر,
+     Employee → کارمند, ReadOnly → فقط‌خواندنی, Customer → مشتری).
+
+     Persian digits used in the Version string ("نسخه ۱.۰") and in
+     string.Format placeholders where the {0} is a user's full name (the
+     name itself stays as-is — it's user-supplied text). Same convention
+     as MobileSettings.fa-IR.resx / MobileSaleDetail.fa-IR.resx /
+     MobileProductDetail.fa-IR.resx. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve"><value>جزئیات کاربر — تک‌وان</value></data>
+  <data name="BackToUsers" xml:space="preserve"><value>بازگشت به فهرست کاربران</value></data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری جزئیات کاربر…</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="UserNotFound" xml:space="preserve"><value>این کاربر وجود ندارد، یا شما اجازه مشاهده آن را ندارید.</value></data>
+
+  <!-- Errors -->
+  <data name="ErrorTitle" xml:space="preserve"><value>خطایی رخ داد</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری این کاربر ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_Generic" xml:space="preserve"><value>انجام این عملیات ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+
+  <!-- Status badges -->
+  <data name="StatusActive" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>غیرفعال</value></data>
+
+  <!-- Profile card -->
+  <data name="ProfileCardTitle" xml:space="preserve"><value>پروفایل</value></data>
+  <data name="ColWorkerId" xml:space="preserve"><value>شناسه کارگری</value></data>
+  <data name="ColFullName" xml:space="preserve"><value>نام کامل</value></data>
+  <data name="ColGender" xml:space="preserve"><value>جنسیت</value></data>
+  <data name="ColEmail" xml:space="preserve"><value>ایمیل</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>وضعیت</value></data>
+  <data name="ColGroup" xml:space="preserve"><value>گروه</value></data>
+
+  <!-- Gender labels -->
+  <data name="GenderMale" xml:space="preserve"><value>مرد</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>زن</value></data>
+
+  <!-- Role labels — match UserDetail.fa-IR.resx + CreateUser.fa-IR.resx conventions -->
+  <data name="RoleAdmin" xml:space="preserve"><value>مدیر سیستم</value></data>
+  <data name="RoleManager" xml:space="preserve"><value>مدیر</value></data>
+  <data name="RoleEmployee" xml:space="preserve"><value>کارمند</value></data>
+  <data name="RoleReadOnly" xml:space="preserve"><value>فقط‌خواندنی</value></data>
+  <data name="RoleCustomer" xml:space="preserve"><value>مشتری</value></data>
+
+  <!-- Roles row -->
+  <data name="RolesCardTitle" xml:space="preserve"><value>نقش‌ها</value></data>
+  <data name="NoRoles" xml:space="preserve"><value>این کاربر هیچ نقشی ندارد.</value></data>
+
+  <!-- Actions card -->
+  <data name="ActionsCardTitle" xml:space="preserve"><value>اقدامات</value></data>
+  <data name="ActionActivate" xml:space="preserve"><value>فعال‌سازی</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>غیرفعال‌سازی</value></data>
+
+  <!-- Inline confirm panel -->
+  <data name="ConfirmDeactivateFormat" xml:space="preserve"><value>«{0}» غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
+    <comment>{0} = نام کامل کاربر</comment>
+  </data>
+  <data name="ConfirmDeactivate" xml:space="preserve"><value>غیرفعال‌سازی</value></data>
+  <data name="ConfirmCancel" xml:space="preserve"><value>انصراف</value></data>
+
+  <!-- Action result toasts -->
+  <data name="ActionSuccessTitle" xml:space="preserve"><value>انجام شد</value></data>
+  <data name="ActivateSuccessFormat" xml:space="preserve"><value>«{0}» با موفقیت فعال شد.</value>
+    <comment>{0} = نام کامل کاربر</comment>
+  </data>
+  <data name="DeactivateSuccessFormat" xml:space="preserve"><value>«{0}» با موفقیت غیرفعال شد.</value>
+    <comment>{0} = نام کامل کاربر</comment>
+  </data>
+
+  <!-- Footer — Persian digits in the version number -->
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

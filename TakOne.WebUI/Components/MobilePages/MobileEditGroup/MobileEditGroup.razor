@@ -1,0 +1,1379 @@
+@* MobileEditGroup.razor — mobile version of the desktop EditGroup page.
+   Route: /m/Admin/Groups/Edit/{GroupId:guid}
+   Layout: MobileLayout
+
+   PORTS a mobile-friendly subset of the desktop EditGroup.razor
+   (1187 lines). The desktop page is a hybrid view + edit surface
+   (summary card, edit form with Name + Salary Amount + locked
+   Currency, Activate/Deactivate buttons, Bulk Apply Defaults card,
+   help panel). MOBILE deliberately drops the desktop's heavy UX
+   affordances (RadzenCard + EditForm + DataAnnotationsValidator +
+   Radzen DialogService for DeactivateGroupDialog + JS.confirm for
+   bulk apply + sticky help panel) — they belong on the desktop
+   /Admin/Groups/Edit surface where there's room for two-column
+   grids + modals + validators. What mobile keeps (mobile-friendly):
+
+     - Page header with back button + group name + inline status
+       badge (mirrors MobileUserDetail's .m-page-header-back pattern).
+     - Summary card (read-only rows): Name, Salary (formatted +
+       currency), Status badge, ActiveUserCount, CreatedAt,
+       UpdatedAt (mirrors MobileSettings's .m-summary-card +
+       .m-profile-row pattern).
+     - Edit form (Manager + Admin only): Name input + Salary
+       Amount input (with focus/blur format swap + Persian-digit
+       swap) + locked-currency pill + Save button. Mirrors the
+       desktop's two-command save flow (RenameCustomerGroupCommand
+       if name changed + UpdateCustomerGroupSalaryCommand if
+       amount changed). Uses plain <input> + <button> elements
+       (no EditForm + no DataAnnotationsValidator — mirrors
+       MobileAdminCategories's inline-form pattern so no
+       antiforgery token is needed and no form POST happens).
+     - Activate/Deactivate card (Manager + Admin only):
+         · Active group → Deactivate (destructive, opens an
+           inline confirm panel with "Deactivate group
+           '{name}'? ..." + Confirm/Cancel buttons, mirrors
+           MobileUserDetail's _confirmingDeactivate pattern).
+         · Inactive group → Activate (non-destructive, no
+           confirmation — mirrors desktop's HandleActivateAsync).
+       Per-action _busyAction string state machine (mirrors
+       MobileAdminCategories's _busyKey + MobileUserDetail's
+       _busyAction pattern).
+     - Bulk Apply Defaults card (Manager + Admin only + group
+       must be active) — closes the "reactivation gap" documented
+       since Step 5: when a group is deactivated and new products
+       are added during the inactive period, those new products
+       have no limit row for the group. This card lets the admin
+       bulk-fill missing limits with the default value (1) in one
+       shot. The desktop uses JS.confirm() for the confirmation —
+       mobile replaces it with an inline confirm panel (mirrors
+       MobileUserDetail's _confirmingDeactivate pattern, per the
+       task spec's "no JS interop beyond basic form interactions"
+       rule).
+     - Empty state (NotFoundTitle / NotFoundBody) when the handler
+       returns Result.Failure (covers both genuinely-missing AND
+       not-allowed-to-see — the desktop's GetCustomerGroupByIdQuery-
+       Handler uses a "never leak existence" pattern, same as
+       SaleDetail / ProductDetail / UserDetail).
+     - Footer with Loc["Version"].
+
+   NOT PORTED TO MOBILE (per task spec — these belong on desktop):
+     - The desktop's sticky help panel (.help-panel with 5 bullet
+       points about Rename / SalaryImmediate / SalaryNegative /
+       CurrencyLocked / Deactivate). The hints are too dense for
+       a mobile viewport; the desktop's SalaryHint one-liner
+       under the amount field captures the most important warning
+       (salary changes take effect immediately for new purchases;
+       doesn't retroactively recalculate current month).
+     - The desktop's EditForm + DataAnnotationsValidator +
+       [Required]/[StringLength]/[Range] attributes. Mobile uses
+       plain <input> + manual validation in HandleSaveAsync
+       (check empty name → toast error; check parse-fail salary
+       → toast error). Same simplification MobileAdminCategories
+       uses for its inline add/rename forms.
+     - The desktop's Radzen DialogService (DeactivateGroupDialog
+       with 3-second countdown). Mobile replaces with a single
+       inline-confirm panel (mirrors MobileCart's _confirmingClear
+       pattern — same friction, lighter UX).
+     - The desktop's JS.confirm() for bulk-apply. Mobile replaces
+       with the SAME inline-confirm pattern (the task spec says
+       "no JS interop beyond basic form interactions" — the
+       desktop's window.confirm() popup is also jarring on a
+       mobile viewport).
+     - The desktop's _submitError inline banner. Mobile surfaces
+       errors via Toast only (matches the gold-standard
+       MobileProducts.razor + MobileUserDetail.razor pattern).
+     - The desktop's _isBulkApplyingDefaults spinner on the bulk
+       button + _isSubmitting shared flag. Mobile uses a separate
+       _isBulkApplyingDefaults bool (no concurrent-action guard
+       needed since bulk-apply is a one-shot dispatch that disables
+       every other button on the page while in flight).
+
+   NOT IN DESKTOP (and thus not on mobile either):
+     The task spec mentioned "Members list — .m-list of group
+     members, each row showing: full name, worker id, status badge.
+     Optional remove-member button per row". The desktop EditGroup
+     page does NOT have a members list — the only member-related
+     info it shows is `ActiveUserCount` (a single integer in the
+     summary card). The CustomerGroupDto does NOT expose a members
+     collection (only `ActiveUserCount`), and the desktop page
+     does NOT invoke AddUserToGroupCommand / RemoveUserFromGroup-
+     Command (those commands live in TakOne.Application.Users.Commands,
+     are invoked from the desktop UserDetail page, not from
+     EditGroup). Per the task spec's "Do NOT invent new DTOs or
+     queries — only use the existing ones the desktop page uses"
+     rule, mobile mirrors the desktop verbatim — NO members list
+     on the mobile EditGroup page either. The ActiveUserCount is
+     shown in the summary card (same as desktop). Member management
+     (assign user to group / remove user from group) is performed
+     on the dedicated /m/Admin/Users surface (where the mobile
+     UserDetail page can host those flows in a future round).
+
+   BACKEND CONTRACT (mirrors desktop EditGroup.razor):
+     - Load: GetCustomerGroupByIdQuery { GroupId } →
+       Result<CustomerGroupDto>. [RequireRoles(Employee, Manager,
+       Admin)] — Employee viewers are allowed in with a view-only
+       scope (the edit form + activate/deactivate + bulk-apply
+       cards are hidden via _isAdmin || _isManagerOnly). The
+       handler returns Result.Failure with a generic "not found"
+       for both genuinely-missing AND not-allowed-to-see viewers
+       (defense-in-depth — never leaks that the group exists).
+     - Rename: RenameCustomerGroupCommand(GroupId, NewName) →
+       Result. [RequireRoles(Manager, Admin)] — the mobile UI's
+       _isAdmin || _isManagerOnly gate is a UX nicety, NOT a
+       security boundary (backend rejects Employees + below).
+     - Update Salary: UpdateCustomerGroupSalaryCommand(GroupId,
+       NewSalaryAmount) → Result. [RequireRoles(Manager, Admin)].
+       The salary's CURRENCY cannot be changed via this command —
+       changing currency would invalidate already-purchased
+       products priced in the old currency. To change currency,
+       deactivate this group and create a new one (the form shows
+       the currency as a locked pill to communicate this).
+     - Activate: ActivateCustomerGroupCommand(GroupId) → Result.
+       [RequireRoles(Manager, Admin)] — idempotent (activating an
+       already-active group is a no-op).
+     - Deactivate: DeactivateCustomerGroupCommand(GroupId) →
+       Result. [RequireRoles(Manager, Admin)] — idempotent + soft-
+       delete (IsActive = false; the row stays for audit).
+     - Bulk Apply Defaults: BulkApplyDefaultsForGroupCommand(
+       GroupId) → Result<BulkApplyDefaultsResult>. [RequireRoles(
+       Manager, Admin)]. The handler rejects inactive groups —
+       the UI hides the bulk-apply card when the group is inactive
+       (mirrors desktop's @if (_group.IsActive) gate).
+
+   ROLE-RESOLUTION PATTERN (matches desktop EditGroup.razor +
+   MobileManageGroups.razor):
+     _isAdmin, _isManagerOnly are computed in OnInitializedAsync
+     via AuthStateProvider.GetAuthenticationStateAsync() — NOT
+     via ICurrentUserService.IsInRole (which returns false for
+     everyone in interactive Blazor Server mode because
+     HttpContext is null over the SignalR circuit). Same pattern
+     as the desktop EditGroup.razor + MobileManageGroups.razor +
+     MobileAdminUsers.razor. The Wolverine command handlers ALSO
+     enforce [RequireRoles(Manager, Admin)] server-side as
+     defense-in-depth — the UI's _isAdmin || _isManagerOnly gate
+     is a UX nicety, NOT a security boundary.
+
+   MONEY: The salary amount is bound to a STRING field
+   (_formSalaryAmount), NOT a decimal. Three reasons (mirrors
+   the desktop's rationale verbatim):
+     1. IRR amounts are whole Rial — never show 2 decimal digits.
+     2. Need thousands separators (N0 format).
+     3. Need Persian digits (۰-۹) when the UI culture is fa-IR.
+   So: bind a string, format on blur (FormatSalaryForDisplay),
+   parse on focus (raw invariant number for easy editing) and on
+   submit (TryParseAmount). The onfocus/onblur swap is the only
+   reliable way to get Persian digits out of .NET (NativeDigits
+   is informational-only — see CultureFormat.cs header comment).
+
+   ROUTE PARAMETER:
+     `GroupId` is a Guid bound from the URL via [Parameter]. The
+     @page constraint `{GroupId:guid}` validates the URL segment
+     is parseable as a Guid before this component even loads —
+     a malformed URL gets a 404 from the router, not a runtime
+     exception here. The route param name is `GroupId` (matches
+     the desktop EditGroup.razor's param name + the underlying
+     GetCustomerGroupByIdQuery field name for symmetry).
+
+   ANTIFORGERY:
+     Not needed — no EditForm. All buttons are regular <button>
+     elements with async @onclick handlers that dispatch commands
+     via Wolverine. The Blazor circuit's anti-forgery token is
+     established at circuit start. No form POST happens. (Same
+     as MobileAdminCategories + MobileUserDetail + MobileProductDetail.)
+
+   NAVIGATION TARGETS:
+     /m/Admin/Groups (Back button + NotFoundBody's "Back to
+     groups" button — forceLoad:false so in-circuit navigation
+     preserves the MobileLayout shell + BottomNav state, matches
+     MobileUserDetail's GoToUsers pattern).
+*@
+
+@page "/m/Admin/Groups/Edit/{GroupId:guid}"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+
+@using System.Globalization
+@using System.Text
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.Commands.ActivateCustomerGroup
+@using TakOne.Application.Customers.Commands.BulkApplyDefaultsForGroup
+@using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
+@using TakOne.Application.Customers.Commands.RenameCustomerGroup
+@using TakOne.Application.Customers.Commands.UpdateCustomerGroupSalary
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Customers.Queries.GetCustomerGroupById
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileEditGroup> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+
+<PageTitle>@(_group is null ? Loc["PageTitle"] : $"{_group.Name} — {Loc["PageTitle"]}")</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_group is null)
+{
+    @* Not-found / not-allowed: the handler returns Result.Failure with a
+       generic "Customer group '...' was not found." message for both
+       genuinely-missing groups AND not-allowed-to-see viewers (defense-
+       in-depth — never leaks that the group exists). Either way the user
+       sees the same friendly NotFoundTitle / NotFoundBody message + a
+       Back-to-groups button. Same pattern as MobileSaleDetail /
+       MobileProductDetail / MobileUserDetail. *@
+    <div class="m-empty">
+        <p><strong>@Loc["NotFoundTitle"]</strong></p>
+        <p>@Loc["NotFoundBody"]</p>
+        <button class="m-btn m-btn-secondary" @onclick="GoToGroups">@Loc["BackToGroups"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — back button + group name + inline status
+           badge. The .m-page-header-back wrapper + .m-back-btn +
+           .m-page-header-text classes are mobile-detail-specific (also
+           used by MobileSaleDetail + MobileProductDetail + MobileUserDetail)
+           — the orchestrator adds them to mobile.css in a later pass
+           (until then the page renders unstyled-but-functional). *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToGroups"]"
+                title="@Loc["BackToGroups"]"
+                @onclick="GoToGroups">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@_group.Name</h1>
+            <p class="m-page-subtitle">@Loc["PageSubtitle"]</p>
+        </div>
+        <span class="m-badge @(_group.IsActive ? "m-badge-success" : "m-badge-danger")">
+            @(_group.IsActive ? Loc["StatusActive"] : Loc["StatusInactive"])
+        </span>
+    </div>
+
+    @* ── 2. Summary card — read-only identity + audit fields. Mirrors
+           MobileSettings.razor's .m-summary-card + .m-profile-row pattern
+           + MobileUserDetail.razor's profile-card rendering. Laid out
+           vertically for mobile (the desktop's 2-col .profile-grid is too
+           dense for a 360px viewport). The ActiveUserCount row shows
+           Loc["NoActiveUsers"] when the count is 0 so the row reads
+           gracefully instead of "0" (mirrors the desktop's @if rule). *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["SummaryCardTitle"]</div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColName"]</span>
+            <span class="m-profile-value">@_group.Name</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColSalary"]</span>
+            <span class="m-profile-value">
+                @FormatSalaryAmount(_group.Salary.Amount)
+                <span class="m-profile-muted" style="margin-inline-start: 0.25rem;">@_group.Salary.Currency</span>
+            </span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColStatus"]</span>
+            <span class="m-profile-value">
+                @if (_group.IsActive)
+                {
+                    <span class="m-badge m-badge-success">@Loc["StatusActive"]</span>
+                }
+                else
+                {
+                    <span class="m-badge m-badge-danger">@Loc["StatusInactive"]</span>
+                }
+            </span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColActiveUsers"]</span>
+            <span class="m-profile-value">
+                @if (_group.ActiveUserCount == 0)
+                {
+                    <span class="m-profile-muted">@Loc["NoActiveUsers"]</span>
+                }
+                else
+                {
+                    @FormatInt(_group.ActiveUserCount)
+                }
+            </span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColCreatedAt"]</span>
+            <span class="m-profile-value">@FormatDate(_group.CreatedAtUtc)</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColUpdatedAt"]</span>
+            <span class="m-profile-value">@FormatDate(_group.UpdatedAtUtc)</span>
+        </div>
+    </div>
+
+    @* ── 3. Edit form — Manager + Admin only. Employees see the summary
+           card only (the edit form + activate/deactivate + bulk-apply
+           cards are hidden). The form is gated BOTH client-side (this
+           @if block) AND server-side (each command has [RequireRoles(
+           Manager, Admin)]). Same role-scope rule as the desktop
+           EditGroup.razor's @if (_isAdmin || _isManagerOnly) gate. *@
+    @if (_isAdmin || _isManagerOnly)
+    {
+        <div class="m-summary-card">
+            <div class="m-card-section-title">@Loc["EditFormCardTitle"]</div>
+
+            @* ── Name input — bound to _formName, plain <input> with
+                   @oninput (no @bind — mirrors MobileAdminCategories's
+                   inline-add form pattern). Plain <input> avoids the
+                   @bind-vs-@onblur conflict on the salary field below;
+                   for consistency we use the same plain-input pattern
+                   for the Name field too. *@
+            <div class="m-form-field">
+                <label class="m-form-label">@Loc["FieldName"]</label>
+                <input class="m-input"
+                       type="text"
+                       value="@_formName"
+                       placeholder="@Loc["FieldNamePlaceholder"]"
+                       @oninput='@(e => _formName = e.Value?.ToString() ?? "")'
+                       @onkeypress='@(async e => { if (e.Key == "Enter") await HandleSaveAsync(); })' />
+            </div>
+
+            @* ── Salary Amount input — bound to _formSalaryAmount (string
+                   NOT decimal, see header comment for the rationale).
+                   The @onfocus/@onblur swap shows the raw invariant
+                   number while editing (easy typing) and the formatted
+                   (thousand-separated + Persian-digit) value when not
+                   editing. Mirrors the desktop's OnSalaryAmountFocus /
+                   OnSalaryAmountBlur verbatim — the only reliable way to
+                   get Persian digits out of .NET is the manual swap in
+                   CultureFormat.ToCultureDigits (NativeDigits is
+                   informational-only).
+
+                   Currency is LOCKED — shown as a read-only pill next to
+                   the amount field. Changing currency would invalidate
+                   already-purchased products priced in the old currency
+                   (the salary's currency is preserved on the aggregate
+                   by UpdateCustomerGroupSalaryCommand — it only accepts
+                   the amount). To use a different currency, the admin
+                   must deactivate this group and create a new one. *@
+            <div class="m-form-field">
+                <label class="m-form-label">@Loc["FieldSalary"]</label>
+
+                <div class="m-salary-row">
+                    <input class="m-input m-salary-amount"
+                           type="text"
+                           inputmode="decimal"
+                           value="@_formSalaryAmount"
+                           placeholder="@Loc["FieldAmountPlaceholder"]"
+                           style="direction: ltr; text-align: left;"
+                           @oninput='@(e => _formSalaryAmount = e.Value?.ToString() ?? "")'
+                           @onfocus="OnSalaryAmountFocus"
+                           @onblur="OnSalaryAmountBlur" />
+
+                    <span class="m-currency-pill"
+                          title="@Loc["CurrencyLockedTitle"]">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 0.875rem; height: 0.875rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        @_formSalaryCurrency
+                    </span>
+                </div>
+
+                <p class="m-form-hint">@Loc["SalaryHint"]</p>
+            </div>
+
+            @* ── Save button — dispatches RenameCustomerGroupCommand (if
+                   name changed) AND UpdateCustomerGroupSalaryCommand (if
+                   amount changed). Both run in their own Wolverine
+                   transaction; if either fails the other is NOT rolled
+                   back (they're independent mutations on the same
+                   aggregate; the user can fix the failing one and retry).
+                   On success: Toast.Success + ReloadGroupSilentlyAsync
+                   so the summary card's Salary/Name/UpdatedAt rows
+                   refresh without a full-page reload. *@
+            <button type="button"
+                    class="m-btn m-btn-primary m-btn-block"
+                    disabled="@_isBusy"
+                    @onclick="HandleSaveAsync">
+                @if (_isBusy)
+                {
+                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                }
+                else
+                {
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                }
+                @Loc["SaveButton"]
+            </button>
+        </div>
+
+        @* ── 4. Activate / Deactivate card — Manager + Admin only (the
+               edit form @if already gates this section). Mirrors the
+               desktop's form-actions row, but moved into its own card
+               for the mobile vertical-stack layout.
+
+               Per-action _busyAction string state machine (mirrors
+               MobileAdminCategories's _busyKey + MobileUserDetail's
+               _busyAction pattern): "action:activate" or
+               "action:deactivate" — the finally block only clears the
+               flag when it still matches this action's key (prevents a
+               stale reset from a concurrent action). Disabled buttons
+               render a small spinner to acknowledge the click. *@
+
+        @* Active group → Deactivate (destructive, requires
+               confirmation). Inline confirm flow mirrors MobileCart's
+               _confirmingClear + MobileUserDetail's _confirmingDeactivate
+               pattern: clicking the Deactivate button opens an inline
+               panel with the confirm prompt + Confirm/Cancel buttons.
+               No 3-second countdown like the desktop's DeactivateGroup-
+               Dialog — mobile keeps the friction minimal but the confirm
+               step prevents reflex clicks. *@
+        <div class="m-summary-card">
+            <div class="m-card-section-title">@Loc["ActionsCardTitle"]</div>
+
+            @if (_group.IsActive)
+            {
+                @if (_confirmingDeactivate)
+                {
+                    <div class="m-inline-confirm">
+                        <p class="m-inline-confirm-text">
+                            @string.Format(CultureInfo.CurrentCulture, Loc["ConfirmDeactivate"], _group.Name)
+                        </p>
+                        <div class="m-inline-confirm-actions">
+                            <button type="button"
+                                    class="m-btn m-btn-secondary m-btn-sm"
+                                    disabled="@(_busyAction == "action:deactivate")"
+                                    @onclick="CancelDeactivate">
+                                @Loc["CancelButton"]
+                            </button>
+                            <button type="button"
+                                    class="m-btn m-btn-danger m-btn-sm"
+                                    disabled="@(_busyAction is not null)"
+                                    @onclick="HandleDeactivateAsync">
+                                @if (_busyAction == "action:deactivate")
+                                {
+                                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                }
+                                else
+                                {
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1rem; height: 1rem;">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                }
+                                @Loc["DeactivateButton"]
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="m-btn m-btn-danger m-btn-block"
+                            disabled="@(_busyAction is not null)"
+                            @onclick="StartDeactivateConfirm">
+                        @if (_busyAction == "action:deactivate")
+                        {
+                            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                        }
+                        else
+                        {
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                            </svg>
+                        }
+                        @Loc["DeactivateButton"]
+                    </button>
+                }
+            }
+            else
+            {
+                @* Inactive group → Activate (non-destructive, no
+                       confirmation — mirrors the desktop's
+                       HandleActivateAsync). Activation is a restore from
+                       soft-delete, so the friction isn't needed. *@
+                <button type="button"
+                        class="m-btn m-btn-primary m-btn-block"
+                        disabled="@(_busyAction is not null)"
+                        @onclick="HandleActivateAsync">
+                    @if (_busyAction == "action:activate")
+                    {
+                        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1.25rem; height: 1.25rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                    }
+                    @Loc["ActivateButton"]
+                </button>
+            }
+        </div>
+
+        @* ── 5. Bulk Apply Defaults card — Manager + Admin only + group
+               must be active. Closes the "reactivation gap" documented
+               since Step 5: when a group is deactivated and new products
+               are added during the inactive period, those new products
+               have NO limit row for the group (CreateProduct's Phase-1
+               auto-default loop only iterates ACTIVE groups, by design).
+               This card lets the admin bulk-fill missing limits with the
+               default value (1) in one shot. The desktop uses
+               JS.confirm() for confirmation — mobile replaces with an
+               inline-confirm panel (mirrors MobileUserDetail's
+               _confirmingDeactivate pattern, per the task spec's "no JS
+               interop beyond basic form interactions" rule).
+
+               The card is visually distinct (warning tone + auto_fix_high
+               icon) to signal that this is a bulk operation across the
+               entire catalog, not a single-row mutation. The card is
+               hidden when the group is inactive (the handler also rejects
+               inactive groups with a friendly error — the UI hides the
+               card preemptively to avoid a dead-end click). *@
+        @if (_group.IsActive)
+        {
+            <div class="m-summary-card m-bulk-card">
+                <div class="m-card-section-title">@Loc["BulkDefaultsCardTitle"]</div>
+
+                <p class="m-card-text">@Loc["BulkDefaultsDescription"]</p>
+
+                @if (_confirmingBulkApply)
+                {
+                    <div class="m-inline-confirm">
+                        <p class="m-inline-confirm-text">
+                            @string.Format(CultureInfo.CurrentCulture, Loc["ConfirmBulkApplyDefaults"], _group.Name)
+                        </p>
+                        <div class="m-inline-confirm-actions">
+                            <button type="button"
+                                    class="m-btn m-btn-secondary m-btn-sm"
+                                    disabled="@_isBulkApplyingDefaults"
+                                    @onclick="CancelBulkApply">
+                                @Loc["CancelButton"]
+                            </button>
+                            <button type="button"
+                                    class="m-btn m-btn-primary m-btn-sm"
+                                    disabled="@_isBulkApplyingDefaults"
+                                    @onclick="HandleBulkApplyDefaultsAsync">
+                                @if (_isBulkApplyingDefaults)
+                                {
+                                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                }
+                                else
+                                {
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1rem; height: 1rem;">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                }
+                                @Loc["BulkApplyDefaultsButton"]
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="m-btn m-btn-secondary m-btn-block"
+                            disabled="@_isBulkApplyingDefaults"
+                            @onclick="StartBulkApplyConfirm">
+                        @if (_isBulkApplyingDefaults)
+                        {
+                            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                        }
+                        else
+                        {
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.871-5.871M11.42 15.17l-2.496 3.394a1 1 0 01-1.515.119L3 14.5 5.5 12m5.921 3.17l5.871-5.871M14.5 5.5L17 3l4 4-2.5 2.5m-9.5 2.5L4 17.5 6.5 20l4.5-4.5"
+                                />
+                            </svg>
+                        }
+                        @Loc["BulkApplyDefaultsButton"]
+                    </button>
+                }
+            </div>
+        }
+    }
+
+    @* ── 6. Footer — version string. Same .m-footer pattern as the other
+           mobile pages. *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Group ID from the route (/m/Admin/Groups/Edit/{GroupId:guid}).
+    /// Bound by the Blazor router — a malformed Guid segment triggers
+    /// the router's 404 template before this component loads. The route
+    /// param name is `GroupId` (matches the desktop EditGroup.razor's
+    /// param name + the underlying GetCustomerGroupByIdQuery field
+    /// name for symmetry).
+    /// </summary>
+    [Parameter]
+    public Guid GroupId { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The loaded CustomerGroupDto (Id, Name, Salary (MoneyDto),
+    /// IsActive, CreatedAtUtc, UpdatedAtUtc, ActiveUserCount). Null
+    /// when the load failed OR when the handler returned Result.Failure
+    /// (covers both genuinely-missing AND viewer-not-allowed — the
+    /// markup's not-found branch handles both cases with the same
+    /// friendly message).
+    /// </summary>
+    private CustomerGroupDto? _group;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    // ── Form state (mirrors desktop EditGroup.razor's _model fields) ──
+
+    /// <summary>
+    /// Form field: group name (bound to the Name input via @oninput).
+    /// Pre-filled from _group.Name in LoadAsync. Trimmed in HandleSaveAsync
+    /// before comparison + dispatch.
+    /// </summary>
+    private string _formName = string.Empty;
+
+    /// <summary>
+    /// Form field: salary amount as a STRING (NOT decimal). Bound to the
+    /// Salary Amount input via @oninput + @onfocus + @onblur. The @onfocus/
+    /// @onblur swap shows the raw invariant number while editing (easy
+    /// typing) and the formatted (thousand-separated + Persian-digit)
+    /// value when not editing. Mirrors the desktop's _salaryAmountText
+    /// field verbatim — the only reliable way to get Persian digits out
+    /// of .NET is the manual swap in CultureFormat.ToCultureDigits
+    /// (NativeDigits is informational-only — see CultureFormat.cs header).
+    /// </summary>
+    private string _formSalaryAmount = string.Empty;
+
+    /// <summary>
+    /// Form field: salary currency (READ-ONLY — the desktop's
+    /// UpdateCustomerGroupSalaryCommand only accepts the amount; currency
+    /// is preserved on the existing aggregate). Shown as a locked pill
+    /// next to the amount input. Pre-filled from _group.Salary.Currency
+    /// in LoadAsync.
+    /// </summary>
+    private string _formSalaryCurrency = string.Empty;
+
+    /// <summary>
+    /// Save-form in-flight guard (mirrors MobileProductDetail's _isBusy
+    /// + the desktop's _isSubmitting). Disabled the Save button while
+    /// the rename + salary-update dispatches are in flight so the user
+    /// can't double-submit.
+    /// </summary>
+    private bool _isBusy;
+
+    // ── Activate / Deactivate state (mirrors MobileUserDetail.razor) ──
+
+    /// <summary>
+    /// Per-action in-flight guard (mirrors MobileAdminCategories's
+    /// _busyKey + MobileUserDetail's _busyAction pattern). Set to
+    /// "action:activate" or "action:deactivate" while an action is in
+    /// flight; null when idle. The finally block only clears the flag
+    /// when it still matches this action's key — prevents a stale reset
+    /// if a concurrent action somehow interleaves (defense-in-depth
+    /// against the rare race where the user double-taps before the
+    /// first handler's await completes).
+    /// </summary>
+    private string? _busyAction;
+
+    /// <summary>
+    /// True when the inline Deactivate confirmation panel is open.
+    /// Toggled by the Deactivate button (open) + Cancel button / a
+    /// successful dispatch (close). Mirrors MobileCart's _confirmingClear
+    /// + MobileUserDetail's _confirmingDeactivate pattern — a mobile-
+    /// friendly alternative to the desktop's 3-second-countdown
+    /// DeactivateGroupDialog (which is too heavy for a single-tap UX).
+    /// </summary>
+    private bool _confirmingDeactivate;
+
+    // ── Bulk Apply Defaults state ────────────────────────────────────
+
+    /// <summary>
+    /// True when the inline Bulk Apply Defaults confirmation panel is
+    /// open. Mirrors _confirmingDeactivate — single inline panel with
+    /// the confirm prompt + Confirm/Cancel buttons, replaces the
+    /// desktop's JS.confirm() popup (which is jarring on a mobile
+    /// viewport, and the task spec says "no JS interop beyond basic
+    /// form interactions").
+    /// </summary>
+    private bool _confirmingBulkApply;
+
+    /// <summary>
+    /// True while a BulkApplyDefaultsForGroupCommand dispatch is in
+    /// flight. Separate from _busyAction because bulk-apply disables
+    /// EVERY button on the page (Save + Activate/Deactivate + bulk-apply
+    /// itself) — a single bool is enough, no need for the per-action
+    /// string state machine (no concurrent-action race possible since
+    /// every other button is disabled). Mirrors the desktop's
+    /// _isBulkApplyingDefaults field.
+    /// </summary>
+    private bool _isBulkApplyingDefaults;
+
+    // ── Current-user role flags (mirrors desktop EditGroup.razor +
+    // MobileManageGroups.razor) ──────────────────────────────────────
+
+    /// <summary>
+    /// True if the current user is in the Admin role. Computed via
+    /// AuthenticationStateProvider in OnInitializedAsync — NOT via
+    /// ICurrentUserService.IsInRole (which returns false for everyone
+    /// in interactive Blazor Server mode because HttpContext is null
+    /// over the SignalR circuit). Gates the edit-form + activate/
+    /// deactivate + bulk-apply UI via the @if (_isAdmin || _isManagerOnly)
+    /// rule. The Wolverine handlers ALSO enforce [RequireRoles(Manager,
+    /// Admin)] server-side as defense-in-depth.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// True if the current user is in the Manager role (and NOT also
+    /// in the Admin role). Used to gate the edit-form + activate/
+    /// deactivate + bulk-apply UI (Manager + Admin can act). Admins
+    /// who are also in the Manager role bypass this check (treated as
+    /// Admins). Same logic as desktop EditGroup.razor's _isManagerOnly.
+    /// </summary>
+    private bool _isManagerOnly;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Compute _isAdmin + _isManagerOnly synchronously via
+        // AuthStateProvider so the edit-form's @if doesn't flicker on
+        // first render. Same pattern as desktop EditGroup.razor +
+        // MobileManageGroups.razor.
+        try
+        {
+            await ResolveRolesAsync();
+        }
+        catch
+        {
+            // Non-fatal — _isAdmin stays false (edit form hidden —
+            // safer fallback if role resolution fails). The handler
+            // still enforces [RequireRoles] server-side.
+        }
+
+        try
+        {
+            await LoadAsync();
+        }
+        catch (Exception)
+        {
+            // Defense-in-depth — LoadAsync swallows its own exceptions
+            // and surfaces a friendly _loadError, but if something
+            // unexpected happens (e.g. AuthStateProvider throws during
+            // role resolution), show the generic error instead of
+            // crashing the circuit.
+            _loadError = Loc["Error_Unexpected"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Auth / role resolution ─────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the current user's Admin/Manager roles via the Blazor
+    /// auth state (NOT ICurrentUserService — see field doc on _isAdmin).
+    /// Same pattern as the desktop EditGroup.razor + MobileManageGroups.
+    /// </summary>
+    private async Task ResolveRolesAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user?.Identity?.IsAuthenticated != true) return;
+
+        _isAdmin = user.IsInRole(Roles.Admin);
+        // Manager-only = Manager AND not also Admin. Admins who are
+        // also in the Manager role bypass this check (treated as Admins).
+        _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads the CustomerGroupDto via GetCustomerGroupByIdQuery. On
+    /// success, sets _group + pre-fills the form fields (Name, Salary
+    /// Amount formatted for display, Salary Currency for the locked
+    /// pill). On failure (handler returned Result.Failure OR the
+    /// dispatch threw), sets _loadError (for the error-box branch)
+    /// OR clears _group + leaves _loadError empty (for the not-found
+    /// branch — the handler returns a generic "not found" for both
+    /// genuinely-missing AND not-allowed-to-see, so we surface the
+    /// friendly NotFoundTitle/NotFoundBody message instead of leaking
+    /// the existence check).
+    ///
+    /// Also called by the Retry button in the error branch.
+    /// </summary>
+    private async Task LoadAsync()
+    {
+        _loadError = string.Empty;
+        try
+        {
+            var query = new GetCustomerGroupByIdQuery { GroupId = GroupId };
+            var result = await MessageBus.InvokeAsync<Result<CustomerGroupDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _group = result.Value;
+                // Pre-fill the form fields so the inputs render with the
+                // current values (not empty textboxes — the user sees
+                // what they're about to edit).
+                _formName = _group.Name;
+                _formSalaryCurrency = _group.Salary.Currency;
+                _formSalaryAmount = FormatSalaryForDisplay(_group.Salary.Amount);
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly
+                // message (e.g. "Customer group '...' was not found.").
+                // For the not-found case, the markup's _group-is-null
+                // branch shows the friendly NotFoundTitle/NotFoundBody
+                // message — we don't surface the raw handler error
+                // because it could leak which (missing vs not-allowed)
+                // case occurred.
+                _group = null;
+                _loadError = string.Empty;
+            }
+        }
+        catch (Exception)
+        {
+            _group = null;
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+    }
+
+    /// <summary>
+    /// Silent-reload variant used after a successful Save / Activate /
+    /// Deactivate / Bulk Apply. Skips toggling _isLoading so the page
+    /// doesn't flash the full-page loading spinner between the success
+    /// toast and the refreshed content. Mirrors desktop EditGroup.razor's
+    /// LoadGroupAsync post-action + MobileUserDetail.razor's
+    /// ReloadUserSilentlyAsync pattern. Failures are non-fatal — the
+    /// action already succeeded and we already toasted success; the
+    /// next user interaction (or manual refresh) will surface any
+    /// persistent load failure via the regular LoadAsync path.
+    /// </summary>
+    private async Task ReloadGroupSilentlyAsync()
+    {
+        try
+        {
+            var query = new GetCustomerGroupByIdQuery { GroupId = GroupId };
+            var result = await MessageBus.InvokeAsync<Result<CustomerGroupDto>>(query);
+            if (result.IsSuccess)
+            {
+                _group = result.Value;
+                // Refresh the form fields too so the inputs reflect the
+                // freshly-saved state (e.g. the salary textbox shows the
+                // new amount formatted; the name input shows the new
+                // name). The currency doesn't change (it's locked) but
+                // we re-set it for safety.
+                _formName = _group.Name;
+                _formSalaryCurrency = _group.Salary.Currency;
+                _formSalaryAmount = FormatSalaryForDisplay(_group.Salary.Amount);
+            }
+            // else: silent — keep the stale _group (the action did succeed).
+        }
+        catch (Exception)
+        {
+            // Silent — see remark above.
+        }
+    }
+
+    // ── Save handler (mirrors desktop EditGroup.razor's HandleSubmitAsync)
+
+    /// <summary>
+    /// Save handler — dispatches BOTH RenameCustomerGroupCommand (if
+    /// the name changed) AND UpdateCustomerGroupSalaryCommand (if the
+    /// amount changed). Both run in their own Wolverine transaction —
+    /// if either fails, the other is NOT rolled back (they're
+    /// independent mutations on the same aggregate; the user can fix
+    /// the failing one and retry). On success: Toast.Success +
+    /// ReloadGroupSilentlyAsync so the summary card's Name/Salary/
+    /// UpdatedAt rows refresh without a full-page reload.
+    ///
+    /// NO-CHANGES SHORT-CIRCUIT: if neither field changed, toast an
+    /// Info "no changes" message + return (mirrors the desktop's
+    /// behavior — saves the user from a confusing "saved successfully"
+    /// toast when nothing actually changed).
+    ///
+    /// VALIDATION: simple inline checks (no EditForm + DataAnnotations
+    /// on mobile — mirrors MobileAdminCategories's inline-form pattern).
+    /// Empty name → toast ValidationError_NameRequired. Salary-amount
+    /// parse-fail → toast ValidationError_AmountRequired. The Wolverine
+    /// command validators provide the SECOND wave server-side via
+    /// Wolverine's pipeline.
+    /// </summary>
+    private async Task HandleSaveAsync()
+    {
+        if (_isBusy || _group is null) return;
+
+        var name = _formName.Trim();
+
+        if (string.IsNullOrEmpty(name))
+        {
+            await Toast.Error(Loc["ValidationError_NameRequired"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // Defensive re-parse of the salary textbox. Normally @onblur
+        // fires before the Save button's @onclick handler does, but a
+        // JS-initiated submit or Enter-key submit could race. Parsing
+        // here too guarantees _formSalaryAmount reflects whatever the
+        // user typed, even if @onblur hasn't run yet.
+        if (!TryParseAmount(_formSalaryAmount, out var salaryAmount))
+        {
+            await Toast.Error(Loc["ValidationError_AmountRequired"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var nameChanged = !string.Equals(name, _group.Name, StringComparison.Ordinal);
+            var amountChanged = salaryAmount != _group.Salary.Amount;
+
+            if (!nameChanged && !amountChanged)
+            {
+                // No-op — nothing to save. Show an info toast (NOT
+                // success — the user should know nothing changed).
+                await Toast.Info(Loc["NoChanges"], summary: Loc["NoChangesTitle"]);
+                return;
+            }
+
+            // 1. Rename if changed.
+            if (nameChanged)
+            {
+                var renameResult = await MessageBus.InvokeAsync<Result>(
+                    new RenameCustomerGroupCommand(_group.Id, name));
+
+                if (!renameResult.IsSuccess)
+                {
+                    await Toast.Error(renameResult.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                    return;
+                }
+            }
+
+            // 2. Update salary amount if changed.
+            if (amountChanged)
+            {
+                var salaryResult = await MessageBus.InvokeAsync<Result>(
+                    new UpdateCustomerGroupSalaryCommand(_group.Id, salaryAmount));
+
+                if (!salaryResult.IsSuccess)
+                {
+                    await Toast.Error(salaryResult.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                    return;
+                }
+            }
+
+            await Toast.Success(Loc["SuccessSummary"], summary: Loc["SuccessTitle"]);
+            await ReloadGroupSilentlyAsync();
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Activate / Deactivate handlers (mirror MobileUserDetail.razor) ──
+
+    /// <summary>
+    /// Opens the inline Deactivate confirmation panel. No dispatch yet
+    /// — the actual DeactivateCustomerGroupCommand is dispatched by
+    /// HandleDeactivateAsync after the user taps Confirm. Mirrors
+    /// MobileCart's _confirmingClear + MobileUserDetail's
+    /// _confirmingDeactivate pattern: a single inline panel with the
+    /// confirm prompt + Confirm/Cancel buttons (mobile-friendly
+    /// alternative to the desktop's 3-second-countdown
+    /// DeactivateGroupDialog).
+    /// </summary>
+    private void StartDeactivateConfirm()
+    {
+        if (_busyAction is not null) return;
+        if (_group is null || !_group.IsActive) return;
+        _confirmingDeactivate = true;
+    }
+
+    /// <summary>
+    /// Closes the inline Deactivate confirmation panel without
+    /// dispatching. Called by the Cancel button. Silent — no toast
+    /// (the user explicitly chose to abort).
+    /// </summary>
+    private void CancelDeactivate()
+    {
+        // Don't allow cancel mid-dispatch — the dispatch is already in
+        // flight, blocking cancel prevents a confused state where the
+        // panel is closed but the toast still pops up.
+        if (_busyAction == "action:deactivate") return;
+        _confirmingDeactivate = false;
+    }
+
+    /// <summary>
+    /// Dispatches DeactivateCustomerGroupCommand. Called by the
+    /// Confirm button in the inline confirmation panel. Sets _busyAction
+    /// = "action:deactivate" (mirrors MobileAdminCategories's _busyKey +
+    /// MobileUserDetail's _busyAction pattern — the finally block only
+    /// clears the flag when it still matches this action's key, which
+    /// prevents stale resets from a concurrent action). On success:
+    /// toast + close the confirm panel + ReloadGroupSilentlyAsync so
+    /// the status badge flips to "Inactive" without a full-page reload.
+    /// On failure: toast the handler's error (or the generic
+    /// Error_Generic fallback).
+    /// </summary>
+    private async Task HandleDeactivateAsync()
+    {
+        if (_busyAction is not null) return;
+        if (_group is null || !_group.IsActive) return;
+
+        var actionKey = "action:deactivate";
+        _busyAction = actionKey;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateCustomerGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                _confirmingDeactivate = false;
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], _group.Name),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await ReloadGroupSilentlyAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            // Only clear the flag when it still matches this action —
+            // prevents a stale reset if a concurrent action somehow
+            // interleaved (defense-in-depth against the rare race).
+            if (_busyAction == actionKey) _busyAction = null;
+        }
+    }
+
+    /// <summary>
+    /// Dispatches ActivateCustomerGroupCommand. Called by the Activate
+    /// button directly (no confirmation — activation is a non-destructive
+    /// restore, mirrors the desktop's HandleActivateAsync). Sets _busyAction
+    /// = "action:activate" (same state-machine pattern as Deactivate).
+    /// On success: toast + ReloadGroupSilentlyAsync so the status badge
+    /// flips to "Active" without a full-page reload. On failure: toast
+    /// the handler's error.
+    /// </summary>
+    private async Task HandleActivateAsync()
+    {
+        if (_busyAction is not null) return;
+        if (_group is null || _group.IsActive) return;
+
+        var actionKey = "action:activate";
+        _busyAction = actionKey;
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateCustomerGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], _group.Name),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await ReloadGroupSilentlyAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            if (_busyAction == actionKey) _busyAction = null;
+        }
+    }
+
+    // ── Bulk Apply Defaults handlers ───────────────────────────────────
+
+    /// <summary>
+    /// Opens the inline Bulk Apply Defaults confirmation panel. No
+    /// dispatch yet — the actual BulkApplyDefaultsForGroupCommand is
+    /// dispatched by HandleBulkApplyDefaultsAsync after the user taps
+    /// Confirm. Mirrors _confirmingDeactivate's pattern — single inline
+    /// panel replaces the desktop's JS.confirm() popup (per the task
+    /// spec's "no JS interop beyond basic form interactions" rule).
+    /// </summary>
+    private void StartBulkApplyConfirm()
+    {
+        if (_isBulkApplyingDefaults || _busyAction is not null) return;
+        if (_group is null || !_group.IsActive) return;
+        _confirmingBulkApply = true;
+    }
+
+    /// <summary>
+    /// Closes the inline Bulk Apply Defaults confirmation panel without
+    /// dispatching. Called by the Cancel button. Silent — no toast.
+    /// </summary>
+    private void CancelBulkApply()
+    {
+        if (_isBulkApplyingDefaults) return;
+        _confirmingBulkApply = false;
+    }
+
+    /// <summary>
+    /// Dispatches BulkApplyDefaultsForGroupCommand. Called by the
+    /// Confirm button in the inline confirmation panel. Sets
+    /// _isBulkApplyingDefaults (which disables every other button on
+    /// the page — Save, Activate/Deactivate, and the bulk-apply button
+    /// itself — to prevent concurrent mutations while the bulk scan is
+    /// in flight). On success: toast the breakdown (ProductsUpdated /
+    /// TotalProductsScanned / ProductsSkipped / AppliedLimit) — or an
+    /// Info toast when every product already had a limit (no updates
+    /// needed — idempotent no-op). On failure: toast the handler's
+    /// error. Mirrors the desktop's HandleBulkApplyDefaultsAsync but
+    /// replaces the JS.confirm() confirmation with an inline panel
+    /// (per the task spec's "no JS interop" rule).
+    /// </summary>
+    private async Task HandleBulkApplyDefaultsAsync()
+    {
+        if (_isBulkApplyingDefaults || _busyAction is not null) return;
+        if (_group is null || !_group.IsActive) return;
+
+        _isBulkApplyingDefaults = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<BulkApplyDefaultsResult>>(
+                new BulkApplyDefaultsForGroupCommand(_group.Id));
+
+            if (result.IsSuccess)
+            {
+                var r = result.Value;
+
+                if (r.ProductsUpdated == 0)
+                {
+                    // Idempotent no-op — every product already had a
+                    // limit. Use Info tone (NOT Success) to communicate
+                    // "nothing changed" (mirrors the desktop's behavior).
+                    await Toast.Info(
+                        string.Format(CultureInfo.CurrentCulture,
+                            Loc["BulkApplyDefaultsNoUpdates"], r.TotalProductsScanned),
+                        summary: Loc["BulkApplyDefaultsTitle"]);
+                }
+                else
+                {
+                    await Toast.Success(
+                        string.Format(CultureInfo.CurrentCulture,
+                            Loc["BulkApplyDefaultsSuccess"],
+                            r.ProductsUpdated, r.TotalProductsScanned,
+                            r.ProductsSkipped, r.AppliedLimit),
+                        summary: Loc["BulkApplyDefaultsTitle"]);
+                }
+
+                _confirmingBulkApply = false;
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBulkApplyingDefaults = false;
+        }
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Navigates back to the mobile Admin Groups list. forceLoad:false —
+    /// in-circuit navigation preserves the MobileLayout shell + BottomNav
+    /// state (matches MobileUserDetail's GoToUsers + MobileProductDetail's
+    /// GoToProducts pattern).
+    /// </summary>
+    private void GoToGroups()
+        => Navigation.NavigateTo("/m/Admin/Groups", forceLoad: false);
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a decimal salary amount for the summary card's "Salary"
+    /// row (read-only display). Mirrors the desktop's FormatSalaryAmount
+    /// verbatim — delegates to CultureFormat.FormatNumber (which produces
+    /// Persian digits + ٬ separator in fa-IR mode and ASCII digits + comma
+    /// separator in en-US mode, with 0 decimal places).
+    /// </summary>
+    private string FormatSalaryAmount(decimal amount)
+        => CultureFormat.FormatNumber(amount);
+
+    /// <summary>
+    /// Formats a decimal salary amount for DISPLAY in the editable
+    /// textbox (i.e. when the input is NOT focused). Returns a string
+    /// with:
+    ///   - Persian digits (۰-۹) when the UI culture is fa-IR, ASCII (0-9)
+    ///     otherwise — via CultureFormat.ToCultureDigits.
+    ///   - Thousands separators ("," in en-US, "٬" in fa-IR — also handled
+    ///     by ToCultureDigits since the .NET N0 format produces commas
+    ///     and ToCultureDigits swaps them).
+    ///   - 0 decimal places when the currency is IRR (whole-Rial — Iran's
+    ///     currency has no fractional unit in practice for salary values).
+    ///     2 decimal places for other currencies (USD, EUR, etc.).
+    /// Mirrors the desktop's FormatSalaryForDisplay verbatim.
+    /// </summary>
+    private string FormatSalaryForDisplay(decimal amount)
+    {
+        var isIrr = string.Equals(_formSalaryCurrency, "IRR",
+            StringComparison.OrdinalIgnoreCase);
+        // N0 = no decimals, with thousands separators.
+        // N2 = 2 decimal places, with thousands separators.
+        // InvariantCulture produces ASCII digits + comma separators; we
+        // then run ToCultureDigits to swap them for Persian digits + ٬
+        // separator when the UI culture is fa-IR.
+        var fmt = isIrr ? "N0" : "N2";
+        return CultureFormat.ToCultureDigits(
+            amount.ToString(fmt, CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Formats an integer count (e.g. ActiveUserCount) with Persian
+    /// digits in fa-IR mode. Mirrors the desktop's FormatInt verbatim.
+    /// </summary>
+    private string FormatInt(int value)
+        => CultureFormat.FormatDigits(value);
+
+    /// <summary>
+    /// Formats a UTC DateTime as a localized date-time string in Tehran
+    /// time, culture-aware. Mirrors the desktop's FormatDate verbatim —
+    /// delegates to CultureFormat.FormatTehranDateTime, which produces
+    /// Persian digits + Jalali date in fa-IR mode and ASCII digits +
+    /// Gregorian date in en-US mode.
+    /// </summary>
+    private string FormatDate(DateTime utc)
+        => CultureFormat.FormatTehranDateTime(utc);
+
+    // ── Salary amount textbox helpers (mirror desktop verbatim) ───────
+
+    /// <summary>
+    /// Parses a string the user typed into the salary amount textbox
+    /// into a decimal. Accepts:
+    ///   - ASCII digits "0"-"9"
+    ///   - Persian digits "۰"-"۹" (converted to ASCII before parsing)
+    ///   - Thousands separators "," and "٬" (ignored)
+    ///   - Decimal separator "." (ASCII) or "٫" (Persian) — both
+    ///     converted to "." for the InvariantCulture parser
+    ///   - Leading/trailing whitespace (trimmed)
+    /// Returns false on any parse failure (caller decides what to do —
+    /// usually toasts a validation error). Mirrors the desktop's
+    /// TryParseAmount verbatim.
+    /// </summary>
+    private static bool TryParseAmount(string? input, out decimal amount)
+    {
+        amount = 0m;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+
+        // Normalize: strip separators, convert Persian digits/decimal-
+        // point to ASCII equivalents, then parse with InvariantCulture.
+        var sb = new StringBuilder(input.Length);
+        foreach (var c in input.Trim())
+        {
+            if (c == ',' || c == '٬') continue;       // thousands separator
+            if (c == '٫') sb.Append('.');              // Persian decimal point
+            else if (c >= '۰' && c <= '۹')
+                sb.Append((char)('0' + (c - '۰')));    // Persian digit → ASCII
+            else sb.Append(c);
+        }
+
+        return decimal.TryParse(sb.ToString(),
+            NumberStyles.Number, CultureInfo.InvariantCulture, out amount);
+    }
+
+    /// <summary>
+    /// Fired when the salary amount textbox gains focus. Switches the
+    /// displayed text from the formatted (thousand-separated, Persian-
+    /// digit) form to the raw invariant number so the user can edit
+    /// easily without fighting separators. If the current text doesn't
+    /// parse (e.g. user typed garbage that we couldn't format on a
+    /// previous blur), we leave the text alone so the user can see what
+    /// they typed. Mirrors the desktop's OnSalaryAmountFocus verbatim.
+    /// </summary>
+    private void OnSalaryAmountFocus()
+    {
+        if (TryParseAmount(_formSalaryAmount, out var amount))
+        {
+            // InvariantCulture produces ASCII digits + "." decimal
+            // separator — the safest form for free-text editing. No
+            // thousands separators (they'd just get in the way while
+            // typing).
+            _formSalaryAmount = amount.ToString(CultureInfo.InvariantCulture);
+        }
+        // else: leave the text alone so the user can fix whatever they typed.
+    }
+
+    /// <summary>
+    /// Fired when the salary amount textbox loses focus. Parses the
+    /// current text to a decimal and re-formats the displayed text with
+    /// thousand separators + Persian digits (in fa-IR) + 0 decimals (in
+    /// IRR). If parsing fails, we leave the text alone — HandleSaveAsync
+    /// will surface a validation error via Toast when the user tries to
+    /// submit. Mirrors the desktop's OnSalaryAmountBlur verbatim.
+    /// </summary>
+    private void OnSalaryAmountBlur()
+    {
+        if (TryParseAmount(_formSalaryAmount, out var amount))
+        {
+            _formSalaryAmount = FormatSalaryForDisplay(amount);
+        }
+        // else: leave text alone — HandleSaveAsync will toast a validation error.
+    }
+}

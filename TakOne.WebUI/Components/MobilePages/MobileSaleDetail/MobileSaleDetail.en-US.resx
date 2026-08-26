@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve"><value>Order details — TakOne</value></data>
+  <data name="BackToList" xml:space="preserve"><value>Back to orders</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve"><value>Loading order details…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>Something went wrong</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>We couldn't load this order. Please try again.</value></data>
+  <data name="Error_GenericAction" xml:space="preserve"><value>We couldn't complete this action. Please try again.</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>Try again</value></data>
+  <data name="NotFoundMessage" xml:space="preserve"><value>This order doesn't exist, or you don't have permission to view it.</value></data>
+  <data name="NoLineItems" xml:space="preserve"><value>This order has no line items.</value></data>
+
+  <!-- Status labels (shared with Sales list page; mirrored here so the
+       detail page is self-contained without depending on MobileSales.resx). -->
+  <data name="StatusDraft" xml:space="preserve"><value>Draft</value></data>
+  <data name="StatusPending" xml:space="preserve"><value>Pending</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>Approved</value></data>
+  <data name="StatusInvoiced" xml:space="preserve"><value>Invoiced</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>Cancelled</value></data>
+
+  <!-- Audit trail -->
+  <data name="AuditCreated" xml:space="preserve"><value>Created</value></data>
+  <data name="AuditSubmitted" xml:space="preserve"><value>Submitted</value></data>
+  <data name="AuditApproved" xml:space="preserve"><value>Approved</value></data>
+  <data name="AuditInvoiced" xml:space="preserve"><value>Invoiced</value></data>
+  <data name="AuditCancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="AuditPending" xml:space="preserve"><value>Awaiting action</value></data>
+  <data name="AuditByFormat" xml:space="preserve"><value>by {0}</value></data>
+
+  <!-- Sale meta info -->
+  <data name="ColCustomer" xml:space="preserve"><value>Customer</value></data>
+
+  <!-- Cancellation reason panel -->
+  <data name="CancellationReasonLabel" xml:space="preserve"><value>Cancellation reason</value></data>
+
+  <!-- Line items list columns -->
+  <data name="ColLineNumber" xml:space="preserve"><value>#</value></data>
+  <data name="ColProduct" xml:space="preserve"><value>Product</value></data>
+  <data name="ColQuantity" xml:space="preserve"><value>Qty</value></data>
+  <data name="ColUnitPrice" xml:space="preserve"><value>Unit price</value></data>
+  <data name="ColLineTotal" xml:space="preserve"><value>Line total</value></data>
+
+  <!-- Totals summary -->
+  <data name="TotalLines" xml:space="preserve"><value>Different products</value></data>
+  <data name="TotalUnits" xml:space="preserve"><value>Total units</value></data>
+  <data name="GrandTotal" xml:space="preserve"><value>Grand total</value></data>
+
+  <!-- Staff actions -->
+  <data name="ActionApprove" xml:space="preserve"><value>Approve order</value></data>
+  <data name="ActionMarkInvoiced" xml:space="preserve"><value>Mark as invoiced</value></data>
+  <data name="ActionCancel" xml:space="preserve"><value>Cancel order</value></data>
+  <data name="ActionWorking" xml:space="preserve"><value>Working…</value></data>
+
+  <!-- Cancel UX — inline form (mobile-friendly two-step equivalent of the
+       desktop's Radzen-dialog + countdown flow). -->
+  <data name="CancelReasonLengthError" xml:space="preserve"><value>Cancellation reason must be between 3 and 500 characters.</value></data>
+
+  <!-- Inline cancel form (Step 1 of the cancel flow) -->
+  <data name="CancelFormHeading" xml:space="preserve"><value>Cancelling order</value></data>
+  <data name="CancelFormReasonLabel" xml:space="preserve"><value>Cancellation reason *</value></data>
+  <data name="CancelFormReasonPlaceholder" xml:space="preserve"><value>Provide a clear, specific reason. Required for all roles and recorded permanently.</value></data>
+  <data name="CancelFormConfirm" xml:space="preserve"><value>Confirm Cancellation</value></data>
+  <data name="CancelFormCancelling" xml:space="preserve"><value>Cancelling…</value></data>
+  <data name="CancelFormDiscard" xml:space="preserve"><value>Discard</value></data>
+
+  <!-- Action feedback -->
+  <data name="ActionSuccessTitle" xml:space="preserve"><value>Done</value></data>
+  <data name="ActionSuccessFormat" xml:space="preserve"><value>{0} — order updated.</value></data>
+
+  <!-- Localized error messages for stable, culture-neutral error codes
+       returned by the Approve / MarkAsInvoiced / Cancel command handlers.
+       See LocalizeError in MobileSaleDetail.razor and the
+       TakOne.Application.Common.Errors helpers (StockErrors,
+       CategoryDeactivatedErrors, PurchaseLimitErrors, NoCustomerGroupErrors)
+       for the format-string contracts. -->
+  <!-- StockExceeded — {0} = product name, {1} = current stock, {2} = required quantity -->
+  <data name="StockExceeded" xml:space="preserve"><value>Not enough stock to approve this order. Product '{0}' has {1} in stock, but the order requires {2}.</value></data>
+  <!-- CategoryDeactivated — {0} = product name (product's category was deactivated) -->
+  <data name="CategoryDeactivated" xml:space="preserve"><value>'{0}' is no longer available for purchase. Remove it from the order or contact an administrator.</value></data>
+  <!-- PurchaseLimitExceeded — {0} = product name, {1} = per-customer limit -->
+  <data name="PurchaseLimitExceeded" xml:space="preserve"><value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value></data>
+  <!-- NoCustomerGroup — shown when the customer on the sale has no CustomerGroup assigned. -->
+  <data name="NoCustomerGroup" xml:space="preserve"><value>This customer is not configured for purchases. Assign them to a customer group before adding items.</value></data>
+</root>

@@ -124,13 +124,27 @@
     @* Mobile CSS — global styles for mobile pages + layout. Loaded on
        every page so the mobile CSS is available when the mobile redirect
        fires. Uses plain class names (no scoped CSS) so child components
-       like BottomNav are styled correctly. *@
-    <link rel="stylesheet" href="css/mobile.css?v=2" />
+       like BottomNav are styled correctly.
 
-    @* Mobile device detection — redirects mobile users from /Products
-       to /m/Products (the mobile version). Runs on DOMContentLoaded.
-       See wwwroot/js/mobile.js for the redirect logic. *@
-    <script src="js/mobile.js?v=2"></script>
+       v3 cache-bust (Round 7): added detail-page chrome classes
+       (.m-page-header-back, .m-status-banner, .m-cancel-form, .m-inline-
+       confirm, .m-breadcrumb, .m-product-detail-*, .m-profile-row-stack,
+       .m-profile-chips, .m-profile-muted), MobileDashboard classes
+       (.m-dash-greeting-*, .m-dash-kpi-grid, .m-dash-spark-*, .m-dash-
+       order-*, .m-dash-employee-*, .m-dash-quick-*), skeleton loading
+       (.m-skeleton[-line/-card/-block/-circle]), pull-to-refresh
+       (.m-ptr-indicator/.m-ptr-pill), MobileEditGroup form classes
+       (.m-form-card, .m-stat-row). Without this bump browsers keep serving
+       the old v2 mobile.css and these new classes render unstyled. *@
+    <link rel="stylesheet" href="css/mobile.css?v=3" />
+
+    @* Mobile device detection + redirect logic + pull-to-refresh — v3
+       (Round 7): added detail-route redirects (/Sales/{id} → /m/Sales/{id}
+       etc.) + the pull-to-refresh touch listener (at scrollTop==0, pull
+       down 70px to reload). Without this bump browsers keep serving the
+       old v2 mobile.js which doesn't redirect detail routes and has no
+       pull-to-refresh. *@
+    <script src="js/mobile.js?v=3"></script>
 
     @* Chart.js — VENDORED locally (same pattern as SignalR).
        Used by the redesigned Dashboard page (Dashboard.razor) for the

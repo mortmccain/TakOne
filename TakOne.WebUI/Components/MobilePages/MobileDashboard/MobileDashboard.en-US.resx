@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileDashboard.en-US.resx — English strings for MobileDashboard.razor.
+     The strings mirror the desktop Dashboard.en-US.resx for keys shared
+     with the desktop dashboard (greeting, KPI labels, status names,
+     quick-access cards, weekly-revenue chart card, etc.). The mobile-only
+     keys (PageTitle, Loading, ErrorTitle, Error_FailedToLoad, Error_Unexpected,
+     Version) use sensible English text. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page + loading + error -->
+  <data name="PageTitle" xml:space="preserve"><value>Dashboard — TakOne</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading dashboard…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>Couldn't load dashboard</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>Failed to load dashboard data. Please reload the page.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>An unexpected error occurred while loading the dashboard. Please try again.</value></data>
+
+  <!-- Welcome / greeting header -->
+  <data name="ActivePanel" xml:space="preserve"><value>Active panel</value></data>
+  <data name="GreetingSubtitle" xml:space="preserve"><value>Here's a summary of today's activity at Tak Makaron.</value></data>
+  <data name="ScopeEmployee" xml:space="preserve"><value>Your personal performance</value></data>
+
+  <!-- Time-of-day greetings — used by GreetingLabel based on server hour -->
+  <data name="Greeting_LateNight" xml:space="preserve"><value>Good night,</value></data>
+  <data name="Greeting_Morning" xml:space="preserve"><value>Good morning,</value></data>
+  <data name="Greeting_Afternoon" xml:space="preserve"><value>Good afternoon,</value></data>
+  <data name="Greeting_Evening" xml:space="preserve"><value>Good evening,</value></data>
+
+  <!-- Gender titles — used by GreetingLabel based on the Gender claim -->
+  <data name="Title_Male" xml:space="preserve"><value>آقای</value></data>
+  <data name="Title_Female" xml:space="preserve"><value>خانم</value></data>
+  <data name="Title_Male_En" xml:space="preserve"><value>Mr.</value></data>
+  <data name="Title_Female_En" xml:space="preserve"><value>Ms.</value></data>
+
+  <!-- Time units — used by FormatOldestPending in the KPI 3 footer -->
+  <data name="MinutesUnit" xml:space="preserve"><value>minutes</value></data>
+  <data name="HoursUnit" xml:space="preserve"><value>hours</value></data>
+  <data name="DaysUnit" xml:space="preserve"><value>days</value></data>
+
+  <!-- Relative-time strings — used by FormatRelativeTime in the orders list -->
+  <data name="JustNow" xml:space="preserve"><value>just now</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>minutes ago</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>hours ago</value></data>
+  <data name="DaysAgo" xml:space="preserve"><value>days ago</value></data>
+
+  <!-- KPI cards (right-to-left in RTL on the desktop; 2-col grid on mobile) -->
+  <data name="Kpi_TodayOrders" xml:space="preserve"><value>Today's orders</value></data>
+  <data name="Kpi_TodayOrdersFooter" xml:space="preserve"><value>orders pending approval</value></data>
+  <data name="Kpi_MonthlyEmployeePurchase" xml:space="preserve"><value>Total employee purchases this month</value></data>
+  <data name="Kpi_MonthlyEmployeePurchaseFooter" xml:space="preserve"><value>Employees who purchased this month:</value></data>
+  <data name="Kpi_PendingApprovals" xml:space="preserve"><value>Pending approval</value></data>
+  <data name="Kpi_PendingApprovalsFooter_Prefix" xml:space="preserve"><value>Oldest:</value></data>
+  <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve"><value>No pending approvals</value></data>
+  <data name="Kpi_MonthlyApprovedSales" xml:space="preserve"><value>Approved sales this month</value></data>
+  <data name="Kpi_MonthlyApprovedSalesFooter" xml:space="preserve"><value>approved in current month</value></data>
+
+  <!-- Weekly revenue sparkline card -->
+  <data name="Chart_WeeklyRevenue" xml:space="preserve"><value>Weekly revenue trend</value></data>
+  <data name="Chart_WeeklyRevenue_Sub" xml:space="preserve"><value>Last 7 days · by day</value></data>
+  <data name="Chart_WeeklyLegend_This" xml:space="preserve"><value>This week</value></data>
+  <data name="Chart_WeeklyLegend_Last" xml:space="preserve"><value>Last week</value></data>
+  <data name="Chart_WeeklyAvg" xml:space="preserve"><value>Daily average</value></data>
+  <data name="Chart_WeeklyMax" xml:space="preserve"><value>Highest day</value></data>
+  <data name="Chart_WeeklyGrowth" xml:space="preserve"><value>Weekly growth</value></data>
+  <data name="Chart_NoData" xml:space="preserve"><value>No data yet</value></data>
+  <data name="Chart_ViewAll" xml:space="preserve"><value>View all</value></data>
+
+  <!-- Status labels — used by StatusLocalizedName in the orders list -->
+  <data name="Status_Approved" xml:space="preserve"><value>Approved</value></data>
+  <data name="Status_Delivered" xml:space="preserve"><value>Delivered</value></data>
+  <data name="Status_Pending" xml:space="preserve"><value>Pending</value></data>
+  <data name="Status_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="Status_Draft" xml:space="preserve"><value>Draft</value></data>
+  <data name="Status_OrdersUnit" xml:space="preserve"><value>orders</value></data>
+
+  <!-- Recent orders card -->
+  <data name="Orders_Recent" xml:space="preserve"><value>Recent orders</value></data>
+  <data name="Orders_Recent_Sub" xml:space="preserve"><value>Last 6 orders in the system</value></data>
+  <data name="Orders_Empty" xml:space="preserve"><value>No recent orders to display.</value></data>
+  <data name="Orders_Col_Number" xml:space="preserve"><value>Order #</value></data>
+  <data name="Orders_Col_Customer" xml:space="preserve"><value>Employee</value></data>
+  <data name="Orders_Col_Product" xml:space="preserve"><value>Product</value></data>
+  <data name="Orders_Col_Amount" xml:space="preserve"><value>Amount</value></data>
+  <data name="Orders_Col_Time" xml:space="preserve"><value>Time</value></data>
+  <data name="Orders_Col_Status" xml:space="preserve"><value>Status</value></data>
+
+  <!-- Top employees card -->
+  <data name="TopEmployees_Title" xml:space="preserve"><value>Employees with the highest purchase amount this month</value></data>
+  <data name="TopEmployees_Sub" xml:space="preserve"><value>This month</value></data>
+  <data name="TopEmployees_Empty" xml:space="preserve"><value>No employee purchases this month yet.</value></data>
+
+  <!-- Quick-access cards -->
+  <data name="Quick_Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="Quick_Settings_Desc" xml:space="preserve"><value>Configuration</value></data>
+  <data name="Quick_Users" xml:space="preserve"><value>System users</value></data>
+  <data name="Quick_Users_Desc" xml:space="preserve"><value>Manage users</value></data>
+
+  <!-- Footer -->
+  <data name="Version" xml:space="preserve"><value>TakOne version 1.0</value></data>
+</root>

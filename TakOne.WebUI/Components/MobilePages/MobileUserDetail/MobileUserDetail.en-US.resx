@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileUserDetail.en-US.resx — English strings for MobileUserDetail.razor.
+
+     Keys mirror the desktop UserDetail.en-US.resx for shared strings
+     (PageTitle, Loading, RetryButton, StatusActive/Inactive, ColWorkerId,
+     ColFullName, ColGender, ColEmail, ColStatus, ColGroup, RolesCardTitle,
+     NoRoles, RoleAdmin/Manager/Employee/ReadOnly/Customer, ActionActivate,
+     ActionDeactivate, ConfirmDeactivateFormat, ActionSuccessTitle,
+     ErrorTitle, Error_FailedToLoad, Error_Generic). Mobile-specific keys
+     (UserNotFound, BackToUsers, ActionsCardTitle, ConfirmCancel,
+     ConfirmDeactivate, DeactivateSuccessFormat, ActivateSuccessFormat,
+     Error_Unexpected, Version) are new but use the same conventions as
+     the desktop's UserDetail + sibling mobile pages (MobileSettings,
+     MobileSaleDetail, MobileProductDetail, MobileAdminUsers). -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page chrome -->
+  <data name="PageTitle" xml:space="preserve"><value>User details — TakOne</value></data>
+  <data name="BackToUsers" xml:space="preserve"><value>Back to users</value></data>
+
+  <!-- States -->
+  <data name="Loading" xml:space="preserve"><value>Loading user details…</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>Try again</value></data>
+  <data name="UserNotFound" xml:space="preserve"><value>This user doesn't exist, or you don't have permission to view it.</value></data>
+
+  <!-- Errors -->
+  <data name="ErrorTitle" xml:space="preserve"><value>Something went wrong</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>We couldn't load this user. Please try again.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>An unexpected error occurred. Please try again.</value></data>
+  <data name="Error_Generic" xml:space="preserve"><value>We couldn't complete this action. Please try again.</value></data>
+
+  <!-- Status badges -->
+  <data name="StatusActive" xml:space="preserve"><value>Active</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>Inactive</value></data>
+
+  <!-- Profile card -->
+  <data name="ProfileCardTitle" xml:space="preserve"><value>Profile</value></data>
+  <data name="ColWorkerId" xml:space="preserve"><value>Worker ID</value></data>
+  <data name="ColFullName" xml:space="preserve"><value>Full name</value></data>
+  <data name="ColGender" xml:space="preserve"><value>Gender</value></data>
+  <data name="ColEmail" xml:space="preserve"><value>Email</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>Status</value></data>
+  <data name="ColGroup" xml:space="preserve"><value>Group</value></data>
+
+  <!-- Gender labels -->
+  <data name="GenderMale" xml:space="preserve"><value>Male</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>Female</value></data>
+
+  <!-- Role labels — match desktop UserDetail + CreateUser conventions -->
+  <data name="RoleAdmin" xml:space="preserve"><value>Administrator</value></data>
+  <data name="RoleManager" xml:space="preserve"><value>Manager</value></data>
+  <data name="RoleEmployee" xml:space="preserve"><value>Employee</value></data>
+  <data name="RoleReadOnly" xml:space="preserve"><value>Read-only</value></data>
+  <data name="RoleCustomer" xml:space="preserve"><value>Customer</value></data>
+
+  <!-- Roles row -->
+  <data name="RolesCardTitle" xml:space="preserve"><value>Roles</value></data>
+  <data name="NoRoles" xml:space="preserve"><value>This user has no roles assigned.</value></data>
+
+  <!-- Actions card -->
+  <data name="ActionsCardTitle" xml:space="preserve"><value>Actions</value></data>
+  <data name="ActionActivate" xml:space="preserve"><value>Activate</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>Deactivate</value></data>
+
+  <!-- Inline confirm panel -->
+  <data name="ConfirmDeactivateFormat" xml:space="preserve"><value>Deactivate {0}? They will no longer be able to log in. Their sales and history are kept.</value>
+    <comment>{0} = user's full name</comment>
+  </data>
+  <data name="ConfirmDeactivate" xml:space="preserve"><value>Deactivate</value></data>
+  <data name="ConfirmCancel" xml:space="preserve"><value>Cancel</value></data>
+
+  <!-- Action result toasts -->
+  <data name="ActionSuccessTitle" xml:space="preserve"><value>Done</value></data>
+  <data name="ActivateSuccessFormat" xml:space="preserve"><value>{0} activated successfully.</value>
+    <comment>{0} = user's full name</comment>
+  </data>
+  <data name="DeactivateSuccessFormat" xml:space="preserve"><value>{0} deactivated successfully.</value>
+    <comment>{0} = user's full name</comment>
+  </data>
+
+  <!-- Footer -->
+  <data name="Version" xml:space="preserve"><value>TakOne version 1.0</value></data>
+</root>

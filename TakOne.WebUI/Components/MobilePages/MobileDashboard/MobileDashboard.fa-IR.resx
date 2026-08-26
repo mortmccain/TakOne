@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileDashboard.fa-IR.resx — Persian (Farsi) strings for MobileDashboard.razor.
+     Persian text is right-to-left; the layout direction is handled by
+     MobileLayout.razor setting <html dir="rtl"> based on the current culture.
+     These strings are pure text content — no markup, no directionality.
+     Persian digits (۰-۹) are used in the Version string ("تک‌وان نسخه ۱.۰")
+     to match the convention used in the other mobile pages' fa-IR resx files.
+     The strings mirror the desktop Dashboard.fa-IR.resx for keys shared
+     with the desktop dashboard; the mobile-only keys use natural Persian
+     phrasing. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- Page + loading + error -->
+  <data name="PageTitle" xml:space="preserve"><value>داشبورد — تک‌وان</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری داشبورد…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>بارگذاری داشبورد ناموفق بود</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری اطلاعات داشبورد ناموفق بود. لطفاً صفحه را مجدداً بارگذاری کنید.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>خطای غیرمنتظره‌ای رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+
+  <!-- Welcome / greeting header -->
+  <data name="ActivePanel" xml:space="preserve"><value>پنل فعال</value></data>
+  <data name="GreetingSubtitle" xml:space="preserve"><value>خلاصه فعالیت‌های امروز تک‌ماکارون را در ادامه ببینید.</value></data>
+  <data name="ScopeEmployee" xml:space="preserve"><value>عملکرد شخصی شما</value></data>
+
+  <!-- Time-of-day greetings — used by GreetingLabel based on server hour -->
+  <data name="Greeting_LateNight" xml:space="preserve"><value>شب بخیر</value></data>
+  <data name="Greeting_Morning" xml:space="preserve"><value>صبح بخیر</value></data>
+  <data name="Greeting_Afternoon" xml:space="preserve"><value>ظهر بخیر</value></data>
+  <data name="Greeting_Evening" xml:space="preserve"><value>عصر بخیر</value></data>
+
+  <!-- Gender titles — used by GreetingLabel based on the Gender claim -->
+  <data name="Title_Male" xml:space="preserve"><value>آقای</value></data>
+  <data name="Title_Female" xml:space="preserve"><value>خانم</value></data>
+  <data name="Title_Male_En" xml:space="preserve"><value>Mr.</value></data>
+  <data name="Title_Female_En" xml:space="preserve"><value>Ms.</value></data>
+
+  <!-- Time units — used by FormatOldestPending in the KPI 3 footer -->
+  <data name="MinutesUnit" xml:space="preserve"><value>دقیقه</value></data>
+  <data name="HoursUnit" xml:space="preserve"><value>ساعت</value></data>
+  <data name="DaysUnit" xml:space="preserve"><value>روز</value></data>
+
+  <!-- Relative-time strings — used by FormatRelativeTime in the orders list -->
+  <data name="JustNow" xml:space="preserve"><value>همین حالا</value></data>
+  <data name="MinutesAgo" xml:space="preserve"><value>دقیقه پیش</value></data>
+  <data name="HoursAgo" xml:space="preserve"><value>ساعت پیش</value></data>
+  <data name="DaysAgo" xml:space="preserve"><value>روز پیش</value></data>
+
+  <!-- KPI cards (right-to-left in RTL on the desktop; 2-col grid on mobile) -->
+  <data name="Kpi_TodayOrders" xml:space="preserve"><value>سفارشات امروز</value></data>
+  <data name="Kpi_TodayOrdersFooter" xml:space="preserve"><value>سفارش در انتظار تأیید</value></data>
+  <data name="Kpi_MonthlyEmployeePurchase" xml:space="preserve"><value>مجموع خرید کارکنان در این ماه</value></data>
+  <data name="Kpi_MonthlyEmployeePurchaseFooter" xml:space="preserve"><value>تعداد کارکنان خریدار در این ماه:</value></data>
+  <data name="Kpi_PendingApprovals" xml:space="preserve"><value>در انتظار تأیید</value></data>
+  <data name="Kpi_PendingApprovalsFooter_Prefix" xml:space="preserve"><value>قدیمی‌ترین:</value></data>
+  <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve"><value>هیچ سفارش در انتظار تأییدی وجود ندارد</value></data>
+  <data name="Kpi_MonthlyApprovedSales" xml:space="preserve"><value>تعداد فروش های این ماه</value></data>
+  <data name="Kpi_MonthlyApprovedSalesFooter" xml:space="preserve"><value>تأیید شده در ماه جاری</value></data>
+
+  <!-- Weekly revenue sparkline card -->
+  <data name="Chart_WeeklyRevenue" xml:space="preserve"><value>روند درآمد هفتگی</value></data>
+  <data name="Chart_WeeklyRevenue_Sub" xml:space="preserve"><value>۷ روز گذشته • به تفکیک روز</value></data>
+  <data name="Chart_WeeklyLegend_This" xml:space="preserve"><value>این هفته</value></data>
+  <data name="Chart_WeeklyLegend_Last" xml:space="preserve"><value>هفته قبل</value></data>
+  <data name="Chart_WeeklyAvg" xml:space="preserve"><value>میانگین روزانه</value></data>
+  <data name="Chart_WeeklyMax" xml:space="preserve"><value>بالاترین روز</value></data>
+  <data name="Chart_WeeklyGrowth" xml:space="preserve"><value>رشد هفتگی</value></data>
+  <data name="Chart_NoData" xml:space="preserve"><value>هنوز داده‌ای موجود نیست</value></data>
+  <data name="Chart_ViewAll" xml:space="preserve"><value>مشاهده همه</value></data>
+
+  <!-- Status labels — used by StatusLocalizedName in the orders list -->
+  <data name="Status_Approved" xml:space="preserve"><value>تأیید شده</value></data>
+  <data name="Status_Delivered" xml:space="preserve"><value>تحویل شده</value></data>
+  <data name="Status_Pending" xml:space="preserve"><value>در انتظار</value></data>
+  <data name="Status_Cancelled" xml:space="preserve"><value>لغو شده</value></data>
+  <data name="Status_Draft" xml:space="preserve"><value>پیش‌نویس</value></data>
+  <data name="Status_OrdersUnit" xml:space="preserve"><value>سفارش</value></data>
+
+  <!-- Recent orders card -->
+  <data name="Orders_Recent" xml:space="preserve"><value>آخرین سفارش‌ها</value></data>
+  <data name="Orders_Recent_Sub" xml:space="preserve"><value>۶ سفارش اخیر سیستم</value></data>
+  <data name="Orders_Empty" xml:space="preserve"><value>سفارش اخیری برای نمایش وجود ندارد.</value></data>
+  <data name="Orders_Col_Number" xml:space="preserve"><value>شماره سفارش</value></data>
+  <data name="Orders_Col_Customer" xml:space="preserve"><value>کارمند</value></data>
+  <data name="Orders_Col_Product" xml:space="preserve"><value>محصول</value></data>
+  <data name="Orders_Col_Amount" xml:space="preserve"><value>مبلغ</value></data>
+  <data name="Orders_Col_Time" xml:space="preserve"><value>زمان</value></data>
+  <data name="Orders_Col_Status" xml:space="preserve"><value>وضعیت</value></data>
+
+  <!-- Top employees card -->
+  <data name="TopEmployees_Title" xml:space="preserve"><value>کارکنان با بالاترین مبلغ خرید در این ماه</value></data>
+  <data name="TopEmployees_Sub" xml:space="preserve"><value>این ماه</value></data>
+  <data name="TopEmployees_Empty" xml:space="preserve"><value>خرید کارکنان در این ماه ثبت نشده است.</value></data>
+
+  <!-- Quick-access cards -->
+  <data name="Quick_Settings" xml:space="preserve"><value>تنظیمات</value></data>
+  <data name="Quick_Settings_Desc" xml:space="preserve"><value>پیکربندی</value></data>
+  <data name="Quick_Users" xml:space="preserve"><value>کاربران سیستم</value></data>
+  <data name="Quick_Users_Desc" xml:space="preserve"><value>مدیریت کاربران</value></data>
+
+  <!-- Footer — Persian digits to match the convention in other mobile pages -->
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

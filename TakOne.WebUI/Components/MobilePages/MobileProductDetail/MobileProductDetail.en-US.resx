@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileProductDetail.en-US.resx — English strings for MobileProductDetail.razor.
+
+     Mirrors the desktop ProductDetail.en-US.resx for the keys present
+     there (PageTitle, Loading, ErrorTitle, BreadcrumbProducts, AddToCart,
+     AddedToCartTitle, AddedToCart, Error_FailedToLoad [aliased from
+     Error_GenericLoad], Error_AddToCartFailed [aliased from
+     Error_GenericAdd], MyPurchaseLimitHint), plus the MobileProducts-
+     shared budget/add-button/stock/toman/toast keys (BudgetRemaining,
+     BudgetUsed, NoBudget, TomanUnit, OutOfStock, LowStock, InStock,
+     AddButtonReadOnly[Title], AddButtonLimitReached[Title],
+     AddButtonSalaryReached[Title], AddButtonStockOut[Title],
+     ToastQtyMin, ToastLimitReached, ToastQtyClamped, ToastSalaryReached),
+     plus mobile-only keys (BackToProducts, ProductNotFound, NoCategory,
+     RetryButton, AddedToCart, AddedToCartTitle, Error_Unexpected,
+     Error_FailedToLoad, Error_AddToCartFailed, Version).
+
+     The four <resheader> tags below are REQUIRED by the .resx reader —
+     without them, the loader rejects the file with "resx input is not
+     valid, couldn't find valid resheader tags". -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Product — TakOne</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading product…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>Something went wrong</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>We couldn't load this product. Please try again.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>Something went wrong. Please try again.</value></data>
+  <data name="Error_AddToCartFailed" xml:space="preserve"><value>We couldn't add this item to your cart. Please try again.</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>Retry</value></data>
+  <data name="ProductNotFound" xml:space="preserve"><value>This product is no longer available or the link is incorrect.</value></data>
+  <data name="BackToProducts" xml:space="preserve"><value>Back to products</value></data>
+  <data name="BreadcrumbProducts" xml:space="preserve"><value>Products</value></data>
+  <data name="NoCategory" xml:space="preserve"><value>Uncategorized</value></data>
+  <data name="OutOfStock" xml:space="preserve"><value>Out of stock</value></data>
+  <data name="LowStock" xml:space="preserve"><value>Low stock</value></data>
+  <data name="InStock" xml:space="preserve"><value>In stock</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+  <data name="BudgetRemaining" xml:space="preserve"><value>Monthly budget remaining</value></data>
+  <data name="BudgetUsed" xml:space="preserve"><value>Used</value></data>
+  <data name="NoBudget" xml:space="preserve"><value>—</value></data>
+  <data name="AddToCart" xml:space="preserve"><value>Add to cart</value></data>
+  <data name="AddedToCart" xml:space="preserve"><value>Added to cart.</value></data>
+  <data name="AddedToCartTitle" xml:space="preserve"><value>Added to cart</value></data>
+  <data name="MyPurchaseLimitHint" xml:space="preserve"><value>Max {0} per order for your account.</value></data>
+  <data name="AddButtonReadOnly" xml:space="preserve"><value>Read only</value></data>
+  <data name="AddButtonReadOnlyTitle" xml:space="preserve"><value>Your account is read-only and cannot place orders.</value></data>
+  <data name="AddButtonLimitReached" xml:space="preserve"><value>Max reached</value></data>
+  <data name="AddButtonLimitReachedTitle" xml:space="preserve"><value>You have already selected the maximum available per person.</value></data>
+  <data name="AddButtonSalaryReached" xml:space="preserve"><value>Budget reached</value></data>
+  <data name="AddButtonSalaryReachedTitle" xml:space="preserve"><value>Adding this item would exceed your monthly salary budget.</value></data>
+  <data name="AddButtonStockOut" xml:space="preserve"><value>Out of stock</value></data>
+  <data name="AddButtonStockOutTitle" xml:space="preserve"><value>This product is currently out of stock.</value></data>
+  <data name="ToastQtyMin" xml:space="preserve"><value>Quantity must be at least 1.</value></data>
+  <data name="ToastLimitReached" xml:space="preserve"><value>You have reached the purchase limit for this product.</value></data>
+  <data name="ToastQtyClamped" xml:space="preserve"><value>You can only add {0} more — quantity adjusted.</value></data>
+  <data name="ToastSalaryReached" xml:space="preserve"><value>Your monthly salary budget has been reached.</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+</root>

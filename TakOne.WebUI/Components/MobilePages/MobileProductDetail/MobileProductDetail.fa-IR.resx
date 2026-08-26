@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MobileProductDetail.fa-IR.resx — Persian (Farsi) strings for MobileProductDetail.razor.
+
+     Persian text is RTL; the layout direction is handled at the <html dir>
+     level by MobileLayout based on the current culture. Individual strings
+     here don't need RTL markers.
+
+     Mirrors the desktop ProductDetail.fa-IR.resx for the shared keys
+     (PageTitle, Loading, ErrorTitle, BreadcrumbProducts, AddToCart,
+     AddedToCartTitle, AddedToCart, MyPurchaseLimitHint, NotFoundMessage
+     [aliased as ProductNotFound], Error_GenericLoad [aliased as
+     Error_FailedToLoad], Error_GenericAdd [aliased as
+     Error_AddToCartFailed]), plus the MobileProducts-shared budget/add-
+     button/stock/toman/toast keys (BudgetRemaining, BudgetUsed, NoBudget,
+     TomanUnit, OutOfStock[=StockOut], LowStock[=StockLow],
+     InStock[=StockIn], AddButtonReadOnly[Title], AddButtonLimitReached
+     [Title], AddButtonSalaryReached[Title], AddButtonStockOut[Title],
+     ToastQtyMin, ToastLimitReached, ToastQtyClamped, ToastSalaryReached),
+     plus mobile-only keys (BackToProducts, NoCategory, RetryButton,
+     AddedToCartTitle, Error_Unexpected, Version).
+
+     Version uses Persian digits ("تک‌وان نسخه ۱.۰") matching the
+     convention in MobileSales / MobileSettings / MobileSaleDetail.
+
+     The four <resheader> tags below are REQUIRED by the .resx reader —
+     without them, the loader rejects the file with "resx input is not
+     valid, couldn't find valid resheader tags". -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>محصول — تک‌وان</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری محصول…</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>خطایی رخ داد</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری این محصول ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_Unexpected" xml:space="preserve"><value>خطایی غیرمنتظره رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="Error_AddToCartFailed" xml:space="preserve"><value>افزودن این کالا به سبد امکان‌پذیر نبود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="ProductNotFound" xml:space="preserve"><value>این محصول دیگر موجود نیست یا لینک نادرست است.</value></data>
+  <data name="BackToProducts" xml:space="preserve"><value>بازگشت به فهرست محصولات</value></data>
+  <data name="BreadcrumbProducts" xml:space="preserve"><value>محصولات</value></data>
+  <data name="NoCategory" xml:space="preserve"><value>بدون دسته‌بندی</value></data>
+  <data name="OutOfStock" xml:space="preserve"><value>ناموجود</value></data>
+  <data name="LowStock" xml:space="preserve"><value>رو به اتمام</value></data>
+  <data name="InStock" xml:space="preserve"><value>موجود</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+  <data name="BudgetRemaining" xml:space="preserve"><value>بودجهٔ ماهانهٔ باقی‌مانده</value></data>
+  <data name="BudgetUsed" xml:space="preserve"><value>استفاده شده</value></data>
+  <data name="NoBudget" xml:space="preserve"><value>—</value></data>
+  <data name="AddToCart" xml:space="preserve"><value>افزودن به سبد</value></data>
+  <data name="AddedToCart" xml:space="preserve"><value>به سبد اضافه شد.</value></data>
+  <data name="AddedToCartTitle" xml:space="preserve"><value>به سبد افزوده شد</value></data>
+  <data name="MyPurchaseLimitHint" xml:space="preserve"><value>حداکثر {0} عدد در هر سفارش برای حساب شما.</value></data>
+  <data name="AddButtonReadOnly" xml:space="preserve"><value>فقط مشاهده</value></data>
+  <data name="AddButtonReadOnlyTitle" xml:space="preserve"><value>حساب شما فقط قابل مشاهده است و امکان ثبت سفارش ندارد.</value></data>
+  <data name="AddButtonLimitReached" xml:space="preserve"><value>به سقف خرید رسیدید</value></data>
+  <data name="AddButtonLimitReachedTitle" xml:space="preserve"><value>به سقف خرید این محصول برای شما رسیده‌اید.</value></data>
+  <data name="AddButtonSalaryReached" xml:space="preserve"><value>به سقف بودجه رسیدید</value></data>
+  <data name="AddButtonSalaryReachedTitle" xml:space="preserve"><value>افزودن این کالا از بودجهٔ ماهانهٔ حقوق شما فراتر می‌رود.</value></data>
+  <data name="AddButtonStockOut" xml:space="preserve"><value>ناموجود</value></data>
+  <data name="AddButtonStockOutTitle" xml:space="preserve"><value>این محصول در حال حاضر ناموجود است.</value></data>
+  <data name="ToastQtyMin" xml:space="preserve"><value>تعداد باید حداقل ۱ باشد.</value></data>
+  <data name="ToastLimitReached" xml:space="preserve"><value>به سقف خرید این محصول رسیده‌اید.</value></data>
+  <data name="ToastQtyClamped" xml:space="preserve"><value>تنها {0} عدد دیگر می‌توانید اضافه کنید — به این مقدار تنظیم شد.</value></data>
+  <data name="ToastSalaryReached" xml:space="preserve"><value>به سقف بودجهٔ ماهانهٔ حقوق رسیده‌اید.</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

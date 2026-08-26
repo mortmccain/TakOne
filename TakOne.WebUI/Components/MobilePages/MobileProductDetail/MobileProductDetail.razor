@@ -1,0 +1,810 @@
+@* MobileProductDetail.razor — mobile version of the ProductDetail page.
+   Route: /m/Products/{ProductId}
+   Layout: MobileLayout
+
+   PORTS a mobile-friendly subset of the desktop ProductDetail.razor
+   (2277 lines). The desktop page is a hybrid view + staff management
+   surface (photo editor, name/description/price/category/stock edits,
+   per-group purchase-limits editor). MOBILE deliberately drops ALL
+   staff management affordances — they belong on the dedicated
+   /m/Admin/Products surface, not on the customer-facing detail page.
+   What mobile keeps + enhances:
+
+     - Page header with back button + product name + category path
+       subtitle (breadcrumb-style — the subtitle shows the
+       Category › SubCategory › SubSubCategory hierarchy).
+     - Hero image (large product picture, or an SVG placeholder when
+       PictureUrl is null/empty). Mirrors MobileProducts's picture
+       placeholder style.
+     - Price + stock badge row — big Toman-formatted price + a stock
+       badge (Out / Low / In) using the SAME threshold rule as
+       MobileProducts's grid card (≤0 → Out, ≤10 → Low, else In) so
+       a product reads the same on the grid and the detail page.
+     - Category breadcrumb — horizontal scrollable row containing
+       "Products" link (→ /m/Products) + "/" + the Category › Sub ›
+       SubSub path. Reuses the desktop ProductDetail.razor hierarchy
+       computation verbatim.
+     - Long description (when present).
+     - Optional salary-budget mini-card (above the Add button) when
+       the customer has an active salary budget (i.e. the cart's
+       BudgetInfo is populated). Mirrors MobileProducts's .m-budget-card
+       so the customer sees their remaining monthly spend before they
+       choose a quantity.
+     - Qty selector + Add-to-cart — the SAME pattern as MobileProducts:
+       .m-qty-selector with − value + buttons, .m-add-btn Add button.
+       Disable rules mirror MobileProducts exactly:
+         - stock out (product.StockQuantity ≤ 0)
+         - salary budget reached (line total > budget.Remaining)
+         - purchase limit reached (remaining cap ≤ 0)
+         - read-only user (Roles.ReadOnly without shopping roles)
+       After successful add: Toast.Success + NavigateTo(Uri, forceLoad:true)
+       so MobileLayout's cart bar + BottomNav badge refresh.
+     - Loading → error → empty → content state machine (matches the
+       MobileProducts / MobileSaleDetail gold-standard pattern).
+     - .m-footer with Loc["Version"].
+
+   BACKEND CONTRACT (mirrors desktop ProductDetail.razor):
+     - Load: GetProductByIdQuery { ProductId } → Result<ProductDto>.
+       [RequireAuthentication] — any authenticated user can view any
+       active product. The handler scopes purchase limits to the
+       caller's role (admins see all limits; non-admins see only their
+       own group's limit reflected as ProductDto.MyPurchaseLimit).
+     - Cart load: GetActiveCartForUserQuery → Result<CartDto?>.
+       Used to compute "remaining" qty caps (purchase limit + stock
+       already in cart) and to populate the optional budget card.
+     - Add to cart: CreateOrAppendSaleCommand(ProductId, Quantity) →
+       Result<Guid>. [RequireRoles(Customer, Employee, Manager, Admin)]
+       — ReadOnly is NOT in the list, so the backend rejects dispatch
+       from read-only users as defense-in-depth (the UI also disables
+       the button via the _isReadOnly flag).
+
+   ROLE-RESOLUTION PATTERN (matches MobileProducts.razor):
+     _isReadOnly is computed in OnInitializedAsync via
+     ICurrentUserService.IsInRole (the same source MobileProducts uses
+     — different from MobileSaleDetail's AuthenticationStateProvider
+     pattern because the role check is structurally identical to the
+     gold-standard mobile shop page, NOT a staff-action gate).
+
+   MONEY: FormatMoney mirrors MobileProducts.razor's FormatPrice helper
+   (IRR / 10 → Toman, label "تومان" via Loc["TomanUnit"], delegates to
+   CultureFormat.ToCultureDigits for the digit swap, returns "—" for
+   null/empty). This means the detail page's price reads the SAME as the
+   grid page's price — consistent UX.
+
+   TIMEZONE: No timestamps displayed on this page. No FormatTimestamp
+   helper needed.
+
+   ANTIFORGERY: Not needed — no EditForm. All buttons are regular
+   <button> elements with async @onclick handlers that dispatch
+   commands via Wolverine. The Blazor circuit's anti-forgery token is
+   established at circuit start. No form POST happens.
+
+   ROUTE PARAMETER:
+     `ProductId` is a Guid bound from the URL via [Parameter]. The @page
+     constraint `{ProductId:guid}` validates the URL segment is parseable
+     as a Guid before this component even loads — a malformed URL gets a
+     404 from the router, not a runtime exception here. The route param
+     name is `ProductId` (matching the desktop query's `ProductId`
+     property name for symmetry — the desktop page uses `Id` on the
+     route but the underlying query field is `ProductId`).
+*@
+
+@page "/m/Products/{ProductId:guid}"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductById
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetCategoryByIdWithHierarchy
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetActiveCartForUser
+@using TakOne.Application.Sales.Commands.CreateOrAppendSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileProductDetail> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(_product is null ? Loc["PageTitle"] : $"{_product.Name} — TakOne")</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadProductAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_product is null)
+{
+    @* Not-found / not-allowed: the handler returns Result.Failure with a
+       generic "not found" message for both genuinely-missing products AND
+       inactive products that customers shouldn't see (defense-in-depth —
+       never leak that the product exists). Either way the user sees the
+       same friendly ProductNotFound message + a Back-to-Products button. *@
+    <div class="m-empty">
+        <p>@Loc["ProductNotFound"]</p>
+        <button class="m-btn m-btn-secondary" @onclick="GoToProducts">@Loc["BackToProducts"]</button>
+    </div>
+}
+else
+{
+    var remaining = GetRemaining();
+    var limitReached = remaining <= 0;
+    var stockOut = _product.StockQuantity <= 0;
+    var budget = _cart?.BudgetInfo;
+    var unitPrice = _product.Price?.Amount ?? 0m;
+    var lineTotal = unitPrice * _qty;
+    var salaryReached = budget is not null && lineTotal > budget.Remaining;
+    var addDisabled = limitReached || stockOut || salaryReached || _isReadOnly || _isBusy;
+
+    @* ── 1. Page header — back button + product name + category-path
+           subtitle. The .m-page-header-back wrapper + .m-back-btn +
+           .m-page-header-text classes are mobile-detail-specific (also
+           used by MobileSaleDetail) — the orchestrator adds them to
+           mobile.css in a later pass (until then the page renders
+           unstyled-but-functional). *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToProducts"]"
+                title="@Loc["BackToProducts"]"
+                @onclick="GoToProducts">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@_product.Name</h1>
+            <p class="m-page-subtitle">
+                @(string.IsNullOrWhiteSpace(_categoryHierarchy) ? Loc["NoCategory"] : _categoryHierarchy)
+            </p>
+        </div>
+    </div>
+
+    @* ── 2. Hero image — large product picture (or an SVG placeholder when
+           PictureUrl is null/empty). The .m-product-image base class is
+           sized for the small grid-card image (5rem square) — on the
+           detail page we add the .m-product-image-hero modifier to make
+           it span the full content width with a 16:9-ish aspect ratio
+           (orchestrator adds the modifier class to mobile.css in a later
+           pass; until then the hero renders at the small card size —
+           unstyled-but-functional). The placeholder SVG mirrors
+           MobileProducts's photo-icon style so the empty state reads the
+           same on the grid and the detail page. *@
+    <div class="m-product-image m-product-image-hero">
+        @if (!string.IsNullOrWhiteSpace(_product.PictureUrl))
+        {
+            <img src="@_product.PictureUrl" alt="@_product.Name" loading="lazy" />
+        }
+        else
+        {
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="color: var(--tm-gray);">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+            </svg>
+        }
+        @if (stockOut)
+        {
+            <span class="m-stock-badge m-stock-out">@Loc["OutOfStock"]</span>
+        }
+        else if (_product.StockQuantity <= 10)
+        {
+            <span class="m-stock-badge m-stock-low">@Loc["LowStock"]</span>
+        }
+        else
+        {
+            <span class="m-stock-badge m-stock-in">@Loc["InStock"]</span>
+        }
+    </div>
+
+    @* ── 3. Price + stock badge row — big Toman-formatted price (FormatMoney
+           mirrors MobileProducts's FormatPrice so the unit reads the same
+           on the grid and the detail page) — wait, FormatMoney here is
+           semantically the same as MobileProducts's FormatPrice (takes a
+           MoneyDto, returns a localized "{amount} {unit}" string). The
+           stock badge threshold matches MobileProducts (≤0 Out, ≤10 Low,
+           else In). The .m-product-detail-price-row class is page-specific
+           (orchestrator adds it to mobile.css in a later pass). *@
+    <div class="m-product-detail-price-row">
+        <span class="m-product-detail-price">@FormatMoney(_product.Price)</span>
+    </div>
+
+    @* ── 4. Category breadcrumb — horizontal scrollable row. The "Products"
+           link goes to the mobile grid (/m/Products). The category path
+           is the same _categoryHierarchy string computed verbatim from
+           the desktop ProductDetail.razor LoadCategoryHierarchyAsync
+           helper (Category › SubCategory › SubSubCategory). *@
+    @if (!string.IsNullOrWhiteSpace(_categoryHierarchy))
+    {
+        <nav class="m-breadcrumb" aria-label="breadcrumb">
+            <a href="/m/Products" class="m-breadcrumb-link">@Loc["BreadcrumbProducts"]</a>
+            <span class="m-breadcrumb-sep" aria-hidden="true">/</span>
+            <span class="m-breadcrumb-current">@_categoryHierarchy</span>
+        </nav>
+    }
+
+    @* ── 5. Long description — shown only when the product has a non-empty
+           Description. White-space pre-wrap preserves any intentional
+           line breaks the staff wrote in the description textarea. *@
+    @if (!string.IsNullOrWhiteSpace(_product.Description))
+    {
+        <p class="m-product-detail-description">@_product.Description</p>
+    }
+
+    @* ── 6. Optional salary budget mini-card — shown only when the customer
+           has an active salary budget (BudgetInfo is populated by the
+           cart-query handler via ISalaryBudgetService). Mirrors
+           MobileProducts's .m-budget-card so the budget reads the same
+           on the grid and the detail page. The card shows the REMAINING
+           amount (Salary.Amount - Consumed) divided by 10 for IRR (→
+           Toman), plus a "Used: X%" progress bar when the consumed
+           percent is > 0. *@
+    @if (budget is not null && budget.Salary.Amount > 0m)
+    {
+        var consumedPercent = Math.Min(1m, budget.Consumed / budget.Salary.Amount);
+        <div class="m-budget-card">
+            <div class="m-budget-content">
+                <div class="m-budget-info">
+                    <p class="m-budget-label">@Loc["BudgetRemaining"]</p>
+                    <p class="m-budget-amount">@FormatBudgetAmount()</p>
+                    @if (consumedPercent > 0)
+                    {
+                        <div class="m-budget-bar-container">
+                            <div class="m-budget-bar-info">
+                                <span>@Loc["BudgetUsed"]</span>
+                                <span>@CultureFormat.FormatPercent(consumedPercent, 0)</span>
+                            </div>
+                            <div class="m-budget-bar-track">
+                                <div class="m-budget-bar-fill" style="width: @($"{consumedPercent:P0}")"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="m-budget-icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.75rem; height: 1.75rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m3.75 0h7.5M3 5.25h18a.75.75 0 01.75.75v12a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── 7. Qty selector + Add to cart — reuses the EXACT pattern from
+           MobileProducts.razor (the gold-standard mobile shop pattern).
+           .m-qty-selector with − value + buttons; .m-add-btn Add button
+           with a cart-plus icon. Disable rules mirror MobileProducts:
+             - read-only user → disabled button labelled "Read only"
+             - limit reached (remaining ≤ 0, not stockOut) → "Max reached"
+             - salary budget reached (lineTotal > Remaining, not stockOut)
+               → "Budget reached"
+             - stock out → "Out of stock"
+             - otherwise → enabled Add button with cart-plus icon
+           The Add button click dispatches CreateOrAppendSaleCommand
+           (ProductId, _qty); on success, Toast.Success + reload via
+           Navigation.NavigateTo(Uri, forceLoad:true) so MobileLayout's
+           cart bar + BottomNav badge refresh. On failure, Toast.Error
+           with the handler's error message (or a generic fallback). *@
+    <div class="m-product-detail-actions">
+        <div class="m-qty-selector">
+            <button type="button" class="m-qty-btn"
+                    disabled="@(_qty <= 1 || _isReadOnly)"
+                    @onclick="DecrementQty">
+                −
+            </button>
+            <span class="m-qty-value">@CultureFormat.FormatDigits(_qty)</span>
+            <button type="button" class="m-qty-btn"
+                    disabled="@(_qty >= GetQtyMax() || _isReadOnly)"
+                    @onclick="IncrementQty">
+                +
+            </button>
+        </div>
+
+        @if (_isReadOnly)
+        {
+            <button type="button" class="m-add-btn m-add-btn-full" disabled
+                    title="@Loc["AddButtonReadOnlyTitle"]">
+                @Loc["AddButtonReadOnly"]
+            </button>
+        }
+        else if (limitReached && !stockOut)
+        {
+            <button type="button" class="m-add-btn m-add-btn-full" disabled
+                    title="@Loc["AddButtonLimitReachedTitle"]">
+                @Loc["AddButtonLimitReached"]
+            </button>
+        }
+        else if (salaryReached && !stockOut)
+        {
+            <button type="button" class="m-add-btn m-add-btn-full" disabled
+                    title="@Loc["AddButtonSalaryReachedTitle"]">
+                @Loc["AddButtonSalaryReached"]
+            </button>
+        }
+        else if (stockOut)
+        {
+            <button type="button" class="m-add-btn m-add-btn-full" disabled
+                    title="@Loc["AddButtonStockOutTitle"]">
+                @Loc["AddButtonStockOut"]
+            </button>
+        }
+        else
+        {
+            <button type="button" class="m-add-btn"
+                    disabled="@_isBusy"
+                    @onclick="HandleAddToCartAsync">
+                @if (_isBusy)
+                {
+                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                }
+                else
+                {
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 16px; height: 16px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M5.25 6.773l1.922 7.227m-1.922-7.227L5.99 9.75m-.75-3.027A3.003 3.003 0 003.99 3.75H2.25m2.25 0L5.99 9.75M5.25 6.773L4.5 21m1.5-14.227l1.922 7.227M5.99 9.75l1.5 5.625m-1.5-5.625L4.5 21m2.25-5.625l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M16.5 21V9.75M16.5 21l3.75-3.75M16.5 21l-3.75-3.75" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>@Loc["AddToCart"]</span>
+                }
+            </button>
+        }
+    </div>
+
+    @* ── 8. My purchase limit hint — shown only when the customer has a
+           per-product purchase limit set for their group (MyPurchaseLimit
+           is non-null). Mirrors the desktop ProductDetail.razor's hint
+           pattern: "Max {0} per order for your account." Helps the
+           customer understand why the qty + button stops at a certain
+           number before they hit the cap. *@
+    @if (_product.MyPurchaseLimit.HasValue)
+    {
+        <p class="m-purchase-limit-hint">
+            @string.Format(CultureInfo.CurrentCulture, Loc["MyPurchaseLimitHint"], CultureFormat.FormatDigits(_product.MyPurchaseLimit.Value))
+        </p>
+    }
+
+    @* ── 9. Footer — version string. .m-footer is a global mobile class
+           (already in mobile.css). Version is "TakOne v1.0" in en-US and
+           "تک‌وان نسخه ۱.۰" in fa-IR (Persian digits — matches the
+           convention used in MobileSales / MobileSettings / MobileSaleDetail). *@
+    <div class="m-footer">
+        <p>@Loc["Version"]</p>
+    </div>
+}
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    [Parameter]
+    public Guid ProductId { get; set; }
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The loaded product. Null while loading or when the load failed.
+    /// </summary>
+    private ProductDto? _product;
+
+    /// <summary>
+    /// The product's category hierarchy string, computed verbatim from
+    /// the desktop ProductDetail.razor LoadCategoryHierarchyAsync helper
+    /// (Category › SubCategory › SubSubCategory). Empty when the product
+    /// has no Category assigned or the hierarchy lookup failed (non-
+    /// fatal — the breadcrumb + subtitle gracefully omit the path).
+    /// </summary>
+    private string? _categoryHierarchy;
+
+    /// <summary>
+    /// The current user's active shopping cart (Draft sale). Used to
+    /// compute "remaining" qty caps (stock already in cart + purchase
+    /// limit) and to populate the optional salary budget mini-card
+    /// (BudgetInfo). Null when the user has no active draft or the load
+    /// failed (non-fatal — the Add button still works without the cap,
+    /// the backend re-checks server-side).
+    /// </summary>
+    private CartDto? _cart;
+
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    /// <summary>
+    /// Selected quantity in the qty selector. Starts at 1. Clamped to
+    /// [1, GetQtyMax()] by the +/- buttons.
+    /// </summary>
+    private int _qty = 1;
+
+    /// <summary>
+    /// Add-to-cart in-flight guard. Disables the Add button while a
+    /// CreateOrAppendSaleCommand is dispatching so the user can't
+    /// double-tap and create duplicate cart lines.
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// True when the current user is in the ReadOnly role WITHOUT any
+    /// shopping role (Customer/Employee/Manager/Admin). Computed once in
+    /// OnInitializedAsync via ICurrentUserService.IsInRole (same source
+    /// as MobileProducts.razor). ReadOnly users see the Add button
+    /// disabled with a "Read only" label — the backend also rejects
+    /// CreateOrAppendSaleCommand via [RequireRoles(Customer, Employee,
+    /// Manager, Admin)] as defense-in-depth.
+    /// </summary>
+    private bool _isReadOnly;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Role resolution — matches MobileProducts.razor's pattern.
+            // ICurrentUserService is safe here because the role check is
+            // a UX gate (not a security boundary — the backend
+            // [RequireRoles] attribute is authoritative). For interactive
+            // Blazor Server scenarios where ICurrentUserService might
+            // resolve from a stale HttpContext, the worst case is the
+            // button shows as enabled when it should be disabled — the
+            // backend still rejects the dispatch.
+            var canShop = CurrentUser.IsInRole(Roles.Customer)
+                          || CurrentUser.IsInRole(Roles.Employee)
+                          || CurrentUser.IsInRole(Roles.Manager)
+                          || CurrentUser.IsInRole(Roles.Admin);
+            _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly) && !canShop;
+
+            // Load the product and the cart in parallel — the cart is
+            // needed for the budget card + the qty cap computation, the
+            // product is the page itself. The category hierarchy lookup
+            // depends on the product being loaded first (we need the
+            // product's CategoryId) so it's a sequential follow-up.
+            await LoadProductAsync();
+            await Task.WhenAll(LoadCartAsync(), LoadCategoryHierarchyAsync());
+        }
+        catch (Exception)
+        {
+            // Defense-in-depth — the inner loaders swallow their own
+            // exceptions and surface a friendly _loadError, but if
+            // something unexpected happens (e.g. auth state lookup
+            // throws), show the generic error instead of crashing the
+            // circuit.
+            _loadError = Loc["Error_Unexpected"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads the product by Id. Mirrors the desktop ProductDetail.razor
+    /// LoadProductAsync helper verbatim. On success, sets _product; on
+    /// failure, sets _loadError with the handler's error message (or a
+    /// generic fallback). Also resets _qty to 1 so a retry doesn't
+    /// carry over a stale quantity from a previous product load.
+    /// </summary>
+    private async Task LoadProductAsync()
+    {
+        var query = new GetProductByIdQuery { ProductId = ProductId };
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<ProductDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _product = result.Value;
+                _qty = 1;
+                _loadError = string.Empty;
+            }
+            else
+            {
+                _product = null;
+                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+            }
+        }
+        catch (Exception)
+        {
+            _product = null;
+            _loadError = Loc["Error_Unexpected"];
+        }
+    }
+
+    /// <summary>
+    /// Loads the current user's active shopping cart (Draft sale). The
+    /// cart provides BudgetInfo (for the salary budget mini-card) and
+    /// LineItems (for the "remaining" qty cap computation). Non-fatal —
+    /// if the load fails or the user has no active draft, _cart stays
+    /// null and the page renders without the budget card + without the
+    /// qty cap (the backend still rejects over-cap adds).
+    /// Mirrors MobileProducts.razor's LoadCartAsync helper.
+    /// </summary>
+    private async Task LoadCartAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CartDto?>>(new GetActiveCartForUserQuery());
+            if (result.IsSuccess && result.Value is not null)
+            {
+                _cart = result.Value;
+            }
+            else
+            {
+                _cart = null;
+            }
+        }
+        catch
+        {
+            _cart = null;
+        }
+    }
+
+    /// <summary>
+    /// Loads the product's full category hierarchy (Category › SubCategory
+    /// › SubSubCategory) for the breadcrumb + page header subtitle. The
+    /// desktop ProductDetail.razor builds this same string from the same
+    /// query — ported verbatim (just using _product instead of the local
+    /// variable). Non-fatal: if the lookup fails, the breadcrumb simply
+    /// omits the category path.
+    /// </summary>
+    private async Task LoadCategoryHierarchyAsync()
+    {
+        if (_product is null || _product.CategoryId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            var query = new GetCategoryByIdWithHierarchyQuery { CategoryId = _product.CategoryId };
+            var result = await MessageBus.InvokeAsync<Result<CategoryDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                var cat = result.Value;
+                var parts = new List<string> { cat.Name };
+
+                if (_product.SubCategoryId.HasValue)
+                {
+                    var sub = cat.SubCategories.FirstOrDefault(s => s.Id == _product.SubCategoryId.Value);
+                    if (sub is not null)
+                    {
+                        parts.Add(sub.Name);
+
+                        if (_product.SubSubCategoryId.HasValue)
+                        {
+                            var subsub = sub.SubSubCategories.FirstOrDefault(ss => ss.Id == _product.SubSubCategoryId.Value);
+                            if (subsub is not null)
+                            {
+                                parts.Add(subsub.Name);
+                            }
+                        }
+                    }
+                }
+
+                _categoryHierarchy = string.Join(" › ", parts);
+            }
+            // Non-fatal.
+        }
+        catch
+        {
+            // Swallow — breadcrumb is purely a UI nicety.
+        }
+    }
+
+    // ── Qty selector + caps (ported from MobileProducts.razor) ────────
+
+    /// <summary>
+    /// Computes the remaining purchaseable quantity for this product:
+    ///   remaining = min(StockQuantity - inCartQty, MyPurchaseLimit - inCartQty)
+    /// Returns 0 when stock is exhausted OR the purchase limit is reached.
+    /// Mirrors MobileProducts.razor's GetRemainingForProduct helper, just
+    /// for the single loaded product instead of a per-listing lookup.
+    /// </summary>
+    private int GetRemaining()
+    {
+        if (_product is null) return 0;
+
+        var inCart = _cart?.LineItems
+            .Where(li => li.ProductId == _product.Id)
+            .Sum(li => li.Quantity) ?? 0;
+
+        var remainingStock = Math.Max(0, _product.StockQuantity - inCart);
+
+        if (!_product.MyPurchaseLimit.HasValue)
+            return remainingStock;
+
+        var remainingLimit = Math.Max(0, _product.MyPurchaseLimit.Value - inCart);
+        return Math.Min(remainingStock, remainingLimit);
+    }
+
+    /// <summary>
+    /// Computes the maximum selectable quantity in the qty selector.
+    /// Caps at:
+    ///   1. Stock minus in-cart quantity (so you can't add more than what
+    ///      physically remains in inventory).
+    ///   2. MyPurchaseLimit minus in-cart quantity (so you can't add more
+    ///      than your group's per-product cap allows).
+    ///   3. Salary budget remaining divided by unit price (so the qty
+    ///      selector stops before the line total would exceed the budget).
+    /// Mirrors MobileProducts.razor's GetQtyMaxForProduct helper.
+    /// </summary>
+    private int GetQtyMax()
+    {
+        if (_product is null) return 1;
+
+        var remaining = GetRemaining();
+        var cap = _product.MyPurchaseLimit.HasValue
+            ? Math.Min(remaining, _product.StockQuantity)
+            : _product.StockQuantity;
+        var max = Math.Max(1, cap);
+
+        var budget = _cart?.BudgetInfo;
+        if (budget is not null && _product.Price is { } price)
+        {
+            var unitPrice = price.Amount;
+            if (unitPrice > 0m)
+            {
+                var salaryMax = (int)Math.Floor(budget.Remaining / unitPrice);
+                max = Math.Min(max, Math.Max(1, salaryMax));
+            }
+        }
+
+        return max;
+    }
+
+    private void IncrementQty()
+    {
+        var max = GetQtyMax();
+        if (_qty < max)
+        {
+            _qty++;
+        }
+    }
+
+    private void DecrementQty()
+    {
+        if (_qty > 1)
+        {
+            _qty--;
+        }
+    }
+
+    // ── Add to cart (ported from MobileProducts.razor) ─────────────────
+
+    /// <summary>
+    /// Add-to-cart handler. Mirrors MobileProducts.razor's AddToCartAsync
+    /// helper, adapted for the single-product case. The handler dispatches
+    /// CreateOrAppendSaleCommand(ProductId, _qty) → Result&lt;Guid&gt;
+    /// (the Sale Id). On success: Toast.Success + navigate to the current
+    /// URI with forceLoad:true so MobileLayout's cart bar + BottomNav
+    /// badge refresh. On failure: Toast.Error with the handler's error
+    /// message (or a generic fallback).
+    /// </summary>
+    private async Task HandleAddToCartAsync()
+    {
+        if (_isBusy || _product is null) return;
+
+        var qty = _qty;
+        if (qty < 1)
+        {
+            await Toast.Warning(Loc["ToastQtyMin"]);
+            return;
+        }
+
+        var remaining = GetRemaining();
+        if (remaining <= 0)
+        {
+            await Toast.Warning(Loc["ToastLimitReached"]);
+            return;
+        }
+        if (qty > remaining)
+        {
+            qty = remaining;
+            await Toast.Info(string.Format(CultureInfo.CurrentCulture, Loc["ToastQtyClamped"], CultureFormat.FormatDigits(remaining)));
+        }
+
+        var budget = _cart?.BudgetInfo;
+        if (budget is not null)
+        {
+            var unitPrice = _product.Price?.Amount ?? 0m;
+            var lineTotal = unitPrice * qty;
+            if (lineTotal > budget.Remaining)
+            {
+                await Toast.Warning(Loc["ToastSalaryReached"]);
+                return;
+            }
+        }
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateOrAppendSaleCommand(_product.Id, qty));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["AddedToCart"], summary: Loc["AddedToCartTitle"]);
+                _qty = 1;
+                // Reload the page so MobileLayout's cart bar + BottomNav
+                // badge update with the new cart state. forceLoad:true
+                // triggers a full page refresh (matches MobileProducts).
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_AddToCartFailed"], summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_AddToCartFailed"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────
+
+    private void GoToProducts()
+        => Navigation.NavigateTo("/m/Products", forceLoad: false);
+
+    // ── Formatting helpers (mirror MobileProducts.razor) ──────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman: IRR is divided by 10 and
+    /// labelled with the localized "Toman" unit; other currencies pass
+    /// through unchanged with their own currency code. Returns "—" for
+    /// null or zero-with-empty-currency amounts (cleaner than "0 تومان"
+    /// on an empty price tag).
+    ///
+    /// Mirrors MobileProducts.razor's FormatPrice helper exactly so the
+    /// detail page's price reads the SAME as the grid page's price —
+    /// consistent UX between the two pages that link to each other.
+    /// </summary>
+    private string FormatMoney(MoneyDto? price)
+    {
+        if (price is null) return "—";
+        var isIrr = string.Equals(price.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var displayAmount = isIrr ? price.Amount / 10m : price.Amount;
+        var amount = CultureFormat.ToCultureDigits(displayAmount.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : price.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Formats the remaining salary budget amount for the budget mini-
+    /// card. Mirrors MobileProducts.razor's FormatBudgetAmount helper.
+    /// Returns "—" when no budget is loaded (defensive — the card is
+    /// only rendered when budget.Salary.Amount > 0, so this fallback is
+    /// a dead code path but kept for parity with MobileProducts).
+    /// </summary>
+    private string FormatBudgetAmount()
+    {
+        var budget = _cart?.BudgetInfo;
+        if (budget is null || budget.Salary.Amount <= 0m) return Loc["NoBudget"];
+
+        var isIrr = string.Equals(budget.Salary.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var remaining = isIrr ? budget.Remaining / 10m : budget.Remaining;
+        var amount = CultureFormat.ToCultureDigits(Math.Max(0, remaining).ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : budget.Salary.Currency;
+        return $"{amount} {unit}";
+    }
+}
