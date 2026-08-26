@@ -102,6 +102,20 @@ public sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Syste
 
         builder.Property(s => s.UpdatedAt).IsRequired();
 
+        // ------------------------------------------------------------------
+        // LastKnownAppVersion: nullable nvarchar(50). Set by
+        // AppUpdateBroadcasterHostedService at startup. Null on fresh
+        // install (the seeded row) and on first boot of a new version —
+        // the hosted service writes the running version after its
+        // version-check, so subsequent restarts with the same version
+        // short-circuit.
+        //
+        // 50 chars is generous: semver '1.2.0-beta1+sha.abc123def' is ~28.
+        // ------------------------------------------------------------------
+        builder.Property(s => s.LastKnownAppVersion)
+            .HasMaxLength(50)
+            .IsRequired(false);
+
         // Unique index on Id — redundant with the PK, but explicit. Makes
         // it obvious at the schema level that this table can only ever have
         // one row.
@@ -137,7 +151,10 @@ public sealed class SystemSettingsConfiguration : IEntityTypeConfiguration<Syste
         {
             Id = Guid.Empty,
             LimitMode = LimitMode.CountOnly,
-            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            // Null on fresh install — the hosted service writes the
+            // running version on first boot.
+            LastKnownAppVersion = (string?)null
         });
     }
 }

@@ -92,6 +92,9 @@
   <data name="ManageGroups" xml:space="preserve">
     <value>گروه‌های مشتریان</value>
   </data>
+  <data name="ManageNotifications" xml:space="preserve">
+    <value>اعلان‌های گروهی</value>
+  </data>
   <data name="Profile" xml:space="preserve">
     <value>پروفایل</value>
   </data>

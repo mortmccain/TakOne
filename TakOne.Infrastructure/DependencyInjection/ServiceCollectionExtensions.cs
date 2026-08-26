@@ -584,6 +584,7 @@ public static class ServiceCollectionExtensions
         //       run inside Wolverine's enrolled EF Core transaction.
         // ------------------------------------------------------------------
         services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<IBroadcastNotificationRepository, BroadcastNotificationRepository>();
 
         // ------------------------------------------------------------------
         // 5c. Claims transformation — keeps FullName claim current.

@@ -76,6 +76,22 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
             .HasMaxLength(500)
             .IsRequired(false);
 
+        // ── BROADCAST FANOUT FIELDS ──
+        // Title + Message are populated by Notification.CreateBroadcast()
+        // (admin-authored broadcast or system-emitted AppUpdate). Null for
+        // sale-lifecycle notifications. BroadcastId is the back-pointer to
+        // the parent BroadcastNotification aggregate's Id.
+        builder.Property(n => n.Title)
+            .HasMaxLength(200)
+            .IsRequired(false);
+
+        builder.Property(n => n.Message)
+            .HasMaxLength(1000)
+            .IsRequired(false);
+
+        builder.Property(n => n.BroadcastId)
+            .IsRequired(false);
+
         builder.Property(n => n.CreatedAtUtc)
             .HasColumnType("datetime2")
             .IsRequired();
@@ -108,5 +124,17 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
             .IsUnique()
             .HasDatabaseName("UX_Notifications_UserId_SaleId_Kind")
             .HasFilter("[SaleId] IS NOT NULL");
+
+        // ── BROADCAST CORRELATION INDEX ──
+        // Lets the admin's "broadcast detail" page (future) find all
+        // per-user fanout rows for a given BroadcastNotification.Id in a
+        // single index seek. Nullable column, so unfiltered index covers
+        // all rows; the WHERE BroadcastId IS NOT NULL filter would make
+        // it a smaller filtered index but the admin's detail-page query
+        // is rare enough that the unfiltered index's slightly larger size
+        // is acceptable (and it doubles as a fanout-row existence check).
+        builder.HasIndex(n => n.BroadcastId)
+            .HasDatabaseName("IX_Notifications_BroadcastId")
+            .HasFilter("[BroadcastId] IS NOT NULL");
     }
 }

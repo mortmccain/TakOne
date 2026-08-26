@@ -1,0 +1,732 @@
+@* AdminNotifications.razor — desktop broadcast-notifications admin page.
+   Route: /Admin/Notifications
+   Layout: MainLayout (via App.razor's default layout)
+
+   PURPOSE: Admin-only control center for the broadcast-notification system
+   introduced in Round 11 / Phase 2. Lets an admin:
+     1. Compose a free-form broadcast (Title + Message) and target it at
+        one of four audiences:
+          - Everyone (Scope=All)
+          - By Role   (Scope=Role, TargetRoleName from the 5 Roles constants)
+          - By Group  (Scope=Group, TargetGroupId loaded via
+                       GetAllCustomerGroupsQuery)
+          - To User   (Scope=User, TargetUserId searched via
+                       GetUsersPaginatedQuery by WorkerId or FullName)
+     2. Audit every past broadcast — both admin-authored (FanoutKind=Broadcast)
+        and system-emitted app-update broadcasts (FanoutKind=AppUpdate) — in a
+        paginated list with sender name, scope badge, recipient count, etc.
+
+   VISUAL PARITY: this page mirrors the Notifications.razor style
+   (loading-skeleton → error-box → empty-state → content state machine;
+   .notif-segmented control; .notif-card row layout; relative-time
+   "just now / N min ago / N hr ago / N d ago" formatter; pagination
+   prev/next + "Page X of Y"). The compose form sits above the audit list
+   in the same .notif-page container.
+
+   ROUTES/QUERIES/COMMANDS:
+     - @page "/Admin/Notifications", [Authorize(Roles = "Admin")]
+     - GetAllCustomerGroupsQuery (IncludeInactive=false) → Result<List<CustomerGroupListItemDto>>
+     - GetUsersPaginatedQuery (PageNumber=1, PageSize=20, SearchTerm=_userSearchTerm) → PaginatedResult<UserListItemDto>
+     - GetBroadcastNotificationsQuery (PageNumber, PageSize=10) → PaginatedResult<BroadcastNotificationDto>
+     - SendBroadcastNotificationCommand (Title, Message, Scope, TargetRoleName, TargetGroupId, TargetUserId) → Result<int>
+*@
+
+@page "/Admin/Notifications"
+@attribute [Authorize(Roles = "Admin")]
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using Radzen
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Notifications.Commands.SendBroadcastNotification
+@using TakOne.Application.Notifications.Queries.GetBroadcastNotifications
+@using TakOne.Application.Notifications.DTOs
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Users.Queries.GetUsersPaginated
+@using TakOne.Application.Users.DTOs
+@using TakOne.Domain.Notifications.Enums
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<AdminNotifications> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+<HeadContent>
+    <style>
+        .notif-page { padding: 1rem 0 3rem; }
+        .notif-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .notif-header-title { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 auto; min-width: 0; }
+        .notif-header-title h1 { margin: 0; font-size: 1.5rem; font-weight: 600; color: var(--rz-text-color); }
+        .notif-header-title .rz-icon { color: var(--rz-primary); font-size: 1.75rem; }
+        .notif-header-subtitle { color: var(--rz-text-secondary-color); font-size: 0.9rem; margin-top: 0.25rem; }
+
+        .notif-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+        .notif-segmented { display: inline-flex; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 8px; padding: 2px; flex-wrap: wrap; }
+        .notif-segment { border: none; background: transparent; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; color: var(--rz-text-secondary-color); font-size: 0.875rem; font-weight: 500; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.15s ease; }
+        .notif-segment:hover { color: var(--rz-text-color); }
+        .notif-segment.active { background: var(--rz-primary); color: var(--rz-primary-text-color); }
+        .notif-segment-badge { background: rgba(255,255,255,0.25); border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.7rem; min-width: 1.2rem; text-align: center; }
+        .notif-segment:not(.active) .notif-segment-badge { background: var(--rz-primary); color: var(--rz-primary-text-color); }
+
+        .notif-list { display: flex; flex-direction: column; gap: 0.75rem; }
+        .notif-card { display: flex; gap: 1rem; padding: 1rem 1.25rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 10px; transition: all 0.15s ease; position: relative; }
+        .notif-card:hover { border-color: var(--rz-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .notif-icon { flex-shrink: 0; width: 2.5rem; height: 2.5rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .notif-icon-broadcast { background: rgba(0, 100, 250, 0.12); color: #0079b5; }
+        .notif-icon-appupdate { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
+        .notif-icon-system { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
+        .notif-body { flex: 1; min-width: 0; }
+        .notif-title { font-weight: 600; color: var(--rz-text-color); margin-bottom: 0.25rem; }
+        .notif-message { color: var(--rz-text-secondary-color); font-size: 0.9rem; line-height: 1.5; }
+        .notif-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--rz-text-secondary-color); flex-wrap: wrap; }
+        .notif-sale { font-weight: 500; color: var(--rz-text-color); }
+        .notif-sep { opacity: 0.5; }
+        .notif-badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 500; }
+        .notif-badge-all { background: rgba(0, 100, 250, 0.12); color: #0079b5; }
+        .notif-badge-role { background: rgba(15, 157, 88, 0.12); color: #0f9d58; }
+        .notif-badge-group { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
+        .notif-badge-user { background: rgba(123, 31, 162, 0.12); color: #7b1fa2; }
+        .notif-badge-kind-broadcast { background: rgba(0, 100, 250, 0.12); color: #0079b5; }
+        .notif-badge-kind-appupdate { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
+        .notif-reached { margin-top: 0.5rem; font-size: 0.75rem; color: var(--rz-text-secondary-color); display: inline-flex; align-items: center; gap: 0.3rem; }
+
+        .notif-empty { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 4rem 1rem; color: var(--rz-text-secondary-color); text-align: center; }
+        .notif-empty .rz-icon { font-size: 4rem; opacity: 0.4; }
+        .notif-empty-title { font-size: 1.1rem; font-weight: 500; }
+        .notif-empty-hint { font-size: 0.85rem; max-width: 28rem; }
+
+        .notif-pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+        .notif-pagination-info { color: var(--rz-text-secondary-color); font-size: 0.85rem; }
+
+        .notif-skeleton { display: flex; gap: 1rem; padding: 1rem 1.25rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 10px; }
+        .notif-error { padding: 1.25rem; background: rgba(220,53,69,0.08); border: 1px solid rgba(220,53,69,0.3); border-radius: 10px; color: var(--rz-text-color); display: flex; flex-direction: column; gap: 0.75rem; }
+
+        /* ── Compose form ── */
+        .notif-compose { padding: 1.25rem 1.5rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 12px; margin-bottom: 2rem; }
+        .notif-compose-heading { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+        .notif-compose-heading h2 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--rz-text-color); }
+        .notif-compose-heading .rz-icon { color: var(--rz-primary); font-size: 1.25rem; }
+        .notif-compose-subtitle { color: var(--rz-text-secondary-color); font-size: 0.85rem; margin-bottom: 1.25rem; }
+        .notif-form-field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+        .notif-form-label { font-size: 0.85rem; font-weight: 500; color: var(--rz-text-color); }
+        .notif-form-hint { color: var(--rz-text-secondary-color); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+        .notif-segment-row { margin-bottom: 1rem; }
+        .notif-target { margin-bottom: 1rem; }
+        .notif-send-row { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+        .notif-audit-header { margin-bottom: 1rem; }
+        .notif-audit-header h2 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--rz-text-color); }
+        .notif-audit-subtitle { color: var(--rz-text-secondary-color); font-size: 0.85rem; margin-top: 0.25rem; }
+    </style>
+</HeadContent>
+
+<RadzenStack Orientation="Orientation.Vertical" Gap="1rem" Class="notif-page">
+    @* ── Page header ── *@
+    <div class="notif-header">
+        <div class="notif-header-title">
+            <RadzenIcon Icon="campaign" Class="rz-icon" />
+            <div>
+                <h1>@Loc["PageHeading"]</h1>
+                <p class="notif-header-subtitle">@Loc["PageSubtitle"]</p>
+            </div>
+        </div>
+    </div>
+
+    @* ── Compose form ── *@
+    <div class="notif-compose">
+        <div class="notif-compose-heading">
+            <RadzenIcon Icon="edit_square" Class="rz-icon" />
+            <h2>@Loc["ComposeHeading"]</h2>
+        </div>
+        <p class="notif-compose-subtitle">@Loc["ComposeSubtitle"]</p>
+
+        <div class="notif-form-field">
+            <label class="notif-form-label" for="bc-title">@Loc["TitleLabel"]</label>
+            <RadzenTextBox @bind-Value="_title"
+                           id="bc-title"
+                           Placeholder="@Loc["TitlePlaceholder"]"
+                           MaxLength="200"
+                           Style="width: 100%;" />
+        </div>
+
+        <div class="notif-form-field">
+            <label class="notif-form-label" for="bc-msg">@Loc["MessageLabel"]</label>
+            <RadzenTextArea @bind-Value="_message"
+                            id="bc-msg"
+                            Placeholder="@Loc["MessagePlaceholder"]"
+                            MaxLength="1000"
+                            Rows="4"
+                            Style="width: 100%; min-height: 6rem;" />
+        </div>
+
+        <div class="notif-form-field">
+            <label class="notif-form-label">@Loc["ScopeLabel"]</label>
+            <div class="notif-segmented notif-segment-row" role="tablist">
+                <button type="button" class="notif-segment @(_scope == BroadcastScope.All ? "active" : "")" @onclick='() => SetScope(BroadcastScope.All)'>
+                    @Loc["ScopeAll"]
+                </button>
+                <button type="button" class="notif-segment @(_scope == BroadcastScope.Role ? "active" : "")" @onclick='() => SetScope(BroadcastScope.Role)'>
+                    @Loc["ScopeRole"]
+                </button>
+                <button type="button" class="notif-segment @(_scope == BroadcastScope.Group ? "active" : "")" @onclick='() => SetScope(BroadcastScope.Group)'>
+                    @Loc["ScopeGroup"]
+                </button>
+                <button type="button" class="notif-segment @(_scope == BroadcastScope.User ? "active" : "")" @onclick='() => SetScope(BroadcastScope.User)'>
+                    @Loc["ScopeUser"]
+                </button>
+            </div>
+        </div>
+
+        @* ── Target selectors, conditionally shown per scope ── *@
+        @if (_scope == BroadcastScope.All)
+        {
+            <div class="notif-form-field notif-target">
+                <p class="notif-form-hint">
+                    <RadzenIcon Icon="public" /> @Loc["ScopeAllHint"]
+                </p>
+            </div>
+        }
+        else if (_scope == BroadcastScope.Role)
+        {
+            <div class="notif-form-field notif-target">
+                <label class="notif-form-label" for="bc-role">@Loc["TargetRoleLabel"]</label>
+                <RadzenDropDown id="bc-role"
+                                @bind-Value="_targetRoleName"
+                                Data="_roleNames"
+                                Placeholder="@Loc["TargetRoleLabel"]"
+                                Style="width: 100%;"
+                                AllowClear="true" />
+            </div>
+        }
+        else if (_scope == BroadcastScope.Group)
+        {
+            <div class="notif-form-field notif-target">
+                <label class="notif-form-label" for="bc-group">@Loc["TargetGroupLabel"]</label>
+                @if (_groups.Count == 0)
+                {
+                    <p class="notif-form-hint">@Loc["NoGroupsHint"]</p>
+                }
+                else
+                {
+                    <RadzenDropDown id="bc-group"
+                                    @bind-Value="_targetGroupId"
+                                    Data="_groups"
+                                    TextProperty="Name"
+                                    ValueProperty="Id"
+                                    Placeholder="@Loc["TargetGroupLabel"]"
+                                    Style="width: 100%;"
+                                    AllowClear="true" />
+                }
+            </div>
+        }
+        else if (_scope == BroadcastScope.User)
+        {
+            <div class="notif-form-field notif-target">
+                <label class="notif-form-label" for="bc-user">@Loc["TargetUserLabel"]</label>
+                <RadzenTextBox id="bc-user-search"
+                               @bind-Value="_userSearchTerm"
+                               @bind:event="oninput"
+                               @bind:after="SearchUsersAsync"
+                               Placeholder="@Loc["TargetUserSearchPlaceholder"]"
+                               Style="width: 100%;"
+                               Debounce="300" />
+                @if (_users.Count > 0)
+                {
+                    <RadzenDropDown id="bc-user"
+                                    @bind-Value="_targetUserId"
+                                    Data="_users"
+                                    TextProperty="FullName"
+                                    ValueProperty="Id"
+                                    Placeholder="@Loc["TargetUserLabel"]"
+                                    Style="width: 100%; margin-top: 0.5rem;"
+                                    AllowClear="true">
+                        <Template Context="u">
+                            <span>@u.WorkerId — @u.FullName</span>
+                        </Template>
+                    </RadzenDropDown>
+                }
+            </div>
+        }
+
+        <div class="notif-send-row">
+            <RadzenButton Text="@(_isSending ? Loc["SendingButton"] : Loc["SendButton"])"
+                          Icon="@(_isSending ? "hourglass_top" : "send")"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Disabled="@(_isSending || string.IsNullOrEmpty(_title) || string.IsNullOrEmpty(_message))"
+                          Click="@SendAsync" />
+        </div>
+    </div>
+
+    @* ── Audit list ── *@
+    <div class="notif-audit-header">
+        <h2>@Loc["AuditHeading"]</h2>
+        <p class="notif-audit-subtitle">@Loc["AuditSubtitle"]</p>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="notif-list">
+            @for (var i = 0; i < 5; i++)
+            {
+                <div class="notif-skeleton">
+                    <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 0.5rem;">
+                        <div style="height: 1rem; background: var(--rz-border-color); border-radius: 4px; width: 40%;"></div>
+                        <div style="height: 0.85rem; background: var(--rz-border-color); border-radius: 4px; width: 70%;"></div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="notif-error">
+            <p>@_loadError</p>
+            <RadzenButton Text="@Loc["RetryButton"]"
+                          Icon="refresh"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Outlined"
+                          Click="@LoadBroadcastsAsync" />
+        </div>
+    }
+    else if (_broadcasts.Count == 0)
+    {
+        <div class="notif-empty">
+            <RadzenIcon Icon="campaign" Class="rz-icon" />
+            <p class="notif-empty-title">@Loc["EmptyAuditTitle"]</p>
+            <p class="notif-empty-hint">@Loc["EmptyAuditHint"]</p>
+        </div>
+    }
+    else
+    {
+        <div class="notif-list">
+            @foreach (var b in _broadcasts)
+            {
+                <div class="notif-card">
+                    <div class="notif-icon @GetSenderIconClass(b)">
+                        <RadzenIcon Icon="@GetSenderIcon(b)" />
+                    </div>
+                    <div class="notif-body">
+                        <div class="notif-title">@b.Title</div>
+                        <div class="notif-message">@b.Message</div>
+                        <div class="notif-meta">
+                            <span class="notif-badge @GetScopeBadgeClass(b)">
+                                @GetScopeBadge(b)
+                            </span>
+                            <span class="notif-badge @GetKindBadgeClass(b)">
+                                <RadzenIcon Icon="@GetKindIcon(b)" /> @GetKindLabel(b)
+                            </span>
+                            <span class="notif-sep" aria-hidden="true">·</span>
+                            <span>@GetSenderLabel(b)</span>
+                            <span class="notif-sep" aria-hidden="true">·</span>
+                            <span>@FormatRelativeTime(b.SentAtUtc)</span>
+                        </div>
+                        <div class="notif-reached">
+                            <RadzenIcon Icon="group" />
+                            <span>@string.Format(Loc["ReachedNUsers"], b.RecipientCount)</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (_totalPages > 1)
+        {
+            <div class="notif-pagination">
+                <RadzenButton Text="@Loc["PrevPage"]"
+                              Icon="chevron_left"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Disabled="@(_pageNumber <= 1 || _isLoadingPage)"
+                              Click="@(() => LoadPageAsync(_pageNumber - 1))" />
+                <span class="notif-pagination-info">@string.Format(Loc["PageFormat"], _pageNumber, _totalPages)</span>
+                <RadzenButton Text="@Loc["NextPage"]"
+                              Icon="chevron_right"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Disabled="@(_pageNumber >= _totalPages || _isLoadingPage)"
+                              Click="@(() => LoadPageAsync(_pageNumber + 1))" />
+            </div>
+        }
+    }
+</RadzenStack>
+
+@code {
+    // ── Compose form state ──
+    private string _title = "";
+    private string _message = "";
+    private BroadcastScope _scope = BroadcastScope.All;
+    private string? _targetRoleName;
+    private Guid? _targetGroupId;
+    private Guid? _targetUserId;
+
+    // ── Target-selector data ──
+    private readonly List<string> _roleNames = new()
+    {
+        Roles.Admin,
+        Roles.Manager,
+        Roles.Employee,
+        Roles.ReadOnly,
+        Roles.Customer
+    };
+    private List<CustomerGroupListItemDto> _groups = new();
+    private string _userSearchTerm = "";
+    private List<UserListItemDto> _users = new();
+
+    // ── Audit list state ──
+    private List<BroadcastNotificationDto> _broadcasts = new();
+    private int _pageNumber = 1;
+    private int _totalPages;
+
+    // ── Lifecycle flags ──
+    private bool _isSending;
+    private bool _isLoading = true;
+    private bool _isLoadingPage;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Load customer groups for the Scope=Group dropdown (active only).
+            var groupsResult = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = false });
+            if (groupsResult.IsSuccess)
+            {
+                _groups = groupsResult.Value;
+            }
+            // If the groups query fails, we silently leave _groups empty —
+            // the Scope=Group target renders a "no groups available" hint
+            // and the admin can still broadcast to All / Role / User.
+
+            // Initial broadcast-audit page (page 1).
+            await LoadBroadcastsAsync();
+        }
+        catch
+        {
+            // Best-effort: groups may fail to load but the audit list may
+            // still succeed (or vice-versa). Surface a load error only if
+            // the broadcasts query itself threw.
+            _loadError = Loc["Err_Load"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Loads the broadcast audit list at the current <see cref="_pageNumber"/>.
+    /// Surfaces a localized error via <see cref="_loadError"/> if the
+    /// query throws (defense-in-depth — the handler returns an empty page
+    /// on auth failure rather than throwing, but a Wolverine transport
+    /// error or transient DB outage should still surface to the admin).
+    /// </summary>
+    private async Task LoadBroadcastsAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var query = new GetBroadcastNotificationsQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = 10
+            };
+
+            var page = await MessageBus.InvokeAsync<PaginatedResult<BroadcastNotificationDto>>(query);
+
+            _broadcasts = page.Items.ToList();
+            _totalPages = page.TotalPages;
+        }
+        catch
+        {
+            _loadError = Loc["Err_Load"];
+        }
+    }
+
+    /// <summary>
+    /// Paginates the audit list — bound to the prev/next buttons. Bounds-
+    /// checks the requested page (defensive) and toggles the per-page
+    /// loading flag so the buttons disable during the round-trip.
+    /// </summary>
+    private async Task LoadPageAsync(int page)
+    {
+        if (page < 1 || page > _totalPages) return;
+        _pageNumber = page;
+        _isLoadingPage = true;
+        try
+        {
+            await LoadBroadcastsAsync();
+        }
+        finally
+        {
+            _isLoadingPage = false;
+        }
+    }
+
+    /// <summary>
+    /// Switches the chosen audience scope and resets any stale target
+    /// selection from the previously chosen scope. (When the admin flips
+    /// from "By Group" to "Everyone", we don't want the previously
+    /// selected group Guid to leak into the SendBroadcastNotificationCommand
+    /// — the domain aggregate's factory would reject it, but it's cleaner
+    /// to clear it client-side so the UI never sends a contradictory
+    /// Scope/TargetUserId combination in the first place.)
+    /// </summary>
+    private void SetScope(BroadcastScope scope)
+    {
+        if (_scope == scope) return;
+        _scope = scope;
+        _targetRoleName = null;
+        _targetGroupId = null;
+        _targetUserId = null;
+        _userSearchTerm = "";
+        _users = new();
+    }
+
+    /// <summary>
+    /// Live-searches users by WorkerId or FullName when the admin is in
+    /// the "To User" scope. Bound to the @bind:after hook of the search
+    /// RadzenTextBox (which has Debounce=300ms built-in, so we don't
+    /// need our own debounce timer). Replaces _users with the new result
+    /// set so the dropdown below the search box reflects the latest query.
+    /// </summary>
+    private async Task SearchUsersAsync()
+    {
+        // Skip the call for short queries — the server-side handler does
+        // the same check, but avoiding the round-trip for 1-2 chars keeps
+        // the UI snappy and prevents noisy DB scans on every keystroke.
+        var term = _userSearchTerm?.Trim() ?? "";
+        if (term.Length < 2)
+        {
+            _users = new();
+            return;
+        }
+
+        try
+        {
+            var query = new GetUsersPaginatedQuery
+            {
+                SearchTerm = term,
+                PageNumber = 1,
+                PageSize = 20
+            };
+            var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(query);
+            _users = page.Items.ToList();
+        }
+        catch
+        {
+            // Silent — best-effort search. If it fails, the admin can retry.
+            _users = new();
+        }
+    }
+
+    /// <summary>
+    /// Sends the broadcast via SendBroadcastNotificationCommand. Maps known
+    /// stable error codes from <see cref="TakOne.Application.Notifications.Errors.NotificationErrors"/>
+    /// to localized messages via <see cref="LocalizeError"/>. On success,
+    /// shows a toast with the recipient count, clears the form, and reloads
+    /// the audit list (page 1) so the just-sent broadcast appears at the top.
+    /// </summary>
+    private async Task SendAsync()
+    {
+        if (_isSending) return;
+        if (string.IsNullOrEmpty(_title) || string.IsNullOrEmpty(_message)) return;
+
+        _isSending = true;
+        try
+        {
+            var cmd = new SendBroadcastNotificationCommand(
+                Title: _title,
+                Message: _message,
+                Scope: _scope,
+                TargetRoleName: _scope == BroadcastScope.Role ? _targetRoleName : null,
+                TargetGroupId: _scope == BroadcastScope.Group ? _targetGroupId : null,
+                TargetUserId: _scope == BroadcastScope.User ? _targetUserId : null);
+
+            var result = await MessageBus.InvokeAsync<Result<int>>(cmd);
+
+            if (result.IsSuccess)
+            {
+                // Special-case the "0 recipients" toast — the handler still
+                // creates the audit row + an empty fanout (no per-user rows).
+                // The admin should know their broadcast reached nobody.
+                if (result.Value == 0)
+                {
+                    await Toast.Success(Loc["Toast_NoRecipients"]);
+                }
+                else
+                {
+                    await Toast.Success(string.Format(Loc["Toast_Sent"], result.Value));
+                }
+
+                // Clear the form for the next broadcast.
+                _title = "";
+                _message = "";
+                _scope = BroadcastScope.All;
+                _targetRoleName = null;
+                _targetGroupId = null;
+                _targetUserId = null;
+                _userSearchTerm = "";
+                _users = new();
+
+                // Reload audit page 1 so the just-sent broadcast appears at the top.
+                _pageNumber = 1;
+                await LoadBroadcastsAsync();
+            }
+            else
+            {
+                // Map stable error codes to localized messages. Unknown
+                // codes fall through to a generic "Could not send" toast
+                // with the raw code appended (so future codes surface to
+                // the admin rather than silently swallowing).
+                var message = LocalizeError(result.Error);
+                await Toast.Error(message);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Wolverine transport / serialization / DB-transient failures
+            // land here. Surface a generic localized toast + the message
+            // for diagnostics (the admin can screenshot this for support).
+            await Toast.Error(Loc["Err_Send"] + ": " + ex.Message);
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    /// <summary>
+    /// Maps a stable error code from
+    /// <see cref="TakOne.Application.Notifications.Errors.NotificationErrors"/>
+    /// to its localized UI message. Falls back to a generic "Could not send"
+    /// message with the raw code appended for unknown codes (so future
+    /// codes surface to the admin instead of silently swallowing).
+    /// </summary>
+    private string LocalizeError(string? code)
+    {
+        return code switch
+        {
+            "BroadcastAuthRequired" => Loc["Err_AuthRequired"],
+            "BroadcastGroupNotFound" => Loc["Err_GroupNotFound"],
+            "BroadcastUserNotFound" => Loc["Err_UserNotFound"],
+            "BroadcastUserInactive" => Loc["Err_UserInactive"],
+            _ => Loc["Err_Send"] + (string.IsNullOrEmpty(code) ? "" : $" ({code})")
+        };
+    }
+
+    // ── Audit-list display helpers ──
+
+    /// <summary>
+    /// Returns "System" (with a leading "·" sep handled by the markup) for
+    /// system-emitted broadcasts (SentByUserId == Guid.Empty); otherwise the
+    /// resolved display name (or a localized "Unknown" fallback if the
+    /// user was hard-deleted after the broadcast).
+    /// </summary>
+    private string GetSenderLabel(BroadcastNotificationDto b)
+    {
+        if (b.SentByUserId == Guid.Empty) return Loc["SenderSystem"];
+        return !string.IsNullOrWhiteSpace(b.SentByUserName) ? b.SentByUserName! : Loc["SenderUnknown"];
+    }
+
+    /// <summary>
+    /// Returns the Material Symbols icon name to render for the broadcast's
+    /// "sender / kind" thumbnail. AppUpdate broadcasts always use the
+    /// system_update icon; admin-authored Broadcasts use the campaign icon;
+    /// system-emitted (SentByUserId == Guid.Empty) broadcasts use the gear icon.
+    /// </summary>
+    private static string GetSenderIcon(BroadcastNotificationDto b)
+    {
+        if (b.FanoutKind == NotificationKind.AppUpdate) return "system_update";
+        if (b.SentByUserId == Guid.Empty) return "settings";
+        return "campaign";
+    }
+
+    /// <summary>
+    /// Returns the CSS class for the sender/kind icon (controls the
+    /// background tint + foreground color).
+    /// </summary>
+    private static string GetSenderIconClass(BroadcastNotificationDto b)
+    {
+        if (b.FanoutKind == NotificationKind.AppUpdate) return "notif-icon-appupdate";
+        if (b.SentByUserId == Guid.Empty) return "notif-icon-system";
+        return "notif-icon-broadcast";
+    }
+
+    /// <summary>
+    /// Returns the localized "Broadcast" / "App update" label for the kind
+    /// badge, based on <see cref="BroadcastNotificationDto.FanoutKind"/>.
+    /// </summary>
+    private string GetKindLabel(BroadcastNotificationDto b)
+        => b.FanoutKind == NotificationKind.AppUpdate ? Loc["KindAppUpdate"] : Loc["KindBroadcast"];
+
+    /// <summary>
+    /// Material Symbols icon for the kind badge — distinct per kind so the
+    /// admin can scan for app-update broadcasts at a glance.
+    /// </summary>
+    private static string GetKindIcon(BroadcastNotificationDto b)
+        => b.FanoutKind == NotificationKind.AppUpdate ? "system_update" : "campaign";
+
+    private static string GetKindBadgeClass(BroadcastNotificationDto b)
+        => b.FanoutKind == NotificationKind.AppUpdate
+            ? "notif-badge-kind-appupdate"
+            : "notif-badge-kind-broadcast";
+
+    /// <summary>
+    /// Returns the localized scope badge text — e.g. "Everyone",
+    /// "Role: Employee", "Group: Sales Team", "User: Sara Ahmadi". Uses
+    /// the Format templates in the resx (with {0} placeholder for the
+    /// resolved target name).
+    /// </summary>
+    private string GetScopeBadge(BroadcastNotificationDto b)
+    {
+        return b.Scope switch
+        {
+            BroadcastScope.All => Loc["ScopeBadgeAll"],
+            BroadcastScope.Role => string.Format(Loc["ScopeBadgeRole"], b.TargetRoleName ?? Loc["Unknown"]),
+            BroadcastScope.Group => string.Format(Loc["ScopeBadgeGroup"], b.TargetGroupName ?? Loc["Unknown"]),
+            BroadcastScope.User => string.Format(Loc["ScopeBadgeUser"], b.TargetUserName ?? Loc["Unknown"]),
+            _ => Loc["Unknown"]
+        };
+    }
+
+    /// <summary>
+    /// CSS class for the scope badge — color-coded per audience so the
+    /// admin can scan for "everyone" (blue) vs "role" (green) vs "group"
+    /// (orange) vs "user" (purple) at a glance.
+    /// </summary>
+    private static string GetScopeBadgeClass(BroadcastNotificationDto b)
+    {
+        return b.Scope switch
+        {
+            BroadcastScope.All => "notif-badge-all",
+            BroadcastScope.Role => "notif-badge-role",
+            BroadcastScope.Group => "notif-badge-group",
+            BroadcastScope.User => "notif-badge-user",
+            _ => "notif-badge-all"
+        };
+    }
+
+    /// <summary>
+    /// Copies Notifications.razor's relative-time formatter verbatim —
+    /// "just now" / "N min ago" / "N hr ago" / "N d ago", falling back to
+    /// a Tehran-localized (UTC+3:30) Gregorian date past 7 days. Numbers
+    /// are rendered through <see cref="CultureFormat.ToCultureDigits"/> so
+    /// fa-IR shows Persian digits and en-US shows ASCII digits.
+    /// </summary>
+    private string FormatRelativeTime(DateTimeOffset sentAtUtc)
+    {
+        var delta = DateTimeOffset.UtcNow - sentAtUtc;
+        if (delta.TotalMinutes < 1) return Loc["Time_JustNow"];
+        if (delta.TotalMinutes < 60) return string.Format(Loc["Time_MinutesAgo"], (int)delta.TotalMinutes);
+        if (delta.TotalHours < 24) return string.Format(Loc["Time_HoursAgo"], (int)delta.TotalHours);
+        if (delta.TotalDays < 7) return string.Format(Loc["Time_DaysAgo"], (int)delta.TotalDays);
+        return CultureFormat.ToCultureDigits(sentAtUtc.AddHours(3.5).ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture));
+    }
+}

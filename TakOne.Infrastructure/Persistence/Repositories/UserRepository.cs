@@ -283,4 +283,81 @@ public sealed class UserRepository : IUserRepository
         //                                                  in one transaction
         await _db.DomainUsers.AddAsync(user, cancellationToken);
     }
+
+    // ── BROADCAST FANOUT RECIPIENT RESOLUTION ──────────────────────────
+    //
+    // Three Ids-only projections used by BroadcastFanout.ExecuteAsync to
+    // resolve recipient user Ids for each scope (All / Role / Group). The
+    // Scope=User case is handled inline in BroadcastFanout (no repo method
+    // needed — it's a single GetByIdAsync call).
+    //
+    // WHY PROJECTIONS (not full entities): the fanout only needs the Guids
+    // to create per-user Notification rows. Loading full User entities
+    // would bloat the EF change tracker for a broadcast that could fan
+    // out to hundreds of users. A .Select(u => u.Id) projection is one
+    // round-trip + zero tracking overhead.
+
+    /// <inheritdoc />
+    public async Task<List<Guid>> GetAllActiveUserIdsAsync(CancellationToken cancellationToken = default)
+    {
+        // Active users only. Uses _db.DomainUsers (the Domain User table)
+        // since IsActive is also on Domain User — no need to go through
+        // ApplicationUser (the IdentityDbContext's Users DbSet). Same
+        // shared-PK convention either way.
+        //
+        // AsNoTracking — pure read path, no caller mutates these entities.
+        // The fanout uses the returned Guids to create NEW Notification
+        // rows, never to mutate the User entities themselves.
+        return await _db.DomainUsers
+            .AsNoTracking()
+            .Where(u => u.IsActive)
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<Guid>> GetActiveUserIdsInRoleAsync(
+        string roleName,
+        CancellationToken cancellationToken = default)
+    {
+        // Cross-Domain/Identity join: same pattern as
+        // GetActiveCustomerCountAsync but returns the user Ids (not a
+        // count) and parameterizes the role name (not hardcoded
+        // "Customer").
+        //
+        // We use _db.Users (ApplicationUser) because the UserRoles join
+        // table references ApplicationUser.Id. Starting from ApplicationUser
+        // avoids a cross-table join through the shared PK.
+        //
+        // AsNoTracking — pure read path.
+        if (string.IsNullOrEmpty(roleName))
+        {
+            return new List<Guid>(0);
+        }
+
+        return await (
+            from u in _db.Users.AsNoTracking()
+            join ur in _db.UserRoles on u.Id equals ur.UserId
+            join r in _db.Roles on ur.RoleId equals r.Id
+            where u.IsActive && r.Name == roleName
+            select u.Id
+        ).ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<Guid>> GetActiveUserIdsInGroupAsync(
+        Guid groupId,
+        CancellationToken cancellationToken = default)
+    {
+        // GroupId is on Domain User (not ApplicationUser — see
+        // ApplicationUser.cs class-level remark: "GroupName not on
+        // ApplicationUser"). So we query _db.DomainUsers directly.
+        //
+        // AsNoTracking — pure read path.
+        return await _db.DomainUsers
+            .AsNoTracking()
+            .Where(u => u.IsActive && u.GroupId == groupId)
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
+    }
 }

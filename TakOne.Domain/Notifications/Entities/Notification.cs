@@ -102,6 +102,39 @@ public sealed class Notification : AggregateRoot
     public string? Reason { get; private set; }
 
     /// <summary>
+    /// The admin-authored subject line, copied verbatim from the
+    /// originating <see cref="BroadcastNotification"/>. Null for sale-lifecycle
+    /// notifications (<see cref="NotificationKind.SaleSubmitted"/> etc.) —
+    /// those use the structured <see cref="Kind"/> + <see cref="SaleDisplayNumber"/>
+    /// + <see cref="ActorName"/> + <see cref="Reason"/> fields and localize
+    /// at render time. Only set for <see cref="NotificationKind.Broadcast"/>
+    /// and <see cref="NotificationKind.AppUpdate"/>.
+    /// </summary>
+    public string? Title { get; private set; }
+
+    /// <summary>
+    /// The admin-authored message body, copied verbatim from the
+    /// originating <see cref="BroadcastNotification"/>. Null for sale-lifecycle
+    /// notifications. Same nullness rules as <see cref="Title"/>.
+    /// </summary>
+    public string? Message { get; private set; }
+
+    /// <summary>
+    /// Foreign-key pointer to the <see cref="BroadcastNotification"/> aggregate
+    /// that fanned out this per-user row. Null for sale-lifecycle notifications
+    /// (they have no parent broadcast). Set for <see cref="NotificationKind.Broadcast"/>
+    /// and <see cref="NotificationKind.AppUpdate"/> so the UI can group/correlate
+    /// fanout rows back to their parent audit row.
+    /// <para>
+    /// <b>NO DB-LEVEL FK</b>: matches the existing convention (see
+    /// <c>NotificationConfiguration</c> — "NO FK TO USERS / SALES").
+    /// Cross-aggregate references are bare Guids, no navigation properties,
+    /// no FKs at the DB level. The Application layer enforces the relationship.
+    /// </para>
+    /// </summary>
+    public Guid? BroadcastId { get; private set; }
+
+    /// <summary>
     /// UTC timestamp the notification was created. Indexed (most UIs list
     /// notifications newest-first via an ORDER BY CreatedAtUtc DESC).
     /// </summary>
@@ -130,7 +163,10 @@ public sealed class Notification : AggregateRoot
         Guid? saleId,
         string? saleDisplayNumber,
         string? actorName,
-        string? reason)
+        string? reason,
+        string? title,
+        string? message,
+        Guid? broadcastId)
         : base(Guid.NewGuid())
     {
         EnsureUserIdValid(userId);
@@ -141,6 +177,9 @@ public sealed class Notification : AggregateRoot
         SaleDisplayNumber = saleDisplayNumber;
         ActorName = actorName;
         Reason = reason;
+        Title = title;
+        Message = message;
+        BroadcastId = broadcastId;
         CreatedAtUtc = DateTime.UtcNow;
         ReadAtUtc = null;
     }
@@ -171,14 +210,88 @@ public sealed class Notification : AggregateRoot
         string? actorName,
         string? reason = null)
     {
+        // Sale-lifecycle factory: Title/Message/BroadcastId are null —
+        // sale notifications use structured fields + UI-side localization.
         var notification = new Notification(
-            userId, kind, saleId, saleDisplayNumber, actorName, reason);
+            userId, kind, saleId, saleDisplayNumber, actorName, reason,
+            title: null, message: null, broadcastId: null);
 
         notification.AddDomainEvent(new NotificationCreatedDomainEvent(
             notificationId: notification.Id,
             userId: notification.UserId,
             kind: (int)notification.Kind,
             saleDisplayNumber: notification.SaleDisplayNumber));
+
+        return notification;
+    }
+
+    /// <summary>
+    /// Factory for broadcast fanout rows. Creates a per-user Notification
+    /// that carries the admin-authored <paramref name="title"/> +
+    /// <paramref name="message"/> verbatim, plus a back-pointer to the
+    /// parent <see cref="BroadcastNotification"/> aggregate via
+    /// <paramref name="broadcastId"/>.
+    /// </summary>
+    /// <param name="userId">The recipient user's Id.</param>
+    /// <param name="kind">
+    /// Must be <see cref="NotificationKind.Broadcast"/> or
+    /// <see cref="NotificationKind.AppUpdate"/>. The factory enforces this —
+    /// sale-lifecycle kinds cannot be created via this path (they must go
+    /// through <see cref="Create"/> so their structured fields are populated
+    /// by the sale-event handler, not free-form text from an admin).
+    /// </param>
+    /// <param name="broadcastId">
+    /// The parent <see cref="BroadcastNotification"/> aggregate's Id.
+    /// Must be non-empty.
+    /// </param>
+    /// <param name="title">The broadcast's subject line (1–200 chars).</param>
+    /// <param name="message">The broadcast's body (1–1000 chars).</param>
+    /// <remarks>
+    /// <para>
+    /// <b>TRANSACTIONAL INVARIANT</b>: called by
+    /// <c>SendBroadcastNotificationCommandHandler</c> in the same EF Core
+    /// transaction as the parent <c>BroadcastNotification</c> row's INSERT.
+    /// Wolverine's <c>AutoApplyTransactions</c> middleware enrolls the
+    /// handler in one transaction; if SaveChangesAsync fails, all N
+    /// fanout rows + the audit row roll back together. No partial broadcast.
+    /// </para>
+    /// <para>
+    /// <b>RAISES NotificationCreatedDomainEvent</b> — same as the sale-lifecycle
+    /// factory. The existing <c>NotificationCreatedBroadcastHandler</c>
+    /// subscribes and pings SignalR for the recipient's UI. The broadcast
+    /// pipeline reuses the existing real-time infrastructure: no new SignalR
+    /// channels, no new broadcaster methods. Each recipient's bell badge
+    /// lights up the moment the fanout transaction commits.
+    /// </para>
+    /// <para>
+    /// <b>NOT SUBJECT TO THE DEDUP UNIQUE INDEX</b>: see
+    /// <see cref="NotificationKind.Broadcast"/>'s doc — the
+    /// <c>UX_Notifications_UserId_SaleId_Kind</c> index is filtered to
+    /// <c>WHERE SaleId IS NOT NULL</c>, and broadcast fanout rows have
+    /// <c>SaleId IS NULL</c>. So each fanout INSERT is a distinct row, no
+    /// dedup collision.
+    /// </para>
+    /// </remarks>
+    public static Notification CreateBroadcast(
+        Guid userId,
+        NotificationKind kind,
+        Guid broadcastId,
+        string? title,
+        string? message)
+    {
+        EnsureBroadcastKindValid(kind);
+        EnsureBroadcastIdValid(broadcastId);
+
+        var notification = new Notification(
+            userId, kind,
+            saleId: null, saleDisplayNumber: null, actorName: null, reason: null,
+            title: title, message: message, broadcastId: broadcastId);
+
+        notification.AddDomainEvent(new NotificationCreatedDomainEvent(
+            notificationId: notification.Id,
+            userId: notification.UserId,
+            kind: (int)notification.Kind,
+            saleDisplayNumber: null));
 
         return notification;
     }
@@ -208,6 +321,29 @@ public sealed class Notification : AggregateRoot
         {
             throw new DomainException(
                 "A notification must be targeted at a non-empty user Id.");
+        }
+    }
+
+    private static void EnsureBroadcastKindValid(NotificationKind kind)
+    {
+        // Only Broadcast and AppUpdate can carry admin-authored title/message.
+        // Sale-lifecycle kinds must go through the Create() factory so their
+        // structured fields (SaleId, SaleDisplayNumber, ActorName) are populated
+        // by the sale-event handler — never free-form text from an admin.
+        if (kind != NotificationKind.Broadcast && kind != NotificationKind.AppUpdate)
+        {
+            throw new DomainException(
+                $"CreateBroadcast requires NotificationKind.Broadcast or AppUpdate (got {kind}). " +
+                "Sale-lifecycle kinds must use the Create() factory.");
+        }
+    }
+
+    private static void EnsureBroadcastIdValid(Guid broadcastId)
+    {
+        if (broadcastId == Guid.Empty)
+        {
+            throw new DomainException(
+                "A broadcast fanout Notification must reference a non-empty BroadcastId.");
         }
     }
 }

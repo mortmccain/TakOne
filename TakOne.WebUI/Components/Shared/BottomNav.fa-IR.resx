@@ -40,4 +40,5 @@
   <data name="AdminUsers" xml:space="preserve"><value>مدیریت کاربران</value></data>
   <data name="AdminCategories" xml:space="preserve"><value>دسته‌بندی‌ها</value></data>
   <data name="CustomerGroups" xml:space="preserve"><value>گروه‌های مشتری</value></data>
+  <data name="AdminNotifications" xml:space="preserve"><value>اعلان‌ها</value></data>
 </root>

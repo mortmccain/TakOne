@@ -74,6 +74,42 @@ public sealed class SystemSettings : AggregateRoot
     public LimitMode LimitMode { get; private set; }
 
     /// <summary>
+    /// The last-known application version, recorded by
+    /// <c>AppUpdateBroadcasterHostedService</c> at startup. Used to detect
+    /// "the running assembly version differs from the persisted one" →
+    /// a deployment happened → broadcast an <see cref="TakOne.Domain.Notifications.Enums.NotificationKind.AppUpdate"/>
+    /// notification to every user via the existing broadcast pipeline.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>NULL ON FRESH INSTALL</b>: a brand-new DB has no row yet, the
+    /// repo lazily creates it with <see cref="CreateDefault"/> which leaves
+    /// this null. The hosted service sees null → treats it as "first boot",
+    /// writes the running version, and SKIPS the broadcast (no point
+    /// announcing an "update" to users who have nothing to update from).
+    /// Subsequent restarts with the same version → no broadcast. Only a
+    /// version CHANGE triggers the broadcast.
+    /// </para>
+    /// <para>
+    /// <b>WHY A STRING (not a parsed Version)</b>: the assembly's
+    /// <c>InformationalVersion</c> attribute can carry semver + git SHA
+    /// suffixes (e.g. <c>1.2.0-beta1+sha.abc123</c>) that don't round-trip
+    /// cleanly through <c>System.Version</c>. Storing the raw string and
+    /// doing an exact-match comparison is the most robust check.
+    /// </para>
+    /// <para>
+    /// <b>NOT ADMIN-CHANGEABLE</b>: this field is written exclusively by
+    /// the hosted service. The admin can SEE it (future Settings page could
+    /// surface it) but cannot edit it — it's a system marker, not a runtime
+    /// config knob. It lives on <see cref="SystemSettings"/> rather than a
+    /// separate table to avoid a new singleton + new repo + new migration
+    /// just for one column. Pragmatic DDD: this is system-wide state, same
+    /// as <see cref="LimitMode"/>.
+    /// </para>
+    /// </remarks>
+    public string? LastKnownAppVersion { get; private set; }
+
+    /// <summary>
     /// The UTC timestamp of the last update to any field on this row.
     /// Used for audit logging — admins can see when the mode was last
     /// changed and by whom (the "by whom" is in the application-layer
@@ -103,6 +139,7 @@ public sealed class SystemSettings : AggregateRoot
         EnsureLimitModeValid(limitMode);
 
         LimitMode = limitMode;
+        LastKnownAppVersion = null;
         UpdatedAt = updatedAt;
     }
 
@@ -129,9 +166,17 @@ public sealed class SystemSettings : AggregateRoot
     /// Loads the singleton row from persisted state. Used by the
     /// repository to materialize the row from the database.
     /// </summary>
-    public static SystemSettings Load(LimitMode limitMode, DateTime updatedAt)
+    public static SystemSettings Load(LimitMode limitMode, DateTime updatedAt, string? lastKnownAppVersion)
     {
-        return new SystemSettings(limitMode, updatedAt);
+        var settings = new SystemSettings(limitMode, updatedAt)
+        {
+            // Bypass the private setter via object initializer — the
+            // property has a private setter, so we can't write to it
+            // after construction. The initializer runs after the ctor
+            // but before the reference is returned, so this is safe.
+            LastKnownAppVersion = lastKnownAppVersion
+        };
+        return settings;
     }
 
 
@@ -154,6 +199,37 @@ public sealed class SystemSettings : AggregateRoot
         if (newMode == LimitMode) return;
 
         LimitMode = newMode;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Records the running assembly's version as the last-known app
+    /// version. Called by <c>AppUpdateBroadcasterHostedService</c> at
+    /// startup AFTER it has broadcast the <c>AppUpdate</c> notification
+    /// (if the version differed). Subsequent restarts with the same
+    /// version then short-circuit — no re-broadcast.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent: if <paramref name="version"/> equals the current
+    /// <see cref="LastKnownAppVersion"/>, this is a no-op (no spurious
+    /// <see cref="UpdatedAt"/> bump, no DB UPDATE generated).
+    /// </remarks>
+    public void UpdateLastKnownAppVersion(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            // Defensive — the caller (hosted service) always passes a
+            // real version string. If somehow empty, no-op rather than
+            // throw — we don't want to crash the host on a degenerate input.
+            return;
+        }
+
+        if (string.Equals(version, LastKnownAppVersion, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        LastKnownAppVersion = version;
         UpdatedAt = DateTime.UtcNow;
     }
 

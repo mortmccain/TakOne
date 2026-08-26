@@ -162,9 +162,16 @@
        button.m-notif-card, .m-notif-icon-*, .m-notif-reason, .m-notif-meta,
        .m-notif-unread-dot, .m-pagination, .m-btn-ghost/.m-btn-sm,
        .m-notif-empty, .m-notif-toolbar).
-       Without this bump browsers keep serving the old v5 mobile.css and the
-       Round 11 bell badge + notification cards render unstyled. *@
-    <link rel="stylesheet" href="css/mobile.css?v=6" />
+       Round 12 (Task 9-A) added the MobileAdminNotifications page
+       classes (.m-broadcast-compose[-title], .m-tabs--scope,
+       .m-field-hint--block, .m-broadcast-selected-user[-name],
+       .m-broadcast-user-results/-row/-name/-id, .m-list--broadcasts,
+       .m-broadcast-item[-head/-sender/-time/-title/-message/-foot/-reached],
+       .m-broadcast-load-more, .m-section-heading, .m-section-subtitle,
+       .m-page-subtitle--pad).
+       Without this bump browsers keep serving the old v6 mobile.css and the
+       Round 12 broadcast-compose + audit-list classes render unstyled. *@
+    <link rel="stylesheet" href="css/mobile.css?v=7" />
 
     @* Mobile device detection + redirect logic + pull-to-refresh — v4
        (Round 8): added /Admin/Products/Create, /Admin/Users/Create,

@@ -48,6 +48,51 @@ public interface IUserRepository
     // ICustomerGroupRepository.GetAllAsync.
 
     /// <summary>
+    /// Returns the Id of every ACTIVE user in the system. Used by the
+    /// broadcast notification fanout when <c>Scope=All</c> (admin-authored
+    /// global announcement, or the auto-emitted app-update broadcast).
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY Ids ONLY (not full User entities)</b>: the fanout only needs
+    /// the recipient Guids to create per-user Notification rows. Loading
+    /// full entities would N times the memory + the EF change-tracker
+    /// population for no benefit. A projection to <c>Guid</c> is one round-trip
+    /// and zero tracking overhead.
+    /// </remarks>
+    Task<List<Guid>> GetAllActiveUserIdsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the Ids of every ACTIVE user currently in the given ASP.NET
+    /// Identity role. Used by the broadcast fanout when <c>Scope=Role</c>.
+    /// </summary>
+    /// <param name="roleName">
+    /// A role name from <see cref="Authorization.Roles"/> (e.g.
+    /// <c>Roles.Customer</c>, <c>Roles.Employee</c>).
+    /// </param>
+    /// <remarks>
+    /// <b>DOMAIN/IDENTITY BOUNDARY</b>: same note as
+    /// <see cref="GetActiveCustomerCountAsync"/> — roles live in
+    /// <c>AspNetUserRoles</c> + <c>AspNetRoles</c>, joined to <c>Users</c> by
+    /// user Id. The Infrastructure implementation does this join server-side.
+    /// </remarks>
+    Task<List<Guid>> GetActiveUserIdsInRoleAsync(string roleName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the Ids of every ACTIVE user assigned to the given customer
+    /// group. Used by the broadcast fanout when <c>Scope=Group</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY A NEW METHOD (vs. GetByGroupIdAsync)</b>: the existing
+    /// <see cref="GetByGroupIdAsync"/> returns full tracked <c>User</c>
+    /// entities (the caller — the staff dashboard — wants to render names +
+    /// badges). The broadcast fanout only needs Guids, and loading full
+    /// entities would bloat the change tracker for an admin broadcast that
+    /// could fan out to hundreds of users. A dedicated Ids-only projection
+    /// is one round-trip + zero tracking overhead.
+    /// </remarks>
+    Task<List<Guid>> GetActiveUserIdsInGroupAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the count of active users currently in the <c>Customer</c>
     /// role. Used by the Dashboard's "Active Customers" KPI card.
     ///

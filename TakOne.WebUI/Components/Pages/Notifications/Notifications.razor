@@ -61,6 +61,8 @@
         .notif-icon-approve { background: rgba(15, 157, 88, 0.12); color: #0f9d58; }
         .notif-icon-invoice { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
         .notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
+        .notif-icon-broadcast { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+        .notif-icon-appupdate { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
         .notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
         .notif-body { flex: 1; min-width: 0; }
         .notif-title { font-weight: 600; color: var(--rz-text-color); margin-bottom: 0.25rem; }
@@ -171,7 +173,7 @@
                         <RadzenIcon Icon="@GetIconName(n.Kind)" />
                     </div>
                     <div class="notif-body">
-                        <div class="notif-title">@GetTitle(n.Kind)</div>
+                        <div class="notif-title">@GetTitle(n)</div>
                         <div class="notif-message">@GetMessage(n)</div>
                         @if (!string.IsNullOrEmpty(n.Reason))
                         {
@@ -355,14 +357,34 @@
         {
             Navigation.NavigateTo($"/Sales/{n.SaleId.Value}", forceLoad: false);
         }
+        else if (n.Kind == NotificationKind.AppUpdate)
+        {
+            // For the auto-emitted "app updated" notification, the user
+            // should reload the page to pick up the new code (the running
+            // Blazor circuit is still on the OLD container's assets). A
+            // full page reload (forceLoad: true) re-fetches everything.
+            // The user explicitly taps the notification — this is opt-in,
+            // not forced on them.
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        // For Broadcast (admin-authored): no navigation — the title +
+        // message are already displayed in the notification card. The
+        // tap just dismisses (marks as read). Future enhancement could
+        // link to a "broadcast detail" page via n.BroadcastId.
     }
 
-    private string GetTitle(NotificationKind kind) => kind switch
+    private string GetTitle(NotificationDto n) => n.Kind switch
     {
         NotificationKind.SaleSubmitted => Loc["Title_Submitted"],
         NotificationKind.SaleApproved => Loc["Title_Approved"],
         NotificationKind.SaleInvoiced => Loc["Title_Invoiced"],
         NotificationKind.SaleCancelled => Loc["Title_Cancelled"],
+        // For Broadcast + AppUpdate, the admin-authored Title is the
+        // notification's title (stored on the row at fanout time). Fall
+        // back to a localized kind-label if the admin somehow sent an
+        // empty title (shouldn't happen — the validator rejects it).
+        NotificationKind.Broadcast => n.Title ?? Loc["Title_Broadcast"],
+        NotificationKind.AppUpdate => n.Title ?? Loc["Title_AppUpdate"],
         _ => Loc["Title_Unknown"]
     };
 
@@ -375,6 +397,12 @@
             NotificationKind.SaleApproved => string.Format(Loc["Message_Approved_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
             NotificationKind.SaleInvoiced => string.Format(Loc["Message_Invoiced_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
             NotificationKind.SaleCancelled => string.Format(Loc["Message_Cancelled_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
+            // For Broadcast + AppUpdate, the admin-authored Message is
+            // the notification's body (stored on the row at fanout time).
+            // Fall back to a localized generic message if the admin
+            // somehow sent an empty message (shouldn't happen).
+            NotificationKind.Broadcast => n.Message ?? Loc["Message_Unknown"],
+            NotificationKind.AppUpdate => n.Message ?? Loc["Message_Unknown"],
             _ => Loc["Message_Unknown"]
         };
     }
@@ -385,6 +413,8 @@
         NotificationKind.SaleApproved => "notif-icon-approve",
         NotificationKind.SaleInvoiced => "notif-icon-invoice",
         NotificationKind.SaleCancelled => "notif-icon-cancel",
+        NotificationKind.Broadcast => "notif-icon-broadcast",
+        NotificationKind.AppUpdate => "notif-icon-appupdate",
         _ => "notif-icon-default"
     };
 
@@ -394,6 +424,11 @@
         NotificationKind.SaleApproved => "check_circle",
         NotificationKind.SaleInvoiced => "receipt_long",
         NotificationKind.SaleCancelled => "cancel",
+        // "campaign" = megaphone icon (Radzen Material Symbols). For
+        // admin-authored broadcasts. "system_update" = a downward arrow
+        // into a tray, for the auto-emitted app-update broadcast.
+        NotificationKind.Broadcast => "campaign",
+        NotificationKind.AppUpdate => "system_update",
         _ => "notifications"
     };
 

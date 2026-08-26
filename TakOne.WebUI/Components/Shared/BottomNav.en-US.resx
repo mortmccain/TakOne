@@ -40,4 +40,5 @@
   <data name="AdminUsers" xml:space="preserve"><value>Admin Users</value></data>
   <data name="AdminCategories" xml:space="preserve"><value>Categories</value></data>
   <data name="CustomerGroups" xml:space="preserve"><value>Customer Groups</value></data>
+  <data name="AdminNotifications" xml:space="preserve"><value>Notifications</value></data>
 </root>

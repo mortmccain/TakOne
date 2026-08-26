@@ -92,6 +92,9 @@
   <data name="ManageGroups" xml:space="preserve">
     <value>Customer Groups</value>
   </data>
+  <data name="ManageNotifications" xml:space="preserve">
+    <value>Broadcast Notifications</value>
+  </data>
   <data name="Profile" xml:space="preserve">
     <value>Profile</value>
   </data>

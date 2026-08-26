@@ -42,4 +42,37 @@ public static class NotificationErrors
     /// someone else").
     /// </summary>
     public static string FormatNotFound() => "NotificationNotFound";
+
+    // ── BROADCAST-SPECIFIC ERRORS ──────────────────────────────────────
+    //
+    // Used by SendBroadcastNotificationCommandHandler and
+    // GetBroadcastNotificationsQueryHandler for clean, culture-neutral
+    // error codes. Same convention as the existing Format*() methods
+    // above (short Pascal-case strings, no interpolated values).
+
+    /// <summary>
+    /// A non-admin attempted to send a broadcast (defense-in-depth —
+    /// the [RequireRoles(Admin)] attribute should already reject this).
+    /// </summary>
+    public static string FormatBroadcastAuthRequired() => "BroadcastAuthRequired";
+
+    /// <summary>
+    /// Scope=Group but the TargetGroupId doesn't correspond to any
+    /// existing customer group (deleted between validation and fanout,
+    /// or never existed).
+    /// </summary>
+    public static string FormatBroadcastGroupNotFound() => "BroadcastGroupNotFound";
+
+    /// <summary>
+    /// Scope=User but the TargetUserId doesn't correspond to any existing
+    /// user (deleted between validation and fanout, or never existed).
+    /// </summary>
+    public static string FormatBroadcastUserNotFound() => "BroadcastUserNotFound";
+
+    /// <summary>
+    /// Scope=User but the TargetUserId refers to a user whose IsActive
+    /// flag is false (soft-deactivated). The admin should target a
+    /// different (active) user, or re-activate the target first.
+    /// </summary>
+    public static string FormatBroadcastUserInactive() => "BroadcastUserInactive";
 }

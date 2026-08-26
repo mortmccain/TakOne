@@ -49,6 +49,8 @@
   <data name="Title_Approved" xml:space="preserve"><value>Order approved</value></data>
   <data name="Title_Invoiced" xml:space="preserve"><value>Order invoiced</value></data>
   <data name="Title_Cancelled" xml:space="preserve"><value>Order cancelled</value></data>
+  <data name="Title_Broadcast" xml:space="preserve"><value>Announcement</value></data>
+  <data name="Title_AppUpdate" xml:space="preserve"><value>App updated</value></data>
   <data name="Title_Unknown" xml:space="preserve"><value>Notification</value></data>
   <data name="Message_Submitted_Customer" xml:space="preserve"><value>Your order {0} was submitted and is awaiting approval.</value></data>
   <data name="Message_Approved_Customer" xml:space="preserve"><value>Your order {0} was approved by {1}.</value></data>

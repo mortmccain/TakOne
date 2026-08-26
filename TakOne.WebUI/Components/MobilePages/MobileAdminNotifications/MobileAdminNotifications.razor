@@ -1,0 +1,639 @@
+@* MobileAdminNotifications.razor — mobile admin broadcast-compose + audit page.
+   Route: /m/Admin/Notifications
+   Layout: MobileLayout
+   Auth: [Authorize(Roles = "Admin")]
+
+   TWO SECTIONS:
+     A. Compose form (always visible for v1): Title + Message + 4-button
+        scope segmented control (All / Role / Group / User) + conditional
+        target selector. Dispatches SendBroadcastNotificationCommand
+        (returns Result<int> = recipient count).
+     B. Audit list: paginated history of past broadcasts (newest first)
+        with sender / relative time / scope badge / kind badge /
+        recipient count. Loaded via GetBroadcastNotificationsQuery
+        (returns PaginatedResult<BroadcastNotificationDto>). "Load more"
+        button advances pages.
+*@
+@page "/m/Admin/Notifications"
+@attribute [Authorize(Roles = "Admin")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Notifications.Commands.SendBroadcastNotification
+@using TakOne.Application.Notifications.Queries.GetBroadcastNotifications
+@using TakOne.Application.Notifications.DTOs
+@using TakOne.Application.Notifications.Errors
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Users.Queries.GetUsersPaginated
+@using TakOne.Application.Users.DTOs
+@using TakOne.Domain.Notifications.Enums
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileAdminNotifications> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    @* Skeleton: page header + compose form stub + 3 audit items *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 10rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+    </div>
+    <div class="m-broadcast-compose">
+        <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.75rem;"></div>
+        <div class="m-skeleton" style="width: 100%; height: 5rem; border-radius: 0.75rem; margin-top: 0.75rem;"></div>
+        <div class="m-skeleton" style="width: 60%; height: 2rem; border-radius: 999px; margin-top: 0.75rem;"></div>
+        <div class="m-skeleton" style="width: 100%; height: 2.75rem; border-radius: 0.625rem; margin-top: 0.75rem;"></div>
+    </div>
+    <h2 class="m-section-heading">@Loc["AuditHeading"]</h2>
+    <div class="m-list">
+        @for (var i = 0; i < 3; i++)
+        {
+            <div class="m-broadcast-item">
+                <div class="m-broadcast-item-head">
+                    <div class="m-skeleton" style="width: 6rem; height: 1rem; border-radius: 0.5rem;"></div>
+                    <div class="m-skeleton" style="width: 3rem; height: 1rem; border-radius: 0.5rem;"></div>
+                </div>
+                <div class="m-skeleton" style="width: 80%; height: 1.1rem; border-radius: 0.5rem; margin-top: 0.5rem;"></div>
+                <div class="m-skeleton" style="width: 100%; height: 3rem; border-radius: 0.5rem; margin-top: 0.375rem;"></div>
+                <div class="m-broadcast-item-foot">
+                    <div class="m-skeleton" style="width: 4rem; height: 1.25rem; border-radius: 999px;"></div>
+                    <div class="m-skeleton" style="width: 4rem; height: 1.25rem; border-radius: 999px;"></div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="ReloadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header ── *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+    </div>
+    <p class="m-page-subtitle m-page-subtitle--pad">@Loc["ComposeSubtitle"]</p>
+
+    @* ── 2. Compose form ── *@
+    <section class="m-broadcast-compose" aria-labelledby="compose-heading">
+        <h2 id="compose-heading" class="m-broadcast-compose-title">@Loc["ComposeHeading"]</h2>
+
+        <div class="m-field">
+            <label class="m-field-label" for="bc-title">@Loc["TitleLabel"]</label>
+            <input id="bc-title" class="m-input" type="text" maxlength="200"
+                   value="@_title"
+                   @oninput="@((ChangeEventArgs e) => _title = e.Value?.ToString() ?? string.Empty)"
+                   placeholder="@Loc["TitlePlaceholder"]"
+                   aria-required="true" />
+        </div>
+
+        <div class="m-field">
+            <label class="m-field-label" for="bc-message">@Loc["MessageLabel"]</label>
+            <textarea id="bc-message" class="m-textarea" rows="4" maxlength="1000"
+                      value="@_message"
+                      @oninput="@((ChangeEventArgs e) => _message = e.Value?.ToString() ?? string.Empty)"
+                      placeholder="@Loc["MessagePlaceholder"]"
+                      aria-required="true"></textarea>
+        </div>
+
+        <div class="m-field">
+            <span class="m-field-label">@Loc["ScopeLabel"]</span>
+            <div class="m-tabs m-tabs--scope" role="tablist">
+                <button type="button" class="m-tab @(_scope == BroadcastScope.All ? "active" : "")"
+                        role="tab" aria-selected="@(_scope == BroadcastScope.All)"
+                        @onclick="@(() => SetScope(BroadcastScope.All))">@Loc["ScopeAll"]</button>
+                <button type="button" class="m-tab @(_scope == BroadcastScope.Role ? "active" : "")"
+                        role="tab" aria-selected="@(_scope == BroadcastScope.Role)"
+                        @onclick="@(() => SetScope(BroadcastScope.Role))">@Loc["ScopeRole"]</button>
+                <button type="button" class="m-tab @(_scope == BroadcastScope.Group ? "active" : "")"
+                        role="tab" aria-selected="@(_scope == BroadcastScope.Group)"
+                        @onclick="@(() => SetScope(BroadcastScope.Group))">@Loc["ScopeGroup"]</button>
+                <button type="button" class="m-tab @(_scope == BroadcastScope.User ? "active" : "")"
+                        role="tab" aria-selected="@(_scope == BroadcastScope.User)"
+                        @onclick="@(() => SetScope(BroadcastScope.User))">@Loc["ScopeUser"]</button>
+            </div>
+        </div>
+
+        @* Conditional target selector based on the chosen scope *@
+        @if (_scope == BroadcastScope.All)
+        {
+            <p class="m-field-hint m-field-hint--block">@Loc["ScopeAllHint"]</p>
+        }
+        else if (_scope == BroadcastScope.Role)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="bc-role">@Loc["TargetRoleLabel"]</label>
+                <select id="bc-role" class="m-select" value="@_targetRoleName"
+                        @onchange="@((ChangeEventArgs e) => _targetRoleName = e.Value?.ToString())">
+                    <option value="">—</option>
+                    <option value="@Roles.Admin">@Roles.Admin</option>
+                    <option value="@Roles.Manager">@Roles.Manager</option>
+                    <option value="@Roles.Employee">@Roles.Employee</option>
+                    <option value="@Roles.ReadOnly">@Roles.ReadOnly</option>
+                    <option value="@Roles.Customer">@Roles.Customer</option>
+                </select>
+            </div>
+        }
+        else if (_scope == BroadcastScope.Group)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="bc-group">@Loc["TargetGroupLabel"]</label>
+                @if (_groups.Count == 0)
+                {
+                    <p class="m-field-hint m-field-hint--block">@Loc["EmptyGroups"]</p>
+                }
+                else
+                {
+                    <select id="bc-group" class="m-select" value="@(_targetGroupId?.ToString() ?? "")"
+                            @onchange="@((ChangeEventArgs e) => _targetGroupId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null)">
+                        <option value="">—</option>
+                        @foreach (var grp in _groups)
+                        {
+                            <option value="@grp.Id.ToString()" data-active="@grp.IsActive">
+                                @grp.Name@(grp.IsActive ? "" : " (" + Loc["Inactive"] + ")")
+                            </option>
+                        }
+                    </select>
+                }
+            </div>
+        }
+        else if (_scope == BroadcastScope.User)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="bc-user-search">@Loc["TargetUserLabel"]</label>
+                <div class="m-search-box">
+                    <input id="bc-user-search" type="search"
+                           value="@_userSearchTerm"
+                           @oninput="@((ChangeEventArgs e) => OnUserSearchInputAsync(e))"
+                           placeholder="@Loc["TargetUserSearchPlaceholder"]"
+                           aria-label="@Loc["TargetUserSearchPlaceholder"]" />
+                    <svg class="m-search-box-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                    </svg>
+                </div>
+
+                @* Selected user chip *@
+                @if (_targetUserId.HasValue && !string.IsNullOrWhiteSpace(_selectedUserName))
+                {
+                    <div class="m-broadcast-selected-user">
+                        <span class="m-broadcast-selected-name">@_selectedUserName</span>
+                        <button type="button" class="m-icon-btn-sm danger"
+                                title="@Loc["ClearSelection"]" aria-label="@Loc["ClearSelection"]"
+                                @onclick="@(() => ClearSelectedUser())">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                }
+
+                @* Search results (debounced live search) *@
+                @if (_isSearchingUsers)
+                {
+                    <p class="m-field-hint m-field-hint--block">@Loc["Loading"]</p>
+                }
+                else if (_users.Count > 0 && !_targetUserId.HasValue)
+                {
+                    <ul class="m-broadcast-user-results">
+                        @foreach (var u in _users)
+                        {
+                            <li>
+                                <button type="button" class="m-broadcast-user-row"
+                                        @onclick="@(() => SelectUser(u))">
+                                    <span class="m-broadcast-user-name">@u.FullName</span>
+                                    <span class="m-broadcast-user-id">@u.WorkerId</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (!_targetUserId.HasValue && !string.IsNullOrWhiteSpace(_userSearchTerm) && !_isSearchingUsers)
+                {
+                    <p class="m-field-hint m-field-hint--block">@Loc["UserSearchEmpty"]</p>
+                }
+            </div>
+        }
+
+        <button type="button" class="m-btn m-btn-primary m-btn-block"
+                disabled="@(_isSending || string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_message))"
+                @onclick="@(SendAsync)">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.6 21l16.5-9L3.6 3 6 12zm0 0h14.1" />
+            </svg>
+            @if (_isSending)
+            {
+                @Loc["SendingButton"]
+            }
+            else
+            {
+                @Loc["SendButton"]
+            }
+        </button>
+    </section>
+
+    @* ── 3. Audit list ── *@
+    <h2 class="m-section-heading">@Loc["AuditHeading"]</h2>
+    <p class="m-section-subtitle">@Loc["AuditSubtitle"]</p>
+
+    @if (_broadcasts.Count == 0)
+    {
+        <div class="m-empty-cta">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="width: 2.5rem; height: 2.5rem; color: var(--tm-gray);">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 3.94c.06-.32.03-.66-.08-.95-.12-.32-.36-.59-.66-.8a2.05 2.05 0 00-2.62.55L3.8 8.85a2 2 0 00-.34 1.42l.13 1.42-1.2 1.95a1 1 0 102 1l1.2-1.95 1.36-.43a2 2 0 001.21-1.04l3.06-6.16a2 2 0 00.21-1.13z" />
+            </svg>
+            <h3>@Loc["EmptyAuditTitle"]</h3>
+            <p>@Loc["EmptyAuditHint"]</p>
+        </div>
+    }
+    else
+    {
+        <div class="m-list m-list--broadcasts m-rise-in">
+            @foreach (var b in _broadcasts)
+            {
+                <article class="m-broadcast-item">
+                    <header class="m-broadcast-item-head">
+                        <span class="m-broadcast-item-sender">
+                            @if (b.SentByUserId == Guid.Empty)
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="width: 1rem; height: 1rem; color: var(--tm-gold);">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 2.86c.06-.32.03-.66-.08-.95-.12-.32-.36-.59-.66-.8a2.05 2.05 0 00-2.62.55L4.88 7.77a2 2 0 00-.34 1.42l.13 1.42-1.2 1.95a1 1 0 102 1l1.2-1.95 1.36-.43a2 2 0 001.21-1.04l3.06-6.16a2 2 0 00.21-1.13z" />
+                                </svg>
+                                @Loc["SenderSystem"]
+                            }
+                            else
+                            {
+                                @(b.SentByUserName ?? Loc["SenderSystem"])
+                            }
+                        </span>
+                        <time class="m-broadcast-item-time" datetime="@b.SentAtUtc.ToString("O", CultureInfo.InvariantCulture)">
+                            @RelativeTime(b.SentAtUtc)
+                        </time>
+                    </header>
+
+                    <h3 class="m-broadcast-item-title">@b.Title</h3>
+                    <p class="m-broadcast-item-message">@b.Message</p>
+
+                    <footer class="m-broadcast-item-foot">
+                        <span class="m-badge @BadgeClassForScope(b.Scope)">
+                            @ScopeBadgeLabel(b)
+                        </span>
+                        @if (b.FanoutKind == NotificationKind.AppUpdate)
+                        {
+                            <span class="m-badge m-badge-gold">@Loc["KindAppUpdate"]</span>
+                        }
+                        else
+                        {
+                            <span class="m-badge m-badge-info">@Loc["KindBroadcast"]</span>
+                        }
+                        <span class="m-broadcast-item-reached">
+                            @string.Format(CultureInfo.CurrentCulture, Loc["ReachedNUsers"], b.RecipientCount)
+                        </span>
+                    </footer>
+                </article>
+            }
+        </div>
+
+        @* Load more (or simple "next page") button — mobile UX, no full pager *@
+        @if (_pageNumber < _totalPages)
+        {
+            <div class="m-broadcast-load-more">
+                <button type="button" class="m-btn m-btn-secondary m-btn-block"
+                        disabled="@_isLoadingMore"
+                        @onclick="LoadMoreAsync">
+                    @if (_isLoadingMore)
+                    {
+                        @Loc["LoadingMore"]
+                    }
+                    else
+                    {
+                        @Loc["LoadMore"]
+                    }
+                </button>
+            </div>
+        }
+    }
+
+    <div class="m-footer">@Loc["Version"]</div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private string _title = string.Empty;
+    private string _message = string.Empty;
+    private BroadcastScope _scope = BroadcastScope.All;
+    private string? _targetRoleName;
+    private Guid? _targetGroupId;
+    private Guid? _targetUserId;
+    private string? _selectedUserName;
+
+    private List<CustomerGroupListItemDto> _groups = new();
+    private string _userSearchTerm = string.Empty;
+    private List<UserListItemDto> _users = new();
+    private bool _isSearchingUsers;
+    private System.Threading.CancellationTokenSource? _userSearchCts;
+
+    private bool _isSending;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    private List<BroadcastNotificationDto> _broadcasts = new();
+    private int _pageNumber = 1;
+    private int _totalPages;
+    private bool _isLoadingMore;
+
+    private const int PageSize = 10;
+
+    // ── Lifecycle ───────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadGroupsAsync();
+            await LoadBroadcastsAsync(1);
+        }
+        catch
+        {
+            _loadError = Loc["Err_Load"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ─────────────────────────────────────────────────────
+
+    private async Task ReloadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        try
+        {
+            await LoadGroupsAsync();
+            await LoadBroadcastsAsync(1);
+        }
+        catch
+        {
+            _loadError = Loc["Err_Load"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+            new GetAllCustomerGroupsQuery { IncludeInactive = false });
+        if (result.IsSuccess)
+        {
+            _groups = result.Value ?? new();
+        }
+        else
+        {
+            _groups = new();
+        }
+    }
+
+    private async Task LoadBroadcastsAsync(int pageNumber)
+    {
+        var page = await MessageBus.InvokeAsync<PaginatedResult<BroadcastNotificationDto>>(
+            new GetBroadcastNotificationsQuery { PageNumber = pageNumber, PageSize = PageSize });
+        if (pageNumber <= 1)
+        {
+            _broadcasts = page.Items?.ToList() ?? new();
+        }
+        else
+        {
+            // "Load more" appends to the existing list so the admin can scroll
+            // through history without losing context.
+            _broadcasts.AddRange(page.Items ?? Enumerable.Empty<BroadcastNotificationDto>());
+        }
+        _pageNumber = page.PageNumber;
+        _totalPages = page.TotalPages;
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoadingMore) return;
+        if (_pageNumber >= _totalPages) return;
+
+        _isLoadingMore = true;
+        try
+        {
+            await LoadBroadcastsAsync(_pageNumber + 1);
+        }
+        catch
+        {
+            // Non-fatal — keep the list as-is and surface a toast.
+            await Toast.Error(Loc["Err_Load"]);
+        }
+        finally
+        {
+            _isLoadingMore = false;
+        }
+    }
+
+    // ── Scope selection ─────────────────────────────────────────────────
+
+    private void SetScope(BroadcastScope scope)
+    {
+        // Reset all targets whenever the scope changes so the next SendAsync
+        // doesn't fire with a stale target from the previous mode.
+        _scope = scope;
+        _targetRoleName = null;
+        _targetGroupId = null;
+        _targetUserId = null;
+        _selectedUserName = null;
+        _users.Clear();
+        _userSearchTerm = string.Empty;
+    }
+
+    // ── User search (debounced 300ms) ────────────────────────────────────
+
+    private async Task OnUserSearchInputAsync(ChangeEventArgs e)
+    {
+        _userSearchTerm = e.Value?.ToString() ?? string.Empty;
+
+        // If the user just cleared the box, drop the selection so they can
+        // re-search cleanly.
+        if (string.IsNullOrWhiteSpace(_userSearchTerm))
+        {
+            _users.Clear();
+            return;
+        }
+
+        _userSearchCts?.Cancel();
+        var cts = new System.Threading.CancellationTokenSource();
+        _userSearchCts = cts;
+        try
+        {
+            await Task.Delay(300, cts.Token);
+            await SearchUsersAsync(cts.Token);
+        }
+        catch (System.Threading.Tasks.TaskCanceledException)
+        {
+            // Debounce — a newer keystroke superseded this one.
+        }
+    }
+
+    private async Task SearchUsersAsync(System.Threading.CancellationToken token)
+    {
+        _isSearchingUsers = true;
+        try
+        {
+            var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
+                new GetUsersPaginatedQuery
+                {
+                    SearchTerm = _userSearchTerm?.Trim(),
+                    PageNumber = 1,
+                    PageSize = 20
+                });
+            if (token.IsCancellationRequested) return;
+            _users = page.Items?.ToList() ?? new();
+        }
+        catch
+        {
+            if (!token.IsCancellationRequested) _users = new();
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested) _isSearchingUsers = false;
+        }
+    }
+
+    private void SelectUser(UserListItemDto user)
+    {
+        _targetUserId = user.Id;
+        _selectedUserName = user.FullName;
+        _users.Clear();
+        _userSearchTerm = string.Empty;
+    }
+
+    private void ClearSelectedUser()
+    {
+        _targetUserId = null;
+        _selectedUserName = null;
+    }
+
+    // ── Send ─────────────────────────────────────────────────────────────
+
+    private async Task SendAsync()
+    {
+        if (_isSending) return;
+        if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_message)) return;
+
+        _isSending = true;
+        try
+        {
+            var cmd = new SendBroadcastNotificationCommand(
+                _title.Trim(),
+                _message.Trim(),
+                _scope,
+                _targetRoleName,
+                _targetGroupId,
+                _targetUserId);
+
+            var result = await MessageBus.InvokeAsync<Result<int>>(cmd);
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(string.Format(CultureInfo.CurrentCulture, Loc["Toast_Sent"], result.Value));
+                ResetForm();
+                await LoadBroadcastsAsync(1);
+            }
+            else
+            {
+                await Toast.Error(MapError(result.Error));
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Err_Send"]);
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        _title = string.Empty;
+        _message = string.Empty;
+        _scope = BroadcastScope.All;
+        _targetRoleName = null;
+        _targetGroupId = null;
+        _targetUserId = null;
+        _selectedUserName = null;
+        _userSearchTerm = string.Empty;
+        _users.Clear();
+    }
+
+    /// <summary>
+    /// Maps the stable culture-neutral error codes emitted by
+    /// <see cref="NotificationErrors"/> to localized messages so the toast
+    /// speaks the user's CurrentUICulture. Mirrors the pattern used by the
+    /// desktop Notifications page.
+    /// </summary>
+    private string MapError(string? error)
+    {
+        return error switch
+        {
+            "BroadcastAuthRequired" => Loc["Err_AuthRequired"],
+            "BroadcastGroupNotFound" => Loc["Err_GroupNotFound"],
+            "BroadcastUserNotFound" => Loc["Err_UserNotFound"],
+            "BroadcastUserInactive" => Loc["Err_UserInactive"],
+            _ => Loc["Err_Send"]
+        };
+    }
+
+    // ── Audit-row rendering helpers ──────────────────────────────────────
+
+    private string RelativeTime(DateTimeOffset sentAtUtc)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var diff = now - sentAtUtc;
+        if (diff.TotalMinutes < 1) return Loc["Time_JustNow"];
+        if (diff.TotalHours < 1)
+            return string.Format(CultureInfo.CurrentCulture, Loc["Time_MinutesAgo"], (int)diff.TotalMinutes);
+        if (diff.TotalDays < 1)
+            return string.Format(CultureInfo.CurrentCulture, Loc["Time_HoursAgo"], (int)diff.TotalHours);
+        return string.Format(CultureInfo.CurrentCulture, Loc["Time_DaysAgo"], (int)diff.TotalDays);
+    }
+
+    private string BadgeClassForScope(BroadcastScope scope) => scope switch
+    {
+        BroadcastScope.All => "m-badge m-badge-success",
+        BroadcastScope.Role => "m-badge m-badge-info",
+        BroadcastScope.Group => "m-badge m-badge-neutral",
+        BroadcastScope.User => "m-badge m-badge-gold",
+        _ => "m-badge m-badge-neutral"
+    };
+
+    private string ScopeBadgeLabel(BroadcastNotificationDto b) => b.Scope switch
+    {
+        BroadcastScope.All => Loc["ScopeBadgeAll"],
+        BroadcastScope.Role => string.Format(CultureInfo.CurrentCulture, Loc["ScopeBadgeRole"], b.TargetRoleName ?? "—"),
+        BroadcastScope.Group => string.Format(CultureInfo.CurrentCulture, Loc["ScopeBadgeGroup"], b.TargetGroupName ?? "—"),
+        BroadcastScope.User => string.Format(CultureInfo.CurrentCulture, Loc["ScopeBadgeUser"], b.TargetUserName ?? "—"),
+        _ => Loc["ScopeBadgeAll"]
+    };
+}

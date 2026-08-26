@@ -6,6 +6,13 @@ name: takone
 services:
 
   takone-db:
+    # PINNED to a specific SQL Server 2022 CU tag (NOT :latest) for
+    # data-safety. `:latest` could silently jump a major version on a
+    # `docker compose pull`, and a SQL Server major-version upgrade is
+    # a one-way door that may require a manual upgrade path. Pinning
+    # ensures `git pull && docker compose up -d --build` only updates
+    # the app, never the DB engine. Bump this tag deliberately (after
+    # backing up) when you want to upgrade SQL Server.
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: takone-db
     restart: unless-stopped

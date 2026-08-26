@@ -49,6 +49,8 @@
   <data name="Title_Approved" xml:space="preserve"><value>سفارش تأیید شد</value></data>
   <data name="Title_Invoiced" xml:space="preserve"><value>فاکتور سفارش صادر شد</value></data>
   <data name="Title_Cancelled" xml:space="preserve"><value>سفارش لغو شد</value></data>
+  <data name="Title_Broadcast" xml:space="preserve"><value>اعلان گروهی</value></data>
+  <data name="Title_AppUpdate" xml:space="preserve"><value>به‌روزرسانی برنامه</value></data>
   <data name="Title_Unknown" xml:space="preserve"><value>اعلان</value></data>
   <data name="Message_Submitted_Customer" xml:space="preserve"><value>سفارش {0} شما ارسال شد و در انتظار تأیید است.</value></data>
   <data name="Message_Approved_Customer" xml:space="preserve"><value>سفارش {0} شما توسط {1} تأیید شد.</value></data>

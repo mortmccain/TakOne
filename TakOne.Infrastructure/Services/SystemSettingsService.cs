@@ -96,10 +96,11 @@ public sealed class SystemSettingsService : ISystemSettingsService
             // Make a defensive snapshot — the entity returned by the
             // repo may be tracked by the DbContext, and we don't want
             // mutations in another scope (e.g. SetSystemLimitModeCommandHandler
-            // calling settings.UpdateLimitMode) to leak into the cached
-            // copy. Use SystemSettings.Load (a factory) to produce a
+            // calling settings.UpdateLimitMode, or AppUpdateBroadcasterHostedService
+            // calling settings.UpdateLastKnownAppVersion) to leak into the
+            // cached copy. Use SystemSettings.Load (a factory) to produce a
             // fresh instance with the same values.
-            return SystemSettings.Load(settings.LimitMode, settings.UpdatedAt);
+            return SystemSettings.Load(settings.LimitMode, settings.UpdatedAt, settings.LastKnownAppVersion);
         }))!;
     }
 

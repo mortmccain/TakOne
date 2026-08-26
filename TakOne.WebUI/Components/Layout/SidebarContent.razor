@@ -137,6 +137,19 @@
         </a>
     </AuthorizeView>
 
+    @* Broadcast Notifications — Admin-only (NOT Manager/Employee).
+       Broadcasts are admin-only by spec (the [RequireRoles(Admin)] gate
+       on SendBroadcastNotificationCommand enforces this server-side;
+       this gate keeps the nav item hidden from non-admin staff so they
+       don't see a tool they can't use). Separate AuthorizeView block
+       from the staff-admin section above so the role gate is tight. *@
+    <AuthorizeView Roles="@Roles.Admin">
+        <a href="/Admin/Notifications" class="tm-nav-item @(IsActive("/Admin/Notifications") ? "active" : "")">
+            <RadzenIcon Icon="campaign" />
+            <span>@Localizer["ManageNotifications"]</span>
+        </a>
+    </AuthorizeView>
+
     <p class="tm-nav-section-header">@Localizer["NavSection_System"]</p>
     <a href="/Settings" class="tm-nav-item @(IsActive("/Settings") ? "active" : "")">
         <RadzenIcon Icon="settings" />

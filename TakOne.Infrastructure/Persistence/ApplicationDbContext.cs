@@ -154,6 +154,17 @@ public class ApplicationDbContext
     public DbSet<Notification> Notifications { get; set; } = null!;
 
     /// <summary>
+    /// BroadcastNotification aggregate root — the admin's audit-record view
+    /// of an admin-authored broadcast (or the auto-emitted app-update
+    /// broadcast). One row per broadcast (sent-by, when, scope, target,
+    /// title, message, recipient count). The per-user fanout rows live in
+    /// <see cref="Notifications"/> with <c>Kind=Broadcast</c> (or AppUpdate)
+    /// and a <c>BroadcastId</c> back-pointer to this aggregate's Id.
+    /// Maps to the <c>BroadcastNotifications</c> table.
+    /// </summary>
+    public DbSet<BroadcastNotification> BroadcastNotifications { get; set; } = null!;
+
+    /// <summary>
     /// ASP.NET Core Data Protection key ring. One row per key. The
     /// <c>DataProtectionKey</c> entity (from
     /// <c>Microsoft.AspNetCore.DataProtection.EntityFrameworkCore</c>)

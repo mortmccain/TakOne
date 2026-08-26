@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Broadcast Notifications — TakOne</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>Broadcast Notifications</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>Send announcements to users and audit past broadcasts</value></data>
+  <data name="ComposeHeading" xml:space="preserve"><value>Compose broadcast</value></data>
+  <data name="ComposeSubtitle" xml:space="preserve"><value>Write a message and choose your audience</value></data>
+  <data name="TitleLabel" xml:space="preserve"><value>Title</value></data>
+  <data name="TitlePlaceholder" xml:space="preserve"><value>Short subject line (max 200 chars)</value></data>
+  <data name="MessageLabel" xml:space="preserve"><value>Message</value></data>
+  <data name="MessagePlaceholder" xml:space="preserve"><value>Body of the broadcast (max 1000 chars)</value></data>
+  <data name="ScopeLabel" xml:space="preserve"><value>Audience</value></data>
+  <data name="ScopeAll" xml:space="preserve"><value>Everyone</value></data>
+  <data name="ScopeRole" xml:space="preserve"><value>By Role</value></data>
+  <data name="ScopeGroup" xml:space="preserve"><value>By Group</value></data>
+  <data name="ScopeUser" xml:space="preserve"><value>To User</value></data>
+  <data name="ScopeAllHint" xml:space="preserve"><value>Reaches every active user in the system</value></data>
+  <data name="NoGroupsHint" xml:space="preserve"><value>No customer groups exist yet. Create one first.</value></data>
+  <data name="TargetRoleLabel" xml:space="preserve"><value>Role</value></data>
+  <data name="TargetGroupLabel" xml:space="preserve"><value>Group</value></data>
+  <data name="TargetUserLabel" xml:space="preserve"><value>User</value></data>
+  <data name="TargetUserSearchPlaceholder" xml:space="preserve"><value>Search by worker ID or name…</value></data>
+  <data name="SendButton" xml:space="preserve"><value>Send broadcast</value></data>
+  <data name="SendingButton" xml:space="preserve"><value>Sending…</value></data>
+  <data name="Toast_Sent" xml:space="preserve"><value>Broadcast sent to {0} user(s).</value></data>
+  <data name="Toast_NoRecipients" xml:space="preserve"><value>Broadcast sent — reached 0 users (the target audience is empty).</value></data>
+  <data name="Err_Send" xml:space="preserve"><value>Could not send broadcast</value></data>
+  <data name="Err_AuthRequired" xml:space="preserve"><value>You do not have permission to send broadcasts.</value></data>
+  <data name="Err_GroupNotFound" xml:space="preserve"><value>The selected group no longer exists.</value></data>
+  <data name="Err_UserNotFound" xml:space="preserve"><value>The selected user no longer exists.</value></data>
+  <data name="Err_UserInactive" xml:space="preserve"><value>The selected user is deactivated.</value></data>
+  <data name="Err_Load" xml:space="preserve"><value>Could not load broadcasts</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>Try again</value></data>
+  <data name="AuditHeading" xml:space="preserve"><value>Recent broadcasts</value></data>
+  <data name="AuditSubtitle" xml:space="preserve"><value>A record of every broadcast sent from this page (and automatic app-update broadcasts)</value></data>
+  <data name="ColSentAt" xml:space="preserve"><value>Sent</value></data>
+  <data name="ColSender" xml:space="preserve"><value>Sender</value></data>
+  <data name="ColScope" xml:space="preserve"><value>Audience</value></data>
+  <data name="ColTitle" xml:space="preserve"><value>Title</value></data>
+  <data name="ColRecipients" xml:space="preserve"><value>Recipients</value></data>
+  <data name="ColKind" xml:space="preserve"><value>Kind</value></data>
+  <data name="KindBroadcast" xml:space="preserve"><value>Broadcast</value></data>
+  <data name="KindAppUpdate" xml:space="preserve"><value>App update</value></data>
+  <data name="SenderSystem" xml:space="preserve"><value>System</value></data>
+  <data name="SenderUnknown" xml:space="preserve"><value>Unknown sender</value></data>
+  <data name="Unknown" xml:space="preserve"><value>unknown</value></data>
+  <data name="ScopeBadgeAll" xml:space="preserve"><value>Everyone</value></data>
+  <data name="ScopeBadgeRole" xml:space="preserve"><value>Role: {0}</value></data>
+  <data name="ScopeBadgeGroup" xml:space="preserve"><value>Group: {0}</value></data>
+  <data name="ScopeBadgeUser" xml:space="preserve"><value>User: {0}</value></data>
+  <data name="ReachedNUsers" xml:space="preserve"><value>Reached {0} user(s)</value></data>
+  <data name="EmptyAuditTitle" xml:space="preserve"><value>No broadcasts yet</value></data>
+  <data name="EmptyAuditHint" xml:space="preserve"><value>Once you send a broadcast (or the system emits an app-update notification), it appears here.</value></data>
+  <data name="PrevPage" xml:space="preserve"><value>Previous</value></data>
+  <data name="NextPage" xml:space="preserve"><value>Next</value></data>
+  <data name="PageFormat" xml:space="preserve"><value>Page {0} of {1}</value></data>
+  <data name="Time_JustNow" xml:space="preserve"><value>just now</value></data>
+  <data name="Time_MinutesAgo" xml:space="preserve"><value>{0} min ago</value></data>
+  <data name="Time_HoursAgo" xml:space="preserve"><value>{0} hr ago</value></data>
+  <data name="Time_DaysAgo" xml:space="preserve"><value>{0} d ago</value></data>
+  <data name="Back" xml:space="preserve"><value>Back</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading…</value></data>
+</root>

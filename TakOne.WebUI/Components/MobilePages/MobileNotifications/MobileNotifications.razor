@@ -170,7 +170,7 @@ else
                     </svg>
                 </div>
                 <div class="m-notif-body">
-                    <div class="m-notif-title">@GetTitle(n.Kind)</div>
+                    <div class="m-notif-title">@GetTitle(n)</div>
                     <div class="m-notif-message">@GetMessage(n)</div>
                     @if (!string.IsNullOrEmpty(n.Reason))
                     {
@@ -398,17 +398,36 @@ else
         {
             Navigation.NavigateTo($"/m/Sales/{n.SaleId.Value}", forceLoad: false);
         }
+        else if (n.Kind == NotificationKind.AppUpdate)
+        {
+            // For the auto-emitted "app updated" notification, the user
+            // should reload the page to pick up the new code (the running
+            // Blazor circuit is still on the OLD container's assets). A
+            // full page reload (forceLoad: true) re-fetches everything.
+            // The user explicitly taps the notification — opt-in, not
+            // forced on them.
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        // For Broadcast (admin-authored): no navigation — the title +
+        // message are already displayed in the card. The tap just
+        // dismisses (marks as read).
     }
 
     /// <summary>
     /// Returns the localized title for the notification kind.
     /// </summary>
-    private string GetTitle(NotificationKind kind) => kind switch
+    private string GetTitle(NotificationDto n) => n.Kind switch
     {
         NotificationKind.SaleSubmitted => Loc["Title_Submitted"],
         NotificationKind.SaleApproved => Loc["Title_Approved"],
         NotificationKind.SaleInvoiced => Loc["Title_Invoiced"],
         NotificationKind.SaleCancelled => Loc["Title_Cancelled"],
+        // For Broadcast + AppUpdate, the admin-authored Title is the
+        // notification's title (stored on the row at fanout time). Fall
+        // back to a localized kind-label if the admin somehow sent an
+        // empty title (shouldn't happen — the validator rejects it).
+        NotificationKind.Broadcast => n.Title ?? Loc["Title_Broadcast"],
+        NotificationKind.AppUpdate => n.Title ?? Loc["Title_AppUpdate"],
         _ => Loc["Title_Unknown"]
     };
 
@@ -429,6 +448,10 @@ else
                 string.Format(Loc["Message_Invoiced_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
             NotificationKind.SaleCancelled =>
                 string.Format(Loc["Message_Cancelled_Customer"], sale, n.ActorName ?? Loc["UnknownActor"]),
+            // For Broadcast + AppUpdate, the admin-authored Message is
+            // the notification's body (stored on the row at fanout time).
+            NotificationKind.Broadcast => n.Message ?? Loc["Message_Unknown"],
+            NotificationKind.AppUpdate => n.Message ?? Loc["Message_Unknown"],
             _ => Loc["Message_Unknown"]
         };
     }
@@ -442,6 +465,8 @@ else
         NotificationKind.SaleApproved => "m-notif-icon-approve",
         NotificationKind.SaleInvoiced => "m-notif-icon-invoice",
         NotificationKind.SaleCancelled => "m-notif-icon-cancel",
+        NotificationKind.Broadcast => "m-notif-icon-broadcast",
+        NotificationKind.AppUpdate => "m-notif-icon-appupdate",
         _ => "m-notif-icon-default"
     };
 
@@ -456,6 +481,11 @@ else
             NotificationKind.SaleApproved => "<path stroke-linecap='round' stroke-linejoin='round' d='M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />",
             NotificationKind.SaleInvoiced => "<path stroke-linecap='round' stroke-linejoin='round' d='M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z' />",
             NotificationKind.SaleCancelled => "<path stroke-linecap='round' stroke-linejoin='round' d='M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />",
+            // Megaphone/campaign icon for admin-authored broadcasts.
+            NotificationKind.Broadcast => "<path stroke-linecap='round' stroke-linejoin='round' d='M10.34 3.94c.06-.32.03-.66-.08-.95-.12-.32-.36-.59-.66-.8a2.05 2.05 0 00-2.62.55L3.8 8.85a2 2 0 00-.34 1.42l.13 1.42-1.2 1.95a1 1 0 102 1l1.2-1.95 1.36-.43a2 2 0 001.21-1.04l3.06-6.16a2 2 0 00.21-1.13zM10.93 14.34l1.55 3.13a1 1 0 101.8-.86l-1.55-3.13a1 1 0 10-1.8.86z' />",
+            // System update icon (downward arrow into a tray) for the
+            // auto-emitted app-update broadcast.
+            NotificationKind.AppUpdate => "<path stroke-linecap='round' stroke-linejoin='round' d='M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3' />",
             _ => "<path stroke-linecap='round' stroke-linejoin='round' d='M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0' />"
         };
         return (Microsoft.AspNetCore.Components.MarkupString)path;

@@ -58,7 +58,10 @@ public sealed class GetNotificationsForUserQueryHandler
             cancellationToken);
 
         // Project aggregates → DTOs. Same shape as the SaleListItemDto
-        // projection in GetSalesPaginatedQueryHandler.
+        // projection in GetSalesPaginatedQueryHandler. Includes the
+        // Title/Message/BroadcastId fields (null for sale-lifecycle
+        // notifications; populated for Broadcast/AppUpdate fanout rows
+        // so the UI can render the admin-authored text directly).
         var dtos = page.Items
             .Select(n => new NotificationDto
             {
@@ -68,6 +71,9 @@ public sealed class GetNotificationsForUserQueryHandler
                 SaleDisplayNumber = n.SaleDisplayNumber,
                 ActorName = n.ActorName,
                 Reason = n.Reason,
+                Title = n.Title,
+                Message = n.Message,
+                BroadcastId = n.BroadcastId,
                 CreatedAtUtc = n.CreatedAtUtc,
                 ReadAtUtc = n.ReadAtUtc
             })

@@ -377,6 +377,23 @@ builder.Services.Configure<RequestLocalizationOptions>(opts =>
     });
 });
 
+// --- App-update auto-broadcaster (hosted service) ---
+//
+// Runs ONCE at startup, after the DI container is built and Wolverine's
+// bus is initialized. Compares the running assembly version against
+// SystemSettings.LastKnownAppVersion; if it changed since last boot,
+// dispatches an EmitAppUpdateBroadcastCommand via IMessageBus. The
+// command fans out per-user AppUpdate Notification rows to every active
+// user (audit row + N fanout rows + N SignalR pings, all in one
+// Wolverine transaction). Then persists the new version so subsequent
+// restarts with the same version don't re-broadcast.
+//
+// The service is best-effort: a broadcast failure (DB unreachable,
+// Wolverine dispatch fails) is logged and never prevents the app from
+// booting. See AppUpdateBroadcasterHostedService class doc for the
+// full rationale.
+builder.Services.AddHostedService<AppUpdateBroadcasterHostedService>();
+
 var app = builder.Build();
 
 // ==================================================================================================================================

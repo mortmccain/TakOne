@@ -59,6 +59,34 @@ public sealed class NotificationDto
     public string? Reason { get; init; }
 
     /// <summary>
+    /// The admin-authored subject line, copied verbatim from the parent
+    /// <see cref="Domain.Notifications.Entities.BroadcastNotification"/>.
+    /// Null for sale-lifecycle notifications — those use the structured
+    /// fields + UI-side localization. Only set for
+    /// <see cref="NotificationKind.Broadcast"/> and
+    /// <see cref="NotificationKind.AppUpdate"/>.
+    /// </summary>
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// The admin-authored message body, copied verbatim from the parent
+    /// <see cref="Domain.Notifications.Entities.BroadcastNotification"/>.
+    /// Same nullness rules as <see cref="Title"/>.
+    /// </summary>
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// The Id of the parent
+    /// <see cref="Domain.Notifications.Entities.BroadcastNotification"/>
+    /// aggregate that fanned out this per-user row. Null for sale-lifecycle
+    /// notifications. Set for <see cref="NotificationKind.Broadcast"/> and
+    /// <see cref="NotificationKind.AppUpdate"/> so the UI can correlate
+    /// fanout rows back to their parent audit row (e.g. for grouping in a
+    /// future "broadcast detail" page).
+    /// </summary>
+    public Guid? BroadcastId { get; init; }
+
+    /// <summary>
     /// UTC timestamp the notification was created. UI converts to local
     /// time + culture-relative format ("2 minutes ago").
     /// </summary>

@@ -3937,6 +3937,8 @@ button.m-notif-card.m-notif-unread {
 .m-notif-icon-approve { background: rgba(15, 157, 88, 0.12); color: #0f9d58; }
 .m-notif-icon-invoice { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
 .m-notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
+.m-notif-icon-broadcast { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
+.m-notif-icon-appupdate { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
 .m-notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
 
 .m-notif-body {
@@ -4017,5 +4019,300 @@ button.m-notif-card.m-notif-unread {
     background: transparent;
     color: var(--m-text, #1f2937);
     border: 1px solid var(--m-border, #e5e7eb);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MobileAdminNotifications — compose form + audit list
+   Round 12 (Task 9-A). Reuses .m-page-header / .m-page-title /
+   .m-page-subtitle / .m-field / .m-field-label / .m-input / .m-textarea /
+   .m-select / .m-tabs / .m-tab / .m-search-box / .m-btn / .m-badge /
+   .m-list / .m-empty-cta / .m-error-box / .m-footer / .m-skeleton from
+   earlier rounds. Adds the broadcast-page-specific classes below.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Subtitle rendered under the page title needs horizontal padding to line
+   up with the rest of the page content. The base .m-page-subtitle only
+   sets font-size/color/margin — no horizontal padding. */
+.m-page-subtitle--pad {
+    padding: 0 1rem;
+    margin-top: 0.125rem;
+}
+
+/* Generic section heading — visually between a page title and a list, used
+   to label "Recent broadcasts" (and reused for any future mobile section
+   that wants the same look without owning its own class). */
+.m-section-heading {
+    margin: 1.25rem 1rem 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--tm-green, #0E4D3C);
+}
+
+.tak-theme-dark .m-section-heading { color: var(--tm-green-light, #3DBE96); }
+
+.m-section-subtitle {
+    margin: 0 1rem 0.875rem;
+    font-size: 0.75rem;
+    color: var(--tm-text-muted, #8A857A);
+}
+
+/* ── Compose form ── */
+.m-broadcast-compose {
+    margin: 0.5rem 1rem 0.5rem;
+    padding: 0.875rem;
+    border-radius: 1rem;
+    background: var(--tm-surface, #FFFFFF);
+    border: 1px solid var(--tm-border, #E5E0D5);
+    box-shadow: 0 1px 4px rgba(14, 77, 60, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tak-theme-dark .m-broadcast-compose {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.m-broadcast-compose-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--tm-green, #0E4D3C);
+    margin: 0 0 0.25rem 0;
+    letter-spacing: 0.01em;
+}
+
+.tak-theme-dark .m-broadcast-compose-title { color: var(--tm-green-light, #3DBE96); }
+
+/* Scope segmented control — same as the regular .m-tabs but the 4 buttons
+   share equal width so they read as a "radio group" rather than a tag
+   cloud. Also forces wrapping on narrow viewports (375px and under). */
+.m-tabs--scope {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.375rem;
+    padding: 0;
+    margin-bottom: 0.25rem;
+}
+
+.m-tabs--scope .m-tab {
+    text-align: center;
+    padding-block: 0.5rem;
+    width: 100%;
+}
+
+@media (max-width: 360px) {
+    .m-tabs--scope { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Block hint text — full-width muted helper shown under a field (e.g. the
+   "Reaches every active user" hint under Scope=All). The base
+   .m-field-hint is inline-flex; this variant is block so it wraps. */
+.m-field-hint--block {
+    display: block;
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--tm-text-muted, #8A857A);
+    line-height: 1.4;
+}
+
+/* Selected-user chip (after picking a row from the user-search results). */
+.m-broadcast-selected-user {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.4375rem 0.625rem 0.4375rem 0.875rem;
+    border-radius: 0.625rem;
+    background: color-mix(in srgb,
+        var(--tm-gold, #C9A227) 10%, var(--tm-surface, #FFFFFF));
+    border: 1px solid color-mix(in srgb,
+        var(--tm-gold, #C9A227) 35%, transparent);
+}
+
+.tak-theme-dark .m-broadcast-selected-user {
+    background: rgba(232, 197, 71, 0.1);
+    border-color: rgba(232, 197, 71, 0.4);
+}
+
+.m-broadcast-selected-name {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--tm-text, #262523);
+}
+
+.tak-theme-dark .m-broadcast-selected-name { color: #F3F1EC; }
+
+/* Debounced user-search results — list with up to 20 rows (PageSize=20). */
+.m-broadcast-user-results {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    max-height: 16rem;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.m-broadcast-user-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border: 1px solid var(--tm-border, #E5E0D5);
+    border-radius: 0.625rem;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: start;
+    transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.m-broadcast-user-row:hover,
+.m-broadcast-user-row:focus-visible {
+    background: color-mix(in srgb,
+        var(--tm-green, #0E4D3C) 8%, var(--tm-surface, #FFFFFF));
+    border-color: var(--tm-green, #0E4D3C);
+    outline: none;
+}
+
+.tak-theme-dark .m-broadcast-user-row {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.tak-theme-dark .m-broadcast-user-row:hover,
+.tak-theme-dark .m-broadcast-user-row:focus-visible {
+    background: rgba(61, 190, 150, 0.14);
+    border-color: var(--tm-green-light, #3DBE96);
+}
+
+.m-broadcast-user-name {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--tm-text, #262523);
+}
+
+.tak-theme-dark .m-broadcast-user-name { color: #F3F1EC; }
+
+.m-broadcast-user-id {
+    font-size: 0.7rem;
+    color: var(--tm-text-muted, #8A857A);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Audit list ── */
+.m-list--broadcasts {
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+/* Each broadcast is rendered as a card (not a row) so we can stack
+   sender / title / message / badges vertically. */
+.m-broadcast-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.75rem 0.875rem;
+    border-radius: 0.875rem;
+    background: var(--tm-surface, #FFFFFF);
+    border: 1px solid var(--tm-border, #E5E0D5);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tak-theme-dark .m-broadcast-item {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+@media (hover: hover) {
+    .m-broadcast-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(14, 77, 60, 0.08);
+    }
+}
+
+.m-broadcast-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+}
+
+.m-broadcast-item-sender {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--tm-text, #262523);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tak-theme-dark .m-broadcast-item-sender { color: #F3F1EC; }
+
+.m-broadcast-item-time {
+    font-size: 0.7rem;
+    color: var(--tm-text-faint, #B0AA9D);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.m-broadcast-item-title {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--tm-green, #0E4D3C);
+    margin: 0;
+    line-height: 1.35;
+}
+
+.tak-theme-dark .m-broadcast-item-title { color: var(--tm-green-light, #3DBE96); }
+
+.m-broadcast-item-message {
+    font-size: 0.8rem;
+    color: var(--tm-text-muted, #8A857A);
+    margin: 0;
+    line-height: 1.5;
+    /* Line-clamp to 3 lines so multi-broadcast lists stay scannable. */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+.tak-theme-dark .m-broadcast-item-message { color: #C9C4B8; }
+
+.m-broadcast-item-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: 0.25rem;
+}
+
+.m-broadcast-item-reached {
+    margin-inline-start: auto;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--tm-text-muted, #8A857A);
+}
+
+.tak-theme-dark .m-broadcast-item-reached { color: #B0AA9D; }
+
+.m-broadcast-load-more {
+    padding: 0.5rem 1rem 0.75rem;
 }
 

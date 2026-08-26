@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>اعلان‌های گروهی — تک‌وان</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>اعلان‌های گروهی</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>ارسال پیام به کاربران و مشاهده تاریخچه اعلان‌ها</value></data>
+  <data name="ComposeHeading" xml:space="preserve"><value>تألیف اعلان</value></data>
+  <data name="ComposeSubtitle" xml:space="preserve"><value>متن پیام را بنویسید و مخاطبان را انتخاب کنید</value></data>
+  <data name="TitleLabel" xml:space="preserve"><value>عنوان</value></data>
+  <data name="TitlePlaceholder" xml:space="preserve"><value>عنوان کوتاه (حداکثر ۲۰۰ کاراکتر)</value></data>
+  <data name="MessageLabel" xml:space="preserve"><value>پیام</value></data>
+  <data name="MessagePlaceholder" xml:space="preserve"><value>متن اعلان (حداکثر ۱۰۰۰ کاراکتر)</value></data>
+  <data name="ScopeLabel" xml:space="preserve"><value>مخاطبان</value></data>
+  <data name="ScopeAll" xml:space="preserve"><value>همه</value></data>
+  <data name="ScopeRole" xml:space="preserve"><value>بر اساس نقش</value></data>
+  <data name="ScopeGroup" xml:space="preserve"><value>بر اساس گروه</value></data>
+  <data name="ScopeUser" xml:space="preserve"><value>به یک کاربر</value></data>
+  <data name="ScopeAllHint" xml:space="preserve"><value>به همه کاربران فعال سیستم ارسال می‌شود</value></data>
+  <data name="NoGroupsHint" xml:space="preserve"><value>هنوز گروه مشتری‌ای تعریف نشده است. ابتدا یک گروه بسازید.</value></data>
+  <data name="TargetRoleLabel" xml:space="preserve"><value>نقش</value></data>
+  <data name="TargetGroupLabel" xml:space="preserve"><value>گروه</value></data>
+  <data name="TargetUserLabel" xml:space="preserve"><value>کاربر</value></data>
+  <data name="TargetUserSearchPlaceholder" xml:space="preserve"><value>جستجو با کد پرسنلی یا نام…</value></data>
+  <data name="SendButton" xml:space="preserve"><value>ارسال اعلان</value></data>
+  <data name="SendingButton" xml:space="preserve"><value>در حال ارسال…</value></data>
+  <data name="Toast_Sent" xml:space="preserve"><value>اعلان به {0} کاربر ارسال شد.</value></data>
+  <data name="Toast_NoRecipients" xml:space="preserve"><value>اعلان ارسال شد — به ۰ کاربر رسید (مخاطبان خالی بود).</value></data>
+  <data name="Err_Send" xml:space="preserve"><value>ارسال اعلان ناموفق بود</value></data>
+  <data name="Err_AuthRequired" xml:space="preserve"><value>شما اجازه ارسال اعلان گروهی را ندارید.</value></data>
+  <data name="Err_GroupNotFound" xml:space="preserve"><value>گروه انتخاب‌شده دیگر وجود ندارد.</value></data>
+  <data name="Err_UserNotFound" xml:space="preserve"><value>کاربر انتخاب‌شده دیگر وجود ندارد.</value></data>
+  <data name="Err_UserInactive" xml:space="preserve"><value>کاربر انتخاب‌شده غیرفعال است.</value></data>
+  <data name="Err_Load" xml:space="preserve"><value>بارگذاری اعلان‌ها ناموفق بود</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش دوباره</value></data>
+  <data name="AuditHeading" xml:space="preserve"><value>اعلان‌های اخیر</value></data>
+  <data name="AuditSubtitle" xml:space="preserve"><value>تاریخچه هر اعلان ارسال‌شده از این صفحه (و اعلان‌های خودکار به‌روزرسانی برنامه)</value></data>
+  <data name="ColSentAt" xml:space="preserve"><value>ارسال</value></data>
+  <data name="ColSender" xml:space="preserve"><value>فرستنده</value></data>
+  <data name="ColScope" xml:space="preserve"><value>مخاطبان</value></data>
+  <data name="ColTitle" xml:space="preserve"><value>عنوان</value></data>
+  <data name="ColRecipients" xml:space="preserve"><value>گیرندگان</value></data>
+  <data name="ColKind" xml:space="preserve"><value>نوع</value></data>
+  <data name="KindBroadcast" xml:space="preserve"><value>اعلان گروهی</value></data>
+  <data name="KindAppUpdate" xml:space="preserve"><value>به‌روزرسانی برنامه</value></data>
+  <data name="SenderSystem" xml:space="preserve"><value>سیستم</value></data>
+  <data name="SenderUnknown" xml:space="preserve"><value>فرستنده ناشناخته</value></data>
+  <data name="Unknown" xml:space="preserve"><value>نامشخص</value></data>
+  <data name="ScopeBadgeAll" xml:space="preserve"><value>همه</value></data>
+  <data name="ScopeBadgeRole" xml:space="preserve"><value>نقش: {0}</value></data>
+  <data name="ScopeBadgeGroup" xml:space="preserve"><value>گروه: {0}</value></data>
+  <data name="ScopeBadgeUser" xml:space="preserve"><value>کاربر: {0}</value></data>
+  <data name="ReachedNUsers" xml:space="preserve"><value>به {0} کاربر رسید</value></data>
+  <data name="EmptyAuditTitle" xml:space="preserve"><value>هنوز اعلانی ارسال نشده</value></data>
+  <data name="EmptyAuditHint" xml:space="preserve"><value>پس از ارسال اولین اعلان (یا صدور اعلان خودکار به‌روزرسانی)، اینجا نمایش داده می‌شود.</value></data>
+  <data name="PrevPage" xml:space="preserve"><value>قبلی</value></data>
+  <data name="NextPage" xml:space="preserve"><value>بعدی</value></data>
+  <data name="PageFormat" xml:space="preserve"><value>صفحه {0} از {1}</value></data>
+  <data name="Time_JustNow" xml:space="preserve"><value>همین الان</value></data>
+  <data name="Time_MinutesAgo" xml:space="preserve"><value>{0} دقیقه پیش</value></data>
+  <data name="Time_HoursAgo" xml:space="preserve"><value>{0} ساعت پیش</value></data>
+  <data name="Time_DaysAgo" xml:space="preserve"><value>{0} روز پیش</value></data>
+  <data name="Back" xml:space="preserve"><value>بازگشت</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری…</value></data>
+</root>

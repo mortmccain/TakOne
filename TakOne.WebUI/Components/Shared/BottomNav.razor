@@ -10,7 +10,8 @@
      In Dashboard:     Dashboard(selected) | Products | Admin Products | Admin Users | Settings
      In Products:      Dashboard | Products(selected) | Orders | Cart | Settings
      In Admin Products: Dashboard | Admin Products(selected) | Admin Categories | Settings
-     In Admin Users:   Dashboard | Admin Users(selected) | Customer Groups | Settings
+     In Admin Users:   Dashboard | Admin Users(selected) | Admin Notifications | Customer Groups | Settings
+     In Admin Notifications: Dashboard | Admin Users | Admin Notifications(selected) | Customer Groups | Settings
 
    The "section" is determined by the current URL path.
 *@
@@ -157,9 +158,21 @@
             }
             else if (section == "admin-users")
             {
-                // In Admin Users: Dashboard | Admin Users(sel) | Customer Groups | Settings
+                // In Admin Users: Dashboard | Admin Users(sel) | Admin Notifications | Customer Groups | Settings
                 _navItems.Add(new NavItem(Loc["Dashboard"], "/m/Dashboard", NavIcon.Dashboard, false));
                 _navItems.Add(new NavItem(Loc["AdminUsers"], "/m/Admin/Users", NavIcon.AdminUsers, true));
+                _navItems.Add(new NavItem(Loc["AdminNotifications"], "/m/Admin/Notifications", NavIcon.AdminNotifications, false));
+                _navItems.Add(new NavItem(Loc["CustomerGroups"], "/m/Admin/Groups", NavIcon.CustomerGroups, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
+            }
+            else if (section == "admin-notifications")
+            {
+                // On the Admin Notifications page: keep the Admin Users section
+                // bar (the one that introduced this destination) but mark
+                // Admin Notifications as the active destination.
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/m/Dashboard", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/m/Admin/Users", NavIcon.AdminUsers, false));
+                _navItems.Add(new NavItem(Loc["AdminNotifications"], "/m/Admin/Notifications", NavIcon.AdminNotifications, true));
                 _navItems.Add(new NavItem(Loc["CustomerGroups"], "/m/Admin/Groups", NavIcon.CustomerGroups, false));
                 _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
             }
@@ -223,6 +236,8 @@
             return "admin-categories";
         if (p == "admin/groups" || p.StartsWith("admin/groups/", StringComparison.Ordinal))
             return "admin-groups";
+        if (p == "admin/notifications" || p.StartsWith("admin/notifications/", StringComparison.Ordinal))
+            return "admin-notifications";
         if (p == "sales" || p.StartsWith("sales/", StringComparison.Ordinal))
             return "sales";
         if (p == "cart" || p.StartsWith("cart/", StringComparison.Ordinal))
@@ -278,5 +293,11 @@
 
         public static readonly Microsoft.AspNetCore.Components.MarkupString CustomerGroups =
             (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a4 4 0 11-8 0 4 4 0 018 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z'/>";
+
+        // Megaphone / campaign icon — represents the broadcast-notifications
+        // admin destination. Matches the line-icon style of the rest of the
+        // NavIcon set (single-color stroke, 24x24 viewBox, no fill).
+        public static readonly Microsoft.AspNetCore.Components.MarkupString AdminNotifications =
+            (Microsoft.AspNetCore.Components.MarkupString)"<path stroke-linecap='round' stroke-linejoin='round' d='M10.34 3.94c.06-.32.03-.66-.08-.95-.12-.32-.36-.59-.66-.8a2.05 2.05 0 00-2.62.55L3.8 8.85a2 2 0 00-.34 1.42l.13 1.42-1.2 1.95a1 1 0 102 1l1.2-1.95 1.36-.43a2 2 0 001.21-1.04l3.06-6.16a2 2 0 00.21-1.13zM10.93 14.34l1.55 3.13a1 1 0 101.8-.86l-1.55-3.13a1 1 0 10-1.8.86z'/>";
     }
 }

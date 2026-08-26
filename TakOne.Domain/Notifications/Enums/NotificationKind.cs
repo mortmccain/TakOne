@@ -53,5 +53,51 @@ public enum NotificationKind
     /// customer ("your order was cancelled: {reason}") and the canceller
     /// ("you cancelled order {number}").
     /// </summary>
-    SaleCancelled = 4
+    SaleCancelled = 4,
+
+    /// <summary>
+    /// An admin-authored broadcast notification (a free-form Title + Message
+    /// sent by an admin to a scoped audience: everyone, a role, a customer
+    /// group, or a specific user). Created by
+    /// <c>SendBroadcastNotificationCommandHandler</c> which:
+    ///   1. Resolves the recipient user Ids for the chosen scope.
+    ///   2. Creates ONE <c>BroadcastNotification</c> audit row (admin's
+    ///      source-of-truth: who sent it, when, to whom, the title/message,
+    ///      the recipient count).
+    ///   3. Fans out N per-user <c>Notification</c> rows (one per recipient)
+    ///      with Kind=Broadcast, Title/Message copied verbatim, and
+    ///      BroadcastId pointing back to the audit row.
+    /// All in the same EF Core transaction (Wolverine's AutoApplyTransactions).
+    /// If the transaction rolls back, no Notification row reaches any user —
+    /// no false broadcast.
+    /// </summary>
+    /// <remarks>
+    /// <b>NOT SUBJECT TO THE DEDUP UNIQUE INDEX</b>: the
+    /// <c>UX_Notifications_UserId_SaleId_Kind</c> index is filtered to
+    /// <c>WHERE SaleId IS NOT NULL</c>. Broadcast notifications have
+    /// <c>SaleId IS NULL</c>, so each fanout row is a distinct INSERT — no
+    /// dedup collision even if the same broadcast somehow fans out twice
+    /// (which it can't, because the audit row's Id is unique per send and
+    /// each fanout row carries that BroadcastId).
+    /// </remarks>
+    Broadcast = 5,
+
+    /// <summary>
+    /// A system-emitted "app updated" notification, broadcast to every user
+    /// by <c>AppUpdateBroadcasterHostedService</c> at app startup when the
+    /// running assembly version differs from <c>SystemSettings.LastKnownAppVersion</c>.
+    /// Reuses the same fanout pipeline as <see cref="Broadcast"/> (one
+    /// <c>BroadcastNotification</c> audit row + N per-user Notification rows
+    /// with Kind=AppUpdate). After broadcasting, the hosted service persists
+    /// the new version so subsequent restarts don't re-broadcast.
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY A SEPARATE KIND (not just Broadcast)</b>: lets the UI render
+    /// the app-update notification with a distinct icon (system_update), a
+    /// distinct color, and a "Reload" action button (calling
+    /// <c>location.reload()</c>) instead of the generic broadcast tap-to-dismiss.
+    /// It also lets admins filter the audit list to see only auto-emitted
+    /// app-update broadcasts.
+    /// </remarks>
+    AppUpdate = 6
 }
