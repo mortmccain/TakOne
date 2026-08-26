@@ -1,0 +1,626 @@
+﻿@* MobileCart.razor — mobile version of the Cart page.
+   Route: /m/Cart
+   Layout: MobileLayout
+
+   PORTS ALL PC Cart page features:
+     - Active draft cart load (GetActiveCartForUserQuery)
+     - Per-line qty selector (− value +) with live line/cart totals
+     - Per-line remove
+     - Clear cart (inline confirm pattern)
+     - Submit cart → /m/Sales
+     - Budget card (when BudgetInfo present — null for staff / CountOnly mode)
+     - Stock + per-line purchase-limit warning gates on Submit
+
+   BACKEND CONTRACT (mirrors desktop Cart.razor):
+     - Load:    GetActiveCartForUserQuery → Result<CartDto?>
+       - Success(null)  = empty cart (normal state, NOT an error)
+       - Success(CartDto) = cart with line items + live stock per line
+       - Failure(error)  = load failed
+     - Update qty:   UpdateSaleLineItemCommand(SaleId, LineItemId, Quantity) → Result
+     - Remove line:  RemoveSaleLineItemCommand(SaleId, LineItemId) → Result
+     - Clear cart:   DeleteDraftSaleCommand(SaleId) → Result
+     - Submit cart:  SubmitSaleCommand(SaleId) → Result
+
+   AFTER EACH CART-CHANGING MUTATION we call
+   Navigation.NavigateTo(Navigation.Uri, forceLoad: true) — the cart bar
+   lives in MobileLayout (not the page), so a force-reload is the only
+   way to refresh it (and the BottomNav badge) without duplicating its
+   state. The submit flow navigates to /m/Sales instead. *@
+
+@page "/m/Cart"
+@attribute [Authorize(Roles = "Admin,Manager,Employee,Customer")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetActiveCartForUser
+@using TakOne.Application.Sales.Commands.UpdateSaleLineItem
+@using TakOne.Application.Sales.Commands.RemoveSaleLineItem
+@using TakOne.Application.Sales.Commands.DeleteDraftSale
+@using TakOne.Application.Sales.Commands.SubmitSale
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileCart> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (_loadError is not null)
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else if (_cart is null || _cart.LineItems.Count == 0)
+{
+    @* ── Empty cart (normal state — Success(null) from the query) ── *@
+    <div class="m-empty-cta">
+        <h3>@Loc["EmptyTitle"]</h3>
+        <p>@Loc["EmptyMessage"]</p>
+        <button class="m-btn m-btn-primary m-btn-block" @onclick="GoToProducts">
+            @Loc["BrowseProductsButton"]
+        </button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header ── *@
+    <div class="m-page-header">
+        <h2 class="m-page-title">@Loc["PageHeading"]</h2>
+        <p class="m-page-subtitle">
+            @string.Format(CultureInfo.CurrentCulture, Loc["ItemCount"], CultureFormat.FormatDigits(_cart.LineItems.Count))
+        </p>
+    </div>
+
+    @* ── 2. Budget card (customer-only — null for staff / CountOnly mode) ── *@
+    @if (_cart.BudgetInfo is { } budget)
+    {
+        var salaryAmount = budget.Salary?.Amount ?? 0m;
+        var usedPercent = salaryAmount > 0m
+            ? Math.Clamp(budget.Consumed / salaryAmount, 0m, 1m)
+            : 0m;
+        var remainingMoney = new MoneyDto
+        {
+            Amount = budget.Remaining,
+            Currency = budget.Salary?.Currency ?? "IRR"
+        };
+
+        <div class="m-budget-card">
+            <div class="m-budget-content">
+                <div class="m-budget-info">
+                    <p class="m-budget-label">@Loc["BudgetRemaining"]</p>
+                    <p class="m-budget-amount">@FormatMoney(remainingMoney)</p>
+                    @if (usedPercent > 0m)
+                    {
+                        <div class="m-budget-bar-container">
+                            <div class="m-budget-bar-info">
+                                <span>@Loc["BudgetUsed"]</span>
+                                <span>@CultureFormat.FormatPercent(usedPercent, 0)</span>
+                            </div>
+                            <div class="m-budget-bar-track">
+                                <div class="m-budget-bar-fill" style="width: @($"{usedPercent:P0}")"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="m-budget-icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.75rem; height: 1.75rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m3.75 0h7.5M3 5.25h18a.75.75 0 01.75.75v12a.75.75 0 01-.75.75H3a.75.75 0 01-.75-.75V6a.75.75 0 01.75-.75z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── 3. Line items ── *@
+    <div class="m-list">
+        @foreach (var line in _cart.LineItems)
+        {
+            var l = line; // closure capture (classic Blazor foreach gotcha)
+            var qty = GetPendingQty(l.Id);
+            var cap = l.MyPurchaseLimit ?? 999;
+            var lineTotalMoney = new MoneyDto
+            {
+                Amount = l.UnitPrice.Amount * qty,
+                Currency = l.UnitPrice.Currency
+            };
+
+            <div class="m-cart-line">
+                @* ─ top: product image (clickable) + body (name + unit price + stock badge) ─ *@
+                <div class="m-cart-line-top">
+                    <div class="m-product-image" @onclick="(() => GoToProduct(l.ProductId))" aria-label="@l.ProductName">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="color: var(--tm-gray);">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                        </svg>
+                        @if (l.CurrentStock <= 0)
+                        {
+                            <span class="m-stock-badge m-stock-out">@Loc["StockOut"]</span>
+                        }
+                        else if (l.CurrentStock <= 10)
+                        {
+                            <span class="m-stock-badge m-stock-low">@Loc["StockLow"]</span>
+                        }
+                        else
+                        {
+                            <span class="m-stock-badge m-stock-in">@Loc["StockIn"]</span>
+                        }
+                    </div>
+                    <div class="m-cart-line-body">
+                        <h4 class="m-cart-line-name" @onclick="(() => GoToProduct(l.ProductId))">@l.ProductName</h4>
+                        <p class="m-cart-line-price">
+                            <span class="m-cart-line-price-label">@Loc["UnitPriceLabel"]</span>
+                            @FormatMoney(l.UnitPrice)
+                        </p>
+                    </div>
+                </div>
+
+                @* ─ bottom: qty selector (or spinner if this line is in-flight) + line total + remove ─ *@
+                <div class="m-cart-line-bottom">
+                    @if (_busyLineId == l.Id)
+                    {
+                        <div class="m-qty-selector" aria-label="@Loc["QuantityLabel"]">
+                            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="m-qty-selector" aria-label="@Loc["QuantityLabel"]">
+                            <button type="button" class="m-qty-btn"
+                                    disabled="@(qty <= 1 || _isBusy)"
+                                    @onclick="(() => DecrementQtyAsync(l))">
+                                −
+                            </button>
+                            <span class="m-qty-value">@CultureFormat.FormatDigits(qty)</span>
+                            <button type="button" class="m-qty-btn"
+                                    disabled="@(qty >= cap || _isBusy)"
+                                    @onclick="(() => IncrementQtyAsync(l))">
+                                +
+                            </button>
+                        </div>
+                    }
+
+                    <div class="m-cart-line-total">@FormatMoney(lineTotalMoney)</div>
+
+                    <button type="button" class="m-icon-btn-sm danger"
+                            title="@Loc["RemoveButton"]"
+                            aria-label="@Loc["RemoveButton"]"
+                            disabled="@(_isBusy || _busyLineId == l.Id)"
+                            @onclick="(() => HandleRemoveLineAsync(l))">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.1rem; height: 1.1rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m9.968-3.21c.342.052.682.107 1.022.166M12 5.25c1.256 0 2.426-.137 3.32-.382.255-.07.475-.348.475-.614 0-.275-.253-.5-.548-.5H9.253c-.295 0-.548.225-.548.5 0 .266.22.544.475.614.894.245 2.064.382 3.32.382z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ── 4. Summary card ── *@
+    <div class="m-section-header">
+        <h3 class="m-section-title">@Loc["SummaryTitle"]</h3>
+    </div>
+    <div class="m-summary-card">
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["TotalItems"]</span>
+            <span class="m-summary-value">@CultureFormat.FormatDigits(ComputeTotalItemCount())</span>
+        </div>
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["LineItemsCount"]</span>
+            <span class="m-summary-value">@CultureFormat.FormatDigits(_cart.LineItems.Count)</span>
+        </div>
+        <div class="m-summary-divider"></div>
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["TotalAmount"]</span>
+            <span class="m-summary-total">@FormatMoney(ComputeCartTotal())</span>
+        </div>
+        @if (HasStockIssue())
+        {
+            <div class="m-summary-warn">@Loc["StockIssueWarning"]</div>
+        }
+        @if (HasLimitIssue())
+        {
+            <div class="m-summary-warn">@Loc["LimitIssueWarning"]</div>
+        }
+    </div>
+
+    @* ── 5. Actions ── *@
+    <button class="m-btn m-btn-secondary m-btn-block"
+            disabled="@_isBusy"
+            @onclick="GoToProducts">
+        @Loc["ContinueShoppingButton"]
+    </button>
+
+    @if (_confirmingClear)
+    {
+        <div class="m-cart-confirm">
+            <p>@Loc["ConfirmClearMessage"]</p>
+            <div class="m-cart-confirm-btns">
+                <button class="m-btn m-btn-danger m-btn-block"
+                        disabled="@_isBusy"
+                        @onclick="HandleClearCartAsync">
+                    @Loc["ConfirmClearYes"]
+                </button>
+                <button class="m-btn m-btn-secondary m-btn-block"
+                        disabled="@_isBusy"
+                        @onclick="@(() => _confirmingClear = false)">
+                    @Loc["ConfirmClearNo"]
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <button class="m-btn m-btn-gold m-btn-block"
+                disabled="@(_isBusy || HasStockIssue() || HasLimitIssue())"
+                @onclick="HandleSubmitCartAsync">
+            @Loc["SubmitCartButton"]
+        </button>
+        <button class="m-btn m-btn-danger m-btn-block"
+                disabled="@_isBusy"
+                @onclick="@(() => _confirmingClear = true)">
+            @Loc["ClearCartButton"]
+        </button>
+    }
+
+    @* ── 6. Footer ── *@
+    <div class="m-footer">@Loc["Version"]</div>
+}
+
+@code {
+    // ── State ──────────────────────────────────────────────────────────
+
+    private bool _isLoading = true;
+    private string? _loadError;
+    private CartDto? _cart;
+
+    /// <summary>
+    /// Live per-line qty state (init from line.Quantity on load). Each +/−
+    /// click commits immediately via UpdateSaleLineItemCommand, then forces
+    /// a full page reload (so MobileLayout's cart bar + BottomNav badge
+    /// refresh — the cart bar lives in the layout, not the page).
+    /// </summary>
+    private readonly Dictionary<Guid, int> _pendingQuantities = new();
+
+    /// <summary>
+    /// Set during a per-line qty update (inc/dec). While set, that line's
+    /// qty selector is replaced by a small RadzenProgressBarCircular and
+    /// other lines' +/- buttons are still enabled (each line is independent).
+    /// </summary>
+    private Guid? _busyLineId;
+
+    /// <summary>
+    /// Set during a page-level mutation (remove / clear / submit). Disables
+    /// ALL action buttons + qty selectors so the user can't fire concurrent
+    /// commands at the same line.
+    /// </summary>
+    private bool _isBusy;
+
+    /// <summary>
+    /// Toggles the inline "Are you sure?" confirmation for the Clear button.
+    /// Replaces the Clear + Submit buttons with Yes/No buttons while true.
+    /// </summary>
+    private bool _confirmingClear;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); }
+        catch { _loadError = Loc["Error_GenericLoad"]; }
+        finally { _isLoading = false; }
+    }
+
+    // ── Data loading ──────────────────────────────────────────────────
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CartDto?>>(new GetActiveCartForUserQuery());
+
+            if (!result.IsSuccess)
+            {
+                _loadError = Loc["Error_GenericLoad"];
+                _cart = null;
+                return;
+            }
+
+            // Success(null) = empty cart — NORMAL state, not an error.
+            _cart = result.Value;
+            _pendingQuantities.Clear();
+            if (_cart is not null)
+            {
+                foreach (var line in _cart.LineItems)
+                    _pendingQuantities[line.Id] = line.Quantity;
+            }
+            _confirmingClear = false;
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+            _cart = null;
+        }
+    }
+
+    // ── Per-line qty handlers (commit on each +/− click) ──────────────
+
+    private async Task IncrementQtyAsync(CartLineItemDto line)
+    {
+        if (_cart is null || _isBusy || _busyLineId is not null) return;
+
+        var cap = line.MyPurchaseLimit ?? 999;
+        var current = GetPendingQty(line.Id);
+        if (current >= cap) return;
+
+        var newQty = current + 1;
+        _pendingQuantities[line.Id] = newQty;
+        await CommitQtyAsync(line, newQty);
+    }
+
+    private async Task DecrementQtyAsync(CartLineItemDto line)
+    {
+        if (_cart is null || _isBusy || _busyLineId is not null) return;
+
+        var current = GetPendingQty(line.Id);
+        if (current <= 1) return;
+
+        var newQty = current - 1;
+        _pendingQuantities[line.Id] = newQty;
+        await CommitQtyAsync(line, newQty);
+    }
+
+    private async Task CommitQtyAsync(CartLineItemDto line, int newQty)
+    {
+        if (_cart is not { } cart) return;
+
+        _busyLineId = line.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new UpdateSaleLineItemCommand(cart.SaleId, line.Id, newQty));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Updated"], summary: Loc["UpdatedTitle"]);
+                // Force-reload so MobileLayout's cart bar + BottomNav badge refresh.
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            else
+            {
+                await Toast.Error(Loc["Error_GenericUpdate"]);
+                // Revert local qty back to the server's truth.
+                _pendingQuantities[line.Id] = line.Quantity;
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericUpdate"]);
+            _pendingQuantities[line.Id] = line.Quantity;
+        }
+        finally
+        {
+            _busyLineId = null;
+        }
+    }
+
+    // ── Remove line ───────────────────────────────────────────────────
+
+    private async Task HandleRemoveLineAsync(CartLineItemDto line)
+    {
+        if (_cart is not { } cart || _isBusy) return;
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new RemoveSaleLineItemCommand(cart.SaleId, line.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Removed"], summary: Loc["RemovedTitle"]);
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            else
+            {
+                await Toast.Error(Loc["Error_GenericRemove"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericRemove"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Clear cart ────────────────────────────────────────────────────
+
+    private async Task HandleClearCartAsync()
+    {
+        if (_cart is not { } cart || _isBusy) return;
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeleteDraftSaleCommand(cart.SaleId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Cleared"], summary: Loc["ClearedTitle"]);
+                _confirmingClear = false;
+                // Will show the empty state after reload.
+                Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            else
+            {
+                await Toast.Error(Loc["Error_GenericClear"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericClear"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Submit cart ───────────────────────────────────────────────────
+
+    private async Task HandleSubmitCartAsync()
+    {
+        if (_cart is not { } cart || _isBusy) return;
+
+        // Defense-in-depth: the Submit button is already disabled when
+        // HasStockIssue / HasLimitIssue is true, but a dev-tools user
+        // could re-enable it. Re-check before dispatching.
+        if (HasStockIssue())
+        {
+            await Toast.Error(Loc["StockIssueWarning"]);
+            return;
+        }
+        if (HasLimitIssue())
+        {
+            await Toast.Error(Loc["LimitIssueWarning"]);
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SubmitSaleCommand(cart.SaleId));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["Submitted"], summary: Loc["SubmittedTitle"]);
+                // The submitted sale is now in Pending status — /m/Sales shows it.
+                Navigation.NavigateTo("/m/Sales", forceLoad: true);
+            }
+            else
+            {
+                await Toast.Error(Loc["Error_GenericSubmit"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericSubmit"]);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    // ── Navigation helpers ────────────────────────────────────────────
+
+    private void GoToProducts()
+        => Navigation.NavigateTo("/m/Products", forceLoad: false);
+
+    private void GoToProduct(Guid productId)
+        => Navigation.NavigateTo($"/Products/{productId}", forceLoad: false);
+
+    // ── Pending-qty state helpers ─────────────────────────────────────
+
+    private int GetPendingQty(Guid lineItemId)
+        => _pendingQuantities.TryGetValue(lineItemId, out var q) ? q : 1;
+
+    // ── Display helpers ───────────────────────────────────────────────
+
+    private MoneyDto ComputeLineTotal(CartLineItemDto line)
+    {
+        var qty = GetPendingQty(line.Id);
+        return new MoneyDto
+        {
+            Amount = line.UnitPrice.Amount * qty,
+            Currency = line.UnitPrice.Currency
+        };
+    }
+
+    private MoneyDto ComputeCartTotal()
+    {
+        if (_cart is null || _cart.LineItems.Count == 0)
+            return new MoneyDto();
+
+        var total = 0m;
+        var currency = _cart.LineItems[0].UnitPrice.Currency;
+        foreach (var line in _cart.LineItems)
+            total += ComputeLineTotal(line).Amount;
+        return new MoneyDto { Amount = total, Currency = currency };
+    }
+
+    private int ComputeTotalItemCount()
+    {
+        if (_cart is null) return 0;
+        var sum = 0;
+        foreach (var line in _cart.LineItems)
+            sum += GetPendingQty(line.Id);
+        return sum;
+    }
+
+    /// <summary>
+    /// True if any line has CurrentStock ≤ 0 — disables Submit + shows the
+    /// stock warning. (Spec definition — simpler than desktop, which also
+    /// checks pending-qty &gt; stock. Mobile +/− pattern commits immediately
+    /// so the server-side clamp keeps qty in sync; we only need to surface
+    /// the binary "out of stock" state.)
+    /// </summary>
+    private bool HasStockIssue()
+    {
+        if (_cart is null) return false;
+        foreach (var line in _cart.LineItems)
+            if (line.CurrentStock <= 0) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// True if any line's live (pending) qty exceeds its MyPurchaseLimit.
+    /// Lines with null MyPurchaseLimit (staff, or no group limit on this
+    /// product) are skipped. Disables Submit + shows the limit warning.
+    /// </summary>
+    private bool HasLimitIssue()
+    {
+        if (_cart is null) return false;
+        foreach (var line in _cart.LineItems)
+        {
+            if (!line.MyPurchaseLimit.HasValue) continue;
+            var liveQty = GetPendingQty(line.Id);
+            if (liveQty > line.MyPurchaseLimit.Value)
+                return true;
+        }
+        return false;
+    }
+
+    // ── Money formatter (IRR / 10 → Toman, "N0" InvariantCulture,
+    //    CultureFormat.ToCultureDigits, append Loc["TomanUnit"]) — spec §5 verbatim.
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0m && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+}

@@ -1,0 +1,977 @@
+@* MobileAdminCategories.razor — mobile version of AdminCategories.razor.
+   Route: /m/Admin/Categories
+   Layout: MobileLayout
+
+   PORTS desktop AdminCategories.razor's category-management features:
+     - Full category tree (Categories -> SubCategories -> SubSubCategories)
+       with active + inactive visible (admin needs to reactivate).
+     - Inline rename for any node (Category / SubCategory / SubSubCategory).
+     - Inline create at the end of each level (Add first category, Add
+       sub-category, Add sub-sub-category).
+     - Per-node activate/deactivate toggle (block icon when active ->
+       deactivate; check icon when inactive -> activate).
+     - Per-node expand/collapse (Category, SubCategory; SubSub is a leaf).
+
+   UI is an INDENTED LIST tree (mobile-friendly). It is NOT the horizontal
+   SVG canvas tree that the desktop page uses — that canvas does not work
+   on a narrow viewport.
+
+   STATE MACHINE (matches MobileProducts.razor's pattern):
+     loading -> error -> empty -> content
+     Per-action _busyKey guards prevent double-clicks on the same control.
+*@
+
+@page "/m/Admin/Categories"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using Radzen
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetAllCategories
+@using TakOne.Application.Categories.Commands.CreateCategory
+@using TakOne.Application.Categories.Commands.RenameCategory
+@using TakOne.Application.Categories.Commands.ActivateCategory
+@using TakOne.Application.Categories.Commands.DeactivateCategory
+@using TakOne.Application.Categories.Commands.SubcategoryCommands.CreateSubCategory
+@using TakOne.Application.Categories.Commands.RenameSubCategory
+@using TakOne.Application.Categories.Commands.ActivateSubCategory
+@using TakOne.Application.Categories.Commands.DeactivateSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.CreateSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.RenameSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.ActivateSubSubCategory
+@using TakOne.Application.Categories.Commands.SubSubCategoryCommands.DeactivateSubSubCategory
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileAdminCategories> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false"
+                                   Mode="ProgressBarMode.Indeterminate"
+                                   Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else if (_categories.Count == 0 && _addingMode != "cat")
+{
+    @* ── Empty state — the page has no categories yet AND the top-level
+       add form is not currently open. The CTA button toggles the form
+       (the same form that sits at the bottom of the .m-tree when the
+       list IS populated). *@
+    <div class="m-empty-cta">
+        <h3>@Loc["EmptyTitle"]</h3>
+        <p>@Loc["EmptyMessage"]</p>
+        <button class="m-btn m-btn-primary" @onclick='(() => StartAdd("cat"))'>
+            @Loc["AddFirstCategoryButton"]
+        </button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — title (no Create button; the add form is
+       inlined at the bottom of the .m-tree, mirroring the desktop's
+       end-of-group + button pattern). *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+    </div>
+
+    @* ── 2. Category tree (indented list, three levels deep) ── *@
+    <div class="m-tree">
+        @foreach (var categoryItem in _categories)
+        {
+            var cat = categoryItem;  // closure-capture (classic Blazor foreach gotcha)
+            var catKey = $"cat:{cat.Id}";
+            var catExpanded = _expandedCats.Contains(cat.Id);
+            var catHasChildren = cat.SubCategories.Count > 0;
+            var catIsRenaming = _renamingKey == catKey;
+            var catIsToggling = _busyKey == $"toggle:{catKey}";
+            var catIsRenamingBusy = _busyKey == $"rename:{catKey}";
+
+            <div class="m-tree-node @(!cat.IsActive ? "inactive" : "")">
+                <div class="m-tree-node-row">
+                    <button class="m-tree-expand"
+                            type="button"
+                            aria-label="@(catExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                            title="@(catExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                            @onclick='(() => ToggleExpandCats(cat.Id))'>
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+                    <span class="m-tree-folder">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1.25rem;height:1.25rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.5 2.122V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.776c0-.353-.05-.696-.144-1.022M3.75 9.776L5.853 4.5h12.294l2.103 5.276m-16.5 0c.112-.303.295-.578.535-.81M15.75 9.75h-6" />
+                        </svg>
+                    </span>
+
+                    @if (catIsRenaming)
+                    {
+                        <div class="m-tree-inline-form">
+                            <input class="m-input"
+                                   value="@_renameValue"
+                                   @oninput='@(e => _renameValue = e.Value?.ToString() ?? "")'
+                                   @onkeypress='@(async e => { if (e.Key == "Enter") await CommitRenameCategoryAsync(cat.Id); })'
+                                   placeholder="@cat.Name" />
+                            <button class="m-btn m-btn-primary m-btn-sm"
+                                    disabled="@(catIsRenamingBusy)"
+                                    @onclick='(() => CommitRenameCategoryAsync(cat.Id))'>
+                                @Loc["SaveButton"]
+                            </button>
+                            <button class="m-btn m-btn-secondary m-btn-sm"
+                                    disabled="@(catIsRenamingBusy)"
+                                    @onclick="CancelRename">
+                                @Loc["CancelButton"]
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="m-tree-name @(!cat.IsActive ? "inactive" : "")">@cat.Name</span>
+                    }
+
+                    <span class="m-tree-btns">
+                        <button class="m-icon-btn-sm"
+                                type="button"
+                                aria-label="@Loc["EditButton"]"
+                                title="@Loc["EditButton"]"
+                                disabled="@(catIsRenaming)"
+                                @onclick='(() => StartRename(catKey, cat.Name))'>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07M16.862 4.487l-9.18 9.18a4.5 4.5 0 00-1.28 2.36l-.46 2.28 2.28-.46a4.5 4.5 0 002.36-1.28l9.18-9.18z" />
+                            </svg>
+                        </button>
+                        <button class="m-icon-btn-sm"
+                                type="button"
+                                aria-label="@(cat.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                title="@(cat.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                disabled="@(catIsToggling)"
+                                @onclick='(() => HandleToggleCategoryActiveAsync(cat))'>
+                            @if (cat.IsActive)
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            }
+                        </button>
+                    </span>
+                </div>
+
+                @if (catExpanded)
+                {
+                    <div class="m-tree-children">
+                        @foreach (var subItem in cat.SubCategories)
+                        {
+                            var sub = subItem;  // closure-capture
+                            var subKey = $"sub:{sub.Id}";
+                            var subExpanded = _expandedSubs.Contains(sub.Id);
+                            var subHasChildren = sub.SubSubCategories.Count > 0;
+                            var subIsRenaming = _renamingKey == subKey;
+                            var subIsToggling = _busyKey == $"toggle:{subKey}";
+                            var subIsRenamingBusy = _busyKey == $"rename:{subKey}";
+                            var subAddMode = $"sub:{cat.Id}";
+                            var subAddActive = _addingMode == subAddMode;
+                            var subAddBusy = _busyKey == $"create:{subAddMode}";
+
+                            <div class="m-tree-sub-row @(!sub.IsActive ? "inactive" : "")">
+                                <button class="m-tree-expand"
+                                        type="button"
+                                        aria-label="@(subExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                        title="@(subExpanded ? Loc["Collapse"] : Loc["Expand"])"
+                                        @onclick='(() => ToggleExpandSubs(sub.Id))'>
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                <span class="m-tree-folder">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1.25rem;height:1.25rem;">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.5 2.122V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.776c0-.353-.05-.696-.144-1.022M3.75 9.776L5.853 4.5h12.294l2.103 5.276m-16.5 0c.112-.303.295-.578.535-.81M15.75 9.75h-6" />
+                                    </svg>
+                                </span>
+
+                                @if (subIsRenaming)
+                                {
+                                    <div class="m-tree-inline-form">
+                                        <input class="m-input"
+                                               value="@_renameValue"
+                                               @oninput='@(e => _renameValue = e.Value?.ToString() ?? "")'
+                                               @onkeypress='@(async e => { if (e.Key == "Enter") await CommitRenameSubAsync(cat.Id, sub.Id); })'
+                                               placeholder="@sub.Name" />
+                                        <button class="m-btn m-btn-primary m-btn-sm"
+                                                disabled="@(subIsRenamingBusy)"
+                                                @onclick='(() => CommitRenameSubAsync(cat.Id, sub.Id))'>
+                                            @Loc["SaveButton"]
+                                        </button>
+                                        <button class="m-btn m-btn-secondary m-btn-sm"
+                                                disabled="@(subIsRenamingBusy)"
+                                                @onclick="CancelRename">
+                                            @Loc["CancelButton"]
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="m-tree-name @(!sub.IsActive ? "inactive" : "")">@sub.Name</span>
+                                }
+
+                                <span class="m-tree-btns">
+                                    <button class="m-icon-btn-sm"
+                                            type="button"
+                                            aria-label="@Loc["EditButton"]"
+                                            title="@Loc["EditButton"]"
+                                            disabled="@(subIsRenaming)"
+                                            @onclick='(() => StartRename(subKey, sub.Name))'>
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07M16.862 4.487l-9.18 9.18a4.5 4.5 0 00-1.28 2.36l-.46 2.28 2.28-.46a4.5 4.5 0 002.36-1.28l9.18-9.18z" />
+                                        </svg>
+                                    </button>
+                                    <button class="m-icon-btn-sm"
+                                            type="button"
+                                            aria-label="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                            title="@(sub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                            disabled="@(subIsToggling)"
+                                            @onclick='(() => HandleToggleSubActiveAsync(cat.Id, sub))'>
+                                        @if (sub.IsActive)
+                                        {
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                        }
+                                    </button>
+                                </span>
+                            </div>
+
+                            @if (subExpanded)
+                            {
+                                <div class="m-tree-sub-children">
+                                    @foreach (var ssubItem in sub.SubSubCategories)
+                                    {
+                                        var ssub = ssubItem;  // closure-capture
+                                        var ssubKey = $"subsub:{ssub.Id}";
+                                        var ssubIsRenaming = _renamingKey == ssubKey;
+                                        var ssubIsToggling = _busyKey == $"toggle:{ssubKey}";
+                                        var ssubIsRenamingBusy = _busyKey == $"rename:{ssubKey}";
+                                        var ssubAddMode = $"subsub:{cat.Id}:{sub.Id}";
+                                        var ssubAddActive = _addingMode == ssubAddMode;
+                                        var ssubAddBusy = _busyKey == $"create:{ssubAddMode}";
+
+                                        <div class="m-tree-subsub-row @(!ssub.IsActive ? "inactive" : "")">
+                                            <span class="m-tree-folder">
+                                                @* Leaf icon — small filled dot, no chevron.
+                                                   SubSub is the leaf level and has no children
+                                                   to expand. Matches desktop's `Icon="circle"`
+                                                   styling. *@
+                                                <svg fill="currentColor" stroke="none" viewBox="0 0 24 24" style="width:0.625rem;height:0.625rem;">
+                                                    <circle cx="12" cy="12" r="6" />
+                                                </svg>
+                                            </span>
+
+                                            @if (ssubIsRenaming)
+                                            {
+                                                <div class="m-tree-inline-form">
+                                                    <input class="m-input"
+                                                           value="@_renameValue"
+                                                           @oninput='@(e => _renameValue = e.Value?.ToString() ?? "")'
+                                                           @onkeypress='@(async e => { if (e.Key == "Enter") await CommitRenameSubSubAsync(cat.Id, sub.Id, ssub.Id); })'
+                                                           placeholder="@ssub.Name" />
+                                                    <button class="m-btn m-btn-primary m-btn-sm"
+                                                            disabled="@(ssubIsRenamingBusy)"
+                                                            @onclick='(() => CommitRenameSubSubAsync(cat.Id, sub.Id, ssub.Id))'>
+                                                        @Loc["SaveButton"]
+                                                    </button>
+                                                    <button class="m-btn m-btn-secondary m-btn-sm"
+                                                            disabled="@(ssubIsRenamingBusy)"
+                                                            @onclick="CancelRename">
+                                                        @Loc["CancelButton"]
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="m-tree-name @(!ssub.IsActive ? "inactive" : "")">@ssub.Name</span>
+                                            }
+
+                                            <span class="m-tree-btns">
+                                                <button class="m-icon-btn-sm"
+                                                        type="button"
+                                                        aria-label="@Loc["EditButton"]"
+                                                        title="@Loc["EditButton"]"
+                                                        disabled="@(ssubIsRenaming)"
+                                                        @onclick='(() => StartRename(ssubKey, ssub.Name))'>
+                                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07M16.862 4.487l-9.18 9.18a4.5 4.5 0 00-1.28 2.36l-.46 2.28 2.28-.46a4.5 4.5 0 002.36-1.28l9.18-9.18z" />
+                                                    </svg>
+                                                </button>
+                                                <button class="m-icon-btn-sm"
+                                                        type="button"
+                                                        aria-label="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                                        title="@(ssub.IsActive ? Loc["DeactivateButton"] : Loc["ActivateButton"])"
+                                                        disabled="@(ssubIsToggling)"
+                                                        @onclick='(() => HandleToggleSubSubActiveAsync(cat.Id, sub.Id, ssub))'>
+                                                    @if (ssub.IsActive)
+                                                    {
+                                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                                        </svg>
+                                                    }
+                                                    else
+                                                    {
+                                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                        </svg>
+                                                    }
+                                                </button>
+                                            </span>
+                                        </div>
+                                    }
+
+                                    @* End-of-group + button for THIS SubCategory's
+                                       sub-subs (adds a new SubSubCategory under
+                                       THIS SubCategory). Mirrors the desktop
+                                       page's v5 end-of-group pattern. *@
+                                    @if (ssubAddActive)
+                                    {
+                                        <div class="m-tree-inline-form">
+                                            <input class="m-input"
+                                                   value="@_addValue"
+                                                   @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
+                                                   @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateSubSubAsync(cat.Id, sub.Id); })'
+                                                   placeholder="@Loc["AddSubSubCategoryButton"]' />
+                                            <button class="m-btn m-btn-primary m-btn-sm"
+                                                    disabled="@(ssubAddBusy)"
+                                                    @onclick='(() => CommitCreateSubSubAsync(cat.Id, sub.Id))'>
+                                                @Loc["SaveButton"]
+                                            </button>
+                                            <button class="m-btn m-btn-secondary m-btn-sm"
+                                                    disabled="@(ssubAddBusy)"
+                                                    @onclick="CancelAdd">
+                                                @Loc["CancelButton"]
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="m-tree-add"
+                                                type="button"
+                                                @onclick='(() => StartAdd($"subsub:{cat.Id}:{sub.Id}"))'>
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            @Loc["AddSubSubCategoryButton"]
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        }
+
+                        @* End-of-group + button for THIS Category's subs
+                           (adds a new SubCategory under THIS Category). *@
+                        @if (subAddActive)
+                        {
+                            <div class="m-tree-inline-form">
+                                <input class="m-input"
+                                       value="@_addValue"
+                                       @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
+                                       @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateSubAsync(cat.Id); })'
+                                       placeholder="@Loc["AddSubCategoryButton"]' />
+                                <button class="m-btn m-btn-primary m-btn-sm"
+                                        disabled="@(subAddBusy)"
+                                        @onclick='(() => CommitCreateSubAsync(cat.Id))'>
+                                    @Loc["SaveButton"]
+                                </button>
+                                <button class="m-btn m-btn-secondary m-btn-sm"
+                                        disabled="@(subAddBusy)"
+                                        @onclick="CancelAdd">
+                                    @Loc["CancelButton"]
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="m-tree-add"
+                                    type="button"
+                                    @onclick='(() => StartAdd($"sub:{cat.Id}"))'>
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                                </svg>
+                                @Loc["AddSubCategoryButton"]
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @* End-of-tree + button for top-level Categories (adds a new
+           top-level Category). Always present at the bottom of the
+           tree, even when the tree is empty (in that case the empty
+           CTA above already shows the same button). *@
+        @{
+            var topAddActive = _addingMode == "cat";
+            var topAddBusy = _busyKey == "create:cat";
+        }
+        @if (topAddActive)
+        {
+            <div class="m-tree-inline-form">
+                <input class="m-input"
+                       value="@_addValue"
+                       @oninput='@(e => _addValue = e.Value?.ToString() ?? "")'
+                       @onkeypress='@(async e => { if (e.Key == "Enter") await CommitCreateCategoryAsync(); })'
+                       placeholder="@Loc["AddFirstCategoryButton"]' />
+                <button class="m-btn m-btn-primary m-btn-sm"
+                        disabled="@(topAddBusy)"
+                        @onclick="CommitCreateCategoryAsync">
+                    @Loc["SaveButton"]
+                </button>
+                <button class="m-btn m-btn-secondary m-btn-sm"
+                        disabled="@(topAddBusy)"
+                        @onclick="CancelAdd">
+                    @Loc["CancelButton"]
+                </button>
+            </div>
+        }
+        else
+        {
+            <button class="m-tree-add"
+                    type="button"
+                    @onclick='(() => StartAdd("cat"))'>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:1rem;height:1rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                @Loc["AddFirstCategoryButton"]
+            </button>
+        }
+    </div>
+
+    <div class="m-footer">@Loc["Version"]</div>
+}
+
+@code {
+    // ── State ──
+    private bool _isLoading = true;
+    private string? _loadError;
+    private List<CategoryDto> _categories = new();
+    private HashSet<Guid> _expandedCats = new();
+    private HashSet<Guid> _expandedSubs = new();
+    private string? _renamingKey;        // "cat:{id}" / "sub:{id}" / "subsub:{id}"
+    private string _renameValue = string.Empty;
+    private string? _addingMode;         // "cat" / "sub:{catId}" / "subsub:{catId}:{subId}"
+    private string _addValue = string.Empty;
+    private string? _busyKey;            // "rename:{renameKey}" / "create:{addingMode}" / "toggle:{renameKey}"
+
+    // ── Lifecycle ──
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            // GetAllCategoriesQuery (NOT GetActiveCategoriesQuery) so
+            // deactivated Categories / SubCategories / SubSubCategories
+            // STAY on the page — the markup renders them with the .inactive
+            // class + an "activate" toggle so the admin can reactivate
+            // them. GetActiveCategoriesQuery would filter out deactivated
+            // top-level Categories entirely, making them vanish.
+            var result = await MessageBus.InvokeAsync<Result<List<CategoryDto>>>(
+                new GetAllCategoriesQuery());
+
+            if (result.IsSuccess)
+            {
+                _categories = result.Value;
+            }
+            else
+            {
+                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Expand / collapse ──────────────────────────────────────────────
+
+    private void ToggleExpandCats(Guid categoryId)
+    {
+        if (!_expandedCats.Remove(categoryId))
+        {
+            _expandedCats.Add(categoryId);
+        }
+    }
+
+    private void ToggleExpandSubs(Guid subCategoryId)
+    {
+        if (!_expandedSubs.Remove(subCategoryId))
+        {
+            _expandedSubs.Add(subCategoryId);
+        }
+    }
+
+    // ── Inline rename ───────────────────────────────────────────────────
+
+    private void StartRename(string key, string currentName)
+    {
+        _renamingKey = key;
+        _renameValue = currentName;
+        // Cancel any open add form — only one inline form at a time.
+        _addingMode = null;
+        _addValue = string.Empty;
+    }
+
+    private void CancelRename()
+    {
+        _renamingKey = null;
+        _renameValue = string.Empty;
+    }
+
+    private async Task CommitRenameCategoryAsync(Guid categoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        var busyKey = $"rename:cat:{categoryId}";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new RenameCategoryCommand(categoryId, trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["CategoryRenamed"], trimmed),
+                    summary: Loc["CategoryRenamedTitle"]);
+                _renamingKey = null;
+                _renameValue = string.Empty;
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    private async Task CommitRenameSubAsync(Guid categoryId, Guid subCategoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        var busyKey = $"rename:sub:{subCategoryId}";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new RenameSubCategoryCommand(categoryId, subCategoryId, trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubCategoryRenamed"], trimmed),
+                    summary: Loc["SubCategoryRenamedTitle"]);
+                _renamingKey = null;
+                _renameValue = string.Empty;
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    private async Task CommitRenameSubSubAsync(Guid categoryId, Guid subCategoryId, Guid subSubCategoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_renameValue))
+        {
+            await Toast.Error(Loc["Error_NewNameRequired"]);
+            return;
+        }
+
+        var trimmed = _renameValue.Trim();
+        var busyKey = $"rename:subsub:{subSubCategoryId}";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new RenameSubSubCategoryCommand(categoryId, subCategoryId, subSubCategoryId, trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubSubCategoryRenamed"], trimmed),
+                    summary: Loc["SubSubCategoryRenamedTitle"]);
+                _renamingKey = null;
+                _renameValue = string.Empty;
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_RenameFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    // ── Inline add ──────────────────────────────────────────────────────
+
+    private void StartAdd(string mode)
+    {
+        _addingMode = mode;
+        _addValue = string.Empty;
+        // Cancel any open rename form — only one inline form at a time.
+        _renamingKey = null;
+        _renameValue = string.Empty;
+    }
+
+    private void CancelAdd()
+    {
+        _addingMode = null;
+        _addValue = string.Empty;
+    }
+
+    private async Task CommitCreateCategoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_addValue))
+        {
+            await Toast.Error(Loc["Error_NameRequired"]);
+            return;
+        }
+
+        var trimmed = _addValue.Trim();
+        var busyKey = "create:cat";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateCategoryCommand(trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["CreateSuccess"], trimmed),
+                    summary: Loc["CreateSuccessTitle"]);
+                _addingMode = null;
+                _addValue = string.Empty;
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_GenericCreate"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_GenericCreate"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    private async Task CommitCreateSubAsync(Guid categoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_addValue))
+        {
+            await Toast.Error(Loc["Error_NameRequired"]);
+            return;
+        }
+
+        var trimmed = _addValue.Trim();
+        var addMode = $"sub:{categoryId}";
+        var busyKey = $"create:{addMode}";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateSubCategoryCommand(categoryId, trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubCategoryCreated"], trimmed),
+                    summary: Loc["SubCategoryCreatedTitle"]);
+                _addingMode = null;
+                _addValue = string.Empty;
+                // Auto-expand the parent so the new sub is visible
+                // after the reload.
+                _expandedCats.Add(categoryId);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_CreateSub"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_CreateSub"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    private async Task CommitCreateSubSubAsync(Guid categoryId, Guid subCategoryId)
+    {
+        if (string.IsNullOrWhiteSpace(_addValue))
+        {
+            await Toast.Error(Loc["Error_NameRequired"]);
+            return;
+        }
+
+        var trimmed = _addValue.Trim();
+        var addMode = $"subsub:{categoryId}:{subCategoryId}";
+        var busyKey = $"create:{addMode}";
+        _busyKey = busyKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<Guid>>(
+                new CreateSubSubCategoryCommand(categoryId, subCategoryId, trimmed));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["SubSubCategoryCreated"], trimmed),
+                    summary: Loc["SubSubCategoryCreatedTitle"]);
+                _addingMode = null;
+                _addValue = string.Empty;
+                // Auto-expand both ancestors so the new subsub is
+                // visible after the reload.
+                _expandedCats.Add(categoryId);
+                _expandedSubs.Add(subCategoryId);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_CreateSubSub"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_CreateSubSub"]);
+        }
+        finally
+        {
+            if (_busyKey == busyKey) _busyKey = null;
+        }
+    }
+
+    // ── Activate / Deactivate toggles ──────────────────────────────────
+    //
+    // Each non-leaf node carries a single toggle icon. If the node is
+    // active, the icon is "block" and clicking dispatches Deactivate
+    // (which also cascades to children for Category/SubCategory per the
+    // domain). If inactive, the icon is "check" and clicking dispatches
+    // Activate (which does NOT cascade — children must be reactivated
+    // individually, per the domain's intentional design).
+
+    private async Task HandleToggleCategoryActiveAsync(CategoryDto category)
+    {
+        var toggleKey = $"toggle:cat:{category.Id}";
+        _busyKey = toggleKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = category.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateCategoryCommand(category.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateCategoryCommand(category.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        category.IsActive ? Loc["CategoryDeactivated"] : Loc["CategoryActivated"],
+                        category.Name),
+                    summary: category.IsActive ? Loc["CategoryDeactivatedTitle"] : Loc["CategoryActivatedTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == toggleKey) _busyKey = null;
+        }
+    }
+
+    private async Task HandleToggleSubActiveAsync(Guid categoryId, SubCategoryDto sub)
+    {
+        var toggleKey = $"toggle:sub:{sub.Id}";
+        _busyKey = toggleKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = sub.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateSubCategoryCommand(categoryId, sub.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateSubCategoryCommand(categoryId, sub.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        sub.IsActive ? Loc["SubCategoryDeactivated"] : Loc["SubCategoryActivated"],
+                        sub.Name),
+                    summary: sub.IsActive ? Loc["SubCategoryDeactivatedTitle"] : Loc["SubCategoryActivatedTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == toggleKey) _busyKey = null;
+        }
+    }
+
+    private async Task HandleToggleSubSubActiveAsync(Guid categoryId, Guid subId, SubSubCategoryDto ssub)
+    {
+        var toggleKey = $"toggle:subsub:{ssub.Id}";
+        _busyKey = toggleKey;
+        StateHasChanged();
+
+        try
+        {
+            var result = ssub.IsActive
+                ? await MessageBus.InvokeAsync<Result>(new DeactivateSubSubCategoryCommand(categoryId, subId, ssub.Id))
+                : await MessageBus.InvokeAsync<Result>(new ActivateSubSubCategoryCommand(categoryId, subId, ssub.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture,
+                        ssub.IsActive ? Loc["SubSubCategoryDeactivated"] : Loc["SubSubCategoryActivated"],
+                        ssub.Name),
+                    summary: ssub.IsActive ? Loc["SubSubCategoryDeactivatedTitle"] : Loc["SubSubCategoryActivatedTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["Error_ToggleFailed"]);
+        }
+        finally
+        {
+            if (_busyKey == toggleKey) _busyKey = null;
+        }
+    }
+}

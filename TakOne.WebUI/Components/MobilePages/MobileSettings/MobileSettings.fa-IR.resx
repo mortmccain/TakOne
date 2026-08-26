@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>تنظیمات — تک‌وان</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>تنظیمات</value></data>
+  <data name="PageSubheading" xml:space="preserve"><value>مدیریت حساب کاربری و ظاهر برنامه</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری...</value></data>
+  <data name="Retry" xml:space="preserve"><value>تلاش دوباره</value></data>
+  <data name="ErrorTitle" xml:space="preserve"><value>خطا</value></data>
+  <data name="Error_NotAuthenticated" xml:space="preserve"><value>برای مشاهدهٔ تنظیمات نخست وارد شوید.</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>بارگذاری اطلاعات کاربر ناموفق بود.</value></data>
+  <data name="AccountCardTitle" xml:space="preserve"><value>حساب کاربری</value></data>
+  <data name="ColWorkerId" xml:space="preserve"><value>کد پرسنلی</value></data>
+  <data name="ColFullName" xml:space="preserve"><value>نام و نام خانوادگی</value></data>
+  <data name="ColGender" xml:space="preserve"><value>جنسیت</value></data>
+  <data name="ColEmail" xml:space="preserve"><value>ایمیل</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>وضعیت</value></data>
+  <data name="StatusActive" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>غیرفعال</value></data>
+  <data name="ChangePassword" xml:space="preserve"><value>تغییر رمز عبور</value></data>
+  <data name="AppearanceCardTitle" xml:space="preserve"><value>ظاهر</value></data>
+  <data name="ThemeHint" xml:space="preserve"><value>پوستهٔ مورد نظر خود را انتخاب کنید</value></data>
+  <data name="ThemeName_TakLight" xml:space="preserve"><value>تک روشن</value></data>
+  <data name="ThemeName_TakDark" xml:space="preserve"><value>تک تیره</value></data>
+  <data name="ThemeName_Default" xml:space="preserve"><value>پیش‌فرض</value></data>
+  <data name="ThemeName_Dark" xml:space="preserve"><value>تیره</value></data>
+  <data name="ThemeName_Standard" xml:space="preserve"><value>استاندارد</value></data>
+  <data name="ThemeName_Material" xml:space="preserve"><value>متریال</value></data>
+  <data name="ThemeName_MaterialDark" xml:space="preserve"><value>متریال تیره</value></data>
+  <data name="ThemeName_Software" xml:space="preserve"><value>نرم‌افزار</value></data>
+  <data name="ThemeName_SoftwareDark" xml:space="preserve"><value>نرم‌افزار تیره</value></data>
+  <data name="HelpCardTitle" xml:space="preserve"><value>راهنما</value></data>
+  <data name="HelpCardText" xml:space="preserve"><value>نیاز به کمک دارید؟ با مدیر سیستم تماس بگیرید.</value></data>
+  <data name="AboutCardTitle" xml:space="preserve"><value>درباره</value></data>
+  <data name="ColApp" xml:space="preserve"><value>برنامه</value></data>
+  <data name="GenderMale" xml:space="preserve"><value>مرد</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>زن</value></data>
+  <data name="ThemeApplied" xml:space="preserve"><value>پوسته به {0} تغییر کرد.</value></data>
+  <data name="Error_ThemeSwitch" xml:space="preserve"><value>تغییر پوسته ناموفق بود.</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

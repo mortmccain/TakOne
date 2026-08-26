@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>سبد خرید — تک‌وان</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>سبد خرید</value></data>
+  <data name="ItemCount" xml:space="preserve"><value>{0} کالا</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری سبد...</value></data>
+  <data name="Retry" xml:space="preserve"><value>تلاش دوباره</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>بارگذاری سبد ناموفق بود.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>سبد خرید شما خالی است</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>محصولات را مرور کنید و کالاهای موردنظر را به سبد اضافه کنید.</value></data>
+  <data name="BrowseProductsButton" xml:space="preserve"><value>مرور محصولات</value></data>
+  <data name="UnitPriceLabel" xml:space="preserve"><value>قیمت واحد</value></data>
+  <data name="StockOut" xml:space="preserve"><value>ناموجود</value></data>
+  <data name="StockLow" xml:space="preserve"><value>رو به اتمام</value></data>
+  <data name="StockIn" xml:space="preserve"><value>موجود</value></data>
+  <data name="QuantityLabel" xml:space="preserve"><value>تعداد</value></data>
+  <data name="RemoveButton" xml:space="preserve"><value>حذف</value></data>
+  <data name="BudgetRemaining" xml:space="preserve"><value>بودجه ماهانه باقی‌مانده</value></data>
+  <data name="BudgetUsed" xml:space="preserve"><value>استفاده شده</value></data>
+  <data name="SummaryTitle" xml:space="preserve"><value>خلاصه سفارش</value></data>
+  <data name="TotalItems" xml:space="preserve"><value>مجموع کالاها</value></data>
+  <data name="LineItemsCount" xml:space="preserve"><value>ردیف‌های سبد</value></data>
+  <data name="TotalAmount" xml:space="preserve"><value>مجموع</value></data>
+  <data name="StockIssueWarning" xml:space="preserve"><value>برخی کالاها ناموجود هستند</value></data>
+  <data name="LimitIssueWarning" xml:space="preserve"><value>برخی کالاها از سقف خرید شما فراتر می‌روند</value></data>
+  <data name="ContinueShoppingButton" xml:space="preserve"><value>ادامه خرید</value></data>
+  <data name="SubmitCartButton" xml:space="preserve"><value>ثبت سفارش</value></data>
+  <data name="ClearCartButton" xml:space="preserve"><value>خالی کردن سبد</value></data>
+  <data name="ConfirmClearMessage" xml:space="preserve"><value>آیا از خالی کردن سبد خود مطمئن هستید؟</value></data>
+  <data name="ConfirmClearYes" xml:space="preserve"><value>بله، خالی کن</value></data>
+  <data name="ConfirmClearNo" xml:space="preserve"><value>انصراف</value></data>
+  <data name="Updated" xml:space="preserve"><value>تعداد به‌روزرسانی شد.</value></data>
+  <data name="UpdatedTitle" xml:space="preserve"><value>به‌روزرسانی شد</value></data>
+  <data name="Removed" xml:space="preserve"><value>کالا حذف شد.</value></data>
+  <data name="RemovedTitle" xml:space="preserve"><value>حذف شد</value></data>
+  <data name="Cleared" xml:space="preserve"><value>سبد خالی شد.</value></data>
+  <data name="ClearedTitle" xml:space="preserve"><value>خالی شد</value></data>
+  <data name="Submitted" xml:space="preserve"><value>سفارش با موفقیت ثبت شد.</value></data>
+  <data name="SubmittedTitle" xml:space="preserve"><value>ثبت شد</value></data>
+  <data name="Error_GenericUpdate" xml:space="preserve"><value>به‌روزرسانی تعداد ناموفق بود.</value></data>
+  <data name="Error_GenericRemove" xml:space="preserve"><value>حذف کالا ناموفق بود.</value></data>
+  <data name="Error_GenericClear" xml:space="preserve"><value>خالی کردن سبد ناموفق بود.</value></data>
+  <data name="Error_GenericSubmit" xml:space="preserve"><value>ثبت سفارش ناموفق بود.</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

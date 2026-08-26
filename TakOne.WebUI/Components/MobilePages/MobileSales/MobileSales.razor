@@ -1,0 +1,426 @@
+@* MobileSales.razor — mobile version of the Sales (order history) page.
+   Route: /m/Sales
+   Layout: MobileLayout
+
+   PORTS the desktop Sales.razor features into a mobile-friendly list view:
+     - Role-aware heading ("Orders" for staff, "My Orders" for customers)
+     - Status filter tabs (All / Draft / Pending / Approved / Invoiced / Cancelled)
+       with client-side filtering on the in-memory list
+     - Search box (filter by DisplayNumber; staff can also search CustomerName)
+     - Per-sale list item: DisplayNumber (clickable → /Sales/{Id}),
+       Tehran-formatted CreatedAtUtc, status badge colored by status,
+       Total formatted as Toman. Staff also sees CustomerName + CreatedByName.
+     - Empty CTA when the user has zero sales total
+     - Footer with version string
+
+   BACKEND CONTRACT (same as desktop Sales.razor):
+     - Load: GetSalesPaginatedQuery(PageNumber=1, PageSize=100, SearchTerm=null,
+       Status=null) → PaginatedResult<SaleListItemDto>. The handler scopes by
+       role server-side: customers see only their own sales, staff see all.
+     - PageSize=100 (the backend cap) so the list has enough rows for
+       client-side filtering to be meaningful.
+
+   TIMEZONE: CreatedAtUtc is a UTC DateTimeOffset; FormatTehran adds the
+   fixed +3:30 offset (Tehran abolished DST in 2022) and formats culture-aware.
+
+   MONEY: FormatMoney divides IRR by 10 (Toman) and labels with the localized
+   "Toman" unit; non-IRR currencies pass through unchanged.
+
+   ROLE-GATED CONTENT: staff (Admin/Manager/Employee/ReadOnly) see two extra
+   subtitle lines per row (CustomerName + CreatedByName). Customers see only
+   the DisplayNumber, CreatedAtUtc, status badge, and Total — the audit
+   columns are noise for them.
+
+   NAVIGATION: tapping the DisplayNumber title or the eye-icon action button
+   navigates to the DESKTOP SaleDetail page at /Sales/{Id}. There is no mobile
+   SaleDetail page (per the spec) — the desktop detail page is responsive
+   enough for a mobile viewport.
+
+   NO TOASTS: this page is read-only (no mutations), so no ToastService inject
+   is needed. Errors surface inline via the m-error-box retry block.
+*@
+
+@page "/m/Sales"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileSales> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else if (_sales.Count == 0)
+{
+    @* ── Empty state — shown only when the backend returns zero sales total
+           (fresh customer with no order history yet). When the user's filter
+           matches zero rows BUT the underlying list is non-empty, the
+           in-list "no matches" message takes over instead (see FilteredSales
+           count check inside the list section). *@
+    <div class="m-empty-cta">
+        <h3>@Loc["EmptyTitle"]</h3>
+        <p>@Loc["EmptyMessage"]</p>
+        <button class="m-btn m-btn-primary m-btn-block" @onclick="GoToCart">
+            @Loc["GoToCartButton"]
+        </button>
+        <button class="m-btn m-btn-secondary m-btn-block" @onclick="ContinueShopping">
+            @Loc["BrowseProductsButton"]
+        </button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — role-aware heading + "Continue shopping" shortcut *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@(Loc[_isStaff ? "Orders" : "MyOrders"])</h1>
+        <button class="m-btn m-btn-secondary m-btn-sm" @onclick="ContinueShopping">
+            @Loc["ContinueShopping"]
+        </button>
+    </div>
+
+    @* ── 2. Status filter tabs — All + Draft/Pending/Approved/Invoiced/Cancelled.
+           Active state bound to _statusFilter (null = All). Tapping sets the
+           filter; the list below re-evaluates FilteredSales reactively. *@
+    <div class="m-tabs">
+        <button type="button"
+                class="m-tab @(_statusFilter is null ? "active" : "")"
+                @onclick="() => SetStatusFilter(null)">
+            @Loc["StatusAll"]
+        </button>
+        @foreach (var status in _statusOptions)
+        {
+            var s = status; // capture loop variable for the closure
+            <button type="button"
+                    class="m-tab @(_statusFilter == s ? "active" : "")"
+                    @onclick="() => SetStatusFilter(s)">
+                @Loc["Status" + s]
+            </button>
+        }
+    </div>
+
+    @* ── 3. Search box — filters by DisplayNumber (always) + CustomerName
+           (staff only — customers can only ever match their own name, so
+           including it would be noise). Bound to _searchTerm with oninput
+           so filtering is live as the user types. *@
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <span class="m-search-box-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+            </span>
+            <input type="search"
+                   class="m-input"
+                   placeholder="@Loc["SearchPlaceholder"]"
+                   @bind="_searchTerm"
+                   @bind:event="oninput" />
+        </div>
+    </div>
+
+    @* ── 4. Sales list — one .m-list-item per sale (filtered by status +
+           search client-side via FilteredSales). Each item shows:
+             - Title: DisplayNumber (clickable → /Sales/{Id})
+             - Subtitle: Tehran-formatted CreatedAtUtc
+             - (Staff only) extra subtitle: CustomerName + CreatedByName
+             - Meta row: colored status badge + Total (FormatMoney → Toman)
+             - Action: eye-icon .m-icon-btn-sm → /Sales/{Id}
+           No mobile SaleDetail page exists yet — both clicks go to the
+           desktop detail page, which is responsive enough for mobile. *@
+    <div class="m-list">
+        @if (FilteredSales.Count == 0)
+        {
+            <p class="m-empty">@Loc["EmptyMessage"]</p>
+        }
+        else
+        {
+            @foreach (var sale in FilteredSales)
+            {
+                var s = sale; // capture loop variable for the closures below
+                <div class="m-list-item">
+                    <div class="m-list-item-main">
+                        <div class="m-list-item-title"
+                             role="link"
+                             tabindex="0"
+                             @onclick="() => Navigation.NavigateTo($"/Sales/{s.Id}", forceLoad: false)">
+                            @CultureFormat.ToCultureDigits(s.DisplayNumber)
+                        </div>
+                        <div class="m-list-item-subtitle">@FormatTehran(s.CreatedAtUtc)</div>
+                        @if (_isStaff)
+                        {
+                            <div class="m-list-item-subtitle">@s.CustomerName</div>
+                            <div class="m-list-item-subtitle">@s.CreatedByName</div>
+                        }
+                        <div class="m-list-item-meta">
+                            <span class="m-badge @GetStatusBadgeClass(s.Status)">@Loc["Status" + s.Status]</span>
+                            <span>@FormatMoney(s.Total)</span>
+                        </div>
+                    </div>
+                    <div class="m-list-item-actions">
+                        <button type="button"
+                                class="m-icon-btn-sm"
+                                title="@Loc["ActionViewDetail"]"
+                                aria-label="@Loc["ActionViewDetail"]"
+                                @onclick="() => Navigation.NavigateTo($"/Sales/{s.Id}", forceLoad: false)">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    @* ── 5. Footer — version string *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The full list of sales returned by the backend (PageSize=100, the cap).
+    /// Filtering by status + search happens client-side in <see cref="FilteredSales"/>.
+    /// </summary>
+    private List<SaleListItemDto> _sales = new();
+
+    /// <summary>
+    /// Loading/error state machine (loading → error → empty → content).
+    /// </summary>
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    /// <summary>
+    /// Currently-selected status filter key ("Draft"/"Pending"/"Approved"/
+    /// "Invoiced"/"Cancelled"), or null when "All" is selected. Set by
+    /// tapping a status tab.
+    /// </summary>
+    private string? _statusFilter;
+
+    /// <summary>
+    /// Free-text search term. Matches DisplayNumber (always) and
+    /// CustomerName (staff only — customers can only ever match their own
+    /// name, so including it would be noise).
+    /// </summary>
+    private string _searchTerm = string.Empty;
+
+    /// <summary>
+    /// True if the current user is in Admin / Manager / Employee / ReadOnly
+    /// role (i.e. "staff" — sees all sales + the CustomerName and
+    /// CreatedByName audit lines). Customers see only their own sales and
+    /// a narrower row layout.
+    ///
+    /// Resolved from AuthenticationStateProvider (not ICurrentUserService)
+    /// because ICurrentUserService resolves from IHttpContextAccessor, which
+    /// is only populated during the initial prerender request and is null
+    /// over the SignalR circuit. AuthStateProvider is the canonical source
+    /// of role info for interactive Blazor Server components.
+    /// </summary>
+    private bool _isStaff;
+
+    /// <summary>
+    /// Status filter tab options — string keys matching the SaleStatus enum's
+    /// ToString() output. The tab labels are looked up via Loc["Status" + key]
+    /// (e.g. "StatusDraft"), so the underlying filter value stays
+    /// culture-neutral while the user sees localized text.
+    /// </summary>
+    private readonly List<string> _statusOptions = new()
+    {
+        "Draft", "Pending", "Approved", "Invoiced", "Cancelled"
+    };
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve _isStaff synchronously before the first render so the
+        // staff-only subtitle lines don't flicker into existence after the
+        // list is already on screen.
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isStaff = user.IsInRole(Roles.Admin)
+                   || user.IsInRole(Roles.Manager)
+                   || user.IsInRole(Roles.Employee)
+                   || user.IsInRole(Roles.ReadOnly);
+
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ─────────────────────────────────────────────────────
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        try
+        {
+            // Load up to 100 sales (the backend cap) so the list has enough
+            // rows for client-side filtering to be meaningful. SearchTerm
+            // and Status are null: filtering happens client-side via the
+            // search box + status tabs above.
+            var query = new GetSalesPaginatedQuery
+            {
+                PageNumber = 1,
+                PageSize = 100,
+                SearchTerm = null,
+                Status = null
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
+            _sales = result.Items.ToList();
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+    }
+
+    // ── Computed view model ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Sales filtered by the currently-selected status tab + search term.
+    /// Recomputed on every render (cheap — list is at most 100 items).
+    /// </summary>
+    private List<SaleListItemDto> FilteredSales
+    {
+        get
+        {
+            var q = _sales.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_statusFilter))
+            {
+                q = q.Where(s => string.Equals(
+                    s.Status,
+                    _statusFilter,
+                    StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var term = _searchTerm.Trim();
+                q = q.Where(s =>
+                    (s.DisplayNumber?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (_isStaff && (s.CustomerName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)));
+            }
+
+            return q.ToList();
+        }
+    }
+
+    // ── Filter handlers ──────────────────────────────────────────────────
+
+    private void SetStatusFilter(string? status)
+    {
+        _statusFilter = status;
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────
+
+    private void ContinueShopping()
+        => Navigation.NavigateTo("/m/Products", forceLoad: false);
+
+    private void GoToCart()
+        => Navigation.NavigateTo("/m/Cart", forceLoad: false);
+
+    // ── Display helpers ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a mobile badge color class:
+    ///   - Draft     → m-badge-neutral  (gray, "in progress, not yet submitted")
+    ///   - Pending   → m-badge-warning  (amber, "awaiting approval")
+    ///   - Approved  → m-badge-info     (blue, "approved, ready to invoice")
+    ///   - Invoiced  → m-badge-success  (green, "complete")
+    ///   - Cancelled → m-badge-danger   (red, "cancelled")
+    ///
+    /// Unknown status strings (defensive: shouldn't happen unless the enum
+    /// gains a new value without updating this mapping) fall back to neutral.
+    /// </summary>
+    private static string GetStatusBadgeClass(string? status) => status switch
+    {
+        "Draft" => "m-badge-neutral",
+        "Pending" => "m-badge-warning",
+        "Approved" => "m-badge-info",
+        "Invoiced" => "m-badge-success",
+        "Cancelled" => "m-badge-danger",
+        _ => "m-badge-neutral"
+    };
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman: IRR is divided by 10 and
+    /// labelled with the localized "Toman" unit; other currencies pass
+    /// through unchanged with their own currency code. Returns "—" for
+    /// null or zero-with-empty-currency amounts (cleaner than "0 تومان"
+    /// on an empty price tag).
+    ///
+    /// Delegates to CultureFormat.ToCultureDigits for the culture-native
+    /// digit swap (Persian digits in fa-IR mode, ASCII in en-US).
+    /// </summary>
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0 && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Formats a UTC DateTimeOffset for display in Tehran time, culture-aware.
+    /// Tehran = UTC + 3:30 (no DST since 2022). The offset is added inline
+    /// (no TimeZoneInfo lookup) so the conversion is bulletproof across
+    /// deployments.
+    ///
+    /// Format: "yyyy/MM/dd HH:mm" with culture-native digits (Persian in
+    /// fa-IR, ASCII in en-US). NOTE: this is a deliberately simpler variant
+    /// of CultureFormat.FormatTehranDateTime (no Jalali calendar conversion)
+    /// because the spec calls for the verbatim inline version — the page
+    /// shows Gregorian dates with Persian digits in fa-IR mode, which is
+    /// consistent with the other mobile pages built in this batch.
+    /// </summary>
+    private static string FormatTehran(DateTimeOffset dto)
+    {
+        var tehran = dto.AddHours(3.5).LocalDateTime;
+        return CultureFormat.ToCultureDigits(tehran.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture));
+    }
+}

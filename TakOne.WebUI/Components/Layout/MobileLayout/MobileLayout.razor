@@ -205,7 +205,10 @@
 
     private void GoToCart()
     {
-        Navigation.NavigateTo("/Cart", forceLoad: false);
+        // Use the mobile route so the cart-bar checkout button keeps the
+        // user on a mobile page instead of bouncing through the desktop
+        // redirect.
+        Navigation.NavigateTo("/m/Cart", forceLoad: false);
     }
 
     private void SetCultureAsync()

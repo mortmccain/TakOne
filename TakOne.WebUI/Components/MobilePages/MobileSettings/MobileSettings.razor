@@ -1,0 +1,436 @@
+@* MobileSettings.razor — mobile version of the Settings (self-service) page.
+   Route: /m/Settings
+   Layout: MobileLayout
+
+   PORTS the desktop Settings.razor features into a mobile-friendly card stack:
+     - Account card: read-only identity fields (WorkerId, FullName, Gender,
+       Email if present, status badge) + a Change-password button linking
+       to /Account/ChangePassword via forceLoad (target is a static SSR page
+       that has to re-issue the auth cookie on the same HTTP response, which
+       a Blazor circuit can't do — linking out is the correct pattern).
+     - Appearance card: theme selector grid. Reads the current theme via
+       window.takTheme.get() on first render, sets it via
+       window.takTheme.set(themeId). Shows 2 custom Tak themes + 7 built-in
+       Radzen themes (9 total) in a 2-column grid; the active theme's card
+       gets the .active modifier.
+     - Help card (title + subtitle).
+     - About card (Application = TakOne).
+     - Footer with the version string.
+
+   ROLE AWARENESS: deliberately NOT shown. End users don't need their own
+   role label spelled out on a self-service page (it adds noise and can
+   read as pejorative in some locales). Role awareness belongs on
+   admin-side pages (AdminUsers / UserDetail), not here.
+
+   ROLE RESOLUTION: AuthStateProvider (NOT ICurrentUserService — that reads
+   from IHttpContextAccessor.HttpContext, which is null over the SignalR
+   circuit in interactive Blazor Server mode). Extracts the UserId claim
+   set by our custom IClaimsPrincipalFactory (with a fallback to
+   ClaimTypes.NameIdentifier), parses it to a Guid, and calls
+   GetUserByIdQuery { UserId } → Result<UserDto>. The query handler
+   enforces that customers/read-only can ONLY query themselves
+   (defense-in-depth — a Customer trying to query someone else's Id gets
+   a "not found" error, same as UserDetail.razor's pattern).
+*@
+
+@page "/m/Settings"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileSettings> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else if (_user is not null)
+{
+    @* ── 1. Page header — title + subtitle *@
+    <div class="m-page-header">
+        <div>
+            <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+            <p class="m-page-subtitle">@Loc["PageSubheading"]</p>
+        </div>
+    </div>
+
+    @* ── 2. Account card — read-only identity fields + change password *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["AccountCardTitle"]</div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColWorkerId"]</span>
+            <span class="m-profile-value">@CultureFormat.FormatDigits(_user.WorkerId)</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColFullName"]</span>
+            <span class="m-profile-value">@_user.FullName</span>
+        </div>
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColGender"]</span>
+            <span class="m-profile-value">@Loc[GetGenderLabel(_user.Gender)]</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_user.Email))
+        {
+            <div class="m-profile-row">
+                <span class="m-profile-label">@Loc["ColEmail"]</span>
+                <span class="m-profile-value">@_user.Email</span>
+            </div>
+        }
+
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColStatus"]</span>
+            <span class="m-profile-value">
+                @if (_user.IsActive)
+                {
+                    <span class="m-badge m-badge-success">@Loc["StatusActive"]</span>
+                }
+                else
+                {
+                    <span class="m-badge m-badge-danger">@Loc["StatusInactive"]</span>
+                }
+            </span>
+        </div>
+
+        @* Change password button — links out to /Account/ChangePassword.
+           That page is a STATIC SSR page (it has to re-issue the auth
+           cookie on the same HTTP response, which a Blazor circuit can't
+           do). forceLoad:true is REQUIRED — navigating from an interactive
+           circuit to a static SSR page without a full HTTP reload leaves
+           the circuit alive and the static page never renders. *@
+        <button type="button" class="m-btn m-btn-secondary m-btn-block"
+                @onclick='(() => Navigation.NavigateTo("/Account/ChangePassword", forceLoad: true))'>
+            @Loc["ChangePassword"]
+        </button>
+    </div>
+
+    @* ── 3. Appearance card — theme selector
+           Renders one .m-theme-card per available theme in a 2-column
+           grid. The active theme's card gets the .active modifier so the
+           CSS shows it as selected. Clicking a card calls
+           HandleSelectThemeAsync(themeId), which:
+             1. invokes window.takTheme.set(themeId) — theme.js swaps the
+                Radzen CSS <link> + layers the Tak override <link> when
+                applicable, and persists the choice to localStorage.
+             2. sets _currentTheme so the .active class moves to the
+                clicked card (no page reload — the stylesheet swap is
+                in-place, the whole page re-paints).
+             3. shows a success toast with the localized theme name. *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["AppearanceCardTitle"]</div>
+        <p class="m-card-subtitle">@Loc["ThemeHint"]</p>
+
+        <div class="m-theme-grid">
+            @foreach (var theme in _availableThemes)
+            {
+                var t = theme; // capture loop variable for the closure
+                <button type="button"
+                        class="m-theme-card @(_currentTheme == t.Id ? "active" : "")"
+                        @onclick="(() => HandleSelectThemeAsync(t.Id))">
+                    <span class="m-theme-card-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="@t.IconPath" />
+                        </svg>
+                    </span>
+                    <span class="m-theme-card-name">@Loc[t.NameKey]</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    @* ── 4. Help card — title + subtitle *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["HelpCardTitle"]</div>
+        <p class="m-card-subtitle">@Loc["HelpCardText"]</p>
+    </div>
+
+    @* ── 5. About card — application name row *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["AboutCardTitle"]</div>
+        <div class="m-profile-row">
+            <span class="m-profile-label">@Loc["ColApp"]</span>
+            <span class="m-profile-value">TakOne</span>
+        </div>
+    </div>
+
+    @* ── 6. Footer — version string *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+
+    private UserDto? _user;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    /// <summary>
+    /// The currently-applied theme name. Initialized to "tak-light" (the
+    /// project default) and then synced with theme.js's saved value in
+    /// OnAfterRenderAsync(firstRender:true). Drives the .active class on
+    /// the theme cards. Same pattern as the desktop Settings.razor +
+    /// MainLayout.razor.
+    /// </summary>
+    private string _currentTheme = "tak-light";
+
+    /// <summary>
+    /// Cached UserId claim value extracted from AuthStateProvider. Stored
+    /// so the Retry button's LoadAsync() doesn't have to re-resolve it.
+    /// </summary>
+    private string _currentUserId = string.Empty;
+
+    // ── Theme registry ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// One entry per available theme. The Id matches the keys in theme.js's
+    /// TAK_THEMES registry (for the 2 Tak themes) OR a built-in Radzen
+    /// theme name (for the rest). theme.js's applyTheme() handles both
+    /// cases: it looks up TAK_THEMES first (Tak theme → Radzen base + Tak
+    /// override), and falls back to treating the Id as a Radzen base
+    /// (plain Radzen palette, no override).
+    ///
+    /// Adding a new Tak theme requires updating BOTH theme.js's TAK_THEMES
+    /// AND this list. Adding a new Radzen built-in only requires this list.
+    ///
+    /// NameKey is the resx key for the localized theme display name; the
+    /// card body looks it up via Loc[NameKey] so the Id stays stable
+    /// (e.g. "tak-light") while the user-visible name is localized
+    /// ("Tak Light" / "تک روشن").
+    ///
+    /// IconPath is the inline Heroicon-style SVG path (sun for light
+    /// themes, moon for dark themes) — verbatim from the spec's icon
+    /// library section 8.
+    /// </summary>
+    private readonly List<ThemeOption> _availableThemes = new()
+    {
+        // ── Tak themes (custom palette on top of a Radzen base) ──
+        new("tak-light",     "ThemeName_TakLight",     SunPath),
+        new("tak-dark",      "ThemeName_TakDark",      MoonPath),
+
+        // ── Built-in Radzen themes (no Tak override) ──
+        new("default",       "ThemeName_Default",      SunPath),
+        new("dark",          "ThemeName_Dark",          MoonPath),
+        new("standard",      "ThemeName_Standard",     SunPath),
+        new("material",      "ThemeName_Material",     SunPath),
+        new("material-dark", "ThemeName_MaterialDark", MoonPath),
+        new("software",      "ThemeName_Software",     SunPath),
+        new("software-dark", "ThemeName_SoftwareDark", MoonPath),
+    };
+
+    /// <summary>
+    /// One theme entry in the selector grid. See _availableThemes above
+    /// for the field-by-field rationale.
+    /// </summary>
+    private sealed record ThemeOption(string Id, string NameKey, string IconPath);
+
+    // Sun + moon Heroicon paths (verbatim from the spec's icon library
+    // section 8). Declared as consts so they can be used in the list
+    // initializer above (record positional parameters accept constant
+    // expressions).
+    private const string SunPath = "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z";
+    private const string MoonPath = "M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z";
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// After the first interactive render, read the actually-applied theme
+    /// from theme.js (window.takTheme.get) and update _currentTheme so the
+    /// active theme's card shows .active. Same pattern as the desktop
+    /// Settings.razor + MainLayout.razor's OnAfterRenderAsync.
+    ///
+    /// WHY OnAfterRenderAsync (not OnInitializedAsync):
+    ///   - OnInitializedAsync runs TWICE in InteractiveServer + prerender:
+    ///     once during static prerender (no circuit yet — JS interop
+    ///     throws), and once after hydration (circuit ready — JS interop
+    ///     works).
+    ///   - OnAfterRenderAsync(firstRender:true) runs ONLY ONCE, after the
+    ///     circuit is established. JS interop definitely works here.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("takTheme.get");
+            if (!string.IsNullOrEmpty(saved) && saved != _currentTheme)
+            {
+                _currentTheme = saved;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // JS interop failed (e.g. theme.js didn't load) — leave
+            // _currentTheme at its "tak-light" default. The user can still
+            // click theme cards; only the persistence would fail.
+        }
+    }
+
+    // ── Data loading ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the current user's Id from AuthStateProvider (NOT
+    /// ICurrentUserService — HttpContext is null over the SignalR circuit
+    /// in interactive mode) and loads the UserDto via GetUserByIdQuery.
+    /// The UserId claim is set by our custom IClaimsPrincipalFactory;
+    /// fallback to ClaimTypes.NameIdentifier for safety.
+    ///
+    /// On failure (not authenticated, missing/unparseable claim, or the
+    /// query returned a failure result) sets _loadError and returns
+    /// without setting _user — the markup's error branch renders the
+    /// Retry button.
+    /// </summary>
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var principal = authState.User;
+
+        if (principal?.Identity?.IsAuthenticated != true)
+        {
+            _loadError = Loc["Error_NotAuthenticated"];
+            return;
+        }
+
+        var idClaim = principal.FindFirst("UserId")?.Value
+                      ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrWhiteSpace(idClaim) || !Guid.TryParse(idClaim, out var userId))
+        {
+            _loadError = Loc["Error_NotAuthenticated"];
+            return;
+        }
+
+        _currentUserId = idClaim;
+
+        var result = await MessageBus.InvokeAsync<Result<UserDto>>(
+            new GetUserByIdQuery { UserId = userId });
+
+        if (result.IsSuccess)
+        {
+            _user = result.Value;
+        }
+        else
+        {
+            // The handler returns "User '...' was not found." for both
+            // genuinely-missing users and not-allowed-to-see — we surface
+            // a generic message to avoid leaking which.
+            _loadError = Loc["Error_GenericLoad"];
+        }
+    }
+
+    // ── Theme selection ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called when the user clicks a theme card. Calls theme.js's
+    /// takTheme.set(themeId) to swap the CSS <link> + persist to
+    /// localStorage, then updates _currentTheme so the .active class
+    /// moves to the clicked card. No page reload needed — theme.js swaps
+    /// the stylesheet in-place and the whole page re-paints. Fires a
+    /// success toast with the localized theme name so the user gets
+    /// feedback that the click was registered.
+    /// </summary>
+    private async Task HandleSelectThemeAsync(string themeId)
+    {
+        if (themeId == _currentTheme)
+        {
+            return; // no-op — clicking the already-active theme
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("takTheme.set", themeId);
+            _currentTheme = themeId;
+
+            var themeName = GetThemeName(themeId);
+            await Toast.Success(
+                string.Format(CultureInfo.CurrentCulture, Loc["ThemeApplied"], themeName),
+                summary: Loc["AppearanceCardTitle"]);
+        }
+        catch
+        {
+            // JS interop failed (e.g. theme.js didn't load) — show an
+            // error toast so the user knows the switch didn't take.
+            await Toast.Error(Loc["Error_ThemeSwitch"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    // ── Display helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the resx KEY for a Gender enum value. The markup wraps
+    /// the call in Loc[...] to look up the localized label. Same pattern
+    /// as the desktop Settings.razor's GetGenderLabel.
+    /// </summary>
+    private static string GetGenderLabel(Gender gender) => gender switch
+    {
+        Gender.Male => "GenderMale",
+        Gender.Female => "GenderFemale",
+        _ => "GenderMale"
+    };
+
+    /// <summary>
+    /// Returns the localized display name for a theme Id (looks up the
+    /// ThemeOption's NameKey in the resx). Used in the success toast's
+    /// {0} placeholder. Falls back to the raw Id if the theme isn't in
+    /// _availableThemes (defensive — should never happen because the
+    /// cards only render known themes).
+    /// </summary>
+    private string GetThemeName(string themeId)
+    {
+        var theme = _availableThemes.FirstOrDefault(t => t.Id == themeId);
+        return theme is null ? themeId : Loc[theme.NameKey];
+    }
+}

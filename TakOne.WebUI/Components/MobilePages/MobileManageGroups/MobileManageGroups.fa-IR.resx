@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>گروه‌های مشتری — مدیریت — تک‌وان</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>گروه‌های مشتری</value></data>
+  <data name="CreateGroupButton" xml:space="preserve"><value>ایجاد گروه</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری گروه‌ها...</value></data>
+  <data name="Retry" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری گروه‌ها ناموفق بود.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>هنوز گروهی وجود ندارد</value></data>
+  <data name="EmptyBody" xml:space="preserve"><value>برای مدیریت حقوق و سقف‌های خرید، یک گروه مشتری ایجاد کنید.</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>جستجوی گروه‌ها...</value></data>
+  <data name="StatusAll" xml:space="preserve"><value>همه</value></data>
+  <data name="StatusActive" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>غیرفعال</value></data>
+  <data name="StatusActiveBadge" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactiveBadge" xml:space="preserve"><value>غیرفعال</value></data>
+  <data name="ColName" xml:space="preserve"><value>نام</value></data>
+  <data name="ColSalary" xml:space="preserve"><value>حقوق ماهانه</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>وضعیت</value></data>
+  <data name="ActionViewDetail" xml:space="preserve"><value>مشاهده</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>غیرفعال کردن</value></data>
+  <data name="ActionActivate" xml:space="preserve"><value>فعال کردن</value></data>
+  <data name="DeactivateDialogTitle" xml:space="preserve"><value>غیرفعال‌سازی گروه</value></data>
+  <data name="DeactivateSuccess" xml:space="preserve"><value>{0} غیرفعال شد.</value></data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve"><value>غیرفعال شد</value></data>
+  <data name="ActivateSuccess" xml:space="preserve"><value>{0} فعال شد.</value></data>
+  <data name="ActivateSuccessTitle" xml:space="preserve"><value>فعال شد</value></data>
+  <data name="ActionError" xml:space="preserve"><value>عملیات ناموفق بود.</value></data>
+  <data name="LimitModeCardTitle" xml:space="preserve"><value>حالت سقف سیستم</value></data>
+  <data name="LimitModeCardSubtitle" xml:space="preserve"><value>سیاست سقف خرید</value></data>
+  <data name="LimitModeLastUpdated" xml:space="preserve"><value>آخرین به‌روزرسانی</value></data>
+  <data name="LimitModeSaveButton" xml:space="preserve"><value>ذخیره</value></data>
+  <data name="LimitModeSaveSuccess" xml:space="preserve"><value>حالت سقف به‌روزرسانی شد.</value></data>
+  <data name="LimitModeSaveSuccessTitle" xml:space="preserve"><value>ذخیره شد</value></data>
+  <data name="LimitModeSaveError" xml:space="preserve"><value>ذخیرهٔ حالت سقف ناموفق بود.</value></data>
+  <data name="LimitModeCountOnly" xml:space="preserve"><value>فقط تعداد</value></data>
+  <data name="LimitModeSalaryOnly" xml:space="preserve"><value>فقط حقوق</value></data>
+  <data name="LimitModeBoth" xml:space="preserve"><value>هر دو</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+</root>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Orders — TakOne</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading orders...</value></data>
+  <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>Failed to load orders.</value></data>
+  <data name="Orders" xml:space="preserve"><value>Orders</value></data>
+  <data name="MyOrders" xml:space="preserve"><value>My Orders</value></data>
+  <data name="ContinueShopping" xml:space="preserve"><value>Continue Shopping</value></data>
+  <data name="StatusAll" xml:space="preserve"><value>All</value></data>
+  <data name="StatusDraft" xml:space="preserve"><value>Draft</value></data>
+  <data name="StatusPending" xml:space="preserve"><value>Pending</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>Approved</value></data>
+  <data name="StatusInvoiced" xml:space="preserve"><value>Invoiced</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>Search orders...</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>No orders yet</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>Your order history will appear here.</value></data>
+  <data name="GoToCartButton" xml:space="preserve"><value>Go to Cart</value></data>
+  <data name="BrowseProductsButton" xml:space="preserve"><value>Browse Products</value></data>
+  <data name="ActionViewDetail" xml:space="preserve"><value>View detail</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+</root>

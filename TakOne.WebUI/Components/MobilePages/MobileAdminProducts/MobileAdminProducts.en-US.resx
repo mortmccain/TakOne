@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Products — Admin — TakOne</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>Products</value></data>
+  <data name="CreateProductButton" xml:space="preserve"><value>Create product</value></data>
+  <data name="CreateFirstProductButton" xml:space="preserve"><value>Create first product</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading products...</value></data>
+  <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>Failed to load products.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>No products yet</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>Create your first product to get started.</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>Search products...</value></data>
+  <data name="StatusAll" xml:space="preserve"><value>All</value></data>
+  <data name="StatusInStock" xml:space="preserve"><value>In stock</value></data>
+  <data name="StatusOutOfStock" xml:space="preserve"><value>Out of stock</value></data>
+  <data name="StockIn" xml:space="preserve"><value>In stock</value></data>
+  <data name="StockLow" xml:space="preserve"><value>Low</value></data>
+  <data name="StockOut" xml:space="preserve"><value>Out</value></data>
+  <data name="UnknownCategory" xml:space="preserve"><value>Uncategorized</value></data>
+  <data name="DeactivatedSuffix" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="ActionView" xml:space="preserve"><value>View</value></data>
+  <data name="ActionRestock" xml:space="preserve"><value>Restock</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>Deactivate</value></data>
+  <data name="RestockSuccess" xml:space="preserve"><value>Restocked {0} units of {1}</value></data>
+  <data name="RestockSuccessTitle" xml:space="preserve"><value>Restocked</value></data>
+  <data name="RestockError" xml:space="preserve"><value>Failed to restock product.</value></data>
+  <data name="DeactivateSuccess" xml:space="preserve"><value>{0} deactivated.</value></data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="DeactivateError" xml:space="preserve"><value>Failed to deactivate product.</value></data>
+  <data name="AlreadyDeactivated" xml:space="preserve"><value>This product is already deactivated.</value></data>
+  <data name="RestockDialogTitle" xml:space="preserve"><value>Restock product</value></data>
+  <data name="RestockDialogError" xml:space="preserve"><value>Please enter a valid quantity.</value></data>
+  <data name="DeactivateDialogTitle" xml:space="preserve"><value>Deactivate product</value></data>
+  <data name="DeactivateDialogError" xml:space="preserve"><value>Action failed.</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+</root>

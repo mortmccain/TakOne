@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Users — Admin — TakOne</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>Users</value></data>
+  <data name="CreateUserButton" xml:space="preserve"><value>Create user</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading users...</value></data>
+  <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>Failed to load users.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>No users yet</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>Create your first user account.</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>Search users...</value></data>
+  <data name="StatusAll" xml:space="preserve"><value>All</value></data>
+  <data name="StatusActive" xml:space="preserve"><value>Active</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>Inactive</value></data>
+  <data name="StatusActiveBadge" xml:space="preserve"><value>Active</value></data>
+  <data name="StatusInactiveBadge" xml:space="preserve"><value>Inactive</value></data>
+  <data name="GenderMale" xml:space="preserve"><value>Male</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>Female</value></data>
+  <data name="GroupNone" xml:space="preserve"><value>No group</value></data>
+  <data name="ActionViewDetail" xml:space="preserve"><value>View</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>Deactivate</value></data>
+  <data name="ActionActivate" xml:space="preserve"><value>Activate</value></data>
+  <data name="ActionLockedForManager" xml:space="preserve"><value>Not permitted for managers</value></data>
+  <data name="DeactivateDialogTitle" xml:space="preserve"><value>Deactivate user</value></data>
+  <data name="DeactivateSuccess" xml:space="preserve"><value>{0} deactivated.</value></data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="ActivateSuccess" xml:space="preserve"><value>{0} activated.</value></data>
+  <data name="ActivateSuccessTitle" xml:space="preserve"><value>Activated</value></data>
+  <data name="ActionError" xml:space="preserve"><value>Action failed.</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+</root>

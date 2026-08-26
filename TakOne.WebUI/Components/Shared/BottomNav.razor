@@ -83,69 +83,127 @@
         // Normalize: remove leading slash, trailing slash
         currentPath = currentPath.Trim('/').TrimEnd('/');
 
+        // Normalize the current path so both desktop (e.g. "Sales") and
+        // mobile (e.g. "m/Sales") routes resolve to the same section. The
+        // nav-bar logic keys off section, not exact URL, so the bar shows the
+        // correct set of items + active state whichever route the user is on.
+        var section = NormalizeSection(currentPath);
+
         if (_isCustomer)
         {
-            // Customer always sees the same 4 items regardless of page
-            _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, IsActive(currentPath, "m/Products")));
-            _navItems.Add(new NavItem(Loc["MyOrders"], "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
-            _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
-            _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+            // Customer always sees the same 4 items regardless of page.
+            // All hrefs point to mobile routes so a tap keeps the user on a
+            // mobile page (no full-page redirect bounce).
+            _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, section == "products"));
+            _navItems.Add(new NavItem(Loc["MyOrders"], "/m/Sales", NavIcon.Orders, section == "sales"));
+            _navItems.Add(new NavItem(Loc["Cart"], "/m/Cart", NavIcon.Cart, section == "cart", ShowBadge: true));
+            _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, section == "settings"));
         }
         else
         {
-            // Staff: determine which "section" based on current path
-            if (IsActive(currentPath, "m/Dashboard") || currentPath == "" || currentPath == "/")
+            // Staff: determine which "section" based on current path.
+            // Per the plan, the lower bar's contents change depending on
+            // which area the staff member is currently viewing.
+            if (section == "dashboard")
             {
-                // Dashboard section
+                // In Dashboard: Dashboard(sel) | Products | Admin Products | Admin Users | Settings
                 _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, true));
                 _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, false));
-                _navItems.Add(new NavItem(Loc["AdminProducts"], "/Admin/Products", NavIcon.AdminProducts, false));
-                _navItems.Add(new NavItem(Loc["AdminUsers"], "/Admin/Users", NavIcon.AdminUsers, false));
-                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["AdminProducts"], "/m/Admin/Products", NavIcon.AdminProducts, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/m/Admin/Users", NavIcon.AdminUsers, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
             }
-            else if (IsActive(currentPath, "m/Products") || IsActive(currentPath, "Products"))
+            else if (section == "products")
             {
-                // Products section
+                // In Products: Dashboard | Products(sel) | Orders | Cart | Settings
                 _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
                 _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, true));
-                _navItems.Add(new NavItem(Loc["Orders"], "/Sales", NavIcon.Orders, false));
-                _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, false, ShowBadge: true));
-                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["Orders"], "/m/Sales", NavIcon.Orders, false));
+                _navItems.Add(new NavItem(Loc["Cart"], "/m/Cart", NavIcon.Cart, false, ShowBadge: true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
             }
-            else if (IsActive(currentPath, "Admin/Products"))
+            else if (section == "admin-products")
             {
-                // Admin Products section
+                // In Admin Products: Dashboard | Admin Products(sel) | Admin Categories | Settings
                 _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
-                _navItems.Add(new NavItem(Loc["AdminProducts"], "/Admin/Products", NavIcon.AdminProducts, true));
-                _navItems.Add(new NavItem(Loc["AdminCategories"], "/Admin/Categories", NavIcon.AdminCategories, false));
-                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["AdminProducts"], "/m/Admin/Products", NavIcon.AdminProducts, true));
+                _navItems.Add(new NavItem(Loc["AdminCategories"], "/m/Admin/Categories", NavIcon.AdminCategories, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
             }
-            else if (IsActive(currentPath, "Admin/Users"))
+            else if (section == "admin-users")
             {
-                // Admin Users section
+                // In Admin Users: Dashboard | Admin Users(sel) | Customer Groups | Settings
                 _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
-                _navItems.Add(new NavItem(Loc["AdminUsers"], "/Admin/Users", NavIcon.AdminUsers, true));
-                _navItems.Add(new NavItem(Loc["CustomerGroups"], "/Admin/Groups", NavIcon.CustomerGroups, false));
-                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/m/Admin/Users", NavIcon.AdminUsers, true));
+                _navItems.Add(new NavItem(Loc["CustomerGroups"], "/m/Admin/Groups", NavIcon.CustomerGroups, false));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
+            }
+            else if (section == "admin-categories")
+            {
+                // On the Admin Categories page: keep the Admin Products
+                // section bar (the one that introduced this destination) but
+                // mark Admin Categories as the active destination.
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["AdminProducts"], "/m/Admin/Products", NavIcon.AdminProducts, false));
+                _navItems.Add(new NavItem(Loc["AdminCategories"], "/m/Admin/Categories", NavIcon.AdminCategories, true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
+            }
+            else if (section == "admin-groups")
+            {
+                // On the Customer Groups page: keep the Admin Users section
+                // bar (the one that introduced this destination) but mark
+                // Customer Groups as the active destination.
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["AdminUsers"], "/m/Admin/Users", NavIcon.AdminUsers, false));
+                _navItems.Add(new NavItem(Loc["CustomerGroups"], "/m/Admin/Groups", NavIcon.CustomerGroups, true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, false));
             }
             else
             {
-                // Fallback for other pages (Sales, Cart, Settings, etc.)
-                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, IsActive(currentPath, "")));
-                _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, false));
-                _navItems.Add(new NavItem(Loc["Orders"], "/Sales", NavIcon.Orders, IsActive(currentPath, "Sales")));
-                _navItems.Add(new NavItem(Loc["Cart"], "/Cart", NavIcon.Cart, IsActive(currentPath, "Cart"), ShowBadge: true));
-                _navItems.Add(new NavItem(Loc["Settings"], "/Settings", NavIcon.Profile, IsActive(currentPath, "Settings")));
+                // Fallback for Sales, Cart, Settings and any other page.
+                // Keep the Products-style bar so the user can always get
+                // back to the main flow.
+                _navItems.Add(new NavItem(Loc["Dashboard"], "/", NavIcon.Dashboard, false));
+                _navItems.Add(new NavItem(Loc["Products"], "/m/Products", NavIcon.Products, section == "products"));
+                _navItems.Add(new NavItem(Loc["Orders"], "/m/Sales", NavIcon.Orders, section == "sales"));
+                _navItems.Add(new NavItem(Loc["Cart"], "/m/Cart", NavIcon.Cart, section == "cart", ShowBadge: true));
+                _navItems.Add(new NavItem(Loc["Settings"], "/m/Settings", NavIcon.Profile, section == "settings"));
             }
         }
     }
 
-    private static bool IsActive(string currentPath, string checkPath)
+    /// <summary>
+    /// Maps the current URL path to a stable "section" key. Both desktop
+    /// ("Sales", "Admin/Products") and mobile ("m/Sales", "m/Admin/Products")
+    /// routes resolve to the same section so the lower bar shows the right
+    /// set of items + active state on either route.
+    /// </summary>
+    private static string NormalizeSection(string currentPath)
     {
-        currentPath = currentPath.Trim('/').TrimEnd('/').ToLowerInvariant();
-        checkPath = checkPath.Trim('/').TrimEnd('/').ToLowerInvariant();
-        if (string.IsNullOrEmpty(checkPath)) return string.IsNullOrEmpty(currentPath);
-        return currentPath == checkPath || currentPath.StartsWith(checkPath + "/", StringComparison.OrdinalIgnoreCase);
+        var p = currentPath.Trim('/').TrimEnd('/').ToLowerInvariant();
+        // Strip the leading "m/" mobile prefix so "m/admin/products" → "admin/products"
+        if (p.StartsWith("m/", StringComparison.Ordinal))
+            p = p.Substring(2);
+
+        if (string.IsNullOrEmpty(p) || p == "dashboard")
+            return "dashboard";
+        if (p == "products" || p.StartsWith("products/", StringComparison.Ordinal))
+            return "products";
+        if (p == "admin/products" || p.StartsWith("admin/products/", StringComparison.Ordinal))
+            return "admin-products";
+        if (p == "admin/users" || p.StartsWith("admin/users/", StringComparison.Ordinal))
+            return "admin-users";
+        if (p == "admin/categories" || p.StartsWith("admin/categories/", StringComparison.Ordinal))
+            return "admin-categories";
+        if (p == "admin/groups" || p.StartsWith("admin/groups/", StringComparison.Ordinal))
+            return "admin-groups";
+        if (p == "sales" || p.StartsWith("sales/", StringComparison.Ordinal))
+            return "sales";
+        if (p == "cart" || p.StartsWith("cart/", StringComparison.Ordinal))
+            return "cart";
+        if (p == "settings" || p.StartsWith("settings/", StringComparison.Ordinal))
+            return "settings";
+        return "other";
     }
 
     private void NavigateTo(string href)

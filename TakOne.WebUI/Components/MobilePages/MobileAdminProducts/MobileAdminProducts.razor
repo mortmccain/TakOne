@@ -1,0 +1,571 @@
+@* MobileAdminProducts.razor — mobile version of AdminProducts.razor.
+   Route: /m/Admin/Products
+   Layout: MobileLayout
+
+   PORTS ALL desktop AdminProducts features:
+     - Staff-facing list of ALL products (IncludeInactive=true →
+       backend cap of 100 rows in one round-trip).
+     - Create product → /Admin/Products/Create (desktop create form
+       is responsive enough to use from mobile; we just link out).
+     - Restock an existing product (IncreaseProductStockCommand).
+       Opened via the RestockProductDialog (Radzen dialog) which
+       returns the quantity to add (int?; null/0 = user aborted).
+     - Deactivate a product (DeactivateProductCommand — sets
+       StockQuantity to 0). Opened via DeactivateProductDialog
+       (returns bool; true = user confirmed).
+     - View a product's full details → /Products/{Id}.
+
+   STATE MACHINE (matches MobileProducts.razor's pattern):
+     loading → error → empty → content
+     Per-row _restockingId / _deactivatingId guards prevent
+     double-clicks on the same row's action button.
+
+   FILTERS (client-side only — the backend already returns 100 rows,
+   more than enough to filter in the browser):
+     - Search box filters by Name (case-insensitive contains).
+     - Status tabs: All / In stock / Out of stock (StockQuantity > 0
+       = in stock; <= 0 = out of stock — matches desktop's filter
+       semantics).
+*@
+
+@page "/m/Admin/Products"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using Radzen
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Products.Commands.IncreaseProductStock
+@using TakOne.Application.Products.Commands.DeactivateProduct
+@using TakOne.WebUI.Components.Dialogs.RestockProductDialog
+@using TakOne.WebUI.Components.Dialogs.DeactivateProductDialog
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileAdminProducts> Loc
+@inject ToastService Toast
+@inject Radzen.DialogService DialogService
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false"
+                                    Mode="ProgressBarMode.Indeterminate"
+                                    Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else if (_products.Count == 0)
+{
+    <div class="m-empty-cta">
+        <h3>@Loc["EmptyTitle"]</h3>
+        <p>@Loc["EmptyMessage"]</p>
+        <button class="m-btn m-btn-primary"
+                @onclick='(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))'>
+            @Loc["CreateFirstProductButton"]
+        </button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — title + Create product CTA ── *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+        <button class="m-btn m-btn-primary m-btn-sm"
+                @onclick='(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))'>
+            @Loc["CreateProductButton"]
+        </button>
+    </div>
+
+    @* ── 2. Filter bar — search box (filters by Name, client-side) ── *@
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <span class="m-search-box-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+            </span>
+            <input type="search"
+                   class="m-input"
+                   placeholder="@Loc["SearchPlaceholder"]"
+                   value="@_searchTerm"
+                   @oninput="@((ChangeEventArgs e) => { _searchTerm = e.Value?.ToString() ?? string.Empty; })" />
+        </div>
+    </div>
+
+    @* ── 3. Status tabs (client-side filter on StockQuantity) ── *@
+    <div class="m-tabs">
+        <button class="m-tab @(_stockFilter == "all" ? "active" : "")"
+                @onclick='(() => SetStockFilter("all"))'>
+            @Loc["StatusAll"]
+        </button>
+        <button class="m-tab @(_stockFilter == "in" ? "active" : "")"
+                @onclick='(() => SetStockFilter("in"))'>
+            @Loc["StatusInStock"]
+        </button>
+        <button class="m-tab @(_stockFilter == "out" ? "active" : "")"
+                @onclick='(() => SetStockFilter("out"))'>
+            @Loc["StatusOutOfStock"]
+        </button>
+    </div>
+
+    @* ── 4. Product list ── *@
+    @if (!FilteredProducts.Any())
+    {
+        <div class="m-empty-cta">
+            <p>@Loc["EmptyMessage"]</p>
+            <button class="m-btn m-btn-primary"
+                    @onclick='(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))'>
+                @Loc["CreateFirstProductButton"]
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="m-list">
+            @foreach (var product in FilteredProducts)
+            {
+                var stockOut = product.StockQuantity <= 0;
+                var low = !stockOut && product.StockQuantity <= 10;
+                var isRestocking = _restockingId == product.Id;
+                var isDeactivating = _deactivatingId == product.Id;
+                var categoryPath = GetCategoryPath(product);
+                var deactivated = !product.CategoryIsActive
+                                  || !product.SubCategoryIsActive
+                                  || !product.SubSubCategoryIsActive;
+
+                <div class="m-list-item @(stockOut ? "is-inactive" : "")">
+                    @* Thumbnail — product image, or a placeholder image icon *@
+                    <div class="m-list-item-thumb">
+                        @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                        {
+                            <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                        }
+                        else
+                        {
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="width: 1.5rem; height: 1.5rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                            </svg>
+                        }
+                    </div>
+
+                    @* Main — title (clickable) + subtitle (category path) + price line *@
+                    <div class="m-list-item-main">
+                        <a class="m-list-item-title"
+                           href="@($"#product-{product.Id}")"
+                           @onclick="() => GoToProduct(product.Id)"
+                           @onclick:preventDefault>
+                            @product.Name
+                        </a>
+                        <p class="m-list-item-subtitle">
+                            @categoryPath
+                            @if (deactivated)
+                            {
+                                <span class="m-badge m-badge-danger">@Loc["DeactivatedSuffix"]</span>
+                            }
+                        </p>
+                        <p class="m-list-item-price">@FormatMoney(product.Price)</p>
+                    </div>
+
+                    @* Meta — stock badge (In/Low/Out) with culture-native digits *@
+                    <div class="m-list-item-meta">
+                        @if (stockOut)
+                        {
+                            <span class="m-badge m-badge-danger">
+                                @Loc["StockOut"] · @CultureFormat.FormatDigits(product.StockQuantity)
+                            </span>
+                        }
+                        else if (low)
+                        {
+                            <span class="m-badge m-badge-warning">
+                                @Loc["StockLow"] · @CultureFormat.FormatDigits(product.StockQuantity)
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="m-badge m-badge-success">
+                                @Loc["StockIn"] · @CultureFormat.FormatDigits(product.StockQuantity)
+                            </span>
+                        }
+                    </div>
+
+                    @* Actions — View (eye) + Restock (plus, success) + Deactivate (block, danger) ──
+                       Deactivate is disabled when StockQuantity <= 0 (the product is already
+                       deactivated; the only useful action at that point is Restock). The desktop
+                       page HIDES the button entirely in that state, but on mobile we keep it
+                       disabled-and-greyed to preserve row-height consistency across the list. *@
+                    <div class="m-list-item-actions">
+                        <button class="m-icon-btn-sm"
+                                title="@Loc["ActionView"]"
+                                aria-label="@Loc["ActionView"]"
+                                @onclick="() => GoToProduct(product.Id)">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.1rem; height: 1.1rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+
+                        <button class="m-icon-btn-sm success"
+                                title="@Loc["ActionRestock"]"
+                                aria-label="@Loc["ActionRestock"]"
+                                disabled="@(isRestocking || isDeactivating)"
+                                @onclick="() => HandleRestockAsync(product)">
+                            @if (isRestocking)
+                            {
+                                <RadzenProgressBarCircular ShowValue="false"
+                                                            Mode="ProgressBarMode.Indeterminate"
+                                                            Size="ProgressBarCircularSize.Small" />
+                            }
+                            else
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1.1rem; height: 1.1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                                </svg>
+                            }
+                        </button>
+
+                        <button class="m-icon-btn-sm danger"
+                                title="@Loc["ActionDeactivate"]"
+                                aria-label="@Loc["ActionDeactivate"]"
+                                disabled="@(stockOut || isRestocking || isDeactivating)"
+                                @onclick="() => HandleDeactivateAsync(product)">
+                            @if (isDeactivating)
+                            {
+                                <RadzenProgressBarCircular ShowValue="false"
+                                                            Mode="ProgressBarMode.Indeterminate"
+                                                            Size="ProgressBarCircularSize.Small" />
+                            }
+                            else
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.1rem; height: 1.1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                </svg>
+                            }
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* ── 6. Footer ── *@
+    <div class="m-footer">@Loc["Version"]</div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private List<ProductListItemDto> _products = new();
+    private string _searchTerm = string.Empty;
+    private string _stockFilter = "all";   // "all" | "in" | "out"
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    // Per-row in-flight guards. Null when no action is pending. Used to
+    // disable the clicked row's action button (prevents double-clicks) and
+    // to swap the button's icon for a small spinner while the round-trip
+    // is in progress.
+    private Guid? _restockingId;
+    private Guid? _deactivatingId;
+
+    // ── Lifecycle ───────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ────────────────────────────────────────────────────
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            // Same query as the desktop AdminProducts page: pull up to 100
+            // products (the backend cap) in one round-trip, with
+            // IncludeInactive=true so deactivated (zero-stock) products are
+            // visible to staff. The handler enforces role-gating on this
+            // flag — non-staff callers silently get active-only.
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = 1,
+                PageSize = 100,
+                SearchTerm = null,
+                CategoryId = null,
+                IncludeInactive = true
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+            _products = result.Items.ToList();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Client-side filtering ──────────────────────────────────────────
+
+    // Search (Name contains, case-insensitive) + stock-status tab.
+    // Both are applied client-side because we already have all 100 rows
+    // in memory (the desktop page does the same with Radzen's column
+    // filters — but on mobile we use a free-text search box + tab strip
+    // instead of per-column dropdowns, which don't translate to a narrow
+    // viewport).
+    private IEnumerable<ProductListItemDto> FilteredProducts
+    {
+        get
+        {
+            var q = _products.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var term = _searchTerm.Trim();
+                q = q.Where(p => p.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            q = _stockFilter switch
+            {
+                "in"  => q.Where(p => p.StockQuantity > 0),
+                "out" => q.Where(p => p.StockQuantity <= 0),
+                _     => q
+            };
+
+            return q.ToList();
+        }
+    }
+
+    private void SetStockFilter(string value)
+    {
+        _stockFilter = value;
+        StateHasChanged();
+    }
+
+    // ── Category path display ──────────────────────────────────────────
+
+    // Composes a "Cat › Sub › SubSub" breadcrumb from the three *_Name
+    // fields. Empty segments are skipped so a product with only a top-level
+    // category shows just "Cat", not "Cat › › ". When CategoryName itself
+    // is null/empty we show Loc["UnknownCategory"] (mirrors the desktop's
+    // cat-empty placeholder span).
+    private string GetCategoryPath(ProductListItemDto p)
+    {
+        var segments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(p.CategoryName))
+            segments.Add(p.CategoryName);
+        if (!string.IsNullOrWhiteSpace(p.SubCategoryName))
+            segments.Add(p.SubCategoryName);
+        if (!string.IsNullOrWhiteSpace(p.SubSubCategoryName))
+            segments.Add(p.SubSubCategoryName);
+
+        if (segments.Count == 0)
+            return Loc["UnknownCategory"];
+
+        return string.Join(" › ", segments);
+    }
+
+    // ── Restock ─────────────────────────────────────────────────────────
+
+    // Opens RestockProductDialog (Radzen dialog) which lets the user enter
+    // the quantity to add. The dialog returns a positive int if the user
+    // confirmed, or null/false otherwise. On confirm we dispatch
+    // IncreaseProductStockCommand(ProductId, Quantity).
+    private async Task HandleRestockAsync(ProductListItemDto product)
+    {
+        if (_restockingId.HasValue || _deactivatingId.HasValue) return;
+
+        object? result;
+        try
+        {
+            result = await DialogService.OpenAsync<RestockProductDialog>(
+                Loc["RestockDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "ProductName", product.Name },
+                    { "CurrentStock", product.StockQuantity }
+                },
+                new DialogOptions
+                {
+                    Width = "460px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,  // force the user to click a button
+                    ShowClose = true                    // keep the X button so the user has an obvious escape
+                });
+        }
+        catch
+        {
+            await Toast.Error(Loc["RestockDialogError"]);
+            return;
+        }
+
+        // Anything that isn't a positive int is treated as "user aborted"
+        // (covers null, false, dismissed-via-X/Esc). The dialog itself
+        // validates the input before calling Close(value), so we don't
+        // need to re-validate here.
+        if (result is not int quantity || quantity <= 0) return;
+
+        _restockingId = product.Id;
+        StateHasChanged();
+        try
+        {
+            var cmdResult = await MessageBus.InvokeAsync<Result>(
+                new IncreaseProductStockCommand(product.Id, quantity));
+
+            if (cmdResult.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["RestockSuccess"], quantity, product.Name),
+                    summary: Loc["RestockSuccessTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(cmdResult.Error ?? Loc["RestockError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["RestockError"]);
+        }
+        finally
+        {
+            _restockingId = null;
+        }
+    }
+
+    // ── Deactivate ──────────────────────────────────────────────────────
+
+    // Opens DeactivateProductDialog (Radzen dialog) that warns the user
+    // about the stock-loss implication and asks for confirmation. On
+    // Confirm, dispatches DeactivateProductCommand (sets StockQuantity
+    // to 0 — see the command's XML doc for why this IS the deactivation).
+    // Defense-in-depth: we also guard against StockQuantity <= 0 here
+    // (the button is already disabled in that state, but the markup
+    // guard could be bypassed by an attacker with crafted DOM — better
+    // safe than sorry).
+    private async Task HandleDeactivateAsync(ProductListItemDto product)
+    {
+        if (_restockingId.HasValue || _deactivatingId.HasValue) return;
+
+        if (product.StockQuantity <= 0)
+        {
+            await Toast.Warning(Loc["AlreadyDeactivated"]);
+            return;
+        }
+
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateProductDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "ProductName", product.Name },
+                    { "CurrentStock", product.StockQuantity }
+                },
+                new DialogOptions
+                {
+                    Width = "460px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,
+                    ShowClose = true
+                });
+        }
+        catch
+        {
+            await Toast.Error(Loc["DeactivateDialogError"]);
+            return;
+        }
+
+        // DialogService.Close(object) boxes a bool. Anything that isn't
+        // exactly `true` is treated as "user aborted" (covers false, null,
+        // dismissed-via-X/Esc cases).
+        if (confirmed is not true) return;
+
+        _deactivatingId = product.Id;
+        StateHasChanged();
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateProductCommand(product.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], product.Name),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["DeactivateError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["DeactivateError"]);
+        }
+        finally
+        {
+            _deactivatingId = null;
+        }
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────
+
+    private void GoToProduct(Guid productId)
+        => Navigation.NavigateTo($"/Products/{productId}", forceLoad: false);
+
+    // ── Money formatter (IRR/10 → Toman, Persian digits) ──────────────
+
+    // Mirrors MobileProducts.razor's FormatPrice exactly: divides IRR
+    // amounts by 10 to show Toman, uses N0 + InvariantCulture for grouping,
+    // swaps in native digits via CultureFormat.ToCultureDigits, and appends
+    // Loc["TomanUnit"] (which is "Toman" in en-US and "تومان" in fa-IR).
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || money.Amount == 0 && string.IsNullOrEmpty(money.Currency)) return "—";
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+}

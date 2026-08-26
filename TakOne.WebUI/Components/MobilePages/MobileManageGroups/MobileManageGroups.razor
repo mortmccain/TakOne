@@ -1,0 +1,527 @@
+@* MobileManageGroups.razor — mobile version of ManageGroups.razor.
+   Route: /m/Admin/Groups
+   Layout: MobileLayout
+
+   PORTS ALL PC ManageGroups page features:
+     - List of ALL customer groups (active + inactive) with greyed-out cue
+       for inactive rows.
+     - Filter by Name (search box) + Status tabs (All / Active / Inactive).
+     - Admin-only system LimitMode card (dark green gradient): select the
+       purchase-limit policy (CountOnly / SalaryOnly / Both) + Save.
+     - Inline activate/deactivate (Manager + Admin). Employees see only
+       the view-details button.
+     - Deactivate goes through DeactivateGroupDialog (3-second countdown
+       confirmation modal) before issuing the command.
+     - Create-group shortcut → /Admin/Groups/Create.
+     - Per-row action busyness guard (_isBusyGroupId) prevents double-clicks.
+*@
+
+@page "/m/Admin/Groups"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using Radzen
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.Commands.DeactivateCustomerGroup
+@using TakOne.Application.Customers.Commands.ActivateCustomerGroup
+@using TakOne.Application.Settings.DTOs
+@using TakOne.Application.Settings.Queries.GetSystemSettings
+@using TakOne.Application.Settings.Commands.SetSystemLimitMode
+@using TakOne.Domain.Common.Enums
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Components.Dialogs.DeactivateGroupDialog
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileManageGroups> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+@inject Radzen.DialogService DialogService
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@* ── Page header (always rendered) ── *@
+<div class="m-page-header">
+    <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+    @if (_isAdmin || _isManagerOnly)
+    {
+        <button class="m-btn m-btn-primary m-btn-sm" @onclick="GoToCreateGroup">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 14px; height: 14px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            @Loc["CreateGroupButton"]
+        </button>
+    }
+</div>
+
+@* ── Limit-mode card (Admin only, dark green gradient) ──
+   Rendered as soon as the system settings are loaded. Loads in parallel
+   with the groups list (Task.WhenAll in OnInitializedAsync) so the card
+   appears at the same time as the groups list. If the settings load
+   failed but groups succeeded, the card is hidden (graceful degradation
+   — the admin still gets to manage groups). *@
+@if (_isAdmin && _systemSettings is not null)
+{
+    <div class="m-limit-card">
+        <h3 style="font-size: 1rem; font-weight: 700; margin: 0 0 0.25rem;">@Loc["LimitModeCardTitle"]</h3>
+        <p style="font-size: 0.75rem; opacity: 0.85; margin: 0 0 0.75rem;">@Loc["LimitModeCardSubtitle"]</p>
+
+        <div class="m-limit-row">
+            <span class="m-limit-label">@Loc["LimitModeCardSubtitle"]</span>
+            <select class="m-limit-select" @bind="_selectedLimitMode" disabled="@_savingLimit">
+                <option value="CountOnly">@Loc["LimitModeCountOnly"]</option>
+                <option value="SalaryOnly">@Loc["LimitModeSalaryOnly"]</option>
+                <option value="Both">@Loc["LimitModeBoth"]</option>
+            </select>
+        </div>
+
+        <div class="m-limit-meta">
+            @Loc["LimitModeLastUpdated"]: @FormatTehran(new DateTimeOffset(_systemSettings.UpdatedAtUtc, TimeSpan.Zero))
+        </div>
+
+        <button class="m-limit-save" disabled="@_savingLimit" @onclick="HandleSaveLimitAsync">
+            @(_savingLimit ? "…" : Loc["LimitModeSaveButton"])
+        </button>
+    </div>
+}
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else
+{
+    @* ── Search filter bar ── *@
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <span class="m-search-box-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 16px; height: 16px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+            </span>
+            <input type="search" placeholder="@Loc["SearchPlaceholder"]" @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+
+    @* ── Status tabs (All / Active / Inactive) ── *@
+    <div class="m-tabs">
+        <button class="m-tab @(_statusFilter is null ? "active" : "")"
+                @onclick="(() => SetStatusFilter(null))">
+            @Loc["StatusAll"]
+        </button>
+        <button class="m-tab @(_statusFilter == "Active" ? "active" : "")"
+                @onclick="(() => SetStatusFilter("Active"))">
+            @Loc["StatusActive"]
+        </button>
+        <button class="m-tab @(_statusFilter == "Inactive" ? "active" : "")"
+                @onclick="(() => SetStatusFilter("Inactive"))">
+            @Loc["StatusInactive"]
+        </button>
+    </div>
+
+    @if (FilteredGroups.Count == 0)
+    {
+        @* ── Empty state ── *@
+        <div class="m-empty-cta">
+            <h3>@Loc["EmptyTitle"]</h3>
+            <p>@Loc["EmptyBody"]</p>
+            @if (_isAdmin || _isManagerOnly)
+            {
+                <button class="m-btn m-btn-primary" @onclick="GoToCreateGroup">@Loc["CreateGroupButton"]</button>
+            }
+        </div>
+    }
+    else
+    {
+        @* ── Groups list (single column, per-row actions) ── *@
+        <div class="m-list">
+            @foreach (var group in FilteredGroups)
+            {
+                var isBusy = _isBusyGroupId == group.Id;
+                <div class="m-list-item @(!group.IsActive ? "is-inactive" : "")">
+                    <div class="m-list-item-thumb">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.5rem; height: 1.5rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87m-4-5.13a4 4 0 110-8 4 4 0 010 8zm6 1.13v2a4 4 0 01-4 4H6a4 4 0 01-4-4v-2a4 4 0 013-3.87m9 3.87a4 4 0 110-8 4 4 0 010 8z" />
+                        </svg>
+                    </div>
+
+                    <div class="m-list-item-main">
+                        <h4 class="m-list-item-title" @onclick="(() => GoToGroup(group.Id))">@group.Name</h4>
+                        <p class="m-list-item-subtitle">@Loc["ColSalary"]: @FormatMoney(group.Salary)</p>
+                    </div>
+
+                    <div class="m-list-item-meta">
+                        @if (group.IsActive)
+                        {
+                            <span class="m-badge m-badge-success">@Loc["StatusActiveBadge"]</span>
+                        }
+                        else
+                        {
+                            <span class="m-badge m-badge-danger">@Loc["StatusInactiveBadge"]</span>
+                        }
+                    </div>
+
+                    <div class="m-list-item-actions">
+                        <button class="m-icon-btn-sm"
+                                title="@Loc["ActionViewDetail"]"
+                                aria-label="@Loc["ActionViewDetail"]"
+                                @onclick="(() => GoToGroup(group.Id))">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+
+                        @if ((_isAdmin || _isManagerOnly) && group.IsActive)
+                        {
+                            <button class="m-icon-btn-sm danger"
+                                    title="@Loc["ActionDeactivate"]"
+                                    aria-label="@Loc["ActionDeactivate"]"
+                                    disabled="@isBusy"
+                                    @onclick="(() => HandleDeactivateAsync(group))">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                </svg>
+                            </button>
+                        }
+                        @if ((_isAdmin || _isManagerOnly) && !group.IsActive)
+                        {
+                            <button class="m-icon-btn-sm success"
+                                    title="@Loc["ActionActivate"]"
+                                    aria-label="@Loc["ActionActivate"]"
+                                    disabled="@isBusy"
+                                    @onclick="(() => HandleActivateAsync(group))">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+<div class="m-footer">@Loc["Version"]</div>
+
+@code {
+    // ── State ──
+    private bool _isLoading = true;
+    private string? _loadError;
+    private List<CustomerGroupListItemDto> _groups = new();
+    private string _searchTerm = string.Empty;
+    private string? _statusFilter;
+    private bool _isAdmin;
+    private bool _isManagerOnly;
+    private SystemSettingsDto? _systemSettings;
+    private LimitMode _selectedLimitMode;
+    private bool _savingLimit;
+    private Guid? _isBusyGroupId;
+
+    // ── Lifecycle ──
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await ResolveRolesAsync();
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the current user's Admin/Manager roles via the Blazor auth
+    /// state (NOT ICurrentUserService — that returns false for everyone in
+    /// interactive Blazor Server mode because HttpContext is null over the
+    /// SignalR circuit). Same pattern as the desktop ManageGroups page.
+    /// </summary>
+    private async Task ResolveRolesAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                _isAdmin = user.IsInRole(Roles.Admin);
+                // Manager-only = Manager AND not also Admin. Admins who are
+                // also in the Manager role bypass this check (treated as Admins).
+                _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
+            }
+        }
+        catch
+        {
+            // Non-fatal — _isAdmin stays false. The Create / Activate /
+            // Deactivate buttons are hidden (safer fallback).
+        }
+    }
+
+    // ── Data loading ──
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        var groupsTask = LoadGroupsAsync();
+        var settingsTask = _isAdmin ? LoadSystemSettingsAsync() : Task.CompletedTask;
+        await Task.WhenAll(groupsTask, settingsTask);
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        try
+        {
+            // Include inactive so the admin can see the full list with the
+            // greyed-out cue + reactivate action.
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = true });
+
+            if (result.IsSuccess)
+            {
+                _groups = result.Value;
+            }
+            else
+            {
+                _loadError = Loc["Error_FailedToLoad"];
+            }
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+    }
+
+    private async Task LoadSystemSettingsAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<SystemSettingsDto>>(
+                new GetSystemSettingsQuery());
+
+            if (result.IsSuccess)
+            {
+                _systemSettings = result.Value;
+                _selectedLimitMode = result.Value.LimitMode;
+            }
+        }
+        catch
+        {
+            // Non-fatal — _systemSettings stays null, the limit-mode card
+            // is hidden; the groups list still renders.
+        }
+    }
+
+    // ── Computed filter ──
+
+    private List<CustomerGroupListItemDto> FilteredGroups
+    {
+        get
+        {
+            var q = _groups.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+            {
+                var term = _searchTerm.Trim();
+                q = q.Where(g => g.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrEmpty(_statusFilter))
+            {
+                var wantActive = _statusFilter == "Active";
+                q = q.Where(g => g.IsActive == wantActive);
+            }
+
+            return q.ToList();
+        }
+    }
+
+    private void SetStatusFilter(string? status)
+    {
+        _statusFilter = status;
+    }
+
+    // ── Mutations ──
+
+    private async Task HandleDeactivateAsync(CustomerGroupListItemDto group)
+    {
+        if (_isBusyGroupId.HasValue) return;
+
+        // Custom in-app confirmation dialog with 3-second countdown (same
+        // pattern as DeactivateUserDialog) — replaces the sparse native
+        // browser confirm() popup and adds friction against reflex confirm.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateGroupDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "GroupName", group.Name }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false,
+                    ShowClose = true,
+                });
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"]);
+            return;
+        }
+
+        if (confirmed is not true) return;
+
+        _isBusyGroupId = group.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateCustomerGroupCommand(group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], group.Name),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadGroupsAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["ActionError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"]);
+        }
+        finally
+        {
+            _isBusyGroupId = null;
+        }
+    }
+
+    private async Task HandleActivateAsync(CustomerGroupListItemDto group)
+    {
+        if (_isBusyGroupId.HasValue) return;
+
+        // No confirmation for activation — it's a non-destructive restore.
+        _isBusyGroupId = group.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateCustomerGroupCommand(group.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], group.Name),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await LoadGroupsAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["ActionError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"]);
+        }
+        finally
+        {
+            _isBusyGroupId = null;
+        }
+    }
+
+    private async Task HandleSaveLimitAsync()
+    {
+        if (_savingLimit || _systemSettings is null) return;
+
+        var previousMode = _systemSettings.LimitMode;
+        _savingLimit = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SetSystemLimitModeCommand(_selectedLimitMode));
+
+            if (result.IsSuccess)
+            {
+                // Refresh settings so UpdatedAtUtc reflects server time and
+                // the dropdown reflects the persisted value.
+                await LoadSystemSettingsAsync();
+                await Toast.Success(Loc["LimitModeSaveSuccess"], summary: Loc["LimitModeSaveSuccessTitle"]);
+            }
+            else
+            {
+                // Revert the dropdown so the UI reflects the actual persisted
+                // state — the user's selection was rejected.
+                _selectedLimitMode = previousMode;
+                await Toast.Error(Loc["LimitModeSaveError"]);
+            }
+        }
+        catch
+        {
+            _selectedLimitMode = previousMode;
+            await Toast.Error(Loc["LimitModeSaveError"]);
+        }
+        finally
+        {
+            _savingLimit = false;
+        }
+    }
+
+    // ── Navigation ──
+
+    private void GoToCreateGroup()
+        => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false);
+
+    private void GoToGroup(Guid groupId)
+        => Navigation.NavigateTo($"/Admin/Groups/{groupId}", forceLoad: false);
+
+    // ── Formatting ──
+
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || money.Amount == 0 && string.IsNullOrEmpty(money.Currency)) return "—";
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    private string FormatTehran(DateTimeOffset dto)
+    {
+        var tehran = dto.AddHours(3.5).LocalDateTime;
+        return CultureFormat.ToCultureDigits(tehran.ToString("yyyy/MM/dd HH:mm", CultureInfo.InvariantCulture));
+    }
+}

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Categories — Admin — TakOne</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>Categories</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading categories...</value></data>
+  <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>Failed to load categories.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>No categories yet</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>Create your first category to organize products.</value></data>
+  <data name="AddFirstCategoryButton" xml:space="preserve"><value>Add first category</value></data>
+  <data name="AddSubCategoryButton" xml:space="preserve"><value>Add sub-category</value></data>
+  <data name="AddSubSubCategoryButton" xml:space="preserve"><value>Add sub-sub-category</value></data>
+  <data name="SaveButton" xml:space="preserve"><value>Save</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>Cancel</value></data>
+  <data name="EditButton" xml:space="preserve"><value>Rename</value></data>
+  <data name="DeactivateButton" xml:space="preserve"><value>Deactivate</value></data>
+  <data name="ActivateButton" xml:space="preserve"><value>Activate</value></data>
+  <data name="Collapse" xml:space="preserve"><value>Collapse</value></data>
+  <data name="Expand" xml:space="preserve"><value>Expand</value></data>
+  <data name="CreateSuccess" xml:space="preserve"><value>Category created.</value></data>
+  <data name="CreateSuccessTitle" xml:space="preserve"><value>Created</value></data>
+  <data name="SubCategoryCreated" xml:space="preserve"><value>Sub-category created.</value></data>
+  <data name="SubCategoryCreatedTitle" xml:space="preserve"><value>Created</value></data>
+  <data name="SubSubCategoryCreated" xml:space="preserve"><value>Sub-sub-category created.</value></data>
+  <data name="SubSubCategoryCreatedTitle" xml:space="preserve"><value>Created</value></data>
+  <data name="CategoryRenamed" xml:space="preserve"><value>Category renamed.</value></data>
+  <data name="CategoryRenamedTitle" xml:space="preserve"><value>Renamed</value></data>
+  <data name="SubCategoryRenamed" xml:space="preserve"><value>Sub-category renamed.</value></data>
+  <data name="SubCategoryRenamedTitle" xml:space="preserve"><value>Renamed</value></data>
+  <data name="SubSubCategoryRenamed" xml:space="preserve"><value>Sub-sub-category renamed.</value></data>
+  <data name="SubSubCategoryRenamedTitle" xml:space="preserve"><value>Renamed</value></data>
+  <data name="CategoryDeactivated" xml:space="preserve"><value>Category deactivated.</value></data>
+  <data name="CategoryDeactivatedTitle" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="CategoryActivated" xml:space="preserve"><value>Category activated.</value></data>
+  <data name="CategoryActivatedTitle" xml:space="preserve"><value>Activated</value></data>
+  <data name="SubCategoryDeactivated" xml:space="preserve"><value>Sub-category deactivated.</value></data>
+  <data name="SubCategoryDeactivatedTitle" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="SubCategoryActivated" xml:space="preserve"><value>Sub-category activated.</value></data>
+  <data name="SubCategoryActivatedTitle" xml:space="preserve"><value>Activated</value></data>
+  <data name="SubSubCategoryDeactivated" xml:space="preserve"><value>Sub-sub-category deactivated.</value></data>
+  <data name="SubSubCategoryDeactivatedTitle" xml:space="preserve"><value>Deactivated</value></data>
+  <data name="SubSubCategoryActivated" xml:space="preserve"><value>Sub-sub-category activated.</value></data>
+  <data name="SubSubCategoryActivatedTitle" xml:space="preserve"><value>Activated</value></data>
+  <data name="Error_NameRequired" xml:space="preserve"><value>Name is required.</value></data>
+  <data name="Error_NewNameRequired" xml:space="preserve"><value>New name is required.</value></data>
+  <data name="Error_GenericCreate" xml:space="preserve"><value>Failed to create category.</value></data>
+  <data name="Error_CreateSub" xml:space="preserve"><value>Failed to create sub-category.</value></data>
+  <data name="Error_CreateSubSub" xml:space="preserve"><value>Failed to create sub-sub-category.</value></data>
+  <data name="Error_RenameFailed" xml:space="preserve"><value>Failed to rename.</value></data>
+  <data name="Error_ToggleFailed" xml:space="preserve"><value>Failed to change status.</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+</root>

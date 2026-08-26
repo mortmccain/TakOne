@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>کاربرها — مدیریت — تک‌وان</value></data>
+  <data name="PageHeading" xml:space="preserve"><value>کاربرها</value></data>
+  <data name="CreateUserButton" xml:space="preserve"><value>افزودن کاربر</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری کاربرها...</value></data>
+  <data name="Retry" xml:space="preserve"><value>تلاش دوباره</value></data>
+  <data name="Error_FailedToLoad" xml:space="preserve"><value>بارگذاری کاربرها ناموفق بود.</value></data>
+  <data name="EmptyTitle" xml:space="preserve"><value>هنوز کاربری ثبت نشده</value></data>
+  <data name="EmptyMessage" xml:space="preserve"><value>نخستین حساب کاربری را بسازید.</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>جستجوی کاربرها...</value></data>
+  <data name="StatusAll" xml:space="preserve"><value>همه</value></data>
+  <data name="StatusActive" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactive" xml:space="preserve"><value>غیرفعال</value></data>
+  <data name="StatusActiveBadge" xml:space="preserve"><value>فعال</value></data>
+  <data name="StatusInactiveBadge" xml:space="preserve"><value>غیرفعال</value></data>
+  <data name="GenderMale" xml:space="preserve"><value>مرد</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>زن</value></data>
+  <data name="GroupNone" xml:space="preserve"><value>بدون گروه</value></data>
+  <data name="ActionViewDetail" xml:space="preserve"><value>مشاهده</value></data>
+  <data name="ActionDeactivate" xml:space="preserve"><value>غیرفعال‌سازی</value></data>
+  <data name="ActionActivate" xml:space="preserve"><value>فعال‌سازی</value></data>
+  <data name="ActionLockedForManager" xml:space="preserve"><value>برای مدیران مجاز نیست</value></data>
+  <data name="DeactivateDialogTitle" xml:space="preserve"><value>غیرفعال‌سازی کاربر</value></data>
+  <data name="DeactivateSuccess" xml:space="preserve"><value>{0} غیرفعال شد.</value></data>
+  <data name="DeactivateSuccessTitle" xml:space="preserve"><value>غیرفعال شد</value></data>
+  <data name="ActivateSuccess" xml:space="preserve"><value>{0} فعال شد.</value></data>
+  <data name="ActivateSuccessTitle" xml:space="preserve"><value>فعال شد</value></data>
+  <data name="ActionError" xml:space="preserve"><value>عملیات ناموفق بود.</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+</root>

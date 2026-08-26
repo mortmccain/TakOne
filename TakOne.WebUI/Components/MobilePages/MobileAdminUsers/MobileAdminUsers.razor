@@ -1,0 +1,466 @@
+@* MobileAdminUsers.razor — mobile version of AdminUsers.razor
+   Route: /m/Admin/Users
+   Layout: MobileLayout
+
+   PORTS desktop AdminUsers features (mobile-simplified):
+     - List every user once (GetUsersPaginatedQuery PageSize=500 → .Items)
+     - Client-side search filter (WorkerId OR FullName, case-insensitive)
+     - Status tabs (All / Active / Inactive) — client-side on .IsActive
+     - Per-row badges: gender (info/gold), group (neutral), status (success/danger)
+     - Per-row View button → /Admin/Users/{Id} (desktop detail page)
+     - Per-row Activate / Deactivate toggle, gated by CanActOn(user)
+         · Admin → may act on anyone (except self)
+         · Manager-only → may act on users whose Roles contain Employee or Customer;
+           other rows show a locked-disabled icon with a tooltip
+         · Employee → cannot act on anyone; only the View button shows
+     - Deactivate opens DeactivateUserDialog (3-second countdown) → DeactivateUserCommand
+     - Activate (no confirm) → ActivateUserCommand
+     - Per-row _busyId (Guid?) guard prevents double-clicks during round-trip
+     - Reset-password flow is intentionally omitted on mobile — it lives on the
+       /Admin/Users/{Id} detail page (kept the list lean per the mobile spec).
+*@
+
+@page "/m/Admin/Users"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using Radzen
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Queries.GetUsersPaginated
+@using TakOne.Application.Users.Commands.DeactivateUser
+@using TakOne.Application.Users.Commands.ActivateUser
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.Dialogs.DeactivateUserDialog
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileAdminUsers> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+@inject DialogService DialogService
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-loading">
+        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
+        <p>@Loc["Loading"]</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["Retry"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header + create button (gated to Admin/Manager — employees can't create users) ── *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["PageHeading"]</h1>
+        @if (_isAdmin || _isManagerOnly)
+        {
+            <button class="m-btn m-btn-primary m-btn-sm"
+                    @onclick="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 14px; height: 14px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                @Loc["CreateUserButton"]
+            </button>
+        }
+    </div>
+
+    @* ── 2. Search filter bar ── *@
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <input type="search"
+                   value="@_searchTerm"
+                   @oninput="@((ChangeEventArgs e) => { _searchTerm = e.Value?.ToString() ?? string.Empty; })"
+                   placeholder="@Loc["SearchPlaceholder"]"
+                   aria-label="@Loc["SearchPlaceholder"]" />
+            <svg class="m-search-box-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+        </div>
+    </div>
+
+    @* ── 3. Status filter tabs ── *@
+    <div class="m-tabs">
+        <button class="m-tab @(_statusFilter == "all" ? "active" : "")"
+                @onclick="@(() => SetStatusFilter("all"))">@Loc["StatusAll"]</button>
+        <button class="m-tab @(_statusFilter == "active" ? "active" : "")"
+                @onclick="@(() => SetStatusFilter("active"))">@Loc["StatusActive"]</button>
+        <button class="m-tab @(_statusFilter == "inactive" ? "active" : "")"
+                @onclick="@(() => SetStatusFilter("inactive"))">@Loc["StatusInactive"]</button>
+    </div>
+
+    @* ── 4. User list / empty state ── *@
+    @if (_users.Count == 0)
+    {
+        <div class="m-empty-cta">
+            <h3>@Loc["EmptyTitle"]</h3>
+            <p>@Loc["EmptyMessage"]</p>
+            @if (_isAdmin || _isManagerOnly)
+            {
+                <button class="m-btn m-btn-primary"
+                        @onclick="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))">
+                    @Loc["CreateUserButton"]
+                </button>
+            }
+        </div>
+    }
+    else if (!FilteredUsers.Any())
+    {
+        <p class="m-empty">@Loc["EmptyMessage"]</p>
+    }
+    else
+    {
+        <div class="m-list">
+            @foreach (var user in FilteredUsers)
+            {
+                <div class="m-list-item @(user.IsActive ? "" : "is-inactive")">
+                    @* Person thumbnail (no image field on the DTO) *@
+                    <div class="m-list-item-thumb">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="width: 1.75rem; height: 1.75rem; color: var(--tm-green);">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.265-.569-7.499-1.632z" />
+                        </svg>
+                    </div>
+
+                    <div class="m-list-item-main">
+                        <p class="m-list-item-title" @onclick="@(() => View(user.Id))">@user.FullName</p>
+                        <p class="m-list-item-subtitle">@CultureFormat.FormatDigits(user.WorkerId)</p>
+
+                        <div class="m-list-item-meta">
+                            <span class="m-badge @(user.Gender == Gender.Male ? "m-badge-info" : "m-badge-gold")">
+                                @(user.Gender == Gender.Male ? Loc["GenderMale"] : Loc["GenderFemale"])
+                            </span>
+                            <span class="m-badge m-badge-neutral">
+                                @(string.IsNullOrWhiteSpace(user.GroupName) ? Loc["GroupNone"] : user.GroupName)
+                            </span>
+                            <span class="m-badge @(user.IsActive ? "m-badge-success" : "m-badge-danger")">
+                                @(user.IsActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"])
+                            </span>
+                        </div>
+
+                        <div class="m-list-item-actions">
+                            @* View — always available to all staff viewers *@
+                            <button class="m-icon-btn-sm"
+                                    title="@Loc["ActionViewDetail"]"
+                                    aria-label="@Loc["ActionViewDetail"]"
+                                    @onclick="@(() => View(user.Id))">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </button>
+
+                            @* Activate / Deactivate toggle.
+                               Hidden on the current user's own row — self-deactivation is rejected
+                               by the handler anyway, but the button adds confusing UX.
+                               Employees don't see the toggle (or the lock) at all — the entire
+                               activate/deactivate feature is off-limits for them, so showing
+                               locks everywhere would be noisy. *@
+                            @if (user.Id != _currentUserId && (_isAdmin || _isManagerOnly))
+                            {
+                                @if (CanActOn(user))
+                                {
+                                    @if (user.IsActive)
+                                    {
+                                        <button class="m-icon-btn-sm danger"
+                                                title="@Loc["ActionDeactivate"]"
+                                                aria-label="@Loc["ActionDeactivate"]"
+                                                disabled="@(_busyId == user.Id)"
+                                                @onclick="@(() => HandleDeactivateAsync(user))">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 18.364m12.728-12.728L5.636 18.364" />
+                                            </svg>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="m-icon-btn-sm success"
+                                                title="@Loc["ActionActivate"]"
+                                                aria-label="@Loc["ActionActivate"]"
+                                                disabled="@(_busyId == user.Id)"
+                                                @onclick="@(() => HandleActivateAsync(user))">
+                                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 1rem; height: 1rem;">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                        </button>
+                                    }
+                                }
+                                else if (_isManagerOnly)
+                                {
+                                    @* Manager can't act on this row — show a lock with a tooltip *@
+                                    <button class="m-icon-btn-sm"
+                                            title="@Loc["ActionLockedForManager"]"
+                                            aria-label="@Loc["ActionLockedForManager"]"
+                                            disabled>
+                                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                                        </svg>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="m-footer">@Loc["Version"]</div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    private List<UserListItemDto> _users = new();
+    private string _searchTerm = string.Empty;
+    private string _statusFilter = "all"; // "all" | "active" | "inactive"
+
+    // Per-row busy guard — Guid of the user whose action is currently in flight.
+    private Guid? _busyId;
+
+    // Current-user context (read from AuthenticationStateProvider — ICurrentUserService
+    // returns false for everyone in interactive Blazor Server mode because the
+    // HttpContext is null over the SignalR circuit; same approach as desktop AdminUsers).
+    private Guid _currentUserId;
+    private bool _isAdmin;
+    private bool _isManagerOnly;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await ResolveCurrentUserAsync();
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Auth / role resolution ───────────────────────────────────────────
+
+    private async Task ResolveCurrentUserAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated != true) return;
+
+            var idClaim = user.FindFirst("UserId")?.Value
+                          ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (Guid.TryParse(idClaim, out var parsedId))
+            {
+                _currentUserId = parsedId;
+            }
+
+            _isAdmin = user.IsInRole(Roles.Admin);
+            // Manager-only means "in Manager role AND not also Admin". Admins
+            // who happen to also be in the Manager role are treated as Admins
+            // (no restriction) — same logic as desktop AdminUsers.
+            _isManagerOnly = !_isAdmin && user.IsInRole(Roles.Manager);
+        }
+        catch
+        {
+            // Non-fatal — _currentUserId stays Guid.Empty (no self-action
+            // buttons hidden, which is safe but slightly worse UX), _isAdmin
+            // and _isManagerOnly stay false (safer fallbacks).
+        }
+    }
+
+    // ── Data loading ─────────────────────────────────────────────────────
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
+                new GetUsersPaginatedQuery { PageNumber = 1, PageSize = 500 });
+            _users = page.Items?.ToList() ?? new List<UserListItemDto>();
+        }
+        catch
+        {
+            _loadError = Loc["Error_FailedToLoad"];
+        }
+    }
+
+    // ── Filtering (client-side) ──────────────────────────────────────────
+
+    private IEnumerable<UserListItemDto> FilteredUsers
+    {
+        get
+        {
+            var users = _users.AsEnumerable();
+
+            if (_statusFilter == "active")
+                users = users.Where(u => u.IsActive);
+            else if (_statusFilter == "inactive")
+                users = users.Where(u => !u.IsActive);
+
+            var term = _searchTerm?.Trim() ?? string.Empty;
+            if (term.Length > 0)
+            {
+                users = users.Where(u =>
+                    u.FullName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || u.WorkerId.Contains(term, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return users;
+        }
+    }
+
+    private void SetStatusFilter(string filter)
+    {
+        _statusFilter = filter;
+    }
+
+    // ── Role-scope rule (mirrors desktop AdminUsers.CanActOn) ───────────
+
+    private bool CanActOn(UserListItemDto user)
+    {
+        // Admins can act on anyone (the markup already hides the button on
+        // the admin's own row — we don't re-check that here).
+        if (_isAdmin) return true;
+
+        // Managers (non-Admin) can act on Employees OR Customers.
+        if (_isManagerOnly)
+        {
+            return user.Roles.Contains(Roles.Employee)
+                || user.Roles.Contains(Roles.Customer);
+        }
+
+        // Employees (and anyone else) — cannot activate/deactivate anyone.
+        return false;
+    }
+
+    // ── Mutations ────────────────────────────────────────────────────────
+
+    private async Task HandleDeactivateAsync(UserListItemDto user)
+    {
+        if (_busyId.HasValue) return;
+
+        // Custom in-app confirmation dialog (DeactivateUserDialog) with a
+        // 3-second countdown on the confirm button — same pattern as the
+        // desktop AdminUsers page and the sale-cancel flow.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<DeactivateUserDialog>(
+                Loc["DeactivateDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "UserDisplayName", user.FullName }
+                },
+                new DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false, // force the user to click a button
+                    ShowClose = true,                  // keep the X as an obvious escape
+                });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
+            await Toast.Error(Loc["ActionError"]);
+            return;
+        }
+
+        // `confirmed` is `object?` (boxed bool from DialogService.Close(true|false),
+        // or null if the user dismissed via X / Esc / overlay). Anything that
+        // isn't exactly `true` is treated as "user aborted".
+        if (confirmed is not true) return;
+
+        _busyId = user.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeactivateUserCommand(user.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], user.FullName),
+                    summary: Loc["DeactivateSuccessTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                // The handler rejects self-deactivation with a friendly message;
+                // surface it verbatim, falling back to the generic ActionError.
+                await Toast.Error(result.Error ?? Loc["ActionError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"]);
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+
+    private async Task HandleActivateAsync(UserListItemDto user)
+    {
+        if (_busyId.HasValue) return;
+
+        // No confirmation for activation — it's a non-destructive restore.
+        _busyId = user.Id;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new ActivateUserCommand(user.Id));
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(
+                    string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], user.FullName),
+                    summary: Loc["ActivateSuccessTitle"]);
+                await LoadAsync();
+            }
+            else
+            {
+                await Toast.Error(result.Error ?? Loc["ActionError"]);
+            }
+        }
+        catch
+        {
+            await Toast.Error(Loc["ActionError"]);
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+
+    private void View(Guid userId)
+        => Navigation.NavigateTo($"/Admin/Users/{userId}", forceLoad: false);
+}

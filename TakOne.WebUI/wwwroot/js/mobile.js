@@ -22,8 +22,17 @@ window.takMobile = (function () {
 
     // Map of PC routes → mobile routes.
     // Only pages that have a mobile version are listed here.
+    // v2: added Cart, Sales, Settings, and the admin pages so the whole
+    //     lower-nav flow stays on mobile once a user lands there.
     var pcToMobile = {
-        '/Products': '/m/Products'
+        '/Products': '/m/Products',
+        '/Cart': '/m/Cart',
+        '/Sales': '/m/Sales',
+        '/Settings': '/m/Settings',
+        '/Admin/Products': '/m/Admin/Products',
+        '/Admin/Users': '/m/Admin/Users',
+        '/Admin/Categories': '/m/Admin/Categories',
+        '/Admin/Groups': '/m/Admin/Groups'
     };
     var mobileToPc = {};
     Object.keys(pcToMobile).forEach(function (pc) {
