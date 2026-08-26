@@ -63,10 +63,44 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: page header + status tabs + search box + 4 list items
+       shaped like the real list rows so the layout doesn't jump. *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 8rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+        <div class="m-skeleton" style="width: 6rem; height: 2rem; border-radius: 0.5rem;"></div>
     </div>
+    <div class="m-tabs">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-skeleton" style="width: 4rem; height: 2rem; border-radius: 0.5rem;"></div>
+        }
+    </div>
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.5rem;"></div>
+        </div>
+    </div>
+    <div class="m-list">
+        @for (var i = 0; i < 5; i++)
+        {
+            <div class="m-list-item">
+                <div class="m-list-item-main">
+                    <div class="m-skeleton m-skeleton-line medium"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                    @if (_isStaff)
+                    {
+                        <div class="m-skeleton m-skeleton-line short"></div>
+                        <div class="m-skeleton m-skeleton-line short"></div>
+                    }
+                    <div class="m-list-item-meta">
+                        <div class="m-skeleton" style="width: 4rem; height: 1.25rem; border-radius: 0.5rem;"></div>
+                        <div class="m-skeleton" style="width: 5rem; height: 1rem; border-radius: 0.25rem;"></div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {

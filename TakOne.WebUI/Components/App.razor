@@ -136,15 +136,24 @@
        (.m-ptr-indicator/.m-ptr-pill), MobileEditGroup form classes
        (.m-form-card, .m-stat-row). Without this bump browsers keep serving
        the old v2 mobile.css and these new classes render unstyled. *@
-    <link rel="stylesheet" href="css/mobile.css?v=3" />
+    @* Mobile CSS — v4 (Round 8): added Create-page form polish (.m-spinner,
+       .m-pill-radio, .m-field-hint, .m-form-field/.m-form-label aliases,
+       .m-input-row, .m-input-currency, .m-select, .m-textarea), gradient
+       .m-status-banner, .m-budget-bar-fill, .m-page-title gold underline,
+       dark-mode contrast fixes (.tak-theme-dark .m-form-card / .m-input /
+       .m-pill-radio), .m-dash-greeting-title gradient text, .m-product-card
+       + .m-list-item hover lift, .m-back-btn gold-ring hover, .m-btn
+       active-scale + hover-shadow. Round 7 added detail-page chrome +
+       skeletons + PTR. Without this bump browsers keep serving the old
+       v3 mobile.css and the new Create pages render unstyled. *@
+    <link rel="stylesheet" href="css/mobile.css?v=4" />
 
-    @* Mobile device detection + redirect logic + pull-to-refresh — v3
-       (Round 7): added detail-route redirects (/Sales/{id} → /m/Sales/{id}
-       etc.) + the pull-to-refresh touch listener (at scrollTop==0, pull
-       down 70px to reload). Without this bump browsers keep serving the
-       old v2 mobile.js which doesn't redirect detail routes and has no
-       pull-to-refresh. *@
-    <script src="js/mobile.js?v=3"></script>
+    @* Mobile device detection + redirect logic + pull-to-refresh — v4
+       (Round 8): added /Admin/Products/Create, /Admin/Users/Create,
+       /Admin/Groups/Create → mobile equivalent so admins tapping Create
+       buttons on the mobile list pages stay on mobile. Round 7 added
+       detail-route redirects + the pull-to-refresh touch listener. *@
+    <script src="js/mobile.js?v=4"></script>
 
     @* Chart.js — VENDORED locally (same pattern as SignalR).
        Used by the redesigned Dashboard page (Dashboard.razor) for the

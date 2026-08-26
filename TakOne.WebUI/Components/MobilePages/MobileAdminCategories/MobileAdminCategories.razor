@@ -56,12 +56,35 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false"
-                                   Mode="ProgressBarMode.Indeterminate"
-                                   Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: page header + tree-like structure with 3 top-level rows +
+       2 sub-rows each. The tree is the main content, so the skeleton
+       mirrors that shape. *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 8rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+        <div class="m-skeleton" style="width: 5rem; height: 2rem; border-radius: 0.5rem;"></div>
     </div>
+    <div class="m-skeleton-card">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-tree-node">
+                <div class="m-tree-node-row">
+                    <div class="m-skeleton" style="width: 1.5rem; height: 1.5rem; border-radius: 0.25rem;"></div>
+                    <div class="m-skeleton m-skeleton-line medium" style="flex: 1;"></div>
+                    <div class="m-skeleton" style="width: 2rem; height: 1.5rem; border-radius: 0.25rem;"></div>
+                </div>
+                <div class="m-tree-children">
+                    @for (var j = 0; j < 2; j++)
+                    {
+                        <div class="m-tree-sub-row">
+                            <div class="m-skeleton" style="width: 1.5rem; height: 1.5rem; border-radius: 0.25rem;"></div>
+                            <div class="m-skeleton m-skeleton-line short" style="flex: 1;"></div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {

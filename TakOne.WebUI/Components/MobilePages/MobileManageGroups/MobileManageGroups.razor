@@ -12,7 +12,7 @@
        the view-details button.
      - Deactivate goes through DeactivateGroupDialog (3-second countdown
        confirmation modal) before issuing the command.
-     - Create-group shortcut → /Admin/Groups/Create.
+     - Create-group shortcut → /m/Admin/Groups/Create.
      - Per-row action busyness guard (_isBusyGroupId) prevents double-clicks.
 *@
 
@@ -94,10 +94,29 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: page header + 3 group cards with summary rows + stat row. *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 9rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+        <div class="m-skeleton" style="width: 5rem; height: 2rem; border-radius: 0.5rem;"></div>
     </div>
+    @for (var i = 0; i < 3; i++)
+    {
+        <div class="m-skeleton-card">
+            <div class="m-list-item-title-row">
+                <div class="m-skeleton-circle"></div>
+                <div style="flex: 1; margin: 0 0.75rem;">
+                    <div class="m-skeleton m-skeleton-line medium"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                </div>
+                <div class="m-skeleton" style="width: 4rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+            </div>
+            <div class="m-summary-row" style="margin-top: 0.75rem;">
+                <div class="m-skeleton m-skeleton-line short"></div>
+                <div class="m-skeleton m-skeleton-line medium"></div>
+            </div>
+        </div>
+    }
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {
@@ -502,7 +521,7 @@ else
     // ── Navigation ──
 
     private void GoToCreateGroup()
-        => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false);
+        => Navigation.NavigateTo("/m/Admin/Groups/Create", forceLoad: false);
 
     private void GoToGroup(Guid groupId)
         => Navigation.NavigateTo($"/m/Admin/Groups/Edit/{groupId}", forceLoad: false);

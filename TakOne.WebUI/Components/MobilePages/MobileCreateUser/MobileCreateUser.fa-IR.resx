@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="PageTitle" xml:space="preserve"><value>ایجاد کاربر</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>افزودن حساب پرسنل یا مشتری</value></data>
+  <data name="ModeStaff" xml:space="preserve"><value>پرسنل</value></data>
+  <data name="ModeCustomer" xml:space="preserve"><value>مشتری</value></data>
+  <data name="FormCardStaff" xml:space="preserve"><value>جزئیات پرسنل</value></data>
+  <data name="FormCardCustomer" xml:space="preserve"><value>جزئیات مشتری</value></data>
+  <data name="FieldWorkerId" xml:space="preserve"><value>کد پرسنلی</value></data>
+  <data name="FieldWorkerIdPlaceholder" xml:space="preserve"><value>شناسه ورود</value></data>
+  <data name="FieldFullName" xml:space="preserve"><value>نام کامل</value></data>
+  <data name="FieldFullNamePlaceholder" xml:space="preserve"><value>نام و نام خانوادگی</value></data>
+  <data name="FieldEmail" xml:space="preserve"><value>ایمیل</value></data>
+  <data name="FieldPassword" xml:space="preserve"><value>رمز عبور اولیه</value></data>
+  <data name="FieldPasswordPlaceholder" xml:space="preserve"><value>حداقل ۶ کاراکتر</value></data>
+  <data name="FieldGender" xml:space="preserve"><value>جنسیت</value></data>
+  <data name="GenderMale" xml:space="preserve"><value>مرد</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>زن</value></data>
+  <data name="FieldRole" xml:space="preserve"><value>نقش</value></data>
+  <data name="FieldGroup" xml:space="preserve"><value>گروه</value></data>
+  <data name="SelectGroup" xml:space="preserve"><value>— انتخاب گروه —</value></data>
+  <data name="RoleAdmin" xml:space="preserve"><value>مدیر کل</value></data>
+  <data name="RoleManager" xml:space="preserve"><value>مدیر</value></data>
+  <data name="RoleEmployee" xml:space="preserve"><value>پرسنل</value></data>
+  <data name="RoleReadOnly" xml:space="preserve"><value>فقط مشاهده</value></data>
+  <data name="RoleManagerHint" xml:space="preserve"><value>مدیران فقط می‌توانند حساب پرسنل ایجاد کنند</value></data>
+  <data name="CreateButton" xml:space="preserve"><value>ایجاد کاربر</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>انصراف</value></data>
+  <data name="Submitting" xml:space="preserve"><value>در حال ثبت...</value></data>
+  <data name="BackToUsers" xml:space="preserve"><value>بازگشت به کاربران</value></data>
+  <data name="FooterHint" xml:space="preserve"><value>پرسنل بدون محدودیت خرید می‌کنند؛ مشتریان محدودیت گروه را به ارث می‌برند</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری...</value></data>
+  <data name="Toast_Success" xml:space="preserve"><value>کاربر با موفقیت ایجاد شد</value></data>
+  <data name="Err_WorkerIdRequired" xml:space="preserve"><value>کد پرسنلی الزامی است</value></data>
+  <data name="Err_FullNameRequired" xml:space="preserve"><value>نام کامل الزامی است</value></data>
+  <data name="Err_EmailRequired" xml:space="preserve"><value>ایمیل الزامی است</value></data>
+  <data name="Err_PasswordRequired" xml:space="preserve"><value>رمز عبور الزامی است</value></data>
+  <data name="Err_PasswordTooShort" xml:space="preserve"><value>رمز عبور باید حداقل ۶ کاراکتر باشد</value></data>
+  <data name="Err_GroupRequired" xml:space="preserve"><value>گروه برای مشتری الزامی است</value></data>
+  <data name="Err_Generic" xml:space="preserve"><value>خطایی رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+</root>

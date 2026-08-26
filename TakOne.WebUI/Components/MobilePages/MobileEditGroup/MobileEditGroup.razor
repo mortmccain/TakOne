@@ -220,10 +220,36 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: back-header + form card (3 field rows) + stat row +
+       bulk-apply placeholder. Mirrors real EditGroup layout. *@
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
     </div>
+    <div class="m-form-card">
+        <div class="m-skeleton m-skeleton-line medium" style="width: 6rem; margin-bottom: 0.75rem;"></div>
+        @for (var i = 0; i < 3; i++)
+        {
+            <div class="m-field">
+                <div class="m-skeleton m-skeleton-line short" style="width: 5rem; margin-bottom: 0.5rem;"></div>
+                <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.5rem;"></div>
+            </div>
+        }
+    </div>
+    <div class="m-skeleton-card">
+        <div class="m-stat-row">
+            <div class="m-skeleton m-skeleton-line short"></div>
+            <div class="m-skeleton m-skeleton-line medium"></div>
+        </div>
+        <div class="m-stat-row">
+            <div class="m-skeleton m-skeleton-line short"></div>
+            <div class="m-skeleton m-skeleton-line medium"></div>
+        </div>
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {

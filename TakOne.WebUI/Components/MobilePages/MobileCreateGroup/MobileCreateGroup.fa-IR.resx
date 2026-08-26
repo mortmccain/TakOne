@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="PageTitle" xml:space="preserve"><value>ایجاد گروه مشتری</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>بودجه حقوق جدید</value></data>
+  <data name="FormCardTitle" xml:space="preserve"><value>جزئیات گروه</value></data>
+  <data name="FieldName" xml:space="preserve"><value>نام</value></data>
+  <data name="FieldNamePlaceholder" xml:space="preserve"><value>مثلاً پرسنل ارشد</value></data>
+  <data name="FieldSalaryAmount" xml:space="preserve"><value>مبلغ حقوق</value></data>
+  <data name="FieldSalaryPlaceholder" xml:space="preserve"><value>۰</value></data>
+  <data name="SalaryHint" xml:space="preserve"><value>بودجه ماهانه برای هر مشتری در این گروه</value></data>
+  <data name="CreateButton" xml:space="preserve"><value>ایجاد گروه</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>انصراف</value></data>
+  <data name="Submitting" xml:space="preserve"><value>در حال ثبت...</value></data>
+  <data name="BackToGroups" xml:space="preserve"><value>بازگشت به گروه‌ها</value></data>
+  <data name="FooterHint" xml:space="preserve"><value>گروه‌ها بودجه حقوق و محدودیت خرید را تعیین می‌کنند</value></data>
+  <data name="Toast_Success" xml:space="preserve"><value>گروه با موفقیت ایجاد شد</value></data>
+  <data name="Err_NameRequired" xml:space="preserve"><value>نام الزامی است</value></data>
+  <data name="Err_NameTooLong" xml:space="preserve"><value>نام باید حداکثر ۱۰۰ کاراکتر باشد</value></data>
+  <data name="Err_SalaryRequired" xml:space="preserve"><value>مبلغ حقوق الزامی است</value></data>
+  <data name="Err_SalaryInvalid" xml:space="preserve"><value>حق باید یک عدد معتبر باشد</value></data>
+  <data name="Err_SalaryPositive" xml:space="preserve"><value>حق باید بزرگتر از صفر باشد</value></data>
+  <data name="Err_Generic" xml:space="preserve"><value>خطایی رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+</root>

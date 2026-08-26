@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="PageTitle" xml:space="preserve"><value>ایجاد محصول</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>افزودن کالای جدید</value></data>
+  <data name="FormCardTitle" xml:space="preserve"><value>جزئیات محصول</value></data>
+  <data name="FieldName" xml:space="preserve"><value>نام</value></data>
+  <data name="FieldNamePlaceholder" xml:space="preserve"><value>مثلاً روغن زیتون درجه یک</value></data>
+  <data name="FieldDescription" xml:space="preserve"><value>توضیحات</value></data>
+  <data name="FieldDescriptionPlaceholder" xml:space="preserve"><value>توضیح کوتاه محصول...</value></data>
+  <data name="FieldPrice" xml:space="preserve"><value>قیمت</value></data>
+  <data name="FieldPricePlaceholder" xml:space="preserve"><value>۰</value></data>
+  <data name="FieldInitialStock" xml:space="preserve"><value>موجودی اولیه</value></data>
+  <data name="FieldCategory" xml:space="preserve"><value>دسته‌بندی</value></data>
+  <data name="FieldSubCategory" xml:space="preserve"><value>زیر دسته</value></data>
+  <data name="FieldSubSubCategory" xml:space="preserve"><value>زیر زیر دسته</value></data>
+  <data name="SelectCategory" xml:space="preserve"><value>— انتخاب دسته —</value></data>
+  <data name="CreateButton" xml:space="preserve"><value>ایجاد محصول</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>انصراف</value></data>
+  <data name="Submitting" xml:space="preserve"><value>در حال ثبت...</value></data>
+  <data name="BackToProducts" xml:space="preserve"><value>بازگشت به محصولات</value></data>
+  <data name="FooterHint" xml:space="preserve"><value>آپلود تصویر در دسکتاپ</value></data>
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری...</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="Toast_Success" xml:space="preserve"><value>محصول با موفقیت ایجاد شد</value></data>
+  <data name="Err_LoadCategories" xml:space="preserve"><value>بارگذاری دسته‌بندی‌ها ناموفق بود</value></data>
+  <data name="Err_NameRequired" xml:space="preserve"><value>نام الزامی است</value></data>
+  <data name="Err_NameTooLong" xml:space="preserve"><value>نام باید حداکثر ۲۰۰ کاراکتر باشد</value></data>
+  <data name="Err_DescriptionRequired" xml:space="preserve"><value>توضیحات الزامی است</value></data>
+  <data name="Err_DescriptionTooLong" xml:space="preserve"><value>توضیحات باید حداکثر ۲۰۰۰ کاراکتر باشد</value></data>
+  <data name="Err_PriceRequired" xml:space="preserve"><value>قیمت الزامی است</value></data>
+  <data name="Err_PriceInvalid" xml:space="preserve"><value>قیمت باید یک عدد معتبر باشد</value></data>
+  <data name="Err_PricePositive" xml:space="preserve"><value>قیمت باید بزرگتر از صفر باشد</value></data>
+  <data name="Err_StockInvalid" xml:space="preserve"><value>موجودی باید یک عدد صحیح باشد</value></data>
+  <data name="Err_StockNegative" xml:space="preserve"><value>موجودی نمی‌تواند منفی باشد</value></data>
+  <data name="Err_StockTooLarge" xml:space="preserve"><value>موجودی نمی‌تواند بیشتر از ۱٬۰۰۰٬۰۰۰ باشد</value></data>
+  <data name="Err_CategoryRequired" xml:space="preserve"><value>دسته‌بندی الزامی است</value></data>
+  <data name="Err_Generic" xml:space="preserve"><value>خطایی رخ داد. لطفاً دوباره تلاش کنید.</value></data>
+</root>

@@ -1,0 +1,261 @@
+@* MobileCreateGroup.razor — mobile version of the CreateGroup (admin) page.
+   Route: /m/Admin/Groups/Create
+   Layout: MobileLayout
+
+   PORTS the desktop CreateGroup.razor's create-customer-group flow into a
+   mobile-friendly form. Three fields:
+     - Name            (required, 1-100 chars, unique)
+     - Salary Amount   (required, > 0; defaults to "0" placeholder)
+     - Salary Currency (required, 3-letter ISO 4217; dropdown with the
+                        most common currencies — IRR/USD/EUR/GBP/AED/CNY,
+                        user can also type a custom 3-letter code)
+
+   ON SUBMIT: dispatches CreateCustomerGroupCommand(Name, SalaryAmount,
+   SalaryCurrency) via IMessageBus. On success: toast + NavigateTo
+   /m/Admin/Groups so the new group appears in the list. On failure: the
+   handler returns Result.Failure with a localized error message — shown
+   inline in the .m-action-error block above the submit button (mirrors
+   MobileSaleDetail's action-stack error pattern).
+
+   BACKEND CONTRACT:
+     - CreateCustomerGroupCommand requires Admin or Manager role
+       ([RequireRoles(Roles.Manager, Roles.Admin)] — see command file).
+     - The handler validates name uniqueness + salary > 0 + currency
+       is 3 letters; failures come back via Result.Failure with a
+       user-readable message.
+
+   ROLE VISIBILITY:
+     - Only Admin + Manager see the "Create group" button on
+       MobileManageGroups (it's gated by _isAdmin || _isManagerOnly
+       there). They're the only roles that can reach this page.
+
+   NO IMAGE UPLOAD: groups don't have a picture field. Form is text-only.
+
+   SKELETON: not needed — the form is statically rendered, no async load
+   (the currency dropdown is hardcoded). Only _isSubmitting toggles the
+   button's disabled + spinner state. *@
+
+@page "/m/Admin/Groups/Create"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.Commands.CreateCustomerGroup
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileCreateGroup> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@* ── 1. Page header — back button + page title + subtitle. Same
+       .m-page-header-back + .m-back-btn + .m-page-header-text pattern
+       used by MobileEditGroup / MobileSaleDetail / MobileProductDetail /
+       MobileUserDetail. *@
+<div class="m-page-header-back">
+    <button type="button"
+            class="m-back-btn"
+            aria-label="@Loc["BackToGroups"]"
+            title="@Loc["BackToGroups"]"
+            @onclick="GoToGroups">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+    </button>
+    <div class="m-page-header-text">
+        <h1 class="m-page-title">@Loc["PageTitle"]</h1>
+        <p class="m-page-subtitle">@Loc["PageSubtitle"]</p>
+    </div>
+</div>
+
+@* ── 2. Create form card — Name + Salary Amount + Salary Currency + Submit.
+       Uses the .m-form-card / .m-field / .m-input-row / .m-input /
+       .m-btn-primary m-btn-block patterns from MobileEditGroup. *@
+<div class="m-form-card">
+    <div class="m-card-section-title">@Loc["FormCardTitle"]</div>
+
+    <div class="m-field">
+        <label class="m-field-label" for="cg-name">@Loc["FieldName"]</label>
+        <input id="cg-name"
+               class="m-input"
+               type="text"
+               value="@_formName"
+               placeholder="@Loc["FieldNamePlaceholder"]"
+               autocomplete="off"
+               @oninput='@(e => _formName = e.Value?.ToString() ?? "")'
+               @onkeypress='@(async e => { if (e.Key == "Enter") await HandleSubmitAsync(); })' />
+        @if (!string.IsNullOrEmpty(_nameError))
+        {
+            <p class="m-field-error">@_nameError</p>
+        }
+    </div>
+
+    <div class="m-field">
+        <label class="m-field-label" for="cg-salary">@Loc["FieldSalaryAmount"]</label>
+        <div class="m-input-row">
+            <input id="cg-salary"
+                   class="m-input m-input-currency"
+                   type="text"
+                   inputmode="decimal"
+                   value="@_formSalaryAmount"
+                   placeholder="@Loc["FieldSalaryPlaceholder"]"
+                   style="direction: ltr; text-align: left;"
+                   @oninput='@(e => _formSalaryAmount = e.Value?.ToString() ?? "")'
+                   @onkeypress='@(async e => { if (e.Key == "Enter") await HandleSubmitAsync(); })' />
+            <select id="cg-currency"
+                    class="m-select"
+                    style="width: 6rem;"
+                    value="@_formSalaryCurrency"
+                    @onchange='@(e => _formSalaryCurrency = e.Value?.ToString() ?? "IRR")'>
+                @foreach (var cur in _currencyOptions)
+                {
+                    <option value="@cur" selected="@(cur == _formSalaryCurrency)">@cur</option>
+                }
+            </select>
+        </div>
+        <p class="m-field-hint">@Loc["SalaryHint"]</p>
+        @if (!string.IsNullOrEmpty(_salaryError))
+        {
+            <p class="m-field-error">@_salaryError</p>
+        }
+    </div>
+
+    @* ── Server-side validation error (defense-in-depth — the handler may
+           reject for reasons not caught by client-side validation, e.g.
+           name uniqueness race). Shown inline above the submit button,
+           same pattern as MobileSaleDetail's .m-action-error. *@
+    @if (!string.IsNullOrEmpty(_submitError))
+    {
+        <div class="m-action-error">
+            <p>@_submitError</p>
+        </div>
+    }
+
+    <button type="button"
+            class="m-btn m-btn-primary m-btn-block"
+            disabled="@_isSubmitting"
+            @onclick="HandleSubmitAsync">
+        @if (_isSubmitting)
+        {
+            <span class="m-spinner" aria-hidden="true"></span>
+            @Loc["Submitting"]
+        }
+        else
+        {
+            @Loc["CreateButton"]
+        }
+    </button>
+    <button type="button"
+            class="m-btn m-btn-secondary m-btn-block"
+            disabled="@_isSubmitting"
+            @onclick="GoToGroups">
+        @Loc["CancelButton"]
+    </button>
+</div>
+
+<div class="m-footer">
+    @Loc["FooterHint"]
+</div>
+
+@code {
+    // ── Form state ────────────────────────────────────────────────────────
+    private string _formName = string.Empty;
+    private string _formSalaryAmount = string.Empty;
+    private string _formSalaryCurrency = "IRR";
+
+    // ── Validation errors (client-side) ───────────────────────────────────
+    private string? _nameError;
+    private string? _salaryError;
+    private string? _submitError;
+
+    // ── Submission state ──────────────────────────────────────────────────
+    private bool _isSubmitting;
+
+    // ── Currency dropdown options (most common for TakOne's market) ───────
+    // Mirrors the desktop CreateGroup's currency list. User can pick from
+    // these OR type a custom 3-letter ISO 4217 code in the salary field's
+    // select element (HTML select doesn't allow free typing, so we'd need
+    // a RadzenDropDown with AllowCustom — for mobile simplicity we just
+    // list the 6 most common currencies; admin can add more via desktop).
+    private readonly string[] _currencyOptions = { "IRR", "USD", "EUR", "GBP", "AED", "CNY" };
+
+    // ── Navigation ───────────────────────────────────────────────────────
+    private void GoToGroups()
+        => Navigation.NavigateTo("/m/Admin/Groups", forceLoad: false);
+
+    // ── Submit handler ─────────────────────────────────────────────────────
+    private async Task HandleSubmitAsync()
+    {
+        // Clear previous errors
+        _nameError = null;
+        _salaryError = null;
+        _submitError = null;
+
+        // ── Client-side validation (first wave) ──
+        var hasError = false;
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            _nameError = Loc["Err_NameRequired"];
+            hasError = true;
+        }
+        else if (_formName.Length > 100)
+        {
+            _nameError = Loc["Err_NameTooLong"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formSalaryAmount))
+        {
+            _salaryError = Loc["Err_SalaryRequired"];
+            hasError = true;
+        }
+        else if (!decimal.TryParse(_formSalaryAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var salaryAmount))
+        {
+            _salaryError = Loc["Err_SalaryInvalid"];
+            hasError = true;
+        }
+        else if (salaryAmount <= 0)
+        {
+            _salaryError = Loc["Err_SalaryPositive"];
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        // ── Dispatch command ──
+        _isSubmitting = true;
+        try
+        {
+            var amount = decimal.Parse(_formSalaryAmount, NumberStyles.Number, CultureInfo.InvariantCulture);
+            var cmd = new CreateCustomerGroupCommand(
+                _formName.Trim(),
+                amount,
+                _formSalaryCurrency.ToUpperInvariant());
+
+            var result = await MessageBus.InvokeAsync<Result>(cmd);
+
+            if (result.IsSuccess)
+            {
+                Toast.ShowSuccess(Loc["Toast_Success"]);
+                Navigation.NavigateTo("/m/Admin/Groups", forceLoad: false);
+            }
+            else
+            {
+                _submitError = result.Error?.Message ?? Loc["Err_Generic"];
+            }
+        }
+        catch (Exception ex)
+        {
+            _submitError = ex.Message ?? Loc["Err_Generic"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

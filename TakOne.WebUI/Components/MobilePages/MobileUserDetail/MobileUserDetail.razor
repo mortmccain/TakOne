@@ -140,10 +140,41 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: back-header + profile summary card (4 rows) + roles chips
+       + action buttons card. Mirrors real UserDetail layout. *@
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
     </div>
+    <div class="m-summary-card">
+        <div class="m-skeleton m-skeleton-line medium" style="width: 6rem; margin-bottom: 0.75rem;"></div>
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-profile-row">
+                <div class="m-skeleton m-skeleton-line short"></div>
+                <div class="m-skeleton m-skeleton-line medium"></div>
+            </div>
+        }
+    </div>
+    <div class="m-summary-card">
+        <div class="m-skeleton m-skeleton-line short" style="width: 5rem; margin-bottom: 0.75rem;"></div>
+        <div class="m-profile-row m-profile-row-stack">
+            <div class="m-profile-chips">
+                @for (var i = 0; i < 2; i++)
+                {
+                    <div class="m-skeleton" style="width: 4rem; height: 1.5rem; border-radius: 0.5rem;"></div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="m-action-stack">
+        <div class="m-skeleton" style="width: 100%; height: 2.75rem; border-radius: 0.5rem;"></div>
+        <div class="m-skeleton" style="width: 100%; height: 2.75rem; border-radius: 0.5rem;"></div>
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {

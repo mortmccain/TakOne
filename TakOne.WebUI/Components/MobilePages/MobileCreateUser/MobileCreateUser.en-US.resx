@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="PageTitle" xml:space="preserve"><value>Create user</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>Add a new staff or customer account</value></data>
+  <data name="ModeStaff" xml:space="preserve"><value>Staff</value></data>
+  <data name="ModeCustomer" xml:space="preserve"><value>Customer</value></data>
+  <data name="FormCardStaff" xml:space="preserve"><value>Staff details</value></data>
+  <data name="FormCardCustomer" xml:space="preserve"><value>Customer details</value></data>
+  <data name="FieldWorkerId" xml:space="preserve"><value>Worker ID</value></data>
+  <data name="FieldWorkerIdPlaceholder" xml:space="preserve"><value>login identifier</value></data>
+  <data name="FieldFullName" xml:space="preserve"><value>Full name</value></data>
+  <data name="FieldFullNamePlaceholder" xml:space="preserve"><value>first + last name</value></data>
+  <data name="FieldEmail" xml:space="preserve"><value>Email</value></data>
+  <data name="FieldPassword" xml:space="preserve"><value>Initial password</value></data>
+  <data name="FieldPasswordPlaceholder" xml:space="preserve"><value>min. 6 characters</value></data>
+  <data name="FieldGender" xml:space="preserve"><value>Gender</value></data>
+  <data name="GenderMale" xml:space="preserve"><value>Male</value></data>
+  <data name="GenderFemale" xml:space="preserve"><value>Female</value></data>
+  <data name="FieldRole" xml:space="preserve"><value>Role</value></data>
+  <data name="FieldGroup" xml:space="preserve"><value>Group</value></data>
+  <data name="SelectGroup" xml:space="preserve"><value>— Select group —</value></data>
+  <data name="RoleAdmin" xml:space="preserve"><value>Admin</value></data>
+  <data name="RoleManager" xml:space="preserve"><value>Manager</value></data>
+  <data name="RoleEmployee" xml:space="preserve"><value>Employee</value></data>
+  <data name="RoleReadOnly" xml:space="preserve"><value>Read-only</value></data>
+  <data name="RoleManagerHint" xml:space="preserve"><value>Managers can only create Employee accounts</value></data>
+  <data name="CreateButton" xml:space="preserve"><value>Create user</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Submitting" xml:space="preserve"><value>Submitting...</value></data>
+  <data name="BackToUsers" xml:space="preserve"><value>Back to users</value></data>
+  <data name="FooterHint" xml:space="preserve"><value>Staff can shop without limit; customers inherit group limits</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading...</value></data>
+  <data name="Toast_Success" xml:space="preserve"><value>User created successfully</value></data>
+  <data name="Err_WorkerIdRequired" xml:space="preserve"><value>Worker ID is required</value></data>
+  <data name="Err_FullNameRequired" xml:space="preserve"><value>Full name is required</value></data>
+  <data name="Err_EmailRequired" xml:space="preserve"><value>Email is required</value></data>
+  <data name="Err_PasswordRequired" xml:space="preserve"><value>Password is required</value></data>
+  <data name="Err_PasswordTooShort" xml:space="preserve"><value>Password must be at least 6 characters</value></data>
+  <data name="Err_GroupRequired" xml:space="preserve"><value>Group is required for customers</value></data>
+  <data name="Err_Generic" xml:space="preserve"><value>Something went wrong. Please try again.</value></data>
+</root>

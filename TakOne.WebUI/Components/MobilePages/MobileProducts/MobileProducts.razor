@@ -43,10 +43,45 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton shaped like the real layout: budget card + category chips
+       + hero + 4 product cards. Perceived-load is faster than a single
+       spinner because the user sees the page's structure take shape. *@
+    <div class="m-skeleton-card" aria-busy="true" aria-live="polite">
+        <div class="m-skeleton m-skeleton-line short"></div>
+        <div class="m-skeleton m-skeleton-line long"></div>
+        <div class="m-skeleton m-skeleton-block" style="height: 0.5rem; margin-top: 0.5rem;"></div>
     </div>
+    <div class="m-cat-scroll" style="margin-bottom: 1rem;">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-skeleton" style="width: 4.5rem; height: 4.5rem; border-radius: 1rem; flex-shrink: 0;"></div>
+        }
+    </div>
+    <div class="m-hero" style="background: var(--tm-surface-muted, var(--tm-cream));">
+        <div class="m-hero-content">
+            <div class="m-skeleton m-skeleton-line short" style="margin-bottom: 0.5rem;"></div>
+            <div class="m-skeleton m-skeleton-line medium"></div>
+        </div>
+    </div>
+    <div class="m-products">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-product-card">
+                <div class="m-product-image">
+                    <div class="m-skeleton" style="width: 100%; height: 100%; border-radius: 0.75rem;"></div>
+                </div>
+                <div class="m-product-body">
+                    <div class="m-skeleton m-skeleton-line long"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                    <div class="m-product-actions">
+                        <div class="m-skeleton" style="width: 4.5rem; height: 2rem; border-radius: 0.5rem;"></div>
+                        <div class="m-skeleton" style="width: 3rem; height: 2rem; border-radius: 0.5rem;"></div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else
 {

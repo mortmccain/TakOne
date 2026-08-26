@@ -1,0 +1,480 @@
+@* MobileCreateProduct.razor — mobile version of CreateProduct (admin) page.
+   Route: /m/Admin/Products/Create
+   Layout: MobileLayout
+
+   PORTS a mobile-friendly subset of the desktop CreateProduct.razor's
+   product-creation flow. Includes:
+     - Name (required)
+     - Description (required, multiline)
+     - Price Amount + Currency (required, dropdown for currency)
+     - Initial Stock (required, >= 0)
+     - Category dropdown (required, populated from GetActiveCategoriesQuery)
+     - SubCategory dropdown (optional, filtered by selected Category)
+     - SubSubCategory dropdown (optional, filtered by selected SubCategory)
+
+   SKIPPED on mobile (use desktop for these):
+     - Picture upload (mobile file pickers are clunky on small screens;
+       admins uploading product images should use the desktop flow)
+     - Per-group purchase limit editor (complex matrix UI; admin can set
+       limits post-creation via MobileAdminProducts → ProductDetail)
+
+   ON SUBMIT: dispatches CreateProductCommand via IMessageBus. On success:
+   toast + NavigateTo /m/Admin/Products so the new product appears in the
+   list. On failure: the handler returns Result.Failure with a localized
+   message — shown inline above the submit button.
+
+   BACKEND CONTRACT:
+     - CreateProductCommand requires Admin, Manager, or Employee role.
+     - The handler validates: name uniqueness, price > 0, currency is
+       3-letter ISO 4217, category hierarchy consistency (SubCategoryId
+       belongs to CategoryId, SubSubCategoryId belongs to SubCategoryId).
+
+   CASCADING CATEGORY DROPDOWNS:
+     - Categories are loaded once on init via GetActiveCategoriesQuery.
+     - SubCategory options re-evaluate reactively when the Category
+       selection changes (SubCategories property of the selected Category).
+     - SubSubCategory options re-evaluate when SubCategory changes.
+     - SubCategory + SubSubCategory are nullable; selecting "—" clears them.
+
+   STATE MACHINE: _isLoading → _loadError → form. Only the categories list
+   is async; once loaded, the form is purely client-side until submit. *@
+
+@page "/m/Admin/Products/Create"
+@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.Commands.CreateProduct
+@using TakOne.Application.Categories.DTOs
+@using TakOne.Application.Categories.Queries.GetActiveCategories
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileCreateProduct> Loc
+@inject ToastService Toast
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    @* Skeleton: back-header + form card with 6 field rows. Lightweight
+       because the form is the only content; a busy skeleton would
+       overwhelm the small viewport. *@
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
+    </div>
+    <div class="m-form-card">
+        <div class="m-skeleton m-skeleton-line medium" style="width: 7rem; margin-bottom: 0.75rem;"></div>
+        @for (var i = 0; i < 6; i++)
+        {
+            <div class="m-field">
+                <div class="m-skeleton m-skeleton-line short" style="width: 5rem; margin-bottom: 0.5rem;"></div>
+                <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.5rem;"></div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadCategoriesAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Page header — back button + title + subtitle. *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToProducts"]"
+                title="@Loc["BackToProducts"]"
+                @onclick="GoToProducts">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@Loc["PageTitle"]</h1>
+            <p class="m-page-subtitle">@Loc["PageSubtitle"]</p>
+        </div>
+    </div>
+
+    @* ── 2. Create form card. *@
+    <div class="m-form-card">
+        <div class="m-card-section-title">@Loc["FormCardTitle"]</div>
+
+        @* ── Name ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cp-name">@Loc["FieldName"]</label>
+            <input id="cp-name"
+                   class="m-input"
+                   type="text"
+                   value="@_formName"
+                   placeholder="@Loc["FieldNamePlaceholder"]"
+                   autocomplete="off"
+                   @oninput='@(e => _formName = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_nameError))
+            {
+                <p class="m-field-error">@_nameError</p>
+            }
+        </div>
+
+        @* ── Description (multiline) ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cp-desc">@Loc["FieldDescription"]</label>
+            <textarea id="cp-desc"
+                      class="m-textarea"
+                      rows="3"
+                      placeholder="@Loc["FieldDescriptionPlaceholder"]"
+                      @oninput='@(e => _formDescription = e.Value?.ToString() ?? "")'>@_formDescription</textarea>
+            @if (!string.IsNullOrEmpty(_descriptionError))
+            {
+                <p class="m-field-error">@_descriptionError</p>
+            }
+        </div>
+
+        @* ── Price Amount + Currency (side-by-side) ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cp-price">@Loc["FieldPrice"]</label>
+            <div class="m-input-row">
+                <input id="cp-price"
+                       class="m-input m-input-currency"
+                       type="text"
+                       inputmode="decimal"
+                       value="@_formPriceAmount"
+                       placeholder="@Loc["FieldPricePlaceholder"]"
+                       style="direction: ltr; text-align: left;"
+                       @oninput='@(e => _formPriceAmount = e.Value?.ToString() ?? "")' />
+                <select id="cp-currency"
+                        class="m-select"
+                        style="width: 6rem;"
+                        value="@_formPriceCurrency"
+                        @onchange='@(e => _formPriceCurrency = e.Value?.ToString() ?? "IRR")'>
+                    @foreach (var cur in _currencyOptions)
+                    {
+                        <option value="@cur" selected="@(cur == _formPriceCurrency)">@cur</option>
+                    }
+                </select>
+            </div>
+            @if (!string.IsNullOrEmpty(_priceError))
+            {
+                <p class="m-field-error">@_priceError</p>
+            }
+        </div>
+
+        @* ── Initial Stock ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cp-stock">@Loc["FieldInitialStock"]</label>
+            <input id="cp-stock"
+                   class="m-input"
+                   type="number"
+                   inputmode="numeric"
+                   min="0"
+                   max="1000000"
+                   value="@_formInitialStock"
+                   placeholder="0"
+                   style="direction: ltr; text-align: left;"
+                   @oninput='@(e => _formInitialStock = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_stockError))
+            {
+                <p class="m-field-error">@_stockError</p>
+            }
+        </div>
+
+        @* ── Category (top-level) ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cp-cat">@Loc["FieldCategory"]</label>
+            <select id="cp-cat"
+                    class="m-select"
+                    value="@_formCategoryId"
+                    @onchange="OnCategoryChanged">
+                <option value="">@Loc["SelectCategory"]</option>
+                @foreach (var cat in _categories)
+                {
+                    <option value="@cat.Id" selected="@(cat.Id == _formCategoryId)">@cat.Name</option>
+                }
+            </select>
+            @if (!string.IsNullOrEmpty(_categoryError))
+            {
+                <p class="m-field-error">@_categoryError</p>
+            }
+        </div>
+
+        @* ── SubCategory (filtered by Category; optional) ── *@
+        @if (SelectedCategory?.SubCategories.Count > 0)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="cp-subcat">@Loc["FieldSubCategory"]</label>
+                <select id="cp-subcat"
+                        class="m-select"
+                        value="@_formSubCategoryId"
+                        @onchange="OnSubCategoryChanged">
+                    <option value="">—</option>
+                    @foreach (var sub in SelectedCategory.SubCategories)
+                    {
+                        <option value="@sub.Id" selected="@(sub.Id == _formSubCategoryId)">@sub.Name</option>
+                    }
+                </select>
+            </div>
+        }
+
+        @* ── SubSubCategory (filtered by SubCategory; optional) ── *@
+        @if (SelectedSubCategory?.SubSubCategories.Count > 0)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="cp-subsubcat">@Loc["FieldSubSubCategory"]</label>
+                <select id="cp-subsubcat"
+                        class="m-select"
+                        value="@_formSubSubCategoryId"
+                        @onchange='@(e => _formSubSubCategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : (Guid?)null)'>
+                    <option value="">—</option>
+                    @foreach (var subsub in SelectedSubCategory.SubSubCategories)
+                    {
+                        <option value="@subsub.Id" selected="@(subsub.Id == _formSubSubCategoryId)">@subsub.Name</option>
+                    }
+                </select>
+            </div>
+        }
+
+        @* ── Server-side validation error ── *@
+        @if (!string.IsNullOrEmpty(_submitError))
+        {
+            <div class="m-action-error">
+                <p>@_submitError</p>
+            </div>
+        }
+
+        <button type="button"
+                class="m-btn m-btn-primary m-btn-block"
+                disabled="@_isSubmitting"
+                @onclick="HandleSubmitAsync">
+            @if (_isSubmitting)
+            {
+                <span class="m-spinner" aria-hidden="true"></span>
+                @Loc["Submitting"]
+            }
+            else
+            {
+                @Loc["CreateButton"]
+            }
+        </button>
+        <button type="button"
+                class="m-btn m-btn-secondary m-btn-block"
+                disabled="@_isSubmitting"
+                @onclick="GoToProducts">
+            @Loc["CancelButton"]
+        </button>
+    </div>
+
+    <div class="m-footer">
+        @Loc["FooterHint"]
+    </div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private List<CategoryDto> _categories = new();
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    // ── Form fields ──────────────────────────────────────────────────────
+    private string _formName = string.Empty;
+    private string _formDescription = string.Empty;
+    private string _formPriceAmount = string.Empty;
+    private string _formPriceCurrency = "IRR";
+    private string _formInitialStock = "0";
+    private Guid? _formCategoryId;
+    private Guid? _formSubCategoryId;
+    private Guid? _formSubSubCategoryId;
+
+    // ── Validation errors ────────────────────────────────────────────────
+    private string? _nameError;
+    private string? _descriptionError;
+    private string? _priceError;
+    private string? _stockError;
+    private string? _categoryError;
+    private string? _submitError;
+
+    private bool _isSubmitting;
+    private readonly string[] _currencyOptions = { "IRR", "USD", "EUR", "GBP", "AED", "CNY" };
+
+    // ── Computed: currently-selected Category / SubCategory DTOs ──────────
+    private CategoryDto? SelectedCategory =>
+        _categories.FirstOrDefault(c => c.Id == _formCategoryId);
+    private SubCategoryDto? SelectedSubCategory =>
+        SelectedCategory?.SubCategories.FirstOrDefault(s => s.Id == _formSubCategoryId);
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadCategoriesAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var query = new GetActiveCategoriesQuery();
+            _categories = (await MessageBus.InvokeAsync<List<CategoryDto>>(query)) ?? new();
+        }
+        catch
+        {
+            _loadError = Loc["Err_LoadCategories"];
+        }
+    }
+
+    // ── Cascading dropdown change handlers ──────────────────────────────
+    private void OnCategoryChanged(ChangeEventArgs e)
+    {
+        _formCategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : (Guid?)null;
+        // Reset sub + subsub when category changes
+        _formSubCategoryId = null;
+        _formSubSubCategoryId = null;
+    }
+
+    private void OnSubCategoryChanged(ChangeEventArgs e)
+    {
+        _formSubCategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : (Guid?)null;
+        // Reset subsub when sub changes
+        _formSubSubCategoryId = null;
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+    private void GoToProducts()
+        => Navigation.NavigateTo("/m/Admin/Products", forceLoad: false);
+
+    // ── Submit handler ───────────────────────────────────────────────────
+    private async Task HandleSubmitAsync()
+    {
+        // Clear previous errors
+        _nameError = null;
+        _descriptionError = null;
+        _priceError = null;
+        _stockError = null;
+        _categoryError = null;
+        _submitError = null;
+
+        // ── Client-side validation ──
+        var hasError = false;
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            _nameError = Loc["Err_NameRequired"];
+            hasError = true;
+        }
+        else if (_formName.Length > 200)
+        {
+            _nameError = Loc["Err_NameTooLong"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formDescription))
+        {
+            _descriptionError = Loc["Err_DescriptionRequired"];
+            hasError = true;
+        }
+        else if (_formDescription.Length > 2000)
+        {
+            _descriptionError = Loc["Err_DescriptionTooLong"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formPriceAmount))
+        {
+            _priceError = Loc["Err_PriceRequired"];
+            hasError = true;
+        }
+        else if (!decimal.TryParse(_formPriceAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var price))
+        {
+            _priceError = Loc["Err_PriceInvalid"];
+            hasError = true;
+        }
+        else if (price <= 0)
+        {
+            _priceError = Loc["Err_PricePositive"];
+            hasError = true;
+        }
+
+        if (!int.TryParse(_formInitialStock, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stock))
+        {
+            _stockError = Loc["Err_StockInvalid"];
+            hasError = true;
+        }
+        else if (stock < 0)
+        {
+            _stockError = Loc["Err_StockNegative"];
+            hasError = true;
+        }
+        else if (stock > 1_000_000)
+        {
+            _stockError = Loc["Err_StockTooLarge"];
+            hasError = true;
+        }
+
+        if (_formCategoryId is null)
+        {
+            _categoryError = Loc["Err_CategoryRequired"];
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        // ── Dispatch command ──
+        _isSubmitting = true;
+        try
+        {
+            var priceAmount = decimal.Parse(_formPriceAmount, NumberStyles.Number, CultureInfo.InvariantCulture);
+            var stockQty = int.Parse(_formInitialStock, NumberStyles.Integer, CultureInfo.InvariantCulture);
+
+            var cmd = new CreateProductCommand(
+                Name: _formName.Trim(),
+                Description: _formDescription.Trim(),
+                PictureUrl: null,
+                Price: new MoneyDto { Amount = priceAmount, Currency = _formPriceCurrency.ToUpperInvariant() },
+                InitialStockQuantity: stockQty,
+                CategoryId: _formCategoryId!.Value,
+                SubCategoryId: _formSubCategoryId,
+                SubSubCategoryId: _formSubSubCategoryId,
+                PurchaseLimits: null);
+
+            var result = await MessageBus.InvokeAsync<Result>(cmd);
+
+            if (result.IsSuccess)
+            {
+                Toast.ShowSuccess(Loc["Toast_Success"]);
+                Navigation.NavigateTo("/m/Admin/Products", forceLoad: false);
+            }
+            else
+            {
+                _submitError = result.Error?.Message ?? Loc["Err_Generic"];
+            }
+        }
+        catch (Exception ex)
+        {
+            _submitError = ex.Message ?? Loc["Err_Generic"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

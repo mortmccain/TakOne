@@ -38,7 +38,12 @@ window.takMobile = (function () {
         '/Admin/Users': '/m/Admin/Users',
         '/Admin/Categories': '/m/Admin/Categories',
         '/Admin/Groups': '/m/Admin/Groups',
-        '/Dashboard': '/m/Dashboard'
+        '/Dashboard': '/m/Dashboard',
+        // Round 8: redirect the desktop Create pages to mobile equivalents so
+        // admins using the mobile list pages' "Create" buttons stay on mobile.
+        '/Admin/Products/Create': '/m/Admin/Products/Create',
+        '/Admin/Users/Create': '/m/Admin/Users/Create',
+        '/Admin/Groups/Create': '/m/Admin/Groups/Create'
     };
     var mobileToPc = {};
     Object.keys(pcToMobile).forEach(function (pc) {

@@ -100,10 +100,43 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: back-header + status banner + 3 line items + summary
+       card + action stack. Mirrors the real SaleDetail layout. *@
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
     </div>
+    <div class="m-status-banner" style="background: var(--tm-surface-muted, var(--tm-cream));">
+        <div class="m-skeleton m-skeleton-line short" style="width: 8rem;"></div>
+    </div>
+    <div class="m-skeleton-card">
+        <div class="m-skeleton m-skeleton-line medium" style="width: 7rem; margin-bottom: 0.75rem;"></div>
+        @for (var i = 0; i < 3; i++)
+        {
+            <div class="m-list-item-title-row" style="margin-bottom: 0.75rem;">
+                <div class="m-skeleton" style="width: 3rem; height: 3rem; border-radius: 0.5rem;"></div>
+                <div style="flex: 1; margin: 0 0.75rem;">
+                    <div class="m-skeleton m-skeleton-line long"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                </div>
+                <div class="m-skeleton" style="width: 4rem; height: 1.5rem; border-radius: 0.25rem;"></div>
+            </div>
+        }
+    </div>
+    <div class="m-summary-card">
+        <div class="m-summary-row">
+            <div class="m-skeleton m-skeleton-line short"></div>
+            <div class="m-skeleton m-skeleton-line medium"></div>
+        </div>
+        <div class="m-summary-row m-summary-total">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line long" style="height: 1.25rem;"></div>
+        </div>
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {

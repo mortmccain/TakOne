@@ -1,0 +1,438 @@
+@* MobileCreateUser.razor — mobile version of CreateUser (admin) page.
+   Route: /m/Admin/Users/Create
+   Layout: MobileLayout
+
+   PORTS the desktop CreateUser.razor's create-user flow. Two modes toggled
+   by a top segmented control:
+     - Staff: WorkerId + FullName + Email + InitialPassword + Role + Gender
+     - Customer: WorkerId + FullName + Email + InitialPassword + Group + Gender
+
+   ON SUBMIT:
+     - Staff mode → CreateStaffCommand (Admin can assign any staff role;
+       Manager can only assign Employee role — UI restricts the dropdown
+       to Employee when a Manager is signed in).
+     - Customer mode → CreateCustomerCommand (GroupId required —
+       populated from GetAllCustomerGroupsQuery; only active groups).
+
+   ON SUCCESS: toast + NavigateTo /m/Admin/Users so the new user appears.
+
+   ROLE VISIBILITY:
+     - Only Admin + Manager see the "Create user" button on MobileAdminUsers
+       (gated by _isAdmin || _isManagerOnly there). They're the only roles
+       that can reach this page.
+     - Employee role is hidden from Managers in the staff-role dropdown
+       (defense-in-depth — server enforces this rule too).
+
+   NO IMAGE UPLOAD: users don't have a picture field. Form is text-only.
+
+   STATE MACHINE: _isLoading (load groups) → _loadError → form. The groups
+   list is needed for customer mode; if it fails to load the user can still
+   create staff (groups only show in customer mode). *@
+
+@page "/m/Admin/Users/Create"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Users.Commands.CreateStaff
+@using TakOne.Application.Users.Commands.CreateCustomer
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Domain.Users
+@using TakOne.SharedKernel.Common
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject ICurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileCreateUser> Loc
+@inject ToastService Toast
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
+    </div>
+    <div class="m-form-card">
+        <div class="m-skeleton m-skeleton-line medium" style="width: 7rem; margin-bottom: 0.75rem;"></div>
+        @for (var i = 0; i < 5; i++)
+        {
+            <div class="m-field">
+                <div class="m-skeleton m-skeleton-line short" style="width: 5rem; margin-bottom: 0.5rem;"></div>
+                <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.5rem;"></div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
+}
+else
+{
+    @* ── 1. Page header ── *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToUsers"]"
+                title="@Loc["BackToUsers"]"
+                @onclick="GoToUsers">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@Loc["PageTitle"]</h1>
+            <p class="m-page-subtitle">@Loc["PageSubtitle"]</p>
+        </div>
+    </div>
+
+    @* ── 2. User type toggle (Staff vs Customer) ── *@
+    <div class="m-tabs">
+        <button type="button"
+                class="m-tab @(_isStaffMode ? "active" : "")"
+                @onclick='(() => _isStaffMode = true)'>
+            @Loc["ModeStaff"]
+        </button>
+        <button type="button"
+                class="m-tab @(!_isStaffMode ? "active" : "")"
+                @onclick='(() => _isStaffMode = false)'>
+            @Loc["ModeCustomer"]
+        </button>
+    </div>
+
+    @* ── 3. Form card ── *@
+    <div class="m-form-card">
+        <div class="m-card-section-title">
+            @(_isStaffMode ? Loc["FormCardStaff"] : Loc["FormCardCustomer"])
+        </div>
+
+        @* ── WorkerId (login identifier) ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cu-workerid">@Loc["FieldWorkerId"]</label>
+            <input id="cu-workerid"
+                   class="m-input"
+                   type="text"
+                   value="@_formWorkerId"
+                   placeholder="@Loc["FieldWorkerIdPlaceholder"]"
+                   autocomplete="off"
+                   @oninput='@(e => _formWorkerId = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_workerIdError))
+            {
+                <p class="m-field-error">@_workerIdError</p>
+            }
+        </div>
+
+        @* ── FullName ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cu-fullname">@Loc["FieldFullName"]</label>
+            <input id="cu-fullname"
+                   class="m-input"
+                   type="text"
+                   value="@_formFullName"
+                   placeholder="@Loc["FieldFullNamePlaceholder"]"
+                   @oninput='@(e => _formFullName = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_fullNameError))
+            {
+                <p class="m-field-error">@_fullNameError</p>
+            }
+        </div>
+
+        @* ── Email ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cu-email">@Loc["FieldEmail"]</label>
+            <input id="cu-email"
+                   class="m-input"
+                   type="email"
+                   inputmode="email"
+                   value="@_formEmail"
+                   placeholder="user@example.com"
+                   style="direction: ltr; text-align: left;"
+                   @oninput='@(e => _formEmail = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_emailError))
+            {
+                <p class="m-field-error">@_emailError</p>
+            }
+        </div>
+
+        @* ── Initial Password ── *@
+        <div class="m-field">
+            <label class="m-field-label" for="cu-password">@Loc["FieldPassword"]</label>
+            <input id="cu-password"
+                   class="m-input"
+                   type="password"
+                   value="@_formPassword"
+                   placeholder="@Loc["FieldPasswordPlaceholder"]"
+                   style="direction: ltr; text-align: left;"
+                   @oninput='@(e => _formPassword = e.Value?.ToString() ?? "")' />
+            @if (!string.IsNullOrEmpty(_passwordError))
+            {
+                <p class="m-field-error">@_passwordError</p>
+            }
+        </div>
+
+        @* ── Gender (radio buttons styled as pills) ── *@
+        <div class="m-field">
+            <label class="m-field-label">@Loc["FieldGender"]</label>
+            <div class="m-input-row">
+                <label class="m-pill-radio">
+                    <input type="radio"
+                           name="gender"
+                           value="Male"
+                           checked="@(_formGender == Gender.Male)"
+                           @onchange='@(e => _formGender = Enum.Parse<Gender>(e.Value?.ToString() ?? "Male"))' />
+                    <span>@Loc["GenderMale"]</span>
+                </label>
+                <label class="m-pill-radio">
+                    <input type="radio"
+                           name="gender"
+                           value="Female"
+                           checked="@(_formGender == Gender.Female)"
+                           @onchange='@(e => _formGender = Enum.Parse<Gender>(e.Value?.ToString() ?? "Female"))' />
+                    <span>@Loc["GenderFemale"]</span>
+                </label>
+            </div>
+        </div>
+
+        @* ── Role (staff only) OR Group (customer only) ── *@
+        @if (_isStaffMode)
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="cu-role">@Loc["FieldRole"]</label>
+                <select id="cu-role"
+                        class="m-select"
+                        value="@_formRole"
+                        @onchange='@(e => _formRole = e.Value?.ToString() ?? Roles.Employee)'>
+                    @if (_isAdmin)
+                    {
+                        <option value="@Roles.Admin" selected="@(_formRole == Roles.Admin)">@Loc["RoleAdmin"]</option>
+                        <option value="@Roles.Manager" selected="@(_formRole == Roles.Manager)">@Loc["RoleManager"]</option>
+                        <option value="@Roles.ReadOnly" selected="@(_formRole == Roles.ReadOnly)">@Loc["RoleReadOnly"]</option>
+                    }
+                    <option value="@Roles.Employee" selected="@(_formRole == Roles.Employee)">@Loc["RoleEmployee"]</option>
+                </select>
+                @if (!_isAdmin)
+                {
+                    <p class="m-field-hint">@Loc["RoleManagerHint"]</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="m-field">
+                <label class="m-field-label" for="cu-group">@Loc["FieldGroup"]</label>
+                <select id="cu-group"
+                        class="m-select"
+                        value="@(_formGroupId?.ToString() ?? "")"
+                        @onchange='@(e => _formGroupId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : (Guid?)null)'>
+                    <option value="">@Loc["SelectGroup"]</option>
+                    @foreach (var g in _groups)
+                    {
+                        <option value="@g.Id" selected="@(g.Id == _formGroupId)">@g.Name</option>
+                    }
+                </select>
+                @if (!string.IsNullOrEmpty(_groupError))
+                {
+                    <p class="m-field-error">@_groupError</p>
+                }
+            </div>
+        }
+
+        @* ── Server-side error ── *@
+        @if (!string.IsNullOrEmpty(_submitError))
+        {
+            <div class="m-action-error">
+                <p>@_submitError</p>
+            </div>
+        }
+
+        <button type="button"
+                class="m-btn m-btn-primary m-btn-block"
+                disabled="@_isSubmitting"
+                @onclick="HandleSubmitAsync">
+            @if (_isSubmitting)
+            {
+                <span class="m-spinner" aria-hidden="true"></span>
+                @Loc["Submitting"]
+            }
+            else
+            {
+                @Loc["CreateButton"]
+            }
+        </button>
+        <button type="button"
+                class="m-btn m-btn-secondary m-btn-block"
+                disabled="@_isSubmitting"
+                @onclick="GoToUsers">
+            @Loc["CancelButton"]
+        </button>
+    </div>
+
+    <div class="m-footer">
+        @Loc["FooterHint"]
+    </div>
+}
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private List<CustomerGroupListItemDto> _groups = new();
+    private bool _isLoading = true;
+    private bool _isAdmin;
+    private bool _isStaffMode = true;
+
+    // ── Form fields ──────────────────────────────────────────────────────
+    private string _formWorkerId = string.Empty;
+    private string _formFullName = string.Empty;
+    private string _formEmail = string.Empty;
+    private string _formPassword = string.Empty;
+    private Gender _formGender = Gender.Male;
+    private string _formRole = Roles.Employee;
+    private Guid? _formGroupId;
+
+    // ── Validation errors ────────────────────────────────────────────────
+    private string? _workerIdError;
+    private string? _fullNameError;
+    private string? _emailError;
+    private string? _passwordError;
+    private string? _groupError;
+    private string? _submitError;
+    private bool _isSubmitting;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isAdmin = user.IsInRole(Roles.Admin);
+
+        try
+        {
+            await LoadGroupsAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        try
+        {
+            var query = new GetAllCustomerGroupsQuery();
+            var result = await MessageBus.InvokeAsync<List<CustomerGroupListItemDto>>(query);
+            _groups = result?.Where(g => g.IsActive).ToList() ?? new();
+        }
+        catch
+        {
+            // Non-fatal — customer-mode dropdown will just be empty.
+            _groups = new();
+        }
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────
+    private void GoToUsers()
+        => Navigation.NavigateTo("/m/Admin/Users", forceLoad: false);
+
+    // ── Submit ──────────────────────────────────────────────────────────
+    private async Task HandleSubmitAsync()
+    {
+        _workerIdError = null;
+        _fullNameError = null;
+        _emailError = null;
+        _passwordError = null;
+        _groupError = null;
+        _submitError = null;
+
+        var hasError = false;
+        if (string.IsNullOrWhiteSpace(_formWorkerId))
+        {
+            _workerIdError = Loc["Err_WorkerIdRequired"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formFullName))
+        {
+            _fullNameError = Loc["Err_FullNameRequired"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formEmail))
+        {
+            _emailError = Loc["Err_EmailRequired"];
+            hasError = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formPassword))
+        {
+            _passwordError = Loc["Err_PasswordRequired"];
+            hasError = true;
+        }
+        else if (_formPassword.Length < 6)
+        {
+            _passwordError = Loc["Err_PasswordTooShort"];
+            hasError = true;
+        }
+
+        if (!_isStaffMode && _formGroupId is null)
+        {
+            _groupError = Loc["Err_GroupRequired"];
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        _isSubmitting = true;
+        try
+        {
+            Result result;
+            if (_isStaffMode)
+            {
+                var cmd = new CreateStaffCommand(
+                    WorkerId: _formWorkerId.Trim(),
+                    FullName: _formFullName.Trim(),
+                    Email: _formEmail.Trim(),
+                    InitialPassword: _formPassword,
+                    Role: _formRole,
+                    Gender: _formGender);
+                result = await MessageBus.InvokeAsync<Result>(cmd);
+            }
+            else
+            {
+                var cmd = new CreateCustomerCommand(
+                    WorkerId: _formWorkerId.Trim(),
+                    FullName: _formFullName.Trim(),
+                    GroupId: _formGroupId!.Value,
+                    Email: _formEmail.Trim(),
+                    InitialPassword: _formPassword,
+                    Gender: _formGender);
+                result = await MessageBus.InvokeAsync<Result>(cmd);
+            }
+
+            if (result.IsSuccess)
+            {
+                Toast.ShowSuccess(Loc["Toast_Success"]);
+                Navigation.NavigateTo("/m/Admin/Users", forceLoad: false);
+            }
+            else
+            {
+                _submitError = result.Error?.Message ?? Loc["Err_Generic"];
+            }
+        }
+        catch (Exception ex)
+        {
+            _submitError = ex.Message ?? Loc["Err_Generic"];
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

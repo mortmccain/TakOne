@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="PageTitle" xml:space="preserve"><value>Create customer group</value></data>
+  <data name="PageSubtitle" xml:space="preserve"><value>New salary budget</value></data>
+  <data name="FormCardTitle" xml:space="preserve"><value>Group details</value></data>
+  <data name="FieldName" xml:space="preserve"><value>Name</value></data>
+  <data name="FieldNamePlaceholder" xml:space="preserve"><value>e.g. Senior staff</value></data>
+  <data name="FieldSalaryAmount" xml:space="preserve"><value>Salary amount</value></data>
+  <data name="FieldSalaryPlaceholder" xml:space="preserve"><value>0</value></data>
+  <data name="SalaryHint" xml:space="preserve"><value>Monthly budget per customer in this group</value></data>
+  <data name="CreateButton" xml:space="preserve"><value>Create group</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Submitting" xml:space="preserve"><value>Submitting...</value></data>
+  <data name="BackToGroups" xml:space="preserve"><value>Back to groups</value></data>
+  <data name="FooterHint" xml:space="preserve"><value>Groups determine salary budget and purchase limits</value></data>
+  <data name="Toast_Success" xml:space="preserve"><value>Group created successfully</value></data>
+  <data name="Err_NameRequired" xml:space="preserve"><value>Name is required</value></data>
+  <data name="Err_NameTooLong" xml:space="preserve"><value>Name must be 100 characters or less</value></data>
+  <data name="Err_SalaryRequired" xml:space="preserve"><value>Salary amount is required</value></data>
+  <data name="Err_SalaryInvalid" xml:space="preserve"><value>Salary must be a valid number</value></data>
+  <data name="Err_SalaryPositive" xml:space="preserve"><value>Salary must be greater than zero</value></data>
+  <data name="Err_Generic" xml:space="preserve"><value>Something went wrong. Please try again.</value></data>
+</root>

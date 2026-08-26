@@ -2702,3 +2702,452 @@
         transform: none;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Round 8 additions — Create-page form polish + spinner + pill radios
+   + field hints + dark-mode contrast fixes
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── .m-spinner — inline loading spinner for buttons in submitting state.
+   Usage: <button class="m-btn m-btn-primary"><span class="m-spinner"></span> Submitting</button>
+   Sized to match the button's text line-height; uses currentColor so it
+   inherits the button's text color (white on primary, dark on secondary). */
+.m-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: m-spinner-rotate 0.7s linear infinite;
+    vertical-align: -0.125rem;
+    margin-inline-end: 0.375rem;
+}
+
+@keyframes m-spinner-rotate {
+    to { transform: rotate(360deg); }
+}
+
+[dir="rtl"] .m-spinner {
+    animation-direction: reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .m-spinner { animation: none; border-top-color: currentColor; opacity: 0.6; }
+}
+
+/* ── .m-pill-radio — radio button styled as a pill button. Used for
+   gender selection in MobileCreateUser. The <input> is visually hidden
+   but still focusable/clickable for a11y; the <span> shows the label. */
+.m-pill-radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 1.5rem;
+    border: 1.5px solid var(--tm-gray-light, #e5e7eb);
+    background: var(--tm-surface, var(--tm-cream, #FAF7F0));
+    color: var(--tm-text, #1f2937);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex: 1;
+    justify-content: center;
+}
+
+.m-pill-radio:hover {
+    border-color: var(--tm-gold, #C9A227);
+}
+
+.m-pill-radio input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.m-pill-radio:has(input:checked) {
+    background: var(--tm-green, #0E4D3C);
+    color: white;
+    border-color: var(--tm-green, #0E4D3C);
+}
+
+.m-pill-radio:has(input:focus-visible) {
+    outline: 2px solid var(--tm-gold, #C9A227);
+    outline-offset: 2px;
+}
+
+/* ── .m-field-hint — small helper text below a form field. Lighter
+   color than .m-field-error, smaller font. */
+.m-field-hint {
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    line-height: 1.4;
+}
+
+/* ── .m-form-field + .m-form-label — aliases of .m-field + .m-field-label
+   so MobileCreateGroup/CreateProduct/CreateUser can use either naming.
+   Keep both for back-compat with MobileEditGroup which uses .m-form-field. */
+.m-form-field {
+    margin-bottom: 0.75rem;
+}
+
+.m-form-field:last-child { margin-bottom: 0; }
+
+.m-form-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--tm-text, #1f2937);
+    margin-bottom: 0.375rem;
+}
+
+.m-form-hint {
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--tm-gray, #6b7280);
+    line-height: 1.4;
+}
+
+/* ── .m-input-row outside .m-form-card — generic flex row used in
+   MobileCreateGroup/CreateProduct for side-by-side input + select. */
+.m-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.m-input-row .m-input { flex: 1; min-width: 0; }
+.m-input-row .m-select { flex: 0 0 auto; }
+
+/* ── .m-input-currency — numeric currency input, LTR direction. */
+.m-input-currency {
+    direction: ltr;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── .m-select — styled select element matching .m-input look. */
+.m-select {
+    width: 100%;
+    background: var(--tm-surface, var(--tm-cream, #FAF7F0));
+    border: 1px solid var(--tm-gray-light, #e5e7eb);
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--tm-text, #1f2937);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: left 0.75rem center;
+    padding-inline-start: 2.25rem;
+}
+
+.m-select:focus {
+    border-color: var(--tm-gold, #C9A227);
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.2);
+}
+
+[dir="rtl"] .m-select {
+    background-position: right 0.75rem center;
+    padding-inline-start: 0.75rem;
+    padding-inline-end: 2.25rem;
+}
+
+/* ── .m-textarea — multiline input matching .m-input look. */
+.m-textarea {
+    width: 100%;
+    background: var(--tm-surface, var(--tm-cream, #FAF7F0));
+    border: 1px solid var(--tm-gray-light, #e5e7eb);
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--tm-text, #1f2937);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+    font-family: inherit;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 4.5rem;
+}
+
+.m-textarea:focus {
+    border-color: var(--tm-gold, #C9A227);
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.2);
+}
+
+/* ── .m-status-banner — gradient backgrounds for the 5 statuses.
+   Used by MobileSaleDetail. The base .m-status-banner class already
+   exists; this adds a subtle gradient + light shadow for depth. */
+.m-status-banner {
+    background-image: linear-gradient(135deg, var(--banner-from, currentColor), var(--banner-to, currentColor));
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.m-status-banner.status-draft {
+    --banner-from: #6b7280;
+    --banner-to: #4b5563;
+}
+.m-status-banner.status-pending {
+    --banner-from: #E8A14A;
+    --banner-to: #C8862D;
+}
+.m-status-banner.status-approved {
+    --banner-from: #2A9D7E;
+    --banner-to: #1F7D63;
+}
+.m-status-banner.status-invoiced {
+    --banner-from: #5BA8E8;
+    --banner-to: #3D85C8;
+}
+.m-status-banner.status-cancelled {
+    --banner-from: #EF6B6B;
+    --banner-to: #C84545;
+}
+
+/* ── .m-budget-bar-fill — gradient fill instead of flat color
+   for visual polish (matches the gold-bar's shimmer style). */
+.m-budget-bar-fill {
+    background-image: linear-gradient(90deg,
+        var(--tm-green, #0E4D3C) 0%,
+        var(--tm-green-light, #1A6B52) 100%);
+    transition: width 0.4s ease;
+}
+
+/* ── .m-product-card — micro-interaction: subtle hover lift on desktop.
+   On touch devices :hover doesn't fire so this is safe. */
+.m-product-card {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (hover: hover) {
+    .m-product-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    }
+}
+
+/* ── .m-list-item — same hover lift pattern. */
+.m-list-item {
+    transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+@media (hover: hover) {
+    .m-list-item:hover {
+        background-color: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    }
+}
+
+/* ── .m-empty-cta — friendlier empty state with subtle gradient bg. */
+.m-empty-cta {
+    background-image: linear-gradient(180deg,
+        var(--tm-surface, var(--tm-cream, #FAF7F0)) 0%,
+        var(--tm-surface-muted, var(--tm-cream, #FAF7F0)) 100%);
+}
+
+/* ── Dark mode contrast fixes — the dark theme's .tm-surface-muted was
+   too close to .tm-surface, making form-cards blend into the page bg.
+   Bump the muted bg slightly lighter so the form-card pops. */
+.tak-theme-dark .m-form-card,
+.tak-theme-dark .m-skeleton-card,
+.tak-theme-dark .m-summary-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+}
+
+.tak-theme-dark .m-input,
+.tak-theme-dark .m-textarea,
+.tak-theme-dark .m-select {
+    background: rgba(0,0,0,0.2);
+    border-color: rgba(255,255,255,0.1);
+    color: var(--tm-text, #E8EDE9);
+}
+
+.tak-theme-dark .m-input::placeholder,
+.tak-theme-dark .m-textarea::placeholder {
+    color: rgba(232, 237, 233, 0.4);
+}
+
+.tak-theme-dark .m-pill-radio {
+    background: rgba(0,0,0,0.2);
+    border-color: rgba(255,255,255,0.1);
+    color: var(--tm-text, #E8EDE9);
+}
+
+/* ── .m-status-banner label + icon — keep readable on dark bg
+   (the banner itself has a colored gradient, but the text was using
+   low-contrast color tokens). Force white text. */
+.m-status-banner,
+.m-status-banner-icon,
+.m-status-banner-label {
+    color: white !important;
+}
+
+/* ── .m-dash-greeting — gradient text on light, plain on dark.
+   Adds visual interest to the dashboard's hero greeting block. */
+.m-dash-greeting-title {
+    background-image: linear-gradient(135deg,
+        var(--tm-green, #0E4D3C) 0%,
+        var(--tm-gold, #C9A227) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: var(--tm-green, #0E4D3C);
+}
+
+.tak-theme-dark .m-dash-greeting-title {
+    background-image: linear-gradient(135deg,
+        var(--tm-green-light, #3DBE96) 0%,
+        var(--tm-gold-bright, #E8C547) 100%);
+    -webkit-text-fill-color: transparent;
+}
+
+/* ── .m-page-title — gradient underline bar (gold accent) for visual polish. */
+.m-page-title {
+    position: relative;
+    padding-bottom: 0.5rem;
+}
+
+.m-page-title::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    inset-inline-start: 0;
+    width: 2.5rem;
+    height: 0.1875rem;
+    background: linear-gradient(90deg, var(--tm-gold, #C9A227), transparent);
+    border-radius: 1px;
+}
+
+/* ── .m-back-btn — gold ring on hover for affordance. */
+.m-back-btn {
+    transition: background-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+@media (hover: hover) {
+    .m-back-btn:hover {
+        background-color: var(--tm-gold-tint, #FBF4D6);
+        box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.15);
+    }
+}
+
+/* ── .m-btn — ripple-ish active scale + transition for affordance. */
+.m-btn {
+    transition: transform 0.12s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.m-btn:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+@media (hover: hover) {
+    .m-btn-primary:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba(14, 77, 60, 0.25);
+    }
+    .m-btn-gold:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba(201, 162, 39, 0.3);
+    }
+    .m-btn-danger:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba(239, 107, 107, 0.3);
+    }
+}
+
+.m-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Round 8 follow-up fixes — apply gradient to .tm-dash-greeting-title
+   (the actual class MobileDashboard.razor uses, from Dashboard.css),
+   not just the mobile.css-only .m-dash-greeting-title alias. Also
+   make the BottomNav active state more prominent (VLM feedback).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Apply gradient text to the Dashboard greeting title (both selectors). */
+.m-dash-greeting-title,
+.tm-dash-greeting-title {
+    background-image: linear-gradient(135deg,
+        var(--tm-green, #0E4D3C) 0%,
+        var(--tm-gold, #C9A227) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: var(--tm-green, #0E4D3C); /* fallback */
+}
+
+.tak-theme-dark .m-dash-greeting-title,
+.tak-theme-dark .tm-dash-greeting-title {
+    background-image: linear-gradient(135deg,
+        var(--tm-green-light, #3DBE96) 0%,
+        var(--tm-gold-bright, #E8C547) 100%);
+    -webkit-text-fill-color: transparent;
+}
+
+/* BottomNav active state — make it more prominent per VLM feedback.
+   The active item already has a top indicator bar; add a subtle
+   green tint behind the icon + bolden the label color so it stands
+   out against inactive items. */
+.nav-item.active .nav-icon-wrapper,
+.nav-item.active .nav-icon {
+    color: var(--tm-green, #0E4D3C);
+}
+
+.tak-theme-dark .nav-item.active .nav-icon-wrapper,
+.tak-theme-dark .nav-item.active .nav-icon {
+    color: var(--tm-green-light, #3DBE96);
+}
+
+.nav-item.active .nav-label {
+    color: var(--tm-green, #0E4D3C);
+    font-weight: 700;
+    transform: translateY(-1px);
+}
+
+.tak-theme-dark .nav-item.active .nav-label {
+    color: var(--tm-green-light, #3DBE96);
+}
+
+.nav-item.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2rem;
+    height: 0.1875rem;
+    background: linear-gradient(90deg, var(--tm-green, #0E4D3C), var(--tm-gold, #C9A227));
+    border-radius: 0 0 2px 2px;
+}
+
+.tak-theme-dark .nav-item.active::before {
+    background: linear-gradient(90deg, var(--tm-green-light, #3DBE96), var(--tm-gold-bright, #E8C547));
+}
+
+.nav-item {
+    position: relative;
+    transition: color 0.15s ease;
+}
+
+.nav-item:active {
+    background-color: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+}
+
+/* Hide the existing .nav-indicator (the old top bar) — replaced by
+   the gradient ::before pseudo-element above. The HTML still emits
+   the .nav-indicator div for back-compat with old CSS, but we hide it
+   so the new gradient bar is the only visible active marker. */
+.nav-indicator {
+    display: none;
+}

@@ -51,10 +51,42 @@
 
 @if (_isLoading)
 {
-    <div class="m-loading">
-        <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Medium" />
-        <p>@Loc["Loading"]</p>
+    @* Skeleton: page header + search box + status tabs + 5 list items
+       shaped like the real user list rows. *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 9rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+        <div class="m-skeleton" style="width: 5rem; height: 2rem; border-radius: 0.5rem;"></div>
     </div>
+    <div class="m-filter-bar">
+        <div class="m-search-box">
+            <div class="m-skeleton" style="width: 100%; height: 2.5rem; border-radius: 0.5rem;"></div>
+        </div>
+    </div>
+    <div class="m-tabs">
+        @for (var i = 0; i < 3; i++)
+        {
+            <div class="m-skeleton" style="width: 4.5rem; height: 2rem; border-radius: 0.5rem;"></div>
+        }
+    </div>
+    <div class="m-list">
+        @for (var i = 0; i < 5; i++)
+        {
+            <div class="m-list-item">
+                <div class="m-list-item-thumb">
+                    <div class="m-skeleton-circle"></div>
+                </div>
+                <div class="m-list-item-main">
+                    <div class="m-skeleton m-skeleton-line medium"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                    <div class="m-list-item-meta">
+                        <div class="m-skeleton" style="width: 4rem; height: 1.25rem; border-radius: 0.5rem;"></div>
+                        <div class="m-skeleton" style="width: 3rem; height: 1.25rem; border-radius: 0.5rem;"></div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
 }
 else if (!string.IsNullOrEmpty(_loadError))
 {
@@ -71,7 +103,7 @@ else
         @if (_isAdmin || _isManagerOnly)
         {
             <button class="m-btn m-btn-primary m-btn-sm"
-                    @onclick="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))">
+                    @onclick="@(() => Navigation.NavigateTo("/m/Admin/Users/Create", forceLoad: false))">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 14px; height: 14px;">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
@@ -113,7 +145,7 @@ else
             @if (_isAdmin || _isManagerOnly)
             {
                 <button class="m-btn m-btn-primary"
-                        @onclick="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))">
+                        @onclick="@(() => Navigation.NavigateTo("/m/Admin/Users/Create", forceLoad: false))">
                     @Loc["CreateUserButton"]
                 </button>
             }
