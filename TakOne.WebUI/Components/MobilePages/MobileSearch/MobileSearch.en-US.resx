@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="PageTitle" xml:space="preserve"><value>Search — TakOne</value></data>
+  <data name="HeaderTitle" xml:space="preserve"><value>Search</value></data>
+  <data name="SearchPlaceholder" xml:space="preserve"><value>Search products and orders…</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading…</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>Retry</value></data>
+  <data name="NoResults" xml:space="preserve"><value>Nothing found.</value></data>
+  <data name="NoResultsHint" xml:space="preserve"><value>Check the spelling or try a different keyword.</value></data>
+  <data name="RecentSearches" xml:space="preserve"><value>Recent searches</value></data>
+  <data name="ProductsSection" xml:space="preserve"><value>Products ({0})</value></data>
+  <data name="OrdersSection" xml:space="preserve"><value>Orders ({0})</value></data>
+  <data name="TypeaheadHint" xml:space="preserve"><value>No product matches — press Enter for full search.</value></data>
+  <data name="MinCharsHint" xml:space="preserve"><value>Type at least 2 characters to start searching.</value></data>
+  <data name="ClearRecent" xml:space="preserve"><value>Clear</value></data>
+  <data name="SeeAllResultsFormat" xml:space="preserve"><value>See all results for “{0}”</value></data>
+  <data name="Error_SearchFailed" xml:space="preserve"><value>Search failed. Please try again.</value></data>
+  <data name="StatusDraft" xml:space="preserve"><value>Draft</value></data>
+  <data name="StatusPending" xml:space="preserve"><value>Pending</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>Approved</value></data>
+  <data name="StatusInvoiced" xml:space="preserve"><value>Invoiced</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="StockOut" xml:space="preserve"><value>Out of stock</value></data>
+  <data name="StockLow" xml:space="preserve"><value>Low stock</value></data>
+  <data name="StockIn" xml:space="preserve"><value>In stock</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+  <data name="Version" xml:space="preserve"><value>TakOne version 1.0</value></data>
+</root>

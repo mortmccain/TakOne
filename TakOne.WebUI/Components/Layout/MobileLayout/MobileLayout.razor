@@ -38,6 +38,15 @@
                 </div>
             </div>
             <div class="m-header-actions">
+                @* Round 9: notifications bell → /m/Notifications (activity
+                   center derived from the user's sales audit events). Placed
+                   first so the three round icon buttons read bell → lang →
+                   theme → logout. *@
+                <button class="m-icon-btn" @onclick="GoToNotifications" title="@Loc["Notifications"]" aria-label="@Loc["Notifications"]">
+                    <svg class="m-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                    </svg>
+                </button>
                 <button class="m-icon-btn" @onclick="SetCultureAsync" title="@Loc["LanguageToggle"]">
                     @if (System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "fa")
                     {
@@ -199,8 +208,17 @@
     {
         if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchTerm))
         {
-            Navigation.NavigateTo($"/m/Products?search={Uri.EscapeDataString(_searchTerm.Trim())}", forceLoad: true);
+            // Round 9: the layout's global search now lands on the mobile
+            // global-search page (/m/Search) which typeaheads products and,
+            // for staff, order numbers — instead of jumping straight to the
+            // products list. MobileSearch understands the ?search= deep-link.
+            Navigation.NavigateTo($"/m/Search?search={Uri.EscapeDataString(_searchTerm.Trim())}", forceLoad: true);
         }
+    }
+
+    private void GoToNotifications()
+    {
+        Navigation.NavigateTo("/m/Notifications", forceLoad: false);
     }
 
     private void GoToCart()

@@ -195,6 +195,19 @@ else
         <span class="m-status-banner-label">@GetStatusLabel(_sale.Status)</span>
     </div>
 
+    @* Round 9: Track-order CTA — jumps to the customer-friendly status
+       timeline (/m/Orders/Track/{SaleId}) built in Round 9. Shown to every
+       viewer of the sale (the tracker page is read-only/informational). *@
+    <button type="button"
+            class="m-btn m-btn-secondary"
+            style="width: 100%; margin-top: 1rem;"
+            @onclick="GoToTracker">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem; vertical-align: -0.125rem; margin-inline-end: 0.375rem;" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.25-4.25a1.125 1.125 0 011.337-.113c.513.34 1.066.6 1.66.787.397.153.747.41 1.02.755.273.345.447.76.51 1.2a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25 2.25 2.25 0 01.51-1.2 2.25 2.25 0 011.02-.755c.594-.187 1.147-.447 1.66-.787a1.125 1.125 0 011.337.113l4.25 4.25" />
+        </svg>
+        @Loc["TrackOrderButton"]
+    </button>
+
     @* ── 3. Cancellation reason panel — only shown when the sale is
            Cancelled and a reason was recorded. Mirrors the desktop's
            .cancellation-reason panel (italic, danger-tinted). *@
@@ -797,6 +810,12 @@ else
 
     private void GoToSales()
         => Navigation.NavigateTo("/m/Sales", forceLoad: false);
+
+    /// <summary>
+    /// Round 9: navigates to the order-tracker timeline page for this sale.
+    /// </summary>
+    private void GoToTracker()
+        => Navigation.NavigateTo($"/m/Orders/Track/{SaleId}", forceLoad: false);
 
     private void GoToProduct(Guid productId)
         => Navigation.NavigateTo($"/m/Products/{productId}", forceLoad: false);

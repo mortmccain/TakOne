@@ -1,0 +1,638 @@
+@* MobileNotifications.razor — mobile notification / activity center.
+   Route: /m/Notifications
+   Layout: MobileLayout
+
+   PURPOSE: a mobile-friendly notification center. There is NO notification
+   store in the backend yet — the SignalR NotificationHub (TakOne.WebUI.Hubs)
+   is an intentionally-empty Phase 0 stub (real broadcasts are planned for
+   Phase 2). To avoid inventing fake data, this page DERIVES real activity
+   events from the user's recent sales audit timestamps via the same
+   GetSalesPaginatedQuery the MobileSales list uses (the handler scopes by
+   role server-side: customers see only their own sales, staff see all —
+   no extra filtering is needed here).
+
+   EVENT DERIVATION (all events are REAL data — nothing is fabricated):
+     For each sale returned on page 1 (PageSize=15, newest first):
+       - CreatedAtUtc   → "New order placed"  (icon: type-order)
+       - SubmittedAtUtc → "Order submitted"   (icon: type-order)
+       - ApprovedAtUtc  → "Order approved"    (icon: type-approve)
+     All events are flattened into one list, sorted newest-first, capped
+     at 30. SaleListItemDto exposes no InvoicedAtUtc / CancelledAtUtc, so
+     type-invoice / type-cancel icon mappings exist in the helpers but are
+     not reachable from this DTO yet (kept for when the DTO gains those
+     audit columns). type-system is the defensive fallback.
+
+   UNREAD LOGIC (session-scoped, per Blazor circuit — documented):
+     - "New" event = an event whose own timestamp is within the last 48h.
+       New events start unread.
+     - _readEventIds is an in-memory HashSet<Guid> (one per component
+       instance = per circuit while the page is alive). Event ids are
+       DETERMINISTIC (MD5 of "{saleId}:{kind}" → Guid), so the read-set
+       stays consistent while the page lives.
+     - "Mark all read" adds every visible event id to the set (inbox zero).
+       Tapping an item also marks it read before navigating.
+     - FUTURE ENHANCEMENT (intentionally not implemented here): persist
+       the read-set to localStorage via JS interop so unread state
+       survives page visits / circuit restarts. This page also does NOT
+       subscribe to SignalR yet — when the NotificationHub goes live in
+       Phase 2, subscribe to the "ReceiveRefresh" group message and
+       re-run LoadAsync() to pull fresh events (the page is structured
+       so that is a one-line addition in OnInitializedAsync +
+       IDisposable).
+
+   BACKEND CONTRACT (verified against GetSalesPaginatedQueryHandler):
+     - Load: GetSalesPaginatedQuery { PageNumber = 1, PageSize = 15 } →
+       Task<PaginatedResult<SaleListItemDto>> via
+       MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query).
+       NOTE: the handler's signature returns PaginatedResult<T>
+       directly — NOT Result<PaginatedResult<T>> — (it returns an empty
+       page instead of a failure for unauthenticated calls), so the
+       InvokeAsync type argument is the bare PaginatedResult, exactly
+       like the gold-standard MobileSales.razor.
+     - SaleListItemDto fields used: Id, DisplayNumber, Status,
+       CustomerName, CreatedAtUtc, SubmittedAtUtc?, ApprovedAtUtc?,
+       Total (MoneyDto { Amount, Currency }).
+
+   ROLE-AWARE CONTENT: staff (Admin/Manager/Employee/ReadOnly) see the
+   customer name in each event's context line; customers see only the
+   sale DisplayNumber (+ total). Both roles navigate to the mobile sale
+   detail page at /m/Sales/{saleId} when tapping an event.
+
+   MONEY: FormatMoney mirrors the MobileSales / MobileSaleDetail helper
+   exactly (IRR / 10 → "تومان" Toman; non-IRR passes through with its
+   currency code) so totals read the same across the whole mobile
+   surface area.
+
+   TIME: relative-ish timestamps ("X minutes/hours/days ago") with
+   culture-native digits, falling back to CultureFormat.FormatTehranDateTime
+   (Tehran UTC+3:30, Jalali calendar + Persian digits in fa-IR) for
+   events older than 7 days.
+
+   NO TOASTS: read-only page (no mutations) — errors surface inline via
+   the m-error-box retry block, matching MobileSales.
+*@
+
+@page "/m/Notifications"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileNotifications> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@if (_isLoading)
+{
+    @* Skeleton: page header + segmented filter row + 4 notification-item
+       placeholders shaped like the real rows (icon circle + title line +
+       text line + time line) so the layout doesn't jump on load. *@
+    <div class="m-page-header">
+        <div class="m-skeleton" style="width: 8rem; height: 1.75rem; border-radius: 0.5rem;"></div>
+    </div>
+    <div class="m-notif-header">
+        <div class="m-segmented">
+            <div class="m-skeleton" style="width: 3.25rem; height: 1.75rem; border-radius: 999px;"></div>
+            <div class="m-skeleton" style="width: 4.5rem; height: 1.75rem; border-radius: 999px;"></div>
+        </div>
+        <div class="m-skeleton" style="width: 7.5rem; height: 2rem; border-radius: 999px;"></div>
+    </div>
+    <div class="m-notif-list">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="m-notif-item">
+                <div class="m-skeleton m-skeleton-circle"></div>
+                <div class="m-notif-body">
+                    <div class="m-skeleton m-skeleton-line medium"></div>
+                    <div class="m-skeleton m-skeleton-line long"></div>
+                    <div class="m-skeleton m-skeleton-line short"></div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_events.Count == 0)
+{
+    @* ── Empty state — the backend returned zero sales, so no activity
+           events could be derived (fresh account / no order history). *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["HeaderTitle"]</h1>
+    </div>
+    <div class="m-empty">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
+             style="width: 2.5rem; height: 2.5rem; display: block; margin: 0 auto 0.75rem; opacity: 0.45;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.397-1.398A2 2 0 0118 14.204V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.204c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        <h3>@Loc["EmptyTitle"]</h3>
+        <p>@Loc["EmptyText"]</p>
+    </div>
+}
+else
+{
+    @* ── 1. Page header *@
+    <div class="m-page-header">
+        <h1 class="m-page-title">@Loc["HeaderTitle"]</h1>
+    </div>
+
+    @* ── 2. Filter + mark-all-read row — segmented control (All / Unread)
+           on one side, unread-count chip + "Mark all read" button on the
+           other. The chip is hidden at inbox-zero and the button is
+           disabled (nothing to mark). *@
+    <div class="m-notif-header">
+        <div class="m-segmented">
+            <button type="button"
+                    class="m-segment @(!_filterUnread ? "active" : "")"
+                    aria-pressed="@(!_filterUnread)"
+                    @onclick="() => SetFilterUnread(false)">
+                @Loc["FilterAll"]
+            </button>
+            <button type="button"
+                    class="m-segment @(_filterUnread ? "active" : "")"
+                    aria-pressed="@(_filterUnread)"
+                    @onclick="() => SetFilterUnread(true)">
+                @Loc["FilterUnread"]
+            </button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+            @if (UnreadCount > 0)
+            {
+                <span class="m-notif-header-count">@Loc["UnreadCount", CultureFormat.FormatDigits(UnreadCount)]</span>
+            }
+            <button type="button"
+                    class="m-btn m-btn-secondary m-btn-sm"
+                    disabled="@(UnreadCount == 0)"
+                    @onclick="MarkAllRead">
+                @Loc["MarkAllRead"]
+            </button>
+        </div>
+    </div>
+
+    @* ── 3. Section label — makes it explicit that these events are
+           derived from real order activity (no notification store yet). *@
+    <div class="m-section-header">
+        <h2 class="m-section-title">@Loc["NewOrdersSection"]</h2>
+    </div>
+
+    @* ── 4. Notification list — one .m-notif-item per derived event,
+           newest first. Unread items get the "unread" class (gold accent
+           bar + tint) and a gold dot. The whole row is clickable (and
+           keyboard-operable) → /m/Sales/{saleId} for BOTH roles — the
+           mobile sale detail page shows the full audit trail. *@
+    <div class="m-notif-list m-rise-in">
+        @if (FilteredEvents.Count == 0)
+        {
+            @* "Unread" filter selected but the user is at inbox zero. *@
+            <p class="m-empty">@Loc["NoUnreadText"]</p>
+        }
+        else
+        {
+            @foreach (var evt in FilteredEvents)
+            {
+                var e = evt; // capture loop variable for the closures below
+                <div class="m-notif-item @(IsUnread(e) ? "unread" : "")"
+                     role="link"
+                     tabindex="0"
+                     @onclick="() => OpenEvent(e)"
+                     @onkeydown="@((KeyboardEventArgs args) => OnEventKeyDown(args, e))">
+                    <span class="m-notif-icon @GetIconClass(e.Kind)" aria-hidden="true">
+                        @switch (e.Kind)
+                        {
+                            case EventKind.Placed:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                </svg>
+                                break;
+                            case EventKind.Submitted:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                break;
+                            case EventKind.Approved:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                break;
+                            case EventKind.Invoiced:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                break;
+                            case EventKind.Cancelled:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                break;
+                            default:
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.397-1.398A2 2 0 0118 14.204V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.204c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                break;
+                        }
+                    </span>
+                    <div class="m-notif-body">
+                        <div class="m-notif-title">@GetEventTitle(e.Kind)</div>
+                        <div class="m-notif-text">@BuildContextText(e)</div>
+                        <div class="m-notif-time">@FormatRelativeTime(e.OccurredAtUtc)</div>
+                    </div>
+                    @if (IsUnread(e))
+                    {
+                        <span class="m-notif-dot" aria-hidden="true"></span>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @* ── 5. Footer — version string *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── Constants ────────────────────────────────────────────────────────
+
+    /// <summary>Page 1 only — enough recent sales to derive ~30 events.</summary>
+    private const int SalesPageSize = 15;
+
+    /// <summary>Cap on derived events (15 sales × up to 3 events ≈ 45 → top 30).</summary>
+    private const int MaxEvents = 30;
+
+    /// <summary>
+    /// Events within this window count as "new" and start unread.
+    /// </summary>
+    private static readonly TimeSpan NewEventWindow = TimeSpan.FromHours(48);
+
+    // ── State ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Derived activity events, sorted newest-first, capped at
+    /// <see cref="MaxEvents"/>. Empty until LoadAsync succeeds.
+    /// </summary>
+    private List<ActivityEvent> _events = new();
+
+    /// <summary>Loading/error state machine (loading → error → empty → content).</summary>
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    /// <summary>
+    /// True when the "Unread" segment is selected (false = "All").
+    /// </summary>
+    private bool _filterUnread;
+
+    /// <summary>
+    /// Read-event ids, session-scoped (in-memory, one HashSet per component
+    /// instance = per circuit while this page is alive). Event ids are
+    /// deterministic, so the set stays meaningful across in-page reloads
+    /// (e.g. the Retry button). Persistence to localStorage via JS interop
+    /// is a documented future enhancement; SignalR "ReceiveRefresh"
+    /// subscription is Phase-2-ready (see the header comment).
+    /// </summary>
+    private readonly HashSet<Guid> _readEventIds = new();
+
+    /// <summary>
+    /// True if the current user is in Admin / Manager / Employee / ReadOnly
+    /// role ("staff" — sees all sales + the customer-name context line).
+    /// Resolved from AuthenticationStateProvider (NOT ICurrentUserService)
+    /// because ICurrentUserService resolves from IHttpContextAccessor, which
+    /// is only populated during the initial prerender request and is null
+    /// over the SignalR circuit. Matches the MobileSales gold standard.
+    /// </summary>
+    private bool _isStaff;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve _isStaff synchronously before the first render so the
+        // staff-only context lines don't flicker in after the list appears.
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isStaff = user.IsInRole(Roles.Admin)
+                   || user.IsInRole(Roles.Manager)
+                   || user.IsInRole(Roles.Employee)
+                   || user.IsInRole(Roles.ReadOnly);
+
+        try
+        {
+            await LoadAsync();
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading + event derivation ──────────────────────────────────
+
+    /// <summary>
+    /// Loads the most recent sales (auto-scoped by role server-side) and
+    /// flattens each sale's audit timestamps into activity events:
+    ///   CreatedAtUtc → Placed, SubmittedAtUtc → Submitted,
+    ///   ApprovedAtUtc → Approved.
+    /// Events are then sorted newest-first and capped at MaxEvents.
+    ///
+    /// NOTE: the handler returns Task&lt;PaginatedResult&lt;SaleListItemDto&gt;&gt;
+    /// (not a Result wrapper) — it answers unauthenticated calls with an
+    /// empty page, so there is no IsFailure branch here. Matches the
+    /// MobileSales gold-standard invocation.
+    /// </summary>
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        try
+        {
+            var query = new GetSalesPaginatedQuery
+            {
+                PageNumber = 1,
+                PageSize = SalesPageSize
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
+
+            var cutoff = DateTimeOffset.UtcNow - NewEventWindow;
+            var events = new List<ActivityEvent>();
+
+            foreach (var sale in result.Items)
+            {
+                if (sale is null) continue; // defensive — IReadOnlyList from the mapper
+
+                // CreatedAtUtc is non-nullable on the DTO → every sale yields a "placed" event.
+                events.Add(new ActivityEvent
+                {
+                    EventId = DeriveEventId(sale.Id, EventKind.Placed),
+                    SaleId = sale.Id,
+                    Kind = EventKind.Placed,
+                    OccurredAtUtc = sale.CreatedAtUtc,
+                    DisplayNumber = sale.DisplayNumber,
+                    CustomerName = sale.CustomerName,
+                    Total = sale.Total,
+                    IsNew = sale.CreatedAtUtc >= cutoff
+                });
+
+                if (sale.SubmittedAtUtc is { } submittedAt)
+                {
+                    events.Add(new ActivityEvent
+                    {
+                        EventId = DeriveEventId(sale.Id, EventKind.Submitted),
+                        SaleId = sale.Id,
+                        Kind = EventKind.Submitted,
+                        OccurredAtUtc = submittedAt,
+                        DisplayNumber = sale.DisplayNumber,
+                        CustomerName = sale.CustomerName,
+                        Total = sale.Total,
+                        IsNew = submittedAt >= cutoff
+                    });
+                }
+
+                if (sale.ApprovedAtUtc is { } approvedAt)
+                {
+                    events.Add(new ActivityEvent
+                    {
+                        EventId = DeriveEventId(sale.Id, EventKind.Approved),
+                        SaleId = sale.Id,
+                        Kind = EventKind.Approved,
+                        OccurredAtUtc = approvedAt,
+                        DisplayNumber = sale.DisplayNumber,
+                        CustomerName = sale.CustomerName,
+                        Total = sale.Total,
+                        IsNew = approvedAt >= cutoff
+                    });
+                }
+            }
+
+            _events = events
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Take(MaxEvents)
+                .ToList();
+        }
+        catch
+        {
+            _loadError = Loc["Error_GenericLoad"];
+        }
+    }
+
+    // ── Computed view model ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Events visible under the current filter (All = everything,
+    /// Unread = new-and-not-yet-read only). Recomputed per render — the
+    /// list is capped at 30 so this is cheap.
+    /// </summary>
+    private List<ActivityEvent> FilteredEvents
+        => _filterUnread ? _events.Where(IsUnread).ToList() : _events;
+
+    /// <summary>
+    /// Unread count across ALL events (not just the filtered view) —
+    /// drives the header chip and the "Mark all read" disabled state.
+    /// </summary>
+    private int UnreadCount => _events.Count(IsUnread);
+
+    /// <summary>
+    /// An event is unread when it is "new" (within the 48h window) and its
+    /// deterministic id is not in the read-set.
+    /// </summary>
+    private bool IsUnread(ActivityEvent e)
+        => e.IsNew && !_readEventIds.Contains(e.EventId);
+
+    // ── Interaction handlers ─────────────────────────────────────────────
+
+    private void SetFilterUnread(bool unread)
+    {
+        _filterUnread = unread;
+    }
+
+    /// <summary>
+    /// "Mark all read" — records every derived event id as read (the
+    /// unread dot / accent bar / chip all clear instantly). Session-scoped;
+    /// see the _readEventIds doc for the persistence caveat.
+    /// </summary>
+    private void MarkAllRead()
+    {
+        foreach (var e in _events)
+        {
+            _readEventIds.Add(e.EventId);
+        }
+    }
+
+    /// <summary>
+    /// Marks the tapped event read (standard notification-center
+    /// semantics) then navigates to the mobile sale detail page — for BOTH
+    /// roles, the full audit trail lives there.
+    /// </summary>
+    private void OpenEvent(ActivityEvent e)
+    {
+        _readEventIds.Add(e.EventId);
+        Navigation.NavigateTo($"/m/Sales/{e.SaleId}", forceLoad: false);
+    }
+
+    /// <summary>Keyboard activation for the role="link" rows (Enter / Space).</summary>
+    private void OnEventKeyDown(KeyboardEventArgs args, ActivityEvent e)
+    {
+        if (args.Key is "Enter" or " ")
+        {
+            OpenEvent(e);
+        }
+    }
+
+    // ── Display helpers ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps an event kind to the .m-notif-icon tint class:
+    ///   Placed / Submitted → type-order  (deep green)
+    ///   Approved           → type-approve (green)
+    ///   Invoiced           → type-invoice (NOT derivable from
+    ///                         SaleListItemDto yet — mapping reserved)
+    ///   Cancelled          → type-cancel  (same — reserved)
+    ///   anything else      → type-system  (gold, defensive fallback)
+    /// </summary>
+    private static string GetIconClass(string kind) => kind switch
+    {
+        EventKind.Placed => "type-order",
+        EventKind.Submitted => "type-order",
+        EventKind.Approved => "type-approve",
+        EventKind.Invoiced => "type-invoice",
+        EventKind.Cancelled => "type-cancel",
+        _ => "type-system"
+    };
+
+    /// <summary>
+    /// Localized event title (falls back to a generic activity label for
+    /// unknown kinds — defensive; the derivation only emits the 3 kinds).
+    /// </summary>
+    private string GetEventTitle(string kind) => kind switch
+    {
+        EventKind.Placed => Loc["EventOrderPlaced"],
+        EventKind.Submitted => Loc["EventOrderSubmitted"],
+        EventKind.Approved => Loc["EventOrderApproved"],
+        _ => Loc["EventActivity"]
+    };
+
+    /// <summary>
+    /// Context line under the title: sale DisplayNumber + Total, plus the
+    /// CustomerName for staff (customers only see their own sales, so the
+    /// name would be noise). Digits are culture-native.
+    /// </summary>
+    private string BuildContextText(ActivityEvent e)
+    {
+        var number = CultureFormat.ToCultureDigits(e.DisplayNumber);
+        var total = FormatMoney(e.Total);
+
+        if (_isStaff && !string.IsNullOrWhiteSpace(e.CustomerName))
+        {
+            return $"{number} · {e.CustomerName} · {total}";
+        }
+
+        return $"{number} · {total}";
+    }
+
+    /// <summary>
+    /// Relative-ish timestamp: "just now" / "X minutes|hours|days ago" with
+    /// culture-native digits, falling back to the absolute Tehran
+    /// date-time (CultureFormat.FormatTehranDateTime — Jalali calendar +
+    /// Persian digits in fa-IR) for events older than 7 days. Mirrors the
+    /// MobileDashboard FormatRelativeTime helper.
+    /// </summary>
+    private string FormatRelativeTime(DateTimeOffset utc)
+    {
+        var diff = DateTimeOffset.UtcNow - utc;
+
+        if (diff.TotalMinutes < 1) return Loc["JustNow"];
+        if (diff.TotalMinutes < 60)
+            return CultureFormat.FormatDigits((int)diff.TotalMinutes) + " " + Loc["MinutesAgo"];
+        if (diff.TotalHours < 24)
+            return CultureFormat.FormatDigits((int)diff.TotalHours) + " " + Loc["HoursAgo"];
+        if (diff.TotalDays < 7)
+            return CultureFormat.FormatDigits((int)diff.TotalDays) + " " + Loc["DaysAgo"];
+
+        return CultureFormat.FormatTehranDateTime(utc);
+    }
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman: IRR is divided by 10 and
+    /// labelled with the localized "Toman" unit; other currencies pass
+    /// through unchanged with their own currency code. Returns "—" for
+    /// null or zero-with-empty-currency amounts. Mirrors the
+    /// MobileSales / MobileSaleDetail helpers exactly so totals read the
+    /// same across the whole mobile surface area.
+    /// </summary>
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0 && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Deterministic event id: MD5("{saleId}:{kind}") → Guid. MD5 is used
+    /// purely as a stable identity hash (NOT for security) so the same
+    /// (sale, event-kind) pair always maps to the same id — keeping the
+    /// in-memory read-set consistent while the page lives.
+    /// </summary>
+    private static Guid DeriveEventId(Guid saleId, string kind)
+    {
+        using var md5 = System.Security.Cryptography.MD5.Create();
+        var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"{saleId:N}:{kind}"));
+        return new Guid(hash);
+    }
+
+    // ── Event kind constants (nameof-style mirrors; keep in sync with the
+    //    derivation switch above — values are page-local, culture-neutral) ──
+
+    private static class EventKind
+    {
+        public const string Placed = "Placed";
+        public const string Submitted = "Submitted";
+        public const string Approved = "Approved";
+
+        /// <summary>Reserved — SaleListItemDto has no InvoicedAtUtc yet.</summary>
+        public const string Invoiced = "Invoiced";
+
+        /// <summary>Reserved — SaleListItemDto has no CancelledAtUtc yet.</summary>
+        public const string Cancelled = "Cancelled";
+    }
+
+    /// <summary>
+    /// One derived activity event (view model). EventId is deterministic
+    /// (see DeriveEventId); IsNew is precomputed at load time from the
+    /// 48h window so the read-set semantics are stable for the visit.
+    /// </summary>
+    private sealed class ActivityEvent
+    {
+        public Guid EventId { get; init; }
+        public Guid SaleId { get; init; }
+        public string Kind { get; init; } = string.Empty;
+        public DateTimeOffset OccurredAtUtc { get; init; }
+        public string DisplayNumber { get; init; } = string.Empty;
+        public string CustomerName { get; init; } = string.Empty;
+        public MoneyDto? Total { get; init; }
+        public bool IsNew { get; init; }
+    }
+}

@@ -1,0 +1,686 @@
+@* MobileOrderTracker.razor — customer-friendly order-status tracking page.
+   Route: /m/Orders/Track/{SaleId:guid}
+   Layout: MobileLayout
+
+   A CUSTOMER-FACING companion to MobileSaleDetail (/m/Sales/{SaleId}).
+   Instead of the staff-oriented detail surface (line items, audit
+   actors, action buttons), this page answers ONE question — "where is
+   my order right now?" — with:
+     - Back header (back to the full sale detail) + inline status badge.
+     - Tracker hero: big status icon + a customer-friendly status title
+       (e.g. "در حال پردازش" / "In processing") + a short "what happens
+       next" hint + a compact 4-dot progress bar (Draft → Pending →
+       Approved → Invoiced) with a localized "Step N of 4" counter
+       (Persian digits in fa-IR via CultureFormat).
+     - Vertical chronological timeline (oldest first, like a story):
+       Order placed → Submitted for review → Approved → Invoiced. Each
+       milestone has an icon, a Tehran-time timestamp and an optional
+       description (creator name on step 1). The step matching the
+       current status is `.current` (gold, pulsing); completed
+       milestones are `.done` (green); milestones that haven't happened
+       yet are `.pending` (muted, "در انتظار / Waiting").
+     - CANCELLED special case: milestones without timestamps are omitted
+       entirely (the journey stopped part-way) and a final red
+       `.cancelled` step shows the cancellation timestamp + the recorded
+       reason (when present) as the description.
+     - Summary card: customer name + grand total (Toman) + a "View full
+       details" button → /m/Sales/{SaleId}.
+     - Loading (skeleton) → error (retry) → not-found → content state
+       machine (matches the MobileSaleDetail gold-standard pattern).
+
+   PURELY INFORMATIONAL — no action buttons (no approve / cancel):
+   customers AND staff see the same read-only timeline. The page is
+   gated by plain [Authorize] (no role restriction); the backend query
+   enforces row-level visibility anyway (see BACKEND CONTRACT below).
+
+   BACKEND CONTRACT (same as MobileSaleDetail.razor):
+     - Load: GetSaleByIdQuery { SaleId } → Result<SaleDto> via
+       MessageBus.InvokeAsync. Namespace:
+       TakOne.Application.Sales.Queries.GetSaleById.
+     - SaleDto fields used: Id, DisplayNumber (never null — real
+       SaleNumber or DRAFT-XXXXXXXX), Status (the SaleStatus enum's
+       ToString: "Draft"|"Pending"|"Approved"|"Invoiced"|"Cancelled"),
+       CustomerName, CreatedByName, CreatedAtUtc (DateTimeOffset),
+       SubmittedAtUtc / ApprovedAtUtc / InvoicedAtUtc / CancelledAtUtc
+       (DateTimeOffset?), CancellationReason (string?), Total
+       (MoneyDto: Amount + Currency).
+     - The handler rejects customers viewing other users' sales with a
+       generic failure (never leaks existence) — the page shows the same
+       friendly not-found UI for both cases.
+
+   MONEY: FormatMoney mirrors the MobileSaleDetail / MobileSales helper
+   (IRR is divided by 10 and labelled "تومان"; non-IRR currencies pass
+   through with their currency code) so the total reads the SAME on the
+   tracker, the list and the detail page — consistent UX.
+
+   TIMEZONE: FormatTimestamp delegates to CultureFormat.FormatTehranDateTime
+   (Tehran UTC+3:30, no DST since 2022; Jalali calendar + Persian
+   digits in fa-IR mode, Gregorian + ASCII in en-US).
+*@
+
+@page "/m/Orders/Track/{SaleId:guid}"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSaleById
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileOrderTracker> Loc
+
+<PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{CultureFormat.FormatDigits(_sale.DisplayNumber)} — {Loc["PageTitle"]}")</PageTitle>
+
+@if (_isLoading)
+{
+    @* Skeleton: back-header + hero + 3 timeline items. Mirrors the real
+       tracker layout so the perceived load feels fast. The hero skeleton
+       gets an inline muted background override (same trick as
+       MobileSaleDetail's status-banner skeleton) so the light shimmer
+       lines stay visible — the real hero has a dark green gradient. *@
+    <div class="m-page-header-back">
+        <div class="m-skeleton" style="width: 2.5rem; height: 2.5rem; border-radius: 0.5rem;"></div>
+        <div class="m-page-header-text" style="flex: 1;">
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+        </div>
+    </div>
+    <div class="m-tracker-hero" style="background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));">
+        <div class="m-skeleton m-skeleton-circle" style="width: 3.5rem; height: 3.5rem; margin: 0 auto 0.75rem;"></div>
+        <div class="m-skeleton m-skeleton-line medium" style="width: 10rem; margin: 0 auto;"></div>
+        <div class="m-skeleton m-skeleton-line short" style="width: 8rem; margin: 0.5rem auto 0;"></div>
+    </div>
+    <div class="m-timeline">
+        @for (var i = 0; i < 3; i++)
+        {
+            <div class="m-timeline-item">
+                <div class="m-skeleton m-skeleton-circle"></div>
+                <div class="m-timeline-body">
+                    <div class="m-skeleton m-skeleton-line medium"></div>
+                    <div class="m-skeleton m-skeleton-line short" style="margin-top: 0.5rem;"></div>
+                </div>
+            </div>
+        }
+    </div>
+    <span class="sr-only">@Loc["Loading"]</span>
+}
+else if (!string.IsNullOrEmpty(_loadError))
+{
+    <div class="m-error-box">
+        <p>@_loadError</p>
+        <button class="m-btn m-btn-secondary" @onclick="LoadSaleAsync">@Loc["RetryButton"]</button>
+    </div>
+}
+else if (_sale is null)
+{
+    @* Not-found / not-allowed: the handler returns Result.Failure with a
+       "not found" message for both genuinely-missing sales AND sales the
+       caller isn't allowed to see (defense-in-depth — never leak that the
+       sale exists). Either way the user sees the same friendly message. *@
+    <div class="m-empty">
+        <p>@Loc["NotFoundMessage"]</p>
+        <button class="m-btn m-btn-secondary" @onclick="GoToMyOrders">@Loc["BackToOrders"]</button>
+    </div>
+}
+else
+{
+    @* ── 1. Back header — back button (→ /m/Sales/{SaleId}) + sale
+           display number + created timestamp + inline status badge.
+           Same structure as MobileSaleDetail's page header. *@
+    <div class="m-page-header-back">
+        <button type="button"
+                class="m-back-btn"
+                aria-label="@Loc["BackToOrderDetails"]"
+                title="@Loc["BackToOrderDetails"]"
+                @onclick="GoToSaleDetail">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="m-page-header-text">
+            <h1 class="m-page-title">@CultureFormat.ToCultureDigits(_sale.DisplayNumber)</h1>
+            <p class="m-page-subtitle">@FormatTimestamp(_sale.CreatedAtUtc)</p>
+        </div>
+        <span class="m-badge @GetStatusBadgeClass(_sale.Status)">@GetStatusLabel(_sale.Status)</span>
+    </div>
+
+    @* ── 2. Tracker hero — big status icon + customer-friendly status
+           title + "what happens next" hint + 4-dot progress bar with a
+           "Step N of 4" counter. The 4 dots represent Draft → Pending →
+           Approved → Invoiced: passed steps are gold-filled (.done), the
+           step matching the current status pulses (.current), future
+           steps are dimmed. Cancelled sales show only the milestones
+           that actually happened (no current dot) and no counter. *@
+    <div class="m-tracker-hero">
+        <div class="m-tracker-hero-icon" aria-hidden="true">
+            @GetHeroIcon(_sale.Status)
+        </div>
+        <h2 class="m-tracker-hero-title">@GetHeroTitle(_sale.Status)</h2>
+        <p class="m-tracker-hero-sub">@GetHeroHint(_sale.Status)</p>
+        <div class="m-progress-steps" aria-hidden="true">
+            <span class="m-step-dot @GetStepDotClass(1)"></span>
+            @for (var sep = 1; sep < TotalSteps; sep++)
+            {
+                var sepClass = IsSeparatorDone(sep) ? "done" : string.Empty;
+                <span class="m-step-sep @sepClass"></span>
+                <span class="m-step-dot @GetStepDotClass(sep + 1)"></span>
+            }
+        </div>
+        @if (!IsCancelled)
+        {
+            <p class="m-tracker-hero-count">@string.Format(CultureInfo.CurrentCulture, Loc["StepCountFormat"], CultureFormat.FormatDigits(CurrentStepIndex), CultureFormat.FormatDigits(TotalSteps))</p>
+        }
+    </div>
+
+    @* ── 3. Vertical timeline — chronological (oldest first, like a
+           story). See BuildTimelineSteps for the per-status rules. *@
+    <div class="m-timeline">
+        @foreach (var item in BuildTimelineSteps())
+        {
+            <div class="m-timeline-item @item.CssClass">
+                <span class="m-timeline-icon" aria-hidden="true">@item.Icon</span>
+                <div class="m-timeline-body">
+                    <div class="m-timeline-title">@item.Title</div>
+                    @if (!string.IsNullOrEmpty(item.TimeText))
+                    {
+                        <div class="m-timeline-time">@item.TimeText</div>
+                    }
+                    @if (!string.IsNullOrEmpty(item.Description))
+                    {
+                        <div class="m-timeline-desc">@item.Description</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ── 4. Summary card — customer + grand total + a link to the full
+           (staff-style) sale detail page for anyone who wants more. *@
+    <div class="m-summary-card">
+        <div class="m-summary-row">
+            <span class="m-summary-label">@Loc["CustomerName"]</span>
+            <span class="m-summary-value">@_sale.CustomerName</span>
+        </div>
+        <div class="m-summary-divider"></div>
+        <div class="m-summary-row">
+            <span class="m-summary-label m-summary-total-label">@Loc["TotalAmount"]</span>
+            <span class="m-summary-total">@FormatMoney(_sale.Total)</span>
+        </div>
+        <button type="button"
+                class="m-btn m-btn-primary m-btn-block"
+                style="margin-top: 0.875rem;"
+                @onclick="GoToSaleDetail">
+            @Loc["ViewFullDetails"]
+        </button>
+    </div>
+
+    @* ── 5. Footer — version string *@
+    <div class="m-footer">
+        @Loc["Version"]
+    </div>
+}
+
+@code {
+    // ── Route parameter ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sale Id from the URL. The @page constraint `{SaleId:guid}` ensures
+    /// only valid Guid strings reach this parameter; malformed URLs hit the
+    /// router's NotFound template instead.
+    /// </summary>
+    [Parameter]
+    public Guid SaleId { get; set; }
+
+    // ── Constants ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Number of steps in the tracker journey: Draft (1) → Pending (2) →
+    /// Approved (3) → Invoiced (4).
+    /// </summary>
+    private const int TotalSteps = 4;
+
+    // ── State ──────────────────────────────────────────────────────────
+
+    private SaleDto? _sale;
+    private bool _isLoading = true;
+    private string _loadError = string.Empty;
+
+    // ── Lifecycle ──────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadSaleAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Data loading ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads the sale via GetSaleByIdQuery. On success populates _sale;
+    /// on failure sets _loadError (the error branch shows the message +
+    /// a retry button) and nulls _sale. The handler returns a generic
+    /// "not found" failure for sales the caller isn't allowed to see —
+    /// the null-sale branch renders the same friendly not-found UI for
+    /// both cases (never leaks existence).
+    /// </summary>
+    private async Task LoadSaleAsync()
+    {
+        _isLoading = true;
+        _loadError = string.Empty;
+
+        try
+        {
+            var query = new GetSaleByIdQuery { SaleId = SaleId };
+            var result = await MessageBus.InvokeAsync<Result<SaleDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _sale = result.Value;
+            }
+            else
+            {
+                // result.Error contains the handler's user-friendly message.
+                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _sale = null;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = Loc["Error_GenericLoad"];
+            _sale = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────
+
+    /// <summary>Back to the full sale detail page (staff-style view).</summary>
+    private void GoToSaleDetail()
+        => Navigation.NavigateTo($"/m/Sales/{SaleId}", forceLoad: false);
+
+    /// <summary>Back to the customer's order list ("My Orders").</summary>
+    private void GoToMyOrders()
+        => Navigation.NavigateTo("/m/Sales", forceLoad: false);
+
+    // ── Tracker step state (hero progress dots) ────────────────────────
+
+    /// <summary>
+    /// True when the sale is Cancelled (terminal). Cancelled sales show
+    /// no "current" dot — only the milestones that actually happened are
+    /// marked done (e.g. dots 1-2 for a sale cancelled while pending).
+    /// </summary>
+    private bool IsCancelled =>
+        _sale is not null && _sale.Status == nameof(SaleStatus.Cancelled);
+
+    /// <summary>
+    /// 1-based index of the step matching the current status:
+    /// Draft = 1, Pending = 2, Approved = 3, Invoiced = 4. Not meaningful
+    /// for Cancelled (see GetStepDotClass).
+    /// </summary>
+    private int CurrentStepIndex => _sale?.Status switch
+    {
+        nameof(SaleStatus.Pending) => 2,
+        nameof(SaleStatus.Approved) => 3,
+        nameof(SaleStatus.Invoiced) => 4,
+        _ => 1 // Draft (or any unrecognized status)
+    };
+
+    /// <summary>
+    /// CSS class for hero progress dot <paramref name="step"/> (1-based):
+    /// "done" for steps the sale has already passed, "current" for the
+    /// step matching the sale's current status (including the terminal
+    /// Invoiced state — "you are here: delivered"), "" (pending) for
+    /// future steps. Cancelled sales mark reached milestones "done" and
+    /// show no current dot.
+    /// </summary>
+    private string GetStepDotClass(int step)
+    {
+        if (_sale is null) return string.Empty;
+
+        if (IsCancelled)
+        {
+            return IsMilestoneReached(step) ? "done" : string.Empty;
+        }
+
+        if (step == CurrentStepIndex) return "current";
+        if (step < CurrentStepIndex) return "done";
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// True when separator <paramref name="separator"/> (1-based — the
+    /// connector between dots <paramref name="separator"/> and
+    /// <paramref name="separator"/>+1) has been passed by the sale's
+    /// progress, i.e. the next milestone has been reached.
+    /// </summary>
+    private bool IsSeparatorDone(int separator)
+    {
+        if (_sale is null) return false;
+
+        if (IsCancelled)
+        {
+            return IsMilestoneReached(separator + 1);
+        }
+
+        return separator < CurrentStepIndex;
+    }
+
+    /// <summary>
+    /// True when lifecycle milestone <paramref name="step"/> (1-based) has
+    /// a recorded timestamp: 1 = created (always), 2 = submitted,
+    /// 3 = approved, 4 = invoiced. Used for cancelled sales, where the
+    /// journey stopped part-way through.
+    /// </summary>
+    private bool IsMilestoneReached(int step)
+    {
+        if (_sale is null) return false;
+
+        return step switch
+        {
+            1 => true, // the sale exists, so it was placed
+            2 => _sale.SubmittedAtUtc.HasValue,
+            3 => _sale.ApprovedAtUtc.HasValue,
+            4 => _sale.InvoicedAtUtc.HasValue,
+            _ => false
+        };
+    }
+
+    // ── Vertical timeline ──────────────────────────────────────────────
+
+    /// <summary>
+    /// One entry in the vertical status timeline.
+    /// </summary>
+    /// <param name="CssClass">"done" | "current" | "pending" | "cancelled".</param>
+    /// <param name="Title">Localized milestone title (already resolved).</param>
+    /// <param name="TimeText">Formatted timestamp, or the "Waiting" label
+    /// for milestones that haven't happened yet, or "" when unknown.</param>
+    /// <param name="Description">Optional description line (creator name,
+    /// cancellation reason).</param>
+    /// <param name="Icon">Inline SVG for the milestone icon.</param>
+    private sealed record TrackerStep(
+        string CssClass,
+        string Title,
+        string TimeText,
+        string? Description,
+        Microsoft.AspNetCore.Components.MarkupString Icon);
+
+    /// <summary>
+    /// Builds the chronological (oldest-first) timeline:
+    ///   1. Order placed (always — the sale exists).
+    ///   2. Submitted for review (timestamp, or muted "Waiting" when the
+    ///      sale is still a draft).
+    ///   3. Approved (timestamp, or muted "Waiting").
+    ///   4. Invoiced (timestamp, or muted "Waiting").
+    /// For CANCELLED sales, milestones without timestamps are omitted
+    /// entirely and a terminal red "Cancelled" step (with the recorded
+    /// reason, if any) closes the story.
+    /// The step matching the current status is "current" (gold, pulsing);
+    /// completed milestones are "done" (green); future ones are "pending"
+    /// (muted).
+    /// </summary>
+    private List<TrackerStep> BuildTimelineSteps()
+    {
+        if (_sale is null) return new List<TrackerStep>();
+
+        var status = _sale.Status;
+        var steps = new List<TrackerStep>();
+
+        // Step 1 — Order placed (always present; the creation is a fact).
+        steps.Add(new TrackerStep(
+            "done",
+            Loc["OrderPlaced"],
+            FormatTimestamp(_sale.CreatedAtUtc),
+            string.IsNullOrWhiteSpace(_sale.CreatedByName)
+                ? null
+                : string.Format(CultureInfo.CurrentCulture, Loc["CreatedByFormat"], _sale.CreatedByName),
+            GetIcon(IconOrderPlaced, "1rem")));
+
+        if (status == nameof(SaleStatus.Cancelled))
+        {
+            // Cancelled: render only the milestones that actually happened
+            // (the journey stopped part-way), then the terminal step.
+            if (_sale.SubmittedAtUtc.HasValue)
+            {
+                steps.Add(new TrackerStep(
+                    "done",
+                    Loc["SubmittedForReview"],
+                    FormatTimestamp(_sale.SubmittedAtUtc.Value),
+                    null,
+                    GetIcon(IconSubmitted, "1rem")));
+            }
+            if (_sale.ApprovedAtUtc.HasValue)
+            {
+                steps.Add(new TrackerStep(
+                    "done",
+                    Loc["Approved"],
+                    FormatTimestamp(_sale.ApprovedAtUtc.Value),
+                    null,
+                    GetIcon(IconApproved, "1rem")));
+            }
+            steps.Add(new TrackerStep(
+                "cancelled",
+                Loc["Cancelled"],
+                _sale.CancelledAtUtc.HasValue ? FormatTimestamp(_sale.CancelledAtUtc.Value) : string.Empty,
+                string.IsNullOrWhiteSpace(_sale.CancellationReason) ? null : _sale.CancellationReason,
+                GetIcon(IconCancelled, "1rem")));
+        }
+        else
+        {
+            // Step 2 — Submitted for review.
+            steps.Add(_sale.SubmittedAtUtc.HasValue
+                ? new TrackerStep(
+                    status == nameof(SaleStatus.Pending) ? "current" : "done",
+                    Loc["SubmittedForReview"],
+                    FormatTimestamp(_sale.SubmittedAtUtc.Value),
+                    null,
+                    GetIcon(IconSubmitted, "1rem"))
+                : new TrackerStep(
+                    "pending",
+                    Loc["SubmittedForReview"],
+                    Loc["Waiting"],
+                    null,
+                    GetIcon(IconSubmitted, "1rem")));
+
+            // Step 3 — Approved.
+            steps.Add(_sale.ApprovedAtUtc.HasValue
+                ? new TrackerStep(
+                    status == nameof(SaleStatus.Approved) ? "current" : "done",
+                    Loc["Approved"],
+                    FormatTimestamp(_sale.ApprovedAtUtc.Value),
+                    null,
+                    GetIcon(IconApproved, "1rem"))
+                : new TrackerStep(
+                    "pending",
+                    Loc["Approved"],
+                    Loc["Waiting"],
+                    null,
+                    GetIcon(IconApproved, "1rem")));
+
+            // Step 4 — Invoiced (terminal success state).
+            steps.Add(_sale.InvoicedAtUtc.HasValue
+                ? new TrackerStep(
+                    status == nameof(SaleStatus.Invoiced) ? "current" : "done",
+                    Loc["Invoiced"],
+                    FormatTimestamp(_sale.InvoicedAtUtc.Value),
+                    null,
+                    GetIcon(IconInvoiced, "1rem"))
+                : new TrackerStep(
+                    "pending",
+                    Loc["Invoiced"],
+                    Loc["Waiting"],
+                    null,
+                    GetIcon(IconInvoiced, "1rem")));
+        }
+
+        return steps;
+    }
+
+    // ── Inline SVG icons ───────────────────────────────────────────────
+    //
+    // Heroicons-style outline paths (viewBox 0 0 24 24, stroke-based —
+    // same style as the rest of the mobile pages). Rendered through
+    // MarkupString so Blazor injects the raw <svg> instead of
+    // HTML-escaping it (same pattern as BottomNav.razor's icon helper).
+
+    private const string IconOrderPlaced =
+        "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10";
+
+    private const string IconSubmitted =
+        "M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.768 59.768 0 013.27 20.876L5.999 12zm0 0h7.5";
+
+    private const string IconApproved =
+        "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+
+    private const string IconInvoiced =
+        "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z";
+
+    private const string IconCancelled =
+        "M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z";
+
+    private const string IconPendingClock =
+        "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z";
+
+    /// <summary>
+    /// Wraps a heroicons-style outline path in an inline SVG at the given
+    /// square size. MarkupString renders it raw (no HTML escaping).
+    /// </summary>
+    private static Microsoft.AspNetCore.Components.MarkupString GetIcon(string path, string size)
+        => (Microsoft.AspNetCore.Components.MarkupString)
+            $"<svg fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\" stroke-width=\"2\" style=\"width: {size}; height: {size};\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"{path}\" /></svg>";
+
+    /// <summary>
+    /// Hero icon for the sale's current status (rendered inside the
+    /// .m-tracker-hero-icon circle — sized up to 1.75rem so it reads at
+    /// a glance).
+    /// </summary>
+    private static Microsoft.AspNetCore.Components.MarkupString GetHeroIcon(string status) => status switch
+    {
+        "Draft" => GetIcon(IconOrderPlaced, "1.75rem"),    // pencil — still editing
+        "Pending" => GetIcon(IconPendingClock, "1.75rem"), // clock — under review
+        "Approved" => GetIcon(IconApproved, "1.75rem"),    // check — approved
+        "Invoiced" => GetIcon(IconInvoiced, "1.75rem"),    // document — invoiced
+        "Cancelled" => GetIcon(IconCancelled, "1.75rem"),  // X — cancelled
+        _ => GetIcon(IconPendingClock, "1.75rem")
+    };
+
+    // ── Display helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman: IRR is divided by 10 and
+    /// labelled with the localized "Toman" unit; other currencies pass
+    /// through unchanged with their own currency code. Returns "—" for
+    /// null or zero-with-empty-currency amounts (cleaner than "0 تومان"
+    /// on an empty total).
+    ///
+    /// Mirrors MobileSaleDetail.razor's FormatMoney helper exactly so the
+    /// tracker's grand total reads the SAME as the detail page's total —
+    /// consistent UX between the two pages that link to each other.
+    /// </summary>
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0 && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Formats a UTC DateTimeOffset for display in Tehran time, culture-
+    /// aware. Delegates to CultureFormat.FormatTehranDateTime (Tehran =
+    /// UTC + 3:30, no DST since 2022; Jalali calendar + Persian digits
+    /// in fa-IR mode, Gregorian + ASCII in en-US).
+    /// </summary>
+    private static string FormatTimestamp(DateTimeOffset utc)
+        => CultureFormat.FormatTehranDateTime(utc);
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a mobile badge color class (the small inline badge next to the
+    /// sale number in the page header). Same color mapping as
+    /// MobileSaleDetail.razor / MobileSales.razor so the badge reads the
+    /// same on the list, the detail page and the tracker.
+    /// </summary>
+    private static string GetStatusBadgeClass(string? status) => status switch
+    {
+        "Draft" => "m-badge-neutral",
+        "Pending" => "m-badge-warning",
+        "Approved" => "m-badge-info",
+        "Invoiced" => "m-badge-success",
+        "Cancelled" => "m-badge-danger",
+        _ => "m-badge-neutral"
+    };
+
+    /// <summary>
+    /// Returns a localized label for the sale status. Falls back to the raw
+    /// status string if no localization key matches. Same pattern as the
+    /// MobileSaleDetail.razor GetStatusLabel helper.
+    /// </summary>
+    private string GetStatusLabel(string status)
+    {
+        var key = $"Status{status}";
+        var localized = Loc[key];
+        return localized == key ? status : localized;
+    }
+
+    /// <summary>
+    /// Customer-friendly hero title for the sale's current status (e.g.
+    /// "در حال پردازش" / "In processing"). Falls back to the standard
+    /// status label if no hero key matches (same fallback pattern as
+    /// GetStatusLabel).
+    /// </summary>
+    private string GetHeroTitle(string status)
+    {
+        var key = $"HeroTitle{status}";
+        var localized = Loc[key];
+        return localized == key ? GetStatusLabel(status) : localized;
+    }
+
+    /// <summary>
+    /// Short localized "what happens next" hint shown under the hero
+    /// title. Falls back to an empty string if no hint key matches (all
+    /// five statuses have keys, so this only guards against unexpected
+    /// status values).
+    /// </summary>
+    private string GetHeroHint(string status)
+    {
+        var key = $"HeroHint{status}";
+        var localized = Loc[key];
+        return localized == key ? string.Empty : localized;
+    }
+
+    // ── SaleStatus mirror (for nameof() comparisons) ───────────────────
+    //
+    // Local mirror of the SaleStatus enum value NAMES. Used via nameof()
+    // so the .razor layer is loosely coupled to the domain enum (no
+    // using directive on TakOne.Domain.Sales.Enums needed). Keep these
+    // in sync with TakOne.Domain.Sales.Enums.SaleStatus. Mirrors the
+    // desktop SaleDetail.razor / MobileSaleDetail.razor private
+    // SaleStatus mirror class.
+
+    private static class SaleStatus
+    {
+        public const string Draft = "Draft";
+        public const string Pending = "Pending";
+        public const string Approved = "Approved";
+        public const string Invoiced = "Invoiced";
+        public const string Cancelled = "Cancelled";
+    }
+}

@@ -33,6 +33,7 @@
 
   <!-- Page chrome -->
   <data name="PageTitle" xml:space="preserve"><value>Order details — TakOne</value></data>
+  <data name="TrackOrderButton" xml:space="preserve"><value>Track order</value></data>
   <data name="BackToList" xml:space="preserve"><value>Back to orders</value></data>
   <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>

@@ -1,0 +1,761 @@
+@* MobileSearch.razor — global mobile search page.
+   Route: /m/Search
+   Layout: MobileLayout
+
+   SEARCH FLOW (typeahead + full results):
+     1. The user types in the hero search box (debounced 350ms via
+        CancellationTokenSource — every keystroke cancels the pending
+        cycle, Task.Delay(350, token) swallows the cancellation).
+     2. While typing (term ≥ 2 chars) and NOT submitted, a typeahead
+        dropdown (.m-typeahead, absolutely positioned under the hero)
+        shows the top 5 product-name matches with the matched substring
+        wrapped in .m-highlight (HighlightMatch HTML-escapes each segment
+        with WebUtility.HtmlEncode before wrapping — no injection vector).
+     3. The full search "executes" on submit — Enter key, a recent-search
+        chip tap, the "see all results" typeahead row, or a deep-link
+        (?search=term). It runs the products query (PageSize=20) and, for
+        staff (Admin/Manager/Employee), the orders query (PageSize=10) in
+        parallel, then renders the results sections (products for
+        everyone; orders for staff only — the backend scopes customers to
+        their own sales anyway, but the section is hidden for them).
+
+   STATE MACHINE (results area below the hero):
+     idle (recents + hint) → searching (skeleton cards) → results |
+     empty (.m-empty) | error (.m-error-box + retry)
+
+   BACKEND CONTRACTS (verified against the handlers):
+     - GetProductsPaginatedQuery { PageNumber, PageSize, SearchTerm } →
+       PaginatedResult<ProductListItemDto> via MessageBus.InvokeAsync
+       (the handler returns the PaginatedResult directly — NOT wrapped in
+       Result<T> — same as MobileProducts/MobileAdminProducts). SearchTerm
+       matches Product.Name case-insensitively server-side.
+     - GetSalesPaginatedQuery { PageNumber, PageSize, SearchTerm } →
+       PaginatedResult<SaleListItemDto>. SearchTerm matches SaleNumber /
+       CustomerName / draft pseudo-id. NOTE: the handler applies the
+       search term IN-MEMORY on the materialized page, so TotalCount is
+       the PRE-search count — the orders section therefore displays
+       Items.Count (the honest matched count), not TotalCount.
+
+   ROLE DETECTION: AuthenticationStateProvider (NOT ICurrentUserService)
+   because ICurrentUserService resolves from IHttpContextAccessor, which
+   is only populated during the initial prerender request and is null
+   over the SignalR circuit — the same reasoning as MobileSales.razor.
+
+   RECENT SEARCHES: kept in a per-page-instance List<string> (max 6,
+   case-insensitively deduped, most-recent-first). True circuit-scoped
+   persistence would need a scoped service or a cascading value on a
+   root component — both are shared files this task may not touch.
+
+   NO TOASTS: read-only page (no mutations). Errors surface inline via
+   the m-error-box retry block.
+*@
+
+@page "/m/Search"
+@attribute [Authorize]
+@layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
+@using System.Globalization
+@using System.Net
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.Extensions.Localization
+@using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Products.DTOs
+@using TakOne.Application.Products.Queries.GetProductsPaginated
+@using TakOne.Application.Sales.DTOs
+@using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.SharedKernel.Common
+@using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
+@inject IMessageBus MessageBus
+@inject NavigationManager Navigation
+@inject IStringLocalizer<MobileSearch> Loc
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<PageTitle>@Loc["PageTitle"]</PageTitle>
+
+@* ── 1. Page header ── *@
+<div class="m-page-header">
+    <h1 class="m-page-title">@Loc["HeaderTitle"]</h1>
+</div>
+
+@* ── 2. Search hero + typeahead dropdown ──
+     The hero is position:relative so .m-typeahead (position:absolute,
+     anchored just below the hero's bottom edge) floats over the results
+     area while the user is typing. The input follows the repo's
+     controlled-input pattern (value + @oninput lambda — same as
+     MobileAdminProducts) so the debounced handler can run BEFORE the
+     bound field is re-rendered. *@
+<div class="m-search-hero">
+    <div class="m-search-box">
+        <span class="m-search-box-icon" aria-hidden="true">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+        </span>
+        <input type="search"
+               class="m-input"
+               placeholder="@Loc["SearchPlaceholder"]"
+               aria-label="@Loc["SearchPlaceholder"]"
+               value="@_searchTerm"
+               @oninput="@((ChangeEventArgs e) => OnSearchInputAsync(e.Value?.ToString() ?? string.Empty))"
+               @onkeydown="HandleSearchKeyDown" />
+    </div>
+
+    @if (_showTypeahead)
+    {
+        <div class="m-typeahead" role="listbox" aria-label="@Loc["HeaderTitle"]">
+            @if (_isTypeaheadLoading)
+            {
+                @* Debounce window / round-trip in flight — one skeleton row. *@
+                <div class="m-typeahead-item" style="cursor: default;" aria-hidden="true">
+                    <span class="m-typeahead-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                        </svg>
+                    </span>
+                    <span style="min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.375rem;">
+                        <span class="m-skeleton m-skeleton-line medium"></span>
+                        <span class="m-skeleton m-skeleton-line short"></span>
+                    </span>
+                </div>
+            }
+            else
+            {
+                @foreach (var item in _suggestions)
+                {
+                    var p = item; // capture loop variable for the closure
+                    <button type="button" class="m-typeahead-item" role="option"
+                            @onclick="() => GoToProduct(p.Id)">
+                        <span class="m-typeahead-icon" aria-hidden="true">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.125rem; height: 1.125rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                            </svg>
+                        </span>
+                        <span style="min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.125rem;">
+                            <span class="m-typeahead-label">@HighlightMatch(p.Name, _searchTerm)</span>
+                            @if (!string.IsNullOrWhiteSpace(p.CategoryName))
+                            {
+                                <span class="m-typeahead-sub">@p.CategoryName</span>
+                            }
+                        </span>
+                    </button>
+                }
+
+                @if (_suggestions.Count == 0)
+                {
+                    @* No product-name matches — the full search may still find
+                       description matches (server-side) or orders, so nudge the
+                       user toward submitting instead of showing a bare dropdown. *@
+                    <div class="m-typeahead-item" style="cursor: default;">
+                        <span class="m-typeahead-icon" aria-hidden="true">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                            </svg>
+                        </span>
+                        <span style="min-width: 0; flex: 1;">
+                            <span class="m-typeahead-label">@Loc["TypeaheadHint"]</span>
+                        </span>
+                    </div>
+                }
+
+                @* "See all results" — the tap-friendly submit affordance for
+                   users who don't reach for the Enter key. *@
+                <button type="button" class="m-typeahead-item" role="option"
+                        @onclick="() => SubmitSearchAsync()">
+                    <span class="m-typeahead-icon" aria-hidden="true">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1rem; height: 1rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                        </svg>
+                    </span>
+                    <span style="min-width: 0; flex: 1;">
+                        <span class="m-typeahead-label">@string.Format(CultureInfo.CurrentCulture, Loc["SeeAllResultsFormat"], TrimmedTerm)</span>
+                    </span>
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@* ── 3. Results area ── *@
+@if (_isSearching)
+{
+    @* Section skeletons shaped like the results (products card + staff
+       orders card, 3 shimmer rows each) — perceived-load is faster than a
+       single spinner because the structure takes shape. *@
+    <div aria-busy="true" aria-live="polite">
+        <div class="m-skeleton-card">
+            <div class="m-skeleton m-skeleton-line long"></div>
+            <div class="m-skeleton m-skeleton-line medium"></div>
+            <div class="m-skeleton m-skeleton-line short"></div>
+        </div>
+        @if (_isStaff)
+        {
+            <div class="m-skeleton-card" style="margin-top: 0.75rem;">
+                <div class="m-skeleton m-skeleton-line medium"></div>
+                <div class="m-skeleton m-skeleton-line long"></div>
+                <div class="m-skeleton m-skeleton-line short"></div>
+            </div>
+        }
+        <span class="sr-only">@Loc["Loading"]</span>
+    </div>
+}
+else if (_searchError is not null)
+{
+    <div class="m-error-box">
+        <p>@_searchError</p>
+        <button class="m-btn m-btn-secondary" @onclick="() => SubmitSearchAsync()">
+            @Loc["RetryButton"]
+        </button>
+    </div>
+}
+else if (_hasSearched)
+{
+    if (_products.Count == 0 && (!_isStaff || _sales.Count == 0))
+    {
+        @* Nothing matched in ANY section — the combined empty state. *@
+        <div class="m-empty">
+            <p>@Loc["NoResults"]</p>
+            <p>@Loc["NoResultsHint"]</p>
+        </div>
+    }
+    else
+    {
+        @* ── Products section (everyone) — simplified MobileProducts card:
+              picture (or placeholder SVG) + stock badge, name, price.
+              Tapping the picture or the name opens the mobile product
+              detail page. *@
+        if (_products.Count > 0)
+        {
+            <section class="m-rise-in">
+                <h2 class="m-search-section-title">
+                    @string.Format(CultureInfo.CurrentCulture, Loc["ProductsSection"], CultureFormat.FormatDigits(_productTotalCount))
+                </h2>
+                <div class="m-products">
+                    @foreach (var item in _products)
+                    {
+                        var product = item; // capture loop variable for the closures
+                        var stockOut = product.StockQuantity <= 0;
+                        <div class="m-product-card">
+                            <div class="m-product-image"
+                                 role="link"
+                                 tabindex="0"
+                                 @onclick="() => GoToProduct(product.Id)">
+                                @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
+                                {
+                                    <img src="@product.PictureUrl" alt="@product.Name" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="color: var(--tm-gray);">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+                                    </svg>
+                                }
+                                @if (stockOut)
+                                {
+                                    <span class="m-stock-badge m-stock-out">@Loc["StockOut"]</span>
+                                }
+                                else if (product.StockQuantity <= 10)
+                                {
+                                    <span class="m-stock-badge m-stock-low">@Loc["StockLow"]</span>
+                                }
+                                else
+                                {
+                                    <span class="m-stock-badge m-stock-in">@Loc["StockIn"]</span>
+                                }
+                            </div>
+                            <div class="m-product-body">
+                                <h4 class="m-product-name" @onclick="() => GoToProduct(product.Id)">@product.Name</h4>
+                                <p class="m-product-price">@FormatMoney(product.Price)</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        @* ── Orders section (staff only) — MobileSales-style list rows:
+              DisplayNumber (tap → mobile sale detail), customer name,
+              Tehran-formatted date, status badge + Toman total.
+              Customers never see this section (the backend would scope
+              them to their own sales, but the global search is a
+              product-first surface for them). *@
+        if (_isStaff && _sales.Count > 0)
+        {
+            <section class="m-rise-in">
+                <h2 class="m-search-section-title">
+                    @string.Format(CultureInfo.CurrentCulture, Loc["OrdersSection"], CultureFormat.FormatDigits(_sales.Count))
+                </h2>
+                <div class="m-list">
+                    @foreach (var item in _sales)
+                    {
+                        var sale = item; // capture loop variable for the closure
+                        <div class="m-list-item">
+                            <div class="m-list-item-main">
+                                <div class="m-list-item-title"
+                                     role="link"
+                                     tabindex="0"
+                                     @onclick="() => GoToSale(sale.Id)">
+                                    @CultureFormat.ToCultureDigits(sale.DisplayNumber)
+                                </div>
+                                <div class="m-list-item-subtitle">@sale.CustomerName</div>
+                                <div class="m-list-item-subtitle">@CultureFormat.FormatTehranDateTime(sale.CreatedAtUtc)</div>
+                                <div class="m-list-item-meta">
+                                    <span class="m-badge @GetStatusBadgeClass(sale.Status)">@GetStatusLabel(sale.Status)</span>
+                                    <span>@FormatMoney(sale.Total)</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+    }
+}
+else
+{
+    @* ── Idle state — recent-search chips (only when the box is empty) +
+           the minimum-length hint. Deliberately no "popular categories"
+           fallback — the recents + hint are enough. *@
+    @if (string.IsNullOrWhiteSpace(_searchTerm) && _recentSearches.Count > 0)
+    {
+        <div class="m-rise-in">
+            <h2 class="m-search-section-title">@Loc["RecentSearches"]</h2>
+            <div class="m-search-recent">
+                @foreach (var item in _recentSearches)
+                {
+                    var recent = item; // capture loop variable for the closure
+                    <button type="button" class="m-chip"
+                            @onclick="() => SubmitSearchAsync(recent)">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 0.875rem; height: 0.875rem;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>@recent</span>
+                    </button>
+                }
+                <button type="button" class="m-chip" @onclick="ClearRecentSearches">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 0.875rem; height: 0.875rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>@Loc["ClearRecent"]</span>
+                </button>
+            </div>
+        </div>
+    }
+    @if (!TermIsSearchable)
+    {
+        <p class="m-empty">@Loc["MinCharsHint"]</p>
+    }
+}
+
+@* ── 4. Footer ── *@
+<div class="m-footer">@Loc["Version"]</div>
+
+@code {
+    // ── Constants ────────────────────────────────────────────────────────
+
+    private const int MinTermLength = 2;          // min chars for typeahead + search
+    private const int DebounceMilliseconds = 350; // keystroke debounce window
+    private const int MaxRecentSearches = 6;      // recent-chip capacity
+    private const int TypeaheadTake = 5;          // suggestion rows in the dropdown
+    private const int ProductPageSize = 20;       // full-search products page
+    private const int OrderPageSize = 10;         // full-search orders page (staff)
+
+    // ── State ────────────────────────────────────────────────────────────
+
+    /// <summary>Raw value of the hero search input (not trimmed).</summary>
+    private string _searchTerm = string.Empty;
+
+    /// <summary>
+    /// True for Admin / Manager / Employee viewers (the orders section).
+    /// Resolved once in OnInitializedAsync from AuthenticationStateProvider —
+    /// the canonical role source over the SignalR circuit.
+    /// </summary>
+    private bool _isStaff;
+
+    // Typeahead state (live suggestions while typing, before submit)
+    private bool _showTypeahead;
+    private bool _isTypeaheadLoading = true;
+    private List<ProductListItemDto> _suggestions = new();
+
+    // Full-search state (after submit)
+    private bool _hasSearched;
+    private bool _isSearching;
+    private string? _searchError;
+    private List<ProductListItemDto> _products = new();
+    private List<SaleListItemDto> _sales = new();
+    private int _productTotalCount;
+
+    /// <summary>
+    /// Recent search terms (max 6, most-recent-first, case-insensitively
+    /// deduped). Kept per page-instance: a true circuit-scoped store would
+    /// need a scoped service or a root cascading value — shared files this
+    /// page may not touch.
+    /// </summary>
+    private readonly List<string> _recentSearches = new();
+
+    /// <summary>
+    /// Debounce scheduler. Every keystroke cancels + replaces this CTS; the
+    /// pending Task.Delay(350, token) throws OperationCanceledException and
+    /// the superseded cycle quietly dies.
+    /// </summary>
+    private CancellationTokenSource? _debounceCts;
+
+    // ── Computed ─────────────────────────────────────────────────────────
+
+    private string TrimmedTerm => _searchTerm.Trim();
+
+    private bool TermIsSearchable => TrimmedTerm.Length >= MinTermLength;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve _isStaff before the first render so the staff-only
+        // orders skeleton/results don't flicker into existence later.
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isStaff = user.IsInRole(Roles.Admin)
+                   || user.IsInRole(Roles.Manager)
+                   || user.IsInRole(Roles.Employee);
+
+        // Deep-link support: /m/Search?search=term prefills the box and
+        // runs the full search immediately (mirrors MobileProducts's
+        // ?search= handling so other pages can link here uniformly).
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("search", out var searchValue))
+        {
+            var initial = searchValue.ToString();
+            if (!string.IsNullOrWhiteSpace(initial) && initial.Trim().Length >= MinTermLength)
+            {
+                _searchTerm = initial;
+                await SubmitSearchAsync(initial);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        // Kill any pending debounce cycle when the user navigates away so
+        // no typeahead query fires against a dead component.
+        _debounceCts?.Cancel();
+        _debounceCts?.Dispose();
+        _debounceCts = null;
+    }
+
+    // ── Input handling (debounce) ────────────────────────────────────────
+
+    /// <summary>
+    /// Fired on every keystroke via @oninput (repo's controlled-input
+    /// pattern). Updates the term, supersedes the pending debounce cycle,
+    /// opens the typeahead immediately (skeleton row), then waits out the
+    /// 350ms window before querying for suggestions.
+    /// </summary>
+    private async Task OnSearchInputAsync(string value)
+    {
+        _searchTerm = value ?? string.Empty;
+
+        // Supersede any pending debounce cycle (newest keystroke wins).
+        _debounceCts?.Cancel();
+        _debounceCts?.Dispose();
+        _debounceCts = new CancellationTokenSource();
+        var token = _debounceCts.Token;
+
+        if (!TermIsSearchable)
+        {
+            // Below the minimum length (or cleared): collapse the dropdown
+            // and return the results area to the idle state (recents + hint).
+            _showTypeahead = false;
+            _isTypeaheadLoading = false;
+            _suggestions.Clear();
+            _hasSearched = false;
+            _isSearching = false;
+            _searchError = null;
+            return;
+        }
+
+        // Typing invalidates the previous full-search results: the typeahead
+        // becomes the live feedback channel until the user submits again.
+        _showTypeahead = true;
+        _isTypeaheadLoading = true;
+        _hasSearched = false;
+        _isSearching = false;
+        _searchError = null;
+        StateHasChanged(); // open the dropdown instantly, before the 350ms wait
+
+        try
+        {
+            await Task.Delay(DebounceMilliseconds, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // superseded by a newer keystroke or a submit — do nothing
+        }
+
+        await LoadTypeaheadAsync(token);
+    }
+
+    /// <summary>
+    /// Keyboard affordances: Enter submits the full search; Escape closes
+    /// the typeahead dropdown (the only dismissal path that doesn't need
+    /// outside-click JS interop).
+    /// </summary>
+    private async Task HandleSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SubmitSearchAsync(_searchTerm);
+        }
+        else if (e.Key == "Escape")
+        {
+            _showTypeahead = false;
+        }
+    }
+
+    // ── Typeahead loading ────────────────────────────────────────────────
+
+    private async Task LoadTypeaheadAsync(CancellationToken token)
+    {
+        try
+        {
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = 1,
+                PageSize = TypeaheadTake,
+                SearchTerm = TrimmedTerm
+            };
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+            if (token.IsCancellationRequested) return;
+            _suggestions = result.Items.ToList();
+        }
+        catch
+        {
+            if (token.IsCancellationRequested) return;
+            // Non-fatal: the dropdown falls back to the "no matches" hint +
+            // the "see all results" row, and the full search has its own
+            // error box + retry.
+            _suggestions.Clear();
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _isTypeaheadLoading = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    // ── Full search (submit) ─────────────────────────────────────────────
+
+    private Task SubmitSearchAsync()
+        => SubmitSearchAsync(_searchTerm);
+
+    /// <summary>
+    /// Executes the full search: collapses the typeahead, flips the results
+    /// area into skeleton mode, records the term in recents, and runs the
+    /// products query + (staff only) orders query in parallel. Results are
+    /// discarded if the user resumed typing while the round-trips were in
+    /// flight (staleness guard on the submitted term).
+    /// </summary>
+    private async Task SubmitSearchAsync(string term)
+    {
+        term = term?.Trim() ?? string.Empty;
+        if (term.Length < MinTermLength) return;
+
+        // A submit invalidates any pending typeahead cycle (its results
+        // would fight the full-search state below).
+        _debounceCts?.Cancel();
+        _debounceCts?.Dispose();
+        _debounceCts = null;
+
+        _searchTerm = term;
+        _showTypeahead = false;
+        _suggestions.Clear();
+        _isTypeaheadLoading = false;
+        _hasSearched = true;
+        _isSearching = true;
+        _searchError = null;
+        _products.Clear();
+        _sales.Clear();
+        _productTotalCount = 0;
+        AddRecentSearch(term);
+        StateHasChanged(); // show the section skeletons immediately
+
+        try
+        {
+            // Both queries are dispatched before either is awaited, so the
+            // products + orders round-trips overlap.
+            var productsTask = MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(
+                new GetProductsPaginatedQuery
+                {
+                    PageNumber = 1,
+                    PageSize = ProductPageSize,
+                    SearchTerm = term
+                });
+
+            Task<PaginatedResult<SaleListItemDto>>? salesTask = _isStaff
+                ? MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
+                    new GetSalesPaginatedQuery
+                    {
+                        PageNumber = 1,
+                        PageSize = OrderPageSize,
+                        SearchTerm = term
+                    })
+                : null;
+
+            var productResult = await productsTask;
+            var saleResult = salesTask is null ? null : await salesTask;
+
+            // Staleness guard: if the user resumed typing while the
+            // round-trips were in flight, the typeahead flow owns the UI
+            // now — don't clobber it with results for the old term.
+            if (!string.Equals(_searchTerm, term, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _products = productResult.Items.ToList();
+            _productTotalCount = productResult.TotalCount;
+
+            if (saleResult is not null)
+            {
+                // TotalCount is intentionally NOT used here: the sales
+                // handler applies SearchTerm in-memory on the materialized
+                // page, so its TotalCount is the PRE-search count. Items
+                // is the honest matched-row count.
+                _sales = saleResult.Items.ToList();
+            }
+        }
+        catch
+        {
+            if (!string.Equals(_searchTerm, term, StringComparison.Ordinal))
+            {
+                return; // stale — the newer typing flow owns the state
+            }
+            _searchError = Loc["Error_SearchFailed"];
+        }
+        finally
+        {
+            // Only flip the searching flag off when this cycle still owns
+            // the state (a newer keystroke already reset it otherwise).
+            if (string.Equals(_searchTerm, term, StringComparison.Ordinal))
+            {
+                _isSearching = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    // ── Recent searches ──────────────────────────────────────────────────
+
+    private void AddRecentSearch(string term)
+    {
+        // Case-insensitive dedupe so "Macaroni" and "macaroni" don't both
+        // appear; the freshest occurrence wins the front slot.
+        _recentSearches.RemoveAll(r => string.Equals(r, term, StringComparison.OrdinalIgnoreCase));
+        _recentSearches.Insert(0, term);
+        while (_recentSearches.Count > MaxRecentSearches)
+        {
+            _recentSearches.RemoveAt(_recentSearches.Count - 1);
+        }
+    }
+
+    private void ClearRecentSearches()
+    {
+        _recentSearches.Clear();
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────
+
+    private void GoToProduct(Guid productId)
+        => Navigation.NavigateTo($"/m/Products/{productId}", forceLoad: false);
+
+    private void GoToSale(Guid saleId)
+        => Navigation.NavigateTo($"/m/Sales/{saleId}", forceLoad: false);
+
+    // ── Display helpers ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps a sale status string (the SaleStatus enum's ToString() output)
+    /// to a mobile badge color class — verbatim from MobileSales.razor so a
+    /// status reads the SAME color on the orders list and in search results.
+    /// </summary>
+    private static string GetStatusBadgeClass(string? status) => status switch
+    {
+        "Draft" => "m-badge-neutral",
+        "Pending" => "m-badge-warning",
+        "Approved" => "m-badge-info",
+        "Invoiced" => "m-badge-success",
+        "Cancelled" => "m-badge-danger",
+        _ => "m-badge-neutral"
+    };
+
+    /// <summary>
+    /// Localized label for a sale status string. Keys mirror MobileSales's
+    /// StatusDraft/… set so the wording matches the orders list page.
+    /// Unknown statuses (defensive) fall back to the raw string.
+    /// </summary>
+    private string GetStatusLabel(string? status) => status switch
+    {
+        "Draft" => Loc["StatusDraft"],
+        "Pending" => Loc["StatusPending"],
+        "Approved" => Loc["StatusApproved"],
+        "Invoiced" => Loc["StatusInvoiced"],
+        "Cancelled" => Loc["StatusCancelled"],
+        _ => status ?? string.Empty
+    };
+
+    /// <summary>
+    /// Formats a MoneyDto for display as Toman — verbatim from
+    /// MobileSales.razor: IRR is divided by 10 and labelled with the
+    /// localized "Toman" unit; other currencies pass through unchanged;
+    /// null/empty collapses to "—".
+    /// </summary>
+    private string FormatMoney(MoneyDto? money)
+    {
+        if (money is null || (money.Amount == 0 && string.IsNullOrEmpty(money.Currency)))
+            return "—";
+
+        var isIrr = string.Equals(money.Currency, "IRR", StringComparison.OrdinalIgnoreCase);
+        var display = isIrr ? money.Amount / 10m : money.Amount;
+        var amount = CultureFormat.ToCultureDigits(display.ToString("N0", CultureInfo.InvariantCulture));
+        var unit = isIrr ? Loc["TomanUnit"] : money.Currency;
+        return $"{amount} {unit}";
+    }
+
+    /// <summary>
+    /// Renders <paramref name="text"/> as a MarkupString with the first
+    /// case-insensitive occurrence of <paramref name="term"/> wrapped in a
+    /// .m-highlight span (the gold-tinted highlight chip from mobile.css v5).
+    ///
+    /// XSS SAFETY: the raw text is split FIRST, then each of the three
+    /// segments (before / match / after) is HTML-encoded with
+    /// System.Net.WebUtility.HtmlEncode BEFORE being concatenated with the
+    /// span markup. Encoding per-segment (rather than encoding the whole
+    /// string and searching within it) avoids false-positive highlights
+    /// that span entity boundaries (e.g. "amp" matching inside "&amp;").
+    /// No match → the fully-encoded text without any wrapper.
+    /// </summary>
+    private static MarkupString HighlightMatch(string? text, string? term)
+    {
+        if (string.IsNullOrEmpty(text))
+            return (MarkupString)string.Empty;
+
+        var trimmed = term?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return (MarkupString)WebUtility.HtmlEncode(text);
+
+        var index = text.IndexOf(trimmed, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return (MarkupString)WebUtility.HtmlEncode(text);
+
+        var before = WebUtility.HtmlEncode(text[..index]);
+        var match = WebUtility.HtmlEncode(text.Substring(index, trimmed.Length));
+        var after = WebUtility.HtmlEncode(text[(index + trimmed.Length)..]);
+
+        return (MarkupString)$"{before}<span class=\"m-highlight\">{match}</span>{after}";
+    }
+}

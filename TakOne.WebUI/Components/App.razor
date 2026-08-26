@@ -146,7 +146,20 @@
        active-scale + hover-shadow. Round 7 added detail-page chrome +
        skeletons + PTR. Without this bump browsers keep serving the old
        v3 mobile.css and the new Create pages render unstyled. *@
-    <link rel="stylesheet" href="css/mobile.css?v=4" />
+    @* Mobile CSS — v5 (Round 9): added OrderTracker timeline classes
+       (.m-tracker-hero, .m-progress-steps, .m-timeline[-item/-icon/-body/
+       -title/-time/-desc] with done/current/cancelled states), Notification
+       center classes (.m-notif-list/-item[-unread]/-icon type-order..system/
+       -body/-title/-text/-time/-dot/-header/-header-count), global-search
+       classes (.m-search-hero, .m-typeahead[-item/-icon/-label/-sub],
+       .m-highlight, .m-search-recent, .m-chip, .m-search-section-title),
+       plus generic UI additions: .m-fab (floating action button),
+       .m-segmented / .m-segment (segmented control), focus-visible rings on
+       interactive rows, and the .m-rise-in entrance animation. Round 8 added
+       Create-page form polish; Round 7 added detail-page chrome + skeletons.
+       Without this bump browsers keep serving the old v4 mobile.css and the
+       Round 9 pages render unstyled. *@
+    <link rel="stylesheet" href="css/mobile.css?v=5" />
 
     @* Mobile device detection + redirect logic + pull-to-refresh — v4
        (Round 8): added /Admin/Products/Create, /Admin/Users/Create,

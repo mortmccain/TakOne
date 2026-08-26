@@ -3151,3 +3151,675 @@
 .nav-indicator {
     display: none;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   ROUND 9 — Order Tracker timeline + Notification center + Global
+   search + micro-polish.
+   New class families:
+     .m-tracker-*   — MobileOrderTracker hero + progress steps
+     .m-timeline-*  — vertical status timeline (Draft→Pending→Approved→Invoiced)
+     .m-notif-*     — notification center rows / icons / unread state
+     .m-search-*    — global search hero + typeahead + recent chips
+                      (extends the existing .m-search-box from Round 5)
+     .m-fab         — floating action button (bottom, above BottomNav)
+     .m-segmented   — segmented control (tightly-packed pill tabs)
+   Bump the stylesheet version in App.razor (?v=4 → ?v=5).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Order Tracker hero — big status card at the top of the tracker ── */
+.m-tracker-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1rem;
+    padding: 1.25rem 1rem 1.5rem;
+    background: linear-gradient(135deg,
+        var(--tm-green, #0E4D3C) 0%,
+        color-mix(in srgb, var(--tm-green, #0E4D3C) 70%, var(--tm-gold, #C9A227)) 100%);
+    color: #fff;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.tak-theme-dark .m-tracker-hero {
+    background: linear-gradient(135deg,
+        var(--tm-green, #0E4D3C) 0%,
+        color-mix(in srgb, var(--tm-green, #0E4D3C) 55%, #000) 100%);
+}
+
+/* soft radial glow behind the icon */
+.m-tracker-hero::before {
+    content: "";
+    position: absolute;
+    inset: -40% -20% auto;
+    height: 80%;
+    background: radial-gradient(closest-side,
+        rgba(255, 255, 255, 0.14), transparent);
+    pointer-events: none;
+}
+
+.m-tracker-hero-icon {
+    width: 3.5rem;
+    height: 3.5rem;
+    margin: 0 auto 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+    position: relative;
+    z-index: 1;
+}
+
+.m-tracker-hero-title {
+    font-size: 1.125rem;
+    font-weight: 800;
+    margin: 0 0 0.25rem;
+    position: relative;
+    z-index: 1;
+}
+
+.m-tracker-hero-sub {
+    font-size: 0.8rem;
+    opacity: 0.85;
+    margin: 0;
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Progress steps — compact 4-dot progress bar under the hero ── */
+.m-progress-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    margin: 1rem 0 0.25rem;
+    position: relative;
+    z-index: 1;
+}
+
+.m-progress-steps .m-step-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    flex: none;
+}
+
+.m-progress-steps .m-step-dot.done,
+.m-progress-steps .m-step-dot.current {
+    background: var(--tm-gold-bright, #E8C547);
+    box-shadow: 0 0 0 3px rgba(232, 197, 71, 0.25);
+}
+
+.m-progress-steps .m-step-sep {
+    width: 1.25rem;
+    height: 2px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.3);
+    flex: none;
+}
+
+.m-progress-steps .m-step-sep.done {
+    background: var(--tm-gold-bright, #E8C547);
+}
+
+.m-tracker-hero-count {
+    font-size: 0.7rem;
+    opacity: 0.8;
+    margin-top: 0.375rem;
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Vertical status timeline ── */
+.m-timeline {
+    position: relative;
+    padding: 0.25rem 0;
+    /* room for the connector line on the inline-start side */
+    padding-inline-start: 0.25rem;
+}
+
+.m-timeline-item {
+    position: relative;
+    display: flex;
+    gap: 0.875rem;
+    padding: 0 0 1.5rem 0;
+    padding-inline-start: 0;
+}
+
+.m-timeline-item:last-child {
+    padding-bottom: 0.25rem;
+}
+
+/* connector line between icons — drawn per item so it can be colored
+   per-state (done items get a green line segment) */
+.m-timeline-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    top: 2.25rem;
+    bottom: -0.25rem;
+    inset-inline-start: 1.0625rem;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--tm-border, #E5E0D5);
+}
+
+.m-timeline-item.done:not(:last-child)::before {
+    background: linear-gradient(180deg,
+        var(--tm-green, #0E4D3C),
+        color-mix(in srgb, var(--tm-green, #0E4D3C) 40%, var(--tm-border, #E5E0D5)));
+}
+
+.tak-theme-dark .m-timeline-item:not(:last-child)::before {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.tak-theme-dark .m-timeline-item.done:not(:last-child)::before {
+    background: linear-gradient(180deg,
+        var(--tm-green-light, #3DBE96),
+        color-mix(in srgb, var(--tm-green-light, #3DBE96) 30%, rgba(255, 255, 255, 0.12)));
+}
+
+/* step icon circle */
+.m-timeline-icon {
+    flex: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border: 2px solid var(--tm-border, #E5E0D5);
+    color: var(--tm-text-muted, #8A857A);
+    position: relative;
+    z-index: 1; /* above the connector line */
+}
+
+.m-timeline-item.done .m-timeline-icon {
+    background: var(--tm-green, #0E4D3C);
+    border-color: var(--tm-green, #0E4D3C);
+    color: #fff;
+}
+
+.tak-theme-dark .m-timeline-item.done .m-timeline-icon {
+    background: var(--tm-green-light, #3DBE96);
+    border-color: var(--tm-green-light, #3DBE96);
+    color: #06281F;
+}
+
+.m-timeline-item.current .m-timeline-icon {
+    background: var(--tm-gold, #C9A227);
+    border-color: var(--tm-gold, #C9A227);
+    color: #fff;
+    animation: m-timeline-pulse 2s ease-in-out infinite;
+}
+
+.tak-theme-dark .m-timeline-item.current .m-timeline-icon {
+    background: var(--tm-gold-bright, #E8C547);
+    border-color: var(--tm-gold-bright, #E8C547);
+    color: #3D3205;
+}
+
+/* pulsing halo on the current step */
+@keyframes m-timeline-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.45); }
+    50%      { box-shadow: 0 0 0 7px rgba(201, 162, 39, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .m-timeline-item.current .m-timeline-icon { animation: none; }
+}
+
+.m-timeline-item.cancelled .m-timeline-icon {
+    background: var(--tm-red, #C0392B);
+    border-color: var(--tm-red, #C0392B);
+    color: #fff;
+}
+
+/* step text block */
+.m-timeline-body {
+    flex: 1;
+    min-width: 0;
+    padding-top: 0.125rem;
+}
+
+.m-timeline-title {
+    font-weight: 700;
+    font-size: 0.9375rem;
+    color: var(--tm-text, #262523);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.m-timeline-item.pending .m-timeline-title {
+    color: var(--tm-text-muted, #8A857A);
+    font-weight: 600;
+}
+
+.m-timeline-time {
+    font-size: 0.75rem;
+    color: var(--tm-text-muted, #8A857A);
+    margin-top: 0.125rem;
+}
+
+.m-timeline-desc {
+    font-size: 0.8rem;
+    color: var(--tm-text-muted, #8A857A);
+    margin-top: 0.25rem;
+    line-height: 1.5;
+}
+
+.m-timeline-desc strong {
+    color: var(--tm-text, #262523);
+}
+
+.tak-theme-dark .m-timeline-title { color: var(--tm-text, #F3F1EC); }
+.tak-theme-dark .m-timeline-desc strong { color: #F3F1EC; }
+
+/* ── Notification center ── */
+.m-notif-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.m-notif-item {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0.875rem;
+    border-radius: 0.875rem;
+    background: var(--tm-surface, #FFFFFF);
+    border: 1px solid var(--tm-border, #E5E0D5);
+    position: relative;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tak-theme-dark .m-notif-item {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+@media (hover: hover) {
+    .m-notif-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(14, 77, 60, 0.08);
+    }
+}
+
+/* unread: accent bar on the inline-start edge + subtle tint */
+.m-notif-item.unread {
+    border-inline-start: 3px solid var(--tm-gold, #C9A227);
+    background: color-mix(in srgb,
+        var(--tm-gold, #C9A227) 6%, var(--tm-surface, #FFFFFF));
+}
+
+.tak-theme-dark .m-notif-item.unread {
+    background: rgba(232, 197, 71, 0.06);
+}
+
+.m-notif-icon {
+    flex: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.625rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* per-type icon tints */
+.m-notif-icon.type-order    { background: rgba(14, 77, 60, 0.12);  color: var(--tm-green, #0E4D3C); }
+.m-notif-icon.type-approve  { background: rgba(35, 134, 89, 0.14);  color: #238659; }
+.m-notif-icon.type-invoice  { background: rgba(61, 190, 150, 0.15); color: #0C6B4E; }
+.m-notif-icon.type-cancel   { background: rgba(192, 57, 43, 0.12);  color: var(--tm-red, #C0392B); }
+.m-notif-icon.type-system   { background: rgba(201, 162, 39, 0.14); color: var(--tm-gold, #C9A227); }
+
+.tak-theme-dark .m-notif-icon.type-order    { background: rgba(61, 190, 150, 0.14); color: var(--tm-green-light, #3DBE96); }
+.tak-theme-dark .m-notif-icon.type-approve  { background: rgba(61, 190, 150, 0.16); color: #6FD8B4; }
+.tak-theme-dark .m-notif-icon.type-invoice  { background: rgba(61, 190, 150, 0.18); color: #8FE3C6; }
+.tak-theme-dark .m-notif-icon.type-cancel   { background: rgba(231, 96, 81, 0.16);  color: #F08A7D; }
+.tak-theme-dark .m-notif-icon.type-system   { background: rgba(232, 197, 71, 0.16); color: var(--tm-gold-bright, #E8C547); }
+
+.m-notif-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.m-notif-title {
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: var(--tm-text, #262523);
+    line-height: 1.4;
+}
+
+.m-notif-text {
+    font-size: 0.8rem;
+    color: var(--tm-text-muted, #8A857A);
+    margin-top: 0.125rem;
+    line-height: 1.5;
+}
+
+.m-notif-time {
+    font-size: 0.7rem;
+    color: var(--tm-text-faint, #B0AA9D);
+    margin-top: 0.375rem;
+}
+
+.tak-theme-dark .m-notif-title { color: #F3F1EC; }
+
+.m-notif-dot {
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--tm-gold, #C9A227);
+    margin-top: 0.375rem;
+    box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18);
+}
+
+/* "mark all read" header row */
+.m-notif-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.875rem;
+}
+
+.m-notif-header-count {
+    font-size: 0.75rem;
+    color: var(--tm-text-muted, #8A857A);
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+}
+
+.tak-theme-dark .m-notif-header-count {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Global search page ── */
+.m-search-hero {
+    position: relative;
+    border-radius: 1rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: var(--tm-surface, #FFFFFF);
+    border: 1px solid var(--tm-border, #E5E0D5);
+    box-shadow: 0 2px 10px rgba(14, 77, 60, 0.05);
+}
+
+.tak-theme-dark .m-search-hero {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.m-search-hero .m-search-box {
+    margin-bottom: 0;
+}
+
+.m-search-hero .m-input {
+    font-size: 1rem;
+    padding-block: 0.75rem;
+}
+
+/* typeahead dropdown (positioned under the hero's search box) */
+.m-typeahead {
+    position: absolute;
+    inset-inline: 0.5rem;
+    top: calc(100% - 0.375rem);
+    z-index: 30;
+    border-radius: 0.875rem;
+    background: var(--tm-surface, #FFFFFF);
+    border: 1px solid var(--tm-border, #E5E0D5);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+    overflow: hidden;
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.tak-theme-dark .m-typeahead {
+    background: #201F1B;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.m-typeahead-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 0.875rem;
+    background: none;
+    border: 0;
+    text-align: start;
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.m-typeahead-item:hover,
+.m-typeahead-item:focus-visible {
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    outline: none;
+}
+
+.tak-theme-dark .m-typeahead-item:hover,
+.tak-theme-dark .m-typeahead-item:focus-visible {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.m-typeahead-icon {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14, 77, 60, 0.1);
+    color: var(--tm-green, #0E4D3C);
+}
+
+.tak-theme-dark .m-typeahead-icon {
+    background: rgba(61, 190, 150, 0.14);
+    color: var(--tm-green-light, #3DBE96);
+}
+
+.m-typeahead-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--tm-text, #262523);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tak-theme-dark .m-typeahead-label { color: #F3F1EC; }
+
+.m-typeahead-sub {
+    font-size: 0.7rem;
+    color: var(--tm-text-muted, #8A857A);
+    margin-top: 0.125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* highlighted matched substring */
+.m-highlight {
+    background: rgba(201, 162, 39, 0.28);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+    font-weight: 700;
+}
+
+.tak-theme-dark .m-highlight {
+    background: rgba(232, 197, 71, 0.3);
+}
+
+/* recent-search chips row */
+.m-search-recent {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.75rem;
+}
+
+.m-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--tm-border, #E5E0D5);
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    color: var(--tm-text-muted, #8A857A);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.m-chip:hover {
+    border-color: var(--tm-green, #0E4D3C);
+    color: var(--tm-green, #0E4D3C);
+    background: color-mix(in srgb, var(--tm-green, #0E4D3C) 6%, var(--tm-surface, #FFFFFF));
+}
+
+.tak-theme-dark .m-chip {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #C9C4B8;
+}
+
+.tak-theme-dark .m-chip:hover {
+    border-color: var(--tm-green-light, #3DBE96);
+    color: var(--tm-green-light, #3DBE96);
+    background: rgba(61, 190, 150, 0.1);
+}
+
+/* search section heading (e.g. "محصولات", "سفارش‌ها") */
+.m-search-section-title {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--tm-text-muted, #8A857A);
+    margin: 0 0 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.m-search-section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--tm-border, #E5E0D5);
+}
+
+.tak-theme-dark .m-search-section-title::after {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Floating action button (FAB) ── */
+.m-fab {
+    position: fixed;
+    inset-inline-end: 1rem;
+    bottom: 5.5rem; /* sits above the BottomNav (~4.5rem tall) */
+    z-index: 35;
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg,
+        var(--tm-green, #0E4D3C),
+        color-mix(in srgb, var(--tm-green, #0E4D3C) 60%, var(--tm-gold, #C9A227)));
+    color: #fff;
+    box-shadow: 0 6px 20px rgba(14, 77, 60, 0.35);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.m-fab:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 10px 26px rgba(14, 77, 60, 0.42);
+}
+
+.m-fab:active { transform: scale(0.96); }
+
+@media (prefers-reduced-motion: reduce) {
+    .m-fab:hover { transform: none; }
+}
+
+/* ── Segmented control (tighter than .m-tabs — for 2–3 options) ── */
+.m-segmented {
+    display: inline-flex;
+    padding: 0.25rem;
+    gap: 0.25rem;
+    border-radius: 999px;
+    background: var(--tm-surface-muted, var(--tm-cream, #FAF7F0));
+    border: 1px solid var(--tm-border, #E5E0D5);
+}
+
+.tak-theme-dark .m-segmented {
+    background: rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.m-segment {
+    border: 0;
+    background: none;
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--tm-text-muted, #8A857A);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.m-segment.active {
+    background: var(--tm-surface, #FFFFFF);
+    color: var(--tm-green, #0E4D3C);
+    box-shadow: 0 1px 6px rgba(14, 77, 60, 0.16);
+    font-weight: 700;
+}
+
+.tak-theme-dark .m-segment.active {
+    background: rgba(61, 190, 150, 0.18);
+    color: var(--tm-green-light, #3DBE96);
+    box-shadow: none;
+}
+
+/* ── Focus-visible consistency pass (keyboard a11y on interactive rows) ── */
+.m-list-item:focus-visible,
+.m-typeahead-item:focus-visible,
+.m-notif-item:focus-visible {
+    outline: 2px solid var(--tm-gold, #C9A227);
+    outline-offset: 2px;
+}
+
+/* ── Subtle entrance animation for freshly-loaded lists ── */
+@keyframes m-rise-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.m-rise-in {
+    animation: m-rise-in 0.28s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .m-rise-in { animation: none; }
+}

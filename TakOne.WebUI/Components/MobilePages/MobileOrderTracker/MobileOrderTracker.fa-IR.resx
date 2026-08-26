@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <!-- صرفت صفحه -->
+  <data name="PageTitle" xml:space="preserve"><value>پیگیری سفارش — تک‌وان</value></data>
+  <data name="BackToOrderDetails" xml:space="preserve"><value>بازگشت به جزئیات سفارش</value></data>
+  <data name="BackToOrders" xml:space="preserve"><value>بازگشت به سفارش‌های من</value></data>
+  <data name="ViewFullDetails" xml:space="preserve"><value>مشاهده جزئیات کامل</value></data>
+  <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+
+  <!-- وضعیت‌ها -->
+  <data name="Loading" xml:space="preserve"><value>در حال بارگذاری وضعیت سفارش…</value></data>
+  <data name="Error_GenericLoad" xml:space="preserve"><value>بارگذاری وضعیت این سفارش ناموفق بود. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="RetryButton" xml:space="preserve"><value>تلاش مجدد</value></data>
+  <data name="NotFoundMessage" xml:space="preserve"><value>این سفارش وجود ندارد یا شما اجازه مشاهده آن را ندارید.</value></data>
+
+  <!-- برچسب وضعیت (نشان کنار شماره سفارش؛ مشترک با صفحه فهرست سفارش‌ها
+       و صفحه جزئیات سفارش، اینجا آینه‌سازی شده تا صفحه پیگیری مستقل باشد) -->
+  <data name="StatusDraft" xml:space="preserve"><value>پیش‌نویس</value></data>
+  <data name="StatusPending" xml:space="preserve"><value>در انتظار</value></data>
+  <data name="StatusApproved" xml:space="preserve"><value>تأیید شده</value></data>
+  <data name="StatusInvoiced" xml:space="preserve"><value>فاکتور شده</value></data>
+  <data name="StatusCancelled" xml:space="preserve"><value>لغو شده</value></data>
+
+  <!-- قهرمان صفحه پیگیری — عنوان دوستانه برای مشتری به تفکیک وضعیت -->
+  <data name="HeroTitleDraft" xml:space="preserve"><value>پیش‌نویس سفارش</value></data>
+  <data name="HeroTitlePending" xml:space="preserve"><value>در حال پردازش</value></data>
+  <data name="HeroTitleApproved" xml:space="preserve"><value>سفارش تأیید شد</value></data>
+  <data name="HeroTitleInvoiced" xml:space="preserve"><value>فاکتور صادر شد</value></data>
+  <data name="HeroTitleCancelled" xml:space="preserve"><value>سفارش لغو شد</value></data>
+
+  <!-- قهرمان صفحه پیگیری — توضیح کوتاه «قدم بعدی چیست» به تفکیک وضعیت -->
+  <data name="HeroHintDraft" xml:space="preserve"><value>این سفارش هنوز ارسال نشده است. برای بازبینی و ارسال آن به سبد خرید بروید.</value></data>
+  <data name="HeroHintPending" xml:space="preserve"><value>سفارش شما برای بررسی به تیم ما ارسال شده است.</value></data>
+  <data name="HeroHintApproved" xml:space="preserve"><value>سفارش شما تأیید شد و در انتظار صدور فاکتور است.</value></data>
+  <data name="HeroHintInvoiced" xml:space="preserve"><value>فاکتور سفارش شما صادر شد. از خرید شما سپاسگزاریم!</value></data>
+  <data name="HeroHintCancelled" xml:space="preserve"><value>این سفارش لغو شده است. در صورت داشتن پرسش با پشتیبانی تماس بگیرید.</value></data>
+
+  <!-- شمارنده گام‌ها — {0} = شماره گام فعلی، {1} = تعداد کل گام‌ها -->
+  <data name="StepCountFormat" xml:space="preserve"><value>گام {0} از {1}</value></data>
+
+  <!-- نقاط زمانی خط زمانی وضعیت -->
+  <data name="OrderPlaced" xml:space="preserve"><value>سفارش ثبت شد</value></data>
+  <data name="SubmittedForReview" xml:space="preserve"><value>ارسال برای بررسی</value></data>
+  <data name="Approved" xml:space="preserve"><value>تأیید شد</value></data>
+  <data name="Invoiced" xml:space="preserve"><value>فاکتور صادر شد</value></data>
+  <data name="Cancelled" xml:space="preserve"><value>لغو شد</value></data>
+  <data name="Waiting" xml:space="preserve"><value>در انتظار</value></data>
+
+  <!-- توضیح گام نخست خط زمانی — {0} = نام ثبت‌کننده سفارش -->
+  <data name="CreatedByFormat" xml:space="preserve"><value>ثبت شده توسط {0}</value></data>
+
+  <!-- کارت خلاصه -->
+  <data name="CustomerName" xml:space="preserve"><value>مشتری</value></data>
+  <data name="TotalAmount" xml:space="preserve"><value>مبلغ کل</value></data>
+</root>

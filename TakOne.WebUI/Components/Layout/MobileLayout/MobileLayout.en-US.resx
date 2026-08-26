@@ -44,5 +44,6 @@
   <data name="CartTotal" xml:space="preserve"><value>Total</value></data>
   <data name="Checkout" xml:space="preserve"><value>Checkout</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+  <data name="Notifications" xml:space="preserve"><value>Notifications</value></data>
   <data name="LanguageToggle" xml:space="preserve"><value>Switch language</value></data>
 </root>

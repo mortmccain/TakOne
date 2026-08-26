@@ -33,6 +33,7 @@
 
   <!-- صرفت صفحه -->
   <data name="PageTitle" xml:space="preserve"><value>جزئیات سفارش — تک‌وان</value></data>
+  <data name="TrackOrderButton" xml:space="preserve"><value>رهگیری سفارش</value></data>
   <data name="BackToList" xml:space="preserve"><value>بازگشت به سفارش‌ها</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>

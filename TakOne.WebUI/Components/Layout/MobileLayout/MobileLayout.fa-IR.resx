@@ -44,5 +44,6 @@
   <data name="CartTotal" xml:space="preserve"><value>مبلغ نهایی</value></data>
   <data name="Checkout" xml:space="preserve"><value>تکمیل سفارش</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+  <data name="Notifications" xml:space="preserve"><value>اعلان‌ها</value></data>
   <data name="LanguageToggle" xml:space="preserve"><value>تغییر زبان</value></data>
 </root>
