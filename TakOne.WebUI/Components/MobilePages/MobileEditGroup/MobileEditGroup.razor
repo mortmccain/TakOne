@@ -215,6 +215,7 @@
 @inject IStringLocalizer<MobileEditGroup> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 
 <PageTitle>@(_group is null ? Loc["PageTitle"] : $"{_group.Name} — {Loc["PageTitle"]}")</PageTitle>
 
@@ -898,7 +899,7 @@ else
         catch (Exception)
         {
             _group = null;
-            _loadError = Loc["Error_FailedToLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.MobileEditGroup_LoadFailure);
         }
     }
 
@@ -1008,7 +1009,7 @@ else
 
                 if (!renameResult.IsSuccess)
                 {
-                    await Toast.Error(renameResult.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                    await Toast.Error(ErrorDisplay.Localize(renameResult.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
                     return;
                 }
             }
@@ -1021,7 +1022,7 @@ else
 
                 if (!salaryResult.IsSuccess)
                 {
-                    await Toast.Error(salaryResult.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                    await Toast.Error(ErrorDisplay.Localize(salaryResult.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
                     return;
                 }
             }
@@ -1031,7 +1032,7 @@ else
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileEditGroup_RenameFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1107,12 +1108,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileEditGroup_SalaryUpdateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1154,12 +1155,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileEditGroup_LimitModeSaveFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1247,12 +1248,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileEditGroup_StatusToggleFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

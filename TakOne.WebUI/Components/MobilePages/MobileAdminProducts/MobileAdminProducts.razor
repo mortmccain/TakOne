@@ -51,6 +51,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileAdminProducts> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -460,7 +461,7 @@ else
         }
         catch
         {
-            await Toast.Error(Loc["RestockDialogError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminProducts_RestockDialogOpen);
             return;
         }
 
@@ -486,12 +487,12 @@ else
             }
             else
             {
-                await Toast.Error(cmdResult.Error ?? Loc["RestockError"]);
+                await Toast.Error(ErrorDisplay.Localize(cmdResult.Error) ?? Loc["RestockError"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["RestockError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminProducts_RestockFailure);
         }
         finally
         {
@@ -540,7 +541,7 @@ else
         }
         catch
         {
-            await Toast.Error(Loc["DeactivateDialogError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminProducts_DeactivateDialogOpen);
             return;
         }
 
@@ -565,12 +566,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["DeactivateError"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["DeactivateError"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["DeactivateError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminProducts_DeactivateFailure);
         }
         finally
         {

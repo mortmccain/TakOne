@@ -73,6 +73,7 @@
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileOrderTracker> Loc
+@inject ErrorDisplayService ErrorDisplay
 
 <PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{CultureFormat.FormatDigits(_sale.DisplayNumber)} — {Loc["PageTitle"]}")</PageTitle>
 
@@ -291,13 +292,13 @@ else
             else
             {
                 // result.Error contains the handler's user-friendly message.
-                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericLoad"];
                 _sale = null;
             }
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_GenericLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.MobileOrderTracker_LoadFailure);
             _sale = null;
         }
         finally

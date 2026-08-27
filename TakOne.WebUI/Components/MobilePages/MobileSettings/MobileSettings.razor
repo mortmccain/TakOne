@@ -54,6 +54,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileSettings> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 
@@ -430,7 +431,7 @@ else if (_user is not null)
         {
             // JS interop failed (e.g. theme.js didn't load) — show an
             // error toast so the user knows the switch didn't take.
-            await Toast.Error(Loc["Error_ThemeSwitch"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileSettings_ThemeSwitchFailure, summary: Loc["ErrorTitle"]);
         }
     }
 

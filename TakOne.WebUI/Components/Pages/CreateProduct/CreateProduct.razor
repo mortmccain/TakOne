@@ -82,6 +82,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<CreateProduct> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IFileStorage FileStorage
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -1105,10 +1106,13 @@
         catch (Exception ex)
         {
             // Log the full exception so we can diagnose the root cause
-            // server-side. Surface a generic message to the user.
+            // server-side. Surface a wire-format unexpected error so the
+            // consumer (HandleSubmitAsync) recognizes the UE| prefix and
+            // routes through ErrorDisplay.Localize for the localized
+            // message + visible code.
             Console.Error.WriteLine(
                 $"[CreateProduct] UploadSelectedFileAsync caught {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
-            return (Url: null, Error: Loc["UploadErrorGeneric"]);
+            return (Url: null, Error: $"{ErrorDisplayService.WireFormatPrefix}{UnexpectedErrorCodes.CreateProduct_UploadFailure}");
         }
     }
 
@@ -1261,7 +1265,7 @@
                     var (url, error) = await UploadSelectedFileAsync();
                     if (error is not null)
                     {
-                        _submitError = error;
+                        _submitError = ErrorDisplay.Localize(error);
                         return;
                     }
                     pictureUrl = url;
@@ -1336,7 +1340,7 @@
             }
             else
             {
-                _submitError = result.Error ?? Loc["Error_GenericCreate"];
+                _submitError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericCreate"];
             }
         }
         catch (FluentValidation.ValidationException vex)
@@ -1347,7 +1351,7 @@
         {
             Console.Error.WriteLine(
                 $"[CreateProduct] HandleSubmitAsync caught {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
-            _submitError = Loc["Error_GenericCreate"];
+            _submitError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.CreateProduct_SubmitFailure);
         }
         finally
         {

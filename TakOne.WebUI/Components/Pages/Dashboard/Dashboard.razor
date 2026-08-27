@@ -55,6 +55,7 @@
 @inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject ErrorDisplayService ErrorDisplay
 @inject IStringLocalizer<Dashboard> Loc
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -546,7 +547,7 @@ else if (_stats is not null)
             }
             else
             {
-                _loadError = result.Error;
+                _loadError = ErrorDisplay.Localize(result.Error) ?? string.Empty;
                 if (string.IsNullOrEmpty(_loadError))
                 {
                     _loadError = Loc["Error_FailedToLoad"];
@@ -555,7 +556,7 @@ else if (_stats is not null)
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_Unexpected"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Dashboard_LoadFailure);
         }
         finally
         {

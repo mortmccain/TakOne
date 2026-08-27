@@ -89,6 +89,7 @@
 @inject IStringLocalizer<AdminUsers> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -923,7 +924,7 @@
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_FailedToLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.AdminUsers_LoadFailure);
         }
         finally
         {
@@ -1071,7 +1072,7 @@
             // if it does (e.g. JS-interop failure), surface it instead of
             // silently swallowing.
             System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminUsers_DialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -1098,13 +1099,13 @@
                 // The handler rejects self-deactivation with a friendly
                 // message; surface it verbatim.
                 await Toast.Error(
-                    result.Error ?? Loc["ActionError"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminUsers_DeactivateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1133,13 +1134,13 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["ActionError"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminUsers_ActivateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

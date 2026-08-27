@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Authorization;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Customers.DTOs;
 using TakOne.SharedKernel.Common;
@@ -48,10 +49,17 @@ public sealed class GetAllCustomerGroupsQueryHandler
         catch (Exception ex)
         {
             logger.LogError(ex,
-                "GetAllCustomerGroups: failed to load customer groups from the repository.");
+                "GetAllCustomerGroups: failed to load customer groups from the repository. [{UnexpectedCode}]",
+                UnexpectedErrorCodes.GetAllCustomerGroups_LoadFailed);
 
+            // Wire-format prefix "UE|" tags this as an UNEXPECTED error
+            // — the UI's ErrorDisplayService.Localize recognizes the
+            // prefix and substitutes a localized
+            // "An unexpected error occurred. Error code: {0}" message
+            // with the visible 7-char code. The opaque code maps to this
+            // file:line in the developer reference PDF.
             return Result<List<CustomerGroupListItemDto>>.Failure(
-                "Could not load customer groups. Please try again.");
+                $"UE|{UnexpectedErrorCodes.GetAllCustomerGroups_LoadFailed}");
         }
     }
 }

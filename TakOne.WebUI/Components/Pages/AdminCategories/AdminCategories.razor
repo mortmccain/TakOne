@@ -87,6 +87,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminCategories> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -1916,7 +1917,7 @@
             }
             else
             {
-                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_FailedToLoad"];
             }
         }
         catch
@@ -1975,12 +1976,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericCreate"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericCreate"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericCreate"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_CreateCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2038,12 +2039,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_CreateSub"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_CreateSub"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_CreateSub"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_CreateSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2104,12 +2105,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_CreateSubSub"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_CreateSubSub"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_CreateSubSub"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_CreateSubSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2176,12 +2177,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_RenameCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2217,12 +2218,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_RenameSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2258,12 +2259,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_RenameSubSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2300,12 +2301,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_ToggleCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2333,12 +2334,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_ToggleSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2366,12 +2367,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminCategories_ToggleSubSubCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

@@ -71,6 +71,7 @@
 @inject IStringLocalizer<ManageGroups> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -635,7 +636,7 @@
             }
             else
             {
-                _limitModeLoadError = result.Error ?? Loc["LimitModeLoadError"];
+                _limitModeLoadError = ErrorDisplay.Localize(result.Error) ?? Loc["LimitModeLoadError"];
             }
         }
         catch
@@ -680,14 +681,14 @@
                 _selectedLimitMode = previousMode;
 
                 await Toast.Error(
-                    result.Error ?? Loc["LimitModeSaveError"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["LimitModeSaveError"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
             _selectedLimitMode = previousMode;
-            await Toast.Error(Loc["LimitModeSaveError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ManageGroups_LimitModeSaveFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -732,7 +733,7 @@
             }
             else
             {
-                _loadError = result.Error ?? Loc["Error_FailedToLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_FailedToLoad"];
             }
         }
         catch
@@ -801,7 +802,7 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ManageGroups_DialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -823,13 +824,13 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["ActionError"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ManageGroups_DeactivateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -858,13 +859,13 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["ActionError"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ManageGroups_ActivateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

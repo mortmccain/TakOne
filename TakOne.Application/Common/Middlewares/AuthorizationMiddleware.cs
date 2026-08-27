@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using TakOne.Application.Common.Authorization;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 using Wolverine;
@@ -115,10 +116,13 @@ public class AuthorizationMiddleware
         // --------------------------------------------------------------
         if (requireRolesAttr is null && requireAuthAttr is null && requireSystemInternalAttr is null)
         {
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize
+            // in the WebUI for the recognizer path. The opaque 7-char
+            // code (AuthorizationMiddleware_PolicyMissing) maps to this
+            // file:line in the developer reference PDF; the user sees
+            // "An unexpected error occurred. Error code: 27JSF84".
             return Result.Failure(
-                $"Authorization policy missing for {messageType.Name}. " +
-                "Every command/query MUST have [RequireRoles], [RequireAuthentication], " +
-                "or [RequireSystemInternal]. This is a fail-closed security policy (Issue #08).");
+                $"UE|{UnexpectedErrorCodes.AuthorizationMiddleware_PolicyMissing}");
         }
 
         // --------------------------------------------------------------

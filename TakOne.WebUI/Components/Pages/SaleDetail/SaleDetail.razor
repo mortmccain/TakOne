@@ -95,6 +95,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<SaleDetail> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IJSRuntime JS
 @inject AuthenticationStateProvider AuthStateProvider
 @inject Radzen.DialogService DialogService
@@ -851,13 +852,13 @@
                 // result.Error contains the handler's user-friendly message.
                 // For "not found" (covers both genuinely-missing AND
                 // permission-denied), we show the same NotFound UI.
-                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericLoad"];
                 _sale = null;
             }
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_GenericLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.SaleDetail_LoadFailure);
             _sale = null;
         }
     }
@@ -1026,8 +1027,8 @@
             Logger.LogWarning(ex,
                 "ShowCancelConfirmation: failed to open CancelConfirmationDialog for sale {SaleId}.",
                 _sale.Id);
-            _actionError = Loc["CancelGuard_DialogError"];
-            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            _actionError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.SaleDetail_CancelDialogOpen);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.SaleDetail_CancelDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -1094,6 +1095,14 @@
     /// </summary>
     private string? LocalizeError(string? error)
     {
+        if (string.IsNullOrEmpty(error)) return null;
+
+        // Wire-format unexpected errors → route through the shared service.
+        if (error.StartsWith(ErrorDisplayService.WireFormatPrefix, StringComparison.Ordinal))
+        {
+            return ErrorDisplay.Localize(error);
+        }
+
         if (StockErrors.TryParse(error, out var stockName, out var stock, out var required))
         {
             return string.Format(
@@ -1172,8 +1181,8 @@
         }
         catch (Exception)
         {
-            _actionError = Loc["Error_GenericAction"];
-            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            _actionError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.SaleDetail_ActionFailure);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.SaleDetail_ActionFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

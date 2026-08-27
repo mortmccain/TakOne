@@ -203,11 +203,13 @@ public sealed class AddItemToSaleCommandHandler
             // (which shouldn't be possible via our domain — users are soft-
             // deleted via Deactivate()). Treat this as a data integrity issue.
             logger.LogError(
-                "AddItemToSale: customer {CustomerId} on sale {SaleId} was not found in the user repository.",
-                sale.CustomerId, sale.Id);
+                "AddItemToSale: customer {CustomerId} on sale {SaleId} was not found in the user repository. [{UnexpectedCode}]",
+                sale.CustomerId, sale.Id,
+                UnexpectedErrorCodes.AddItemToSale_CustomerDisappeared);
 
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
             return Result.Failure(
-                "The customer associated with this sale could not be found. Contact an administrator.");
+                $"UE|{UnexpectedErrorCodes.AddItemToSale_CustomerDisappeared}");
         }
 
         // ------------------------------------------------------------------

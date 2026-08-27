@@ -48,6 +48,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileAdminCategories> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -645,12 +646,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_RenameCategoryFailure);
         }
         finally
         {
@@ -687,12 +688,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_RenameSubCategoryFailure);
         }
         finally
         {
@@ -729,12 +730,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_RenameFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_RenameFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_RenameFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_RenameSubSubCategoryFailure);
         }
         finally
         {
@@ -788,12 +789,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericCreate"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericCreate"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericCreate"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_CreateCategoryFailure);
         }
         finally
         {
@@ -834,12 +835,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_CreateSub"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_CreateSub"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_CreateSub"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_CreateSubCategoryFailure);
         }
         finally
         {
@@ -881,12 +882,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_CreateSubSub"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_CreateSubSub"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_CreateSubSub"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_CreateSubSubCategoryFailure);
         }
         finally
         {
@@ -926,12 +927,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_ToggleCategoryFailure);
         }
         finally
         {
@@ -962,12 +963,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_ToggleSubCategoryFailure);
         }
         finally
         {
@@ -998,12 +999,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_ToggleFailed"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_ToggleFailed"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_ToggleFailed"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminCategories_ToggleSubSubCategoryFailure);
         }
         finally
         {

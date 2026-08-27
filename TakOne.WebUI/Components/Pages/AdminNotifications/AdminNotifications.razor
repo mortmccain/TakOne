@@ -54,6 +54,8 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminNotifications> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
+@inject Microsoft.Extensions.Logging.ILogger<AdminNotifications> Logger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -592,9 +594,16 @@
         catch (Exception ex)
         {
             // Wolverine transport / serialization / DB-transient failures
-            // land here. Surface a generic localized toast + the message
-            // for diagnostics (the admin can screenshot this for support).
-            await Toast.Error(Loc["Err_Send"] + ": " + ex.Message);
+            // land here. Surface a generic localized toast + the reference
+            // code so the support team can pinpoint the file:line via the
+            // developer reference PDF. (Don't leak ex.Message to the UI —
+            // it may contain PII / config details / stack fragments.)
+            Logger.LogError(ex,
+                "AdminNotifications.HandleSendAsync: unexpected failure. [{UnexpectedCode}]",
+                UnexpectedErrorCodes.AdminNotifications_SendFailure);
+            await Toast.UnexpectedError(
+                UnexpectedErrorCodes.AdminNotifications_SendFailure,
+                summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -605,12 +614,24 @@
     /// <summary>
     /// Maps a stable error code from
     /// <see cref="TakOne.Application.Notifications.Errors.NotificationErrors"/>
-    /// to its localized UI message. Falls back to a generic "Could not send"
-    /// message with the raw code appended for unknown codes (so future
-    /// codes surface to the admin instead of silently swallowing).
+    /// to its localized UI message. Also recognizes the wire-format
+    /// prefix <c>"UE|"</c> emitted by Application-layer unexpected-error
+    /// <c>Result.Failure</c> sites and routes them through
+    /// <see cref="ErrorDisplayService.Localize"/> so the user sees a
+    /// localized "unexpected error" message + the visible code.
+    /// Falls back to a generic "Could not send" message with the raw
+    /// code appended for unknown codes (so future codes surface to
+    /// the admin instead of silently swallowing).
     /// </summary>
     private string LocalizeError(string? code)
     {
+        // Wire-format unexpected errors → route through the shared service.
+        if (!string.IsNullOrEmpty(code)
+            && code.StartsWith(ErrorDisplayService.WireFormatPrefix, StringComparison.Ordinal))
+        {
+            return ErrorDisplay.Localize(code)!;
+        }
+
         return code switch
         {
             "BroadcastAuthRequired" => Loc["Err_AuthRequired"],

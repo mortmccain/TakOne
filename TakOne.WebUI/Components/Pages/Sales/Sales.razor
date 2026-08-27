@@ -82,6 +82,7 @@
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Sales> Loc
+@inject ErrorDisplayService ErrorDisplay
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -583,7 +584,7 @@
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_GenericLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Sales_LoadFailure);
         }
         finally
         {

@@ -147,11 +147,13 @@ public sealed class UpdateSaleLineItemCommandHandler
         if (customer is null)
         {
             logger.LogError(
-                "UpdateSaleLineItem: customer {CustomerId} on sale {SaleId} not found.",
-                sale.CustomerId, sale.Id);
+                "UpdateSaleLineItem: customer {CustomerId} on sale {SaleId} not found. [{UnexpectedCode}]",
+                sale.CustomerId, sale.Id,
+                UnexpectedErrorCodes.UpdateSaleLineItem_CustomerDisappeared);
 
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
             return Result.Failure(
-                "The customer associated with this sale could not be found. Contact an administrator.");
+                $"UE|{UnexpectedErrorCodes.UpdateSaleLineItem_CustomerDisappeared}");
         }
 
         // ------------------------------------------------------------------

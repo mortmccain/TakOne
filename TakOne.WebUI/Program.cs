@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Radzen;
 using TakOne.Application.Common.Authorization;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Configuration;
 using TakOne.Application.DependencyInjection;
@@ -237,6 +238,15 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
 
 // --- WebUI-only services ---
+//
+// ErrorDisplayService is the UI-side formatter for unexpected-error
+// messages — takes a 7-char opaque code from UnexpectedErrorCodes and
+// produces a localized "An unexpected error occurred. Error code: X"
+// string. Injected into ToastService (so Toast.UnexpectedError(code)
+// is a one-liner from any catch block) and directly into razor pages
+// for the cases where the message is rendered in a _loadError-style
+// field instead of a toast.
+builder.Services.AddScoped<ErrorDisplayService>();
 builder.Services.AddScoped<ToastService>();
 
 // --- Notification system: real-time broadcaster + Blazor refresh bridge ---
@@ -833,21 +843,30 @@ app.MapPost
         {
             // LocalFileStorage throws this for: unrecognized content type,
             // content-type mismatch, or file size over limit. Map to 400.
+            // The response body carries the UnexpectedErrorCodes reference
+            // so the user (or support team) can pinpoint the file:line via
+            // the developer reference PDF.
             logger.LogWarning(
-                "Product image upload rejected: {Message}. User: {User}",
-                ex.Message, httpContext.User.Identity?.Name ?? "?");
-            return Results.BadRequest(new { error = ex.Message });
+                "Product image upload rejected: {Message}. User: {User} [{UnexpectedCode}]",
+                ex.Message, httpContext.User.Identity?.Name ?? "?",
+                UnexpectedErrorCodes.ProductImageEndpoint_InvalidUpload);
+            return Results.BadRequest(new
+            {
+                error = $"An unexpected error occurred. Error code: {UnexpectedErrorCodes.ProductImageEndpoint_InvalidUpload}",
+            });
         }
         catch (Exception ex)
         {
             // Unexpected failure (disk full, permission denied, etc.). Don't leak
-            // the exception message to the client — return a generic 500.
+            // the exception message to the client — return a generic 500 with
+            // the UnexpectedErrorCodes reference in the title.
             logger.LogError(
                 ex,
-                "Unexpected error during product image upload. User: {User}",
-                httpContext.User.Identity?.Name ?? "?");
+                "Unexpected error during product image upload. User: {User} [{UnexpectedCode}]",
+                httpContext.User.Identity?.Name ?? "?",
+                UnexpectedErrorCodes.ProductImageEndpoint_UploadFailed);
             return Results.Problem(
-                title: "Upload failed.",
+                title: $"Upload failed. Error code: {UnexpectedErrorCodes.ProductImageEndpoint_UploadFailed}",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
     })

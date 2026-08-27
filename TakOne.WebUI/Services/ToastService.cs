@@ -1,4 +1,4 @@
-﻿using Radzen;
+using Radzen;
 
 namespace TakOne.WebUI.Services;
 
@@ -27,22 +27,33 @@ namespace TakOne.WebUI.Services;
 ///    notifications to the audit log, this is the single chokepoint.
 /// </para>
 /// <para>
+/// <b>Unexpected-error shortcut.</b> <see cref="UnexpectedError"/>
+/// is the canonical way to surface a catch-block surprise with the
+/// user-facing reference code from
+/// <see cref="TakOne.Application.Common.Errors.UnexpectedErrorCodes"/>.
+/// The localized message + code are formatted by
+/// <see cref="ErrorDisplayService"/>; call-sites stay one-liners.
+/// </para>
+/// <para>
 /// <b>Usage from any razor page:</b>
 /// <code>
 /// @inject ToastService Toast
 /// ...
 /// await Toast.Success("Sale submitted.");
 /// await Toast.Error("Could not approve sale: " + error);
+/// await Toast.UnexpectedError(UnexpectedErrorCodes.Cart_UpdateFailure, summary: Loc["ErrorTitle"]);
 /// </code>
 /// </para>
 /// </remarks>
 public sealed class ToastService
 {
     private readonly NotificationService _radzen;
+    private readonly ErrorDisplayService _errorDisplay;
 
-    public ToastService(NotificationService radzen)
+    public ToastService(NotificationService radzen, ErrorDisplayService errorDisplay)
     {
         _radzen = radzen;
+        _errorDisplay = errorDisplay;
     }
 
     public Task Success(string message, string? summary = null, double durationMs = 3000)
@@ -56,6 +67,36 @@ public sealed class ToastService
 
     public Task Error(string message, string? summary = null, double durationMs = 6000)
         => Notify(NotificationSeverity.Error, summary ?? "Error", message, durationMs);
+
+    /// <summary>
+    /// Surface an UNEXPECTED error to the user. Formats the localized
+    /// "unexpected error" message with the visible reference code
+    /// (e.g. <c>"An unexpected error occurred. Error code: 47NQR83"</c>
+    /// in en-US; the Persian counterpart in fa-IR). The 7-character
+    /// code maps to a specific catch-block in the developer reference
+    /// PDF — the support team looks up the code to pinpoint the file
+    /// and remediation hint. Use this in every <c>catch (Exception)</c>
+    /// block where the underlying exception is opaque.
+    /// </summary>
+    /// <param name="code">
+    /// The 7-character opaque code from
+    /// <see cref="TakOne.Application.Common.Errors.UnexpectedErrorCodes"/>.
+    /// </param>
+    /// <param name="summary">
+    /// Optional toast-heading string. Defaults to the localized
+    /// "Unexpected error" title from
+    /// <see cref="ErrorDisplayService.UnexpectedTitle"/>.
+    /// </param>
+    /// <param name="durationMs">
+    /// Optional override for the toast's duration in milliseconds.
+    /// Unexpected errors stay on screen for 7s by default (vs. 6s for
+    /// regular errors) so the user has time to copy the code.
+    /// </param>
+    public Task UnexpectedError(string code, string? summary = null, double durationMs = 7000)
+        => Notify(NotificationSeverity.Error,
+                  summary ?? _errorDisplay.UnexpectedTitle,
+                  _errorDisplay.Unexpected(code),
+                  durationMs);
 
     private Task Notify(NotificationSeverity severity, string summary, string detail, double durationMs)
     {

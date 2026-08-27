@@ -93,6 +93,7 @@
 @inject IStringLocalizer<AdminProducts> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -582,7 +583,7 @@
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_FailedToLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.AdminProducts_LoadFailure);
         }
         finally
         {
@@ -681,7 +682,7 @@
         catch (Exception ex)
         {
             System.Console.WriteLine($"Restock dialog open failed: {ex.Message}");
-            await Toast.Error(Loc["RestockDialogError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_RestockDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -707,12 +708,12 @@
             }
             else
             {
-                await Toast.Error(cmdResult.Error ?? Loc["RestockError"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(cmdResult.Error) ?? Loc["RestockError"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["RestockError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_RestockFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -771,7 +772,7 @@
         catch (Exception ex)
         {
             System.Console.WriteLine($"Deactivate dialog open failed: {ex.Message}");
-            await Toast.Error(Loc["DeactivateDialogError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_DeactivateDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -795,12 +796,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["DeactivateError"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["DeactivateError"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["DeactivateError"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_DeactivateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

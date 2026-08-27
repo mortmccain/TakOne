@@ -94,6 +94,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileSaleDetail> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>@(_sale is null ? Loc["PageTitle"] : $"{CultureFormat.FormatDigits(_sale.DisplayNumber)} — {Loc["PageTitle"]}")</PageTitle>
@@ -599,13 +600,13 @@ else
                 // result.Error contains the handler's user-friendly message.
                 // For "not found" (covers both genuinely-missing AND
                 // permission-denied), we show the same NotFound UI.
-                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericLoad"];
                 _sale = null;
             }
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_GenericLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.MobileSaleDetail_LoadFailure);
             _sale = null;
         }
     }
@@ -717,6 +718,14 @@ else
     /// </summary>
     private string? LocalizeError(string? error)
     {
+        if (string.IsNullOrEmpty(error)) return null;
+
+        // Wire-format unexpected errors → route through the shared service.
+        if (error.StartsWith(ErrorDisplayService.WireFormatPrefix, StringComparison.Ordinal))
+        {
+            return ErrorDisplay.Localize(error);
+        }
+
         if (StockErrors.TryParse(error, out var stockName, out var stock, out var required))
         {
             return string.Format(
@@ -797,8 +806,8 @@ else
         }
         catch (Exception)
         {
-            _actionError = Loc["Error_GenericAction"];
-            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            _actionError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.MobileSaleDetail_ActionFailure);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileSaleDetail_ActionFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

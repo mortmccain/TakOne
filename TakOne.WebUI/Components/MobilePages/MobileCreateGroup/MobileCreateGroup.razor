@@ -50,6 +50,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileCreateGroup> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -246,12 +247,12 @@
             }
             else
             {
-                _submitError = result.Error ?? Loc["Err_Generic"];
+                _submitError = ErrorDisplay.Localize(result.Error) ?? Loc["Err_Generic"];
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _submitError = ex.Message ?? Loc["Err_Generic"];
+            _submitError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.MobileCreateGroup_SubmitFailure);
         }
         finally
         {

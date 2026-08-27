@@ -55,6 +55,7 @@
 @inject IHttpContextAccessor HttpContextAccessor
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Login> Loc
+@inject ErrorDisplayService ErrorDisplay
 @inject LoginAuditLogger AuditLogger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -799,7 +800,7 @@
                 Outcome = LoginLogOutcome.Exception,
                 ExceptionTypeName = ex.GetType().Name,
             });
-            _errorMessage = Loc["Error_Unexpected"];
+            _errorMessage = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Login_UnexpectedFailure);
         }
         finally
         {

@@ -136,6 +136,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<ProductDetail> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IFileStorage FileStorage
 
 <PageTitle>@(_product is null ? Loc["PageTitle"] : $"{_product.Name} — TakOne")</PageTitle>
@@ -1605,13 +1606,13 @@
             else
             {
                 await Toast.Error(
-                    result.Error ?? Loc["Error_GenericSave"],
+                    ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"],
                     summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SaveBasicFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1670,12 +1671,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SavePricingFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1802,12 +1803,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SaveStockFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1946,12 +1947,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SaveCategoryFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2088,7 +2089,7 @@
             }
             catch (Exception)
             {
-                _uploadError = Loc["UploadErrorGeneric"];
+                _uploadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.ProductDetail_UploadReadFailure);
                 return;
             }
 
@@ -2201,12 +2202,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SaveLimitsFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -2250,12 +2251,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_GenericSave"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.ProductDetail_SaveStatusFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

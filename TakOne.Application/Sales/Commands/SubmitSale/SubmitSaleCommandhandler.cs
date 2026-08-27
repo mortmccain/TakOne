@@ -151,11 +151,15 @@ public sealed class SubmitSaleCommandHandler
         if (customer is null)
         {
             logger.LogError(
-                "SubmitSale: customer {CustomerId} on sale {SaleId} not found.",
-                sale.CustomerId, sale.Id);
+                "SubmitSale: customer {CustomerId} on sale {SaleId} not found. [{UnexpectedCode}]",
+                sale.CustomerId, sale.Id,
+                UnexpectedErrorCodes.SubmitSale_CustomerDisappeared);
 
+            // Wire-format prefix "UE|" — the UI's ErrorDisplayService.Localize
+            // recognizes the prefix and substitutes a localized
+            // "An unexpected error occurred. Error code: {0}" message.
             return Result.Failure(
-                "The customer associated with this sale could not be found. Contact an administrator.");
+                $"UE|{UnexpectedErrorCodes.SubmitSale_CustomerDisappeared}");
         }
 
         // ------------------------------------------------------------------

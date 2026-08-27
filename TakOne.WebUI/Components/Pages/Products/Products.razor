@@ -84,6 +84,7 @@
 @inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IJSRuntime JS
 @inject IStringLocalizer<Products> Loc
 
@@ -1081,7 +1082,7 @@
         }
         catch (Exception)
         {
-            _loadError = Loc["LoadErrorDefault"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Products_LoadFailure);
         }
         finally
         {
@@ -1458,7 +1459,7 @@
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["ToastAddError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Products_AddToCartFailure);
         }
         finally
         {
@@ -1541,7 +1542,7 @@
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["ToastUpdateError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Products_UpdateCartFailure);
         }
         finally
         {
@@ -1574,7 +1575,7 @@
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["ToastSubmitError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Products_SubmitOrderFailure);
         }
         finally
         {
@@ -1607,7 +1608,7 @@
         }
         catch (Exception)
         {
-            await Toast.Error(Loc["ToastReorderError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Products_ReorderFailure);
         }
         finally
         {
@@ -1794,6 +1795,14 @@
     /// </summary>
     private string? LocalizeError(string? error)
     {
+        if (string.IsNullOrEmpty(error)) return null;
+
+        // Wire-format unexpected errors → route through the shared service.
+        if (error.StartsWith(ErrorDisplayService.WireFormatPrefix, StringComparison.Ordinal))
+        {
+            return ErrorDisplay.Localize(error);
+        }
+
         if (PurchaseLimitErrors.TryParse(error, out var productName, out var limit))
         {
             // Format the limit with culture-native digits before substitution
@@ -1928,6 +1937,14 @@
     /// </summary>
     private string? LocalizeReorderError(string? error)
     {
+        if (string.IsNullOrEmpty(error)) return null;
+
+        // Wire-format unexpected errors → route through the shared service.
+        if (error.StartsWith(ErrorDisplayService.WireFormatPrefix, StringComparison.Ordinal))
+        {
+            return ErrorDisplay.Localize(error);
+        }
+
         // Step 12-a — a no-group user cannot reorder either. The backend
         // rejects the quick-reorder outright (defense-in-depth). Localize
         // to the same "contact administrator" message used by the

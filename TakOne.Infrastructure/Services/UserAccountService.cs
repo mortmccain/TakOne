@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Users;
 using TakOne.Infrastructure.Identity;
@@ -234,7 +235,9 @@ public sealed class UserAccountService : IUserAccountService
             // but couldn't do anything (and the Domain User INSERT might
             // still go through, leaving a half-state).
             await _userManager.DeleteAsync(appUser);
-            return Result.Failure(error);
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
+            return Result.Failure(
+                $"UE|{UnexpectedErrorCodes.UserAccountService_AddToRoleFailed}");
         }
 
         _logger.LogInformation(
@@ -284,7 +287,9 @@ public sealed class UserAccountService : IUserAccountService
                 "UserAccountService.ResetPasswordAsync: RemovePasswordAsync failed " +
                 "for userId {UserId}. Errors: {Errors}.",
                 userId, error);
-            return Result.Failure(error);
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
+            return Result.Failure(
+                $"UE|{UnexpectedErrorCodes.UserAccountService_RemovePasswordFailed}");
         }
 
         var addResult = await _userManager.AddPasswordAsync(appUser, newPassword);
@@ -509,7 +514,9 @@ public sealed class UserAccountService : IUserAccountService
                 "UserAccountService.AssignRoleAsync: AddToRoleAsync '{Role}' failed " +
                 "for userId {UserId}. Errors: {Errors}.",
                 role, userId, error);
-            return Result.Failure(error);
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
+            return Result.Failure(
+                $"UE|{UnexpectedErrorCodes.UserAccountService_AssignRoleFailed}");
         }
 
         _logger.LogInformation(
@@ -548,7 +555,9 @@ public sealed class UserAccountService : IUserAccountService
                 "UserAccountService.RemoveFromRoleAsync: RemoveFromRoleAsync '{Role}' failed " +
                 "for userId {UserId}. Errors: {Errors}.",
                 role, userId, error);
-            return Result.Failure(error);
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
+            return Result.Failure(
+                $"UE|{UnexpectedErrorCodes.UserAccountService_RemoveFromRoleFailed}");
         }
 
         _logger.LogInformation(
@@ -720,7 +729,9 @@ public sealed class UserAccountService : IUserAccountService
                 "UserAccountService.SetUserActiveStatusAsync: UpdateAsync failed " +
                 "for userId {UserId}. IsActive={IsActive}. Errors: {Errors}.",
                 userId, isActive, error);
-            return Result.Failure(error);
+            // Wire-format prefix "UE|" — see ErrorDisplayService.Localize.
+            return Result.Failure(
+                $"UE|{UnexpectedErrorCodes.UserAccountService_UpdateUserFailed}");
         }
 
         // ------------------------------------------------------------------

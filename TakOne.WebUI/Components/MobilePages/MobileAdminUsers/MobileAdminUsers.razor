@@ -44,6 +44,7 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileAdminUsers> Loc
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject AuthenticationStateProvider AuthStateProvider
 @inject DialogService DialogService
 
@@ -419,7 +420,7 @@ else
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["ActionError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminUsers_DialogOpen);
             return;
         }
 
@@ -445,12 +446,12 @@ else
             {
                 // The handler rejects self-deactivation with a friendly message;
                 // surface it verbatim, falling back to the generic ActionError.
-                await Toast.Error(result.Error ?? Loc["ActionError"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminUsers_DeactivateFailure);
         }
         finally
         {
@@ -478,12 +479,12 @@ else
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["ActionError"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["ActionError"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["ActionError"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileAdminUsers_ActivateFailure);
         }
         finally
         {

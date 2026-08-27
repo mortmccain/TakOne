@@ -159,6 +159,7 @@
 @inject IStringLocalizer<UserDetail> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject IJSRuntime JS
 @inject Radzen.DialogService DialogService
 
@@ -1814,13 +1815,13 @@
                 // result.Error contains the handler's user-friendly message.
                 // For "not found" (covers both genuinely-missing AND
                 // permission-denied), we show the same NotFound UI.
-                _loadError = result.Error ?? Loc["Error_GenericLoad"];
+                _loadError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericLoad"];
                 _user = null;
             }
         }
         catch (Exception)
         {
-            _loadError = Loc["Error_GenericLoad"];
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.UserDetail_LoadFailure);
             _user = null;
         }
     }
@@ -2058,7 +2059,7 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"HandleRemoveRoleAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["ActionRemoveRole"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.UserDetail_RemoveRoleDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -2192,7 +2193,7 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"HandleRemoveGroupAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["ActionRemoveGroup"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.UserDetail_RemoveGroupDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -2270,7 +2271,7 @@
             // if it does (e.g. JS-interop failure), surface it instead of
             // silently swallowing.
             System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["Error_GenericAction"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.UserDetail_ActionDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -2443,14 +2444,14 @@
                 // result.Error contains the handler's user-friendly message
                 // (e.g. "User '...' was not found.", or "You cannot remove
                 // your own Admin role. Assign Admin to another user first.").
-                _actionError = result.Error ?? Loc["Error_GenericAction"];
+                _actionError = ErrorDisplay.Localize(result.Error) ?? Loc["Error_GenericAction"];
                 await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
             }
         }
         catch (Exception)
         {
-            _actionError = Loc["Error_GenericAction"];
-            await Toast.Error(_actionError, summary: Loc["ErrorTitle"]);
+            _actionError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.UserDetail_ActionFailure);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.UserDetail_ActionFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {

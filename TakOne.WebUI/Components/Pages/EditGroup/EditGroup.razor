@@ -82,6 +82,7 @@
 @inject IStringLocalizer<EditGroup> Loc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
+@inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 @inject IJSRuntime JS
 
@@ -903,7 +904,7 @@
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.EditGroup_DialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
 
@@ -924,12 +925,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.EditGroup_RenameFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -958,12 +959,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.EditGroup_SalaryUpdateFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
@@ -1044,12 +1045,12 @@
             }
             else
             {
-                await Toast.Error(result.Error ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+                await Toast.Error(ErrorDisplay.Localize(result.Error) ?? Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
             }
         }
         catch
         {
-            await Toast.Error(Loc["Error_Generic"], summary: Loc["ErrorTitle"]);
+            await Toast.UnexpectedError(UnexpectedErrorCodes.EditGroup_LimitModeSaveFailure, summary: Loc["ErrorTitle"]);
         }
         finally
         {
