@@ -11,12 +11,12 @@ namespace TakOne.Application.Notifications.Commands.SendBroadcastNotification;
 /// <para>
 /// <b>WHY VALIDATE HERE (vs. relying on the domain factory's guards)</b>:
 /// the domain's <c>BroadcastNotification.Create</c> factory throws
-/// <c>DomainException</c> on invalid input. Wolverine's
-/// <c>DomainExceptionMiddleware</c> catches that and converts it to a
-/// <c>Result.Failure</c>, but the Result's error string is the raw
-/// exception message — not a stable, culture-neutral code the UI can
-/// localize. Validating here lets us return clean, localizable error
-/// codes via <c>NotificationErrors</c>.
+/// <c>DomainException</c> on invalid input. The handler catches that and
+/// converts it to a <c>Result.Failure</c>, but the Result's error string
+/// is the raw exception message — not a stable, culture-neutral code the
+/// UI can localize. Validating here lets us return clean, localizable
+/// error codes via <c>NotificationErrors</c> and short-circuit before
+/// the domain factory is even invoked.
 /// </para>
 /// <para>
 /// <b>SCOPE-TARGET CONSISTENCY</b>: enforced by a custom rule. Exactly

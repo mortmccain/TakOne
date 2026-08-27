@@ -9,7 +9,7 @@ namespace TakOne.Application.Sales.Specifications;
 ///
 /// Used by <c>GetSalesPaginatedQuery</c> when the caller is an admin, manager,
 /// or employee (roles that can see all sales). For customer-scoped views, use
-/// <see cref="SaleByCreatorSpecification"/> instead.
+/// <see cref="SaleByCustomerSpecification"/> instead.
 ///
 /// WHY THIS EXISTS INSTEAD OF `null`:
 ///   <c>ISaleRepository.GetPaginatedBySpecificationAsync</c> accepts an
@@ -21,7 +21,7 @@ namespace TakOne.Application.Sales.Specifications;
 ///     <code>
 ///       ISpecification&lt;Sale&gt; spec = canSeeAllSales
 ///           ? new AllSalesSpecification()
-///           : new SaleByCreatorSpecification(currentUserId);
+///           : new SaleByCustomerSpecification(currentUserId);
 ///     </code>
 ///
 ///   reads as "if they can see all sales, use the all-sales spec; otherwise

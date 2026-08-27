@@ -294,15 +294,14 @@ public static class ServiceCollectionExtensions
         //                                                   handler runs;
         //                                                   short-circuits)
         //        4. -- handler runs --
-        //        5. DomainExceptionMiddleware.Handle      (catches any
-        //                                                   DomainException
-        //                                                   thrown by the
-        //                                                   handler or
-        //                                                   aggregate and
-        //                                                   converts to
-        //                                                   Result.Failure)
-        //        6. PerformanceMiddleware.AfterAsync      (logs if slow)
-        //        7. LoggingMiddleware.AfterAsync          (logs "Completed X")
+        //           (handlers that call aggregate methods which may throw
+        //           DomainException wrap those calls in try/catch and return
+        //           Result.Failure themselves — Wolverine 6.x's FinallyAsync
+        //           convention cannot return a value to replace the handler
+        //           output, so exception-to-Result conversion happens in the
+        //           handler, not in middleware)
+        //        5. PerformanceMiddleware.AfterAsync      (logs if slow)
+        //        6. LoggingMiddleware.AfterAsync          (logs "Completed X")
         //
         //     NOTE on AuthorizationMiddleware short-circuit: when Before
         //     returns a non-null Result, Wolverine uses it as the handler's
@@ -321,27 +320,30 @@ public static class ServiceCollectionExtensions
         opts.Policies.AddMiddleware<PerformanceMiddleware>();
         opts.Policies.AddMiddleware<AuthorizationMiddleware>();
 
-        // NOTE: DomainExceptionMiddleware was DELETED. In Wolverine 6.x,
-        // middleware methods must be named
+        // NOTE: DomainExceptionMiddleware is intentionally NOT present in
+        // this codebase. In Wolverine 6.x, middleware methods must be named
         // Before/BeforeAsync/After/AfterAsync/Finally/FinallyAsync, and
-        // Finally/FinallyAsync can receive an Exception but CANNOT return
-        // a value to replace the handler's output. That means we cannot
-        // do "catch DomainException -> return Result.Failure(message)"
+        // Finally/FinallyAsync can receive an Exception parameter but CANNOT
+        // return a value to replace the handler's output. That means we
+        // cannot do "catch DomainException -> return Result.Failure(message)"
         // in middleware the way the original design intended.
         //
         // Worse: Wolverine 6.22 AUTO-DISCOVERS middleware classes by
-        // convention -- any public class in a scanned assembly with a
+        // convention — any public class in a scanned assembly with a
         // method matching Before/BeforeAsync/After/AfterAsync/Finally/
         // FinallyAsync gets auto-applied to ALL handlers, EVEN IF it is
-        // not registered via AddMiddleware<T>(). The only way to prevent
-        // auto-discovery is to delete the class (or rename its methods to
-        // not match the convention). We chose to delete it.
+        // not registered via AddMiddleware<T>(). A leftover
+        // DomainExceptionMiddleware class with a FinallyAsync method would
+        // silently run after every handler, doing nothing useful (because
+        // handlers catch DomainException themselves — see below) while
+        // adding per-handler overhead. The class was therefore DELETED to
+        // match the original intent and avoid the auto-discovery footgun.
         //
         // Handlers that call aggregate methods which may throw
-        // DomainException (e.g. sale.AddLineItem) should wrap those calls
-        // in a try/catch and return Result.Failure themselves. This is
-        // the recommended Wolverine 6.x pattern for exception-to-Result
-        // conversion -- see https://wolverinefx.net/guide/handlers/error-handling.
+        // DomainException (e.g. sale.AddLineItem) wrap those calls in a
+        // try/catch and return Result.Failure themselves. This is the
+        // recommended Wolverine 6.x pattern for exception-to-Result
+        // conversion — see https://wolverinefx.net/guide/handlers/error-handling.
 
         // --------------------------------------------------------------
         // (c) FLUENTVALIDATION INTEGRATION.

@@ -8,12 +8,12 @@ namespace TakOne.Infrastructure.Persistence.Repositories;
 /// EF Core implementation of <see cref="ICustomerGroupRepository"/>.
 ///
 /// TRACKING POLICY:
-///   <see cref="GetByIdAsync"/> and <see cref="GetByNameAsync"/> return
-///   TRACKED entities (the caller may mutate them — rename, update
-///   salary, activate, deactivate). <see cref="GetByIdReadOnlyAsync"/>
-///   returns an UNTRACKED entity for read-only paths (the policy check),
-///   to avoid polluting the change tracker with entities we'll never
-///   SaveChanges.
+///   <see cref="GetByIdAsync"/> returns a TRACKED entity (the caller may
+///   mutate it — rename, update salary, activate, deactivate).
+///   <see cref="GetByIdReadOnlyAsync"/> and <see cref="GetByIdsReadOnlyAsync"/>
+///   return UNTRACKED entities for read-only paths (the policy check and
+///   the broadcast-audit name resolver), to avoid polluting the change
+///   tracker with entities we'll never SaveChanges.
 ///
 /// MONEY VALUE OBJECT AUTO-LOADED:
 ///   <c>CustomerGroup.Salary</c> is a ComplexProperty, which means EF Core
@@ -53,12 +53,24 @@ public sealed class CustomerGroupRepository : ICustomerGroupRepository
     }
 
     /// <inheritdoc />
-    public async Task<CustomerGroup?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<List<CustomerGroup>> GetByIdsReadOnlyAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
     {
-        // SingleOrDefaultAsync because Name has a unique index — at most one match.
-        // Throws if more than one (defensive against a dropped/missing unique index).
+        // AsNoTracking — pure read path for the broadcast-audit name resolver.
+        // ToListAsync materializes the batch in a single round-trip. Missing Ids
+        // are simply absent from the result (callers use GetValueOrDefault on
+        // the dictionary built from this list).
+        var idList = ids as ICollection<Guid> ?? ids.ToList();
+        if (idList.Count == 0)
+        {
+            return new List<CustomerGroup>(0);
+        }
+
         return await _db.CustomerGroups
-            .SingleOrDefaultAsync(g => g.Name == name, cancellationToken);
+            .AsNoTracking()
+            .Where(g => idList.Contains(g.Id))
+            .ToListAsync(cancellationToken);
     }
 
     /// <inheritdoc />

@@ -47,7 +47,7 @@ public interface ISaleRepository
     /// Returns a paginated slice of Sales matching the given specification.
     ///
     /// The caller (a query handler) builds an <see cref="ISpecification{Sale}"/>
-    /// (e.g. <c>SaleByCreatorSpecification</c>) and passes it here. The
+    /// (e.g. <c>SaleByCustomerSpecification</c>) and passes it here. The
     /// Infrastructure layer's <c>SpecificationEvaluator</c> translates the
     /// spec into a LINQ query against the <c>Sales</c> DbSet — including
     /// any <c>Where</c>, <c>OrderBy</c>, <c>Include</c> clauses declared

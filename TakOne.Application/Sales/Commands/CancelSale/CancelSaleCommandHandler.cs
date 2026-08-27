@@ -102,32 +102,39 @@ public sealed class CancelSaleCommandHandler
 
                     if (wasApproved)
                     {
+                        // BATCH LOAD (not N+1): collect the distinct product
+                        // Ids across the sale's line items and load them in
+                        // a single GetByIdsAsync round-trip (tracked — we
+                        // mutate stock via IncreaseStock below). The previous
+                        // per-product GetByIdAsync loop was an N+1 costing one
+                        // round-trip per distinct product on the sale.
                         var productIds = freshSale.LineItems
                             .Select(li => li.ProductId)
                             .Distinct()
                             .ToList();
-                        var productsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
 
-                        foreach (var productId in productIds)
-                        {
-                            var product = await productRepository.GetByIdAsync(productId, ct);
-                            if (product is null)
-                            {
-                                logger.LogWarning(
-                                    "CancelSale: product {ProductId} on sale {SaleId} no longer exists. " +
-                                    "Stock cannot be restored for this product. Sale will still be cancelled.",
-                                    productId, freshSale.Id);
-                                continue;
-                            }
-                            productsById[productId] = product;
-                        }
+                        var products = await productRepository.GetByIdsAsync(
+                            productIds, ct);
+                        var productsById = products.ToDictionary(p => p.Id);
 
+                        // Restore stock per line. A product that no longer
+                        // exists (hard-deleted after the sale was approved)
+                        // is skipped with a warning — the sale is still
+                        // cancelled; we just can't restore stock for a product
+                        // that's gone.
                         foreach (var line in freshSale.LineItems)
                         {
                             if (productsById.TryGetValue(line.ProductId, out var product))
                             {
                                 product.IncreaseStock(line.Quantity);
                                 stockRestored = true;
+                            }
+                            else
+                            {
+                                logger.LogWarning(
+                                    "CancelSale: product {ProductId} on sale {SaleId} no longer exists. " +
+                                    "Stock cannot be restored for this product. Sale will still be cancelled.",
+                                    line.ProductId, freshSale.Id);
                             }
                         }
                     }

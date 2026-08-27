@@ -242,8 +242,9 @@ public class ApplicationDbContext
         // from the aggregate by Wolverine's
         // `PublishDomainEventsFromEntityFrameworkCore<AggregateRoot,
         // BaseDomainEvent>(agg => agg.DomainEvents)` extension in
-        // ServiceCollectionExtensions, then dispatched as MediatR
-        // notifications, then cleared from the aggregate.
+        // ServiceCollectionExtensions, then dispatched by Wolverine as
+        // messages through the enrolled outbox (atomic with the
+        // originating SaveChangesAsync transaction).
         //
         // `Ignore<BaseDomainEvent>()` removes it from the model
         // discovery graph entirely — and because derived types are only

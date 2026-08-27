@@ -22,12 +22,13 @@ namespace TakOne.Application.Notifications.Queries.GetBroadcastNotifications;
 /// <b>NAME RESOLUTION</b>: the audit list surfaces <c>SentByUserName</c>
 /// (the admin who authored it), <c>TargetGroupName</c> (when scope=Group),
 /// and <c>TargetUserName</c> (when scope=User). These are resolved by
-/// batched lookups via <c>IUserRepository</c> and
-/// <c>ICustomerGroupRepository</c>. To avoid N+1 queries on the page, we
-/// batch: collect all distinct user Ids + group Ids across the page's
-/// items, do ONE batched user-role lookup + ONE group lookup, then
-/// project. The page size is bounded (default 20), so this is at most ~20
-/// lookups per page render.
+/// <b>batched</b> lookups via <c>IUserRepository.GetByIdsReadOnlyAsync</c>
+/// and <c>ICustomerGroupRepository.GetByIdsReadOnlyAsync</c>. We collect
+/// all distinct sender + target user Ids and target group Ids across the
+/// page's items, then do ONE batched user lookup + ONE batched group
+/// lookup (2 round-trips total per page render, regardless of page size),
+/// build dictionaries, and project. The page size is bounded (default 20),
+/// so the IN clauses stay cheap.
 /// </para>
 /// <para>
 /// <b>SYSTEM-EMITTED BROADCASTS</b>: <c>SentByUserId == Guid.Empty</c>
@@ -91,27 +92,51 @@ public sealed class GetBroadcastNotificationsQueryHandler
             .Distinct()
             .ToList();
 
-        // Batched lookups: load all needed users + groups in one round-trip each.
+        // ── Name resolution (batched — 2 round-trips total, not N). ──
+        // Collect distinct sender + target user Ids (excluding Guid.Empty
+        // sender Ids — system-emitted broadcasts have no human author) and
+        // distinct target group Ids across the page. Then do ONE batched
+        // user lookup + ONE batched group lookup and build dictionaries for
+        // the projection. This replaces the previous per-id foreach loops
+        // (an N+1 that cost up to 2*pageSize round-trips per render).
+        var allUserIds = senderUserIds
+            .Concat(targetUserIds)
+            .Distinct()
+            .ToList();
+
         var senderNames = new Dictionary<Guid, string>();
         var targetUserNames = new Dictionary<Guid, string>();
         var groupNames = new Dictionary<Guid, string>();
 
-        foreach (var uid in senderUserIds)
+        if (allUserIds.Count > 0)
         {
-            var u = await userRepository.GetByIdAsync(uid, cancellationToken);
-            if (u is not null) senderNames[uid] = u.FullName;
+            var users = await userRepository.GetByIdsReadOnlyAsync(allUserIds, cancellationToken);
+            // Build a single user-Id → FullName map; sender + target lookups
+            // both read from it. Users that don't exist (hard-deleted after
+            // the broadcast was sent) are simply absent — the DTO projection
+            // uses GetValueOrDefault and renders "Unknown" / "System" via the
+            // UI's fallback paths.
+            var usersById = users.ToDictionary(u => u.Id);
+            foreach (var uid in senderUserIds)
+            {
+                if (usersById.TryGetValue(uid, out var u))
+                {
+                    senderNames[uid] = u.FullName;
+                }
+            }
+            foreach (var uid in targetUserIds)
+            {
+                if (usersById.TryGetValue(uid, out var u))
+                {
+                    targetUserNames[uid] = u.FullName;
+                }
+            }
         }
 
-        foreach (var uid in targetUserIds)
+        if (targetGroupIds.Count > 0)
         {
-            var u = await userRepository.GetByIdAsync(uid, cancellationToken);
-            if (u is not null) targetUserNames[uid] = u.FullName;
-        }
-
-        foreach (var gid in targetGroupIds)
-        {
-            var g = await groupRepository.GetByIdReadOnlyAsync(gid, cancellationToken);
-            if (g is not null) groupNames[gid] = g.Name;
+            var groups = await groupRepository.GetByIdsReadOnlyAsync(targetGroupIds, cancellationToken);
+            groupNames = groups.ToDictionary(g => g.Id, g => g.Name);
         }
 
         // Project aggregates → DTOs.

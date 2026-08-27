@@ -48,13 +48,15 @@ public sealed class GetSalesPaginatedQueryHandler
 
         // ------------------------------------------------------------------
         // 1. Decide the spec. Admins/Managers/Employees/ReadOnly see
-        //    everything (staff audit view); customers see only sales they
-        //    created (my-orders view). ReadOnly is a staff role whose
+        //    everything (staff audit view); customers see only sales in
+        //    which they are the Customer (my-purchases view — includes
+        //    on-behalf purchases staff made for them, see
+        //    SaleByCustomerSpecification). ReadOnly is a staff role whose
         //    entire purpose is to audit sales without modifying them, so
-        //    it MUST be in the "see all" branch — falling through to
-        //    SaleByCreatorSpecification would hide every sale created by
-        //    anyone else (and ReadOnly users by definition never create
-        //    sales), leaving them with an empty grid.
+        //    it MUST be in the "see all" branch — falling through to a
+        //    customer-role spec would hide every sale created by anyone
+        //    else (and ReadOnly users by definition never buy), leaving
+        //    them with an empty grid.
         // ------------------------------------------------------------------
         var canSeeAllSales =
             currentUser.IsInRole(Roles.Admin) ||
@@ -71,7 +73,7 @@ public sealed class GetSalesPaginatedQueryHandler
         // TotalCount, no in-memory filtering, scales beyond one page.
         ISpecification<Sale> spec = canSeeAllSales
             ? new AllSalesSpecification(query.Status)
-            : new SaleByCreatorSpecification(currentUser.UserId, query.Status);
+            : new SaleByCustomerSpecification(currentUser.UserId, query.Status);
 
         // ------------------------------------------------------------------
         // 2. Clamp page parameters to safe values. Negative or zero page

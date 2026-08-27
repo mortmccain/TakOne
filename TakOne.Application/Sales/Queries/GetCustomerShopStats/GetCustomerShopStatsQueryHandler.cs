@@ -11,9 +11,14 @@ namespace TakOne.Application.Sales.Queries.GetCustomerShopStats;
 /// Handler for <see cref="GetCustomerShopStatsQuery"/>.
 ///
 /// DATA LOADING:
-///   1. Loads ALL of the caller's sales via <see cref="SaleByCreatorSpecification"/>
-///      (no status filter — we need drafts too if we ever decide to count
-///      them; right now we filter to submitted-only in memory).
+///   1. Loads ALL of the caller's purchases via
+///      <see cref="SaleByCustomerSpecification"/> (filters on
+///      <c>CustomerId</c>, so on-behalf purchases staff made for the
+///      caller are included — pre-Round 14 this used
+///      <c>SaleByCreatorSpecification</c> which excluded on-behalf sales
+///      and undercounted the caller's monthly/yearly totals). No status
+///      filter — we need drafts too if we ever decide to count them;
+///      right now we filter to submitted-only in memory.
 ///   2. Aggregates in memory (matches the v1 pattern in
 ///      <c>GetDashboardStatsQueryHandler</c>).
 ///   3. <c>InStockProductCount</c> is a separate single round-trip via
@@ -50,10 +55,12 @@ public sealed class GetCustomerShopStatsQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 1. Load the caller's sales (all statuses — filter in memory).
-        //    SaleByCreatorSpecification guards against Guid.Empty already.
+        // 1. Load the caller's purchases (all statuses — filter in memory).
+        //    SaleByCustomerSpecification filters on CustomerId so on-behalf
+        //    purchases (staff created the sale for this customer) are
+        //    included. Guards against Guid.Empty already.
         // ------------------------------------------------------------------
-        var spec = new SaleByCreatorSpecification(currentUser.UserId);
+        var spec = new SaleByCustomerSpecification(currentUser.UserId);
         var sales = await saleRepository.GetAllBySpecificationAsync(spec, cancellationToken);
 
         // ------------------------------------------------------------------

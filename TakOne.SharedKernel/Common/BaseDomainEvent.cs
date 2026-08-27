@@ -5,7 +5,11 @@ using System.Text;
 namespace TakOne.SharedKernel.Common;
 
     /// <summary>
-    /// Base class for all Domain Events. Implements INotification for MediatR dispatch.
+    /// Base class for all Domain Events. Dispatched by Wolverine's
+    /// <c>PublishDomainEventsFromEntityFrameworkCore&lt;AggregateRoot,
+    /// BaseDomainEvent&gt;</c> extension at <c>SaveChangesAsync</c> time
+    /// through the enrolled Wolverine outbox (atomic with the originating
+    /// EF Core transaction).
     /// </summary>
     public abstract class BaseDomainEvent
     {

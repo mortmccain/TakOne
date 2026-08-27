@@ -24,7 +24,7 @@ namespace TakOne.Infrastructure.Persistence.Repositories;
 ///     - Skip / Take            (pagination — but we add this AFTER evaluation
 ///                                 so the spec doesn't have to know the page)
 ///
-///   This separation means a single spec (e.g. SaleByCreatorSpecification)
+///   This separation means a single spec (e.g. SaleByCustomerSpecification)
 ///   works for both "all sales for this user" and "page 3 of sales for this
 ///   user" — the page parameters are the repository's concern, not the spec's.
 ///
@@ -32,7 +32,8 @@ namespace TakOne.Infrastructure.Persistence.Repositories;
 ///   Read methods return TRACKED entities (same rationale as ProductRepository:
 ///   handlers load → mutate → SaveChanges). The spec evaluator does NOT add
 ///   AsNoTracking unless the spec itself declares <c>Query.AsNoTracking()</c>.
-///   All current specs (SaleByCreatorSpecification, AllSalesSpecification) are
+///   All current specs (SaleByCustomerSpecification, AllSalesSpecification,
+///   SaleByApproverSpecification) are
 ///   silent on this — they return tracked entities, which is correct for the
 ///   command-handler pattern but suboptimal for pure reads. If/when a query
 ///   handler needs AsNoTracking, add <c>Query.AsNoTracking()</c> to the spec.
@@ -149,7 +150,7 @@ public sealed class SaleRepository : ISaleRepository
 
         // ------------------------------------------------------------------
         // 3. Apply pagination. ORDER BY is already enforced by the spec
-        //    (both SaleByCreatorSpecification and AllSalesSpecification add
+        //    (both SaleByCustomerSpecification and AllSalesSpecification add
         //    Query.OrderByDescending(s => s.CreatedAtUtc)), so OFFSET/FETCH
         //    won't throw.
         //

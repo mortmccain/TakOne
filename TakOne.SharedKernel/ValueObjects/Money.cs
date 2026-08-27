@@ -100,7 +100,6 @@ public sealed class Money : BaseValueObject
         return new Money(left.Amount - right.Amount, left.Currency);
     }
 
-    //validations and checks need to be reviewed
     public static Money operator *(Money unitPrice, int quantity)
     {
         return new Money(unitPrice.Amount * quantity, unitPrice.Currency);

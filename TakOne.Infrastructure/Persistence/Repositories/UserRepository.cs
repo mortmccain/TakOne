@@ -52,6 +52,29 @@ public sealed class UserRepository : IUserRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<User>> GetByIdsReadOnlyAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        // AsNoTracking — pure read path for the broadcast-audit name resolver.
+        // ToListAsync materializes the batch in a single round-trip. Missing
+        // Ids are simply absent from the result (callers use GetValueOrDefault
+        // on the dictionary built from this list). ICollection materialization
+        // avoids double-enumeration of an IEnumerable when the EF Core
+        // provider translates `ids.Contains(...)` into a SQL IN clause.
+        var idList = ids as ICollection<Guid> ?? ids.ToList();
+        if (idList.Count == 0)
+        {
+            return new List<User>(0);
+        }
+
+        return await _db.DomainUsers
+            .AsNoTracking()
+            .Where(u => idList.Contains(u.Id))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<User?> GetByWorkerIdAsync(string workerId, CancellationToken cancellationToken = default)
     {
         // SingleOrDefaultAsync: WorkerId has a unique index, so at most one

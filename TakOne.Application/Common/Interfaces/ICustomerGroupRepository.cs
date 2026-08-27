@@ -35,11 +35,16 @@ public interface ICustomerGroupRepository
     Task<CustomerGroup?> GetByIdReadOnlyAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Loads a customer group by its (unique) name, tracked. Used by
-    /// the create-group flow to enforce name uniqueness at the application
-    /// layer (before the DB unique index rejects the INSERT).
+    /// Batch read-only load of customer groups by Id, AsNoTracking. Used by
+    /// <c>GetBroadcastNotificationsQueryHandler</c> to resolve target-group
+    /// names for a page of audit rows in a single round-trip (instead of one
+    /// <c>GetByIdReadOnlyAsync</c> call per row). Empty input returns an empty
+    /// list without hitting the DB; missing Ids are simply absent from the
+    /// result.
     /// </summary>
-    Task<CustomerGroup?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
+    Task<List<CustomerGroup>> GetByIdsReadOnlyAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns all customer groups, ordered by Name. Used by the Manage

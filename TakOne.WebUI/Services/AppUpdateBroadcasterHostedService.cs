@@ -184,7 +184,7 @@ public sealed class AppUpdateBroadcasterHostedService : BackgroundService
                 "AppUpdateBroadcasterHostedService: app version changed '{Old}' → '{New}'. Broadcasting AppUpdate notification to all users.",
                 persistedVersion, assemblyVersion);
 
-            await BroadcastAppUpdateAsync(messageBus, assemblyVersion, persistedVersion!, cancellationToken);
+            await BroadcastAppUpdateAsync(messageBus, assemblyVersion, persistedVersion!);
         }
         else if (persistedVersion is null)
         {
@@ -219,8 +219,7 @@ public sealed class AppUpdateBroadcasterHostedService : BackgroundService
     private static async Task BroadcastAppUpdateAsync(
         IMessageBus messageBus,
         string newVersion,
-        string oldVersion,
-        CancellationToken cancellationToken)
+        string oldVersion)
     {
         // Compose the title + message. Kept short so they fit in the
         // notification bell badge preview + the desktop toast.

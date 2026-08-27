@@ -15,9 +15,12 @@ namespace TakOne.WebUI.Services;
 ///    means a future redesign touches one file, not 16 page files.
 /// </para>
 /// <para>
-/// 2) <b>Localization hook.</b> When the i18n system is wired (Phase 0.17
-///    resx files), we can route the <c>message</c> parameter through
-///    <c>IStringLocalizer</c> here instead of at every call site.
+/// 2) <b>Localization hook.</b> The i18n system is now in place
+///    (<c>Resources/ValidationMessages.resx</c> + per-page resx files),
+///    so we CAN route the <c>message</c> parameter through
+///    <c>IStringLocalizer</c> here instead of at every call site — but we
+///    haven't yet (toast messages are currently passed verbatim from the
+///    call site). This is the single chokepoint for that future change.
 /// </para>
 /// <para>
 /// 3) <b>Future audit hook.</b> If we ever need to log user-facing

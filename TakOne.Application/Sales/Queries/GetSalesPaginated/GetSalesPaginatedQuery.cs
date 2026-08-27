@@ -17,7 +17,7 @@ namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 ///
 ///   The handler decides this by inspecting ICurrentUserService.IsInRole(...)
 ///   and either passes an empty specification (all sales) or a
-///   <c>SaleByCreatorSpecification</c> scoped to the current user. The
+///   <c>SaleByCustomerSpecification</c> scoped to the current user. The
 ///   optional <see cref="Status"/> filter is pushed down to SQL via the
 ///   specification (Phase 7 item E — was previously filtered client-side
 ///   on the materialized page, which doesn't scale beyond one page).

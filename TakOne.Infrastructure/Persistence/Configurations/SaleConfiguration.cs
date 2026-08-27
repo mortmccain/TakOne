@@ -319,8 +319,8 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         builder.HasIndex(s => s.CustomerId);
 
         // CreatedByUserId — for "show me the sales I started" (employee
-        // dashboard). This is the column that SaleByCreatorSpecification
-        // filters on.
+        // dashboard). This is the CreatedByUserId column, used to filter
+        // sales by the user who physically created them.
         builder.HasIndex(s => s.CreatedByUserId);
 
         // Status — for "show me all pending sales" (employee approval queue).

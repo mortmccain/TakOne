@@ -10,6 +10,19 @@ public interface IUserRepository
 {
     Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Batch read-only load of users by Id, AsNoTracking. Used by
+    /// <c>GetBroadcastNotificationsQueryHandler</c> to resolve sender +
+    /// target-user names for a page of audit rows in a single round-trip
+    /// (instead of one <c>GetByIdAsync</c> call per row — an N+1 that
+    /// costs N round-trips per page render). Empty input returns an empty
+    /// list without hitting the DB; missing Ids are simply absent from
+    /// the result.
+    /// </summary>
+    Task<List<User>> GetByIdsReadOnlyAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default);
+
     Task<User?> GetByWorkerIdAsync(string workerId, CancellationToken cancellationToken = default);
 
     /// <summary>

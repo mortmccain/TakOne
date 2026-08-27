@@ -88,23 +88,43 @@ public sealed class ApproveSaleCommandHandler
                     // Pre-check stock for each line. Loaded fresh on every
                     // retry attempt so a concurrent Approve on a different
                     // sale (which decremented the same product) is observed.
-                    var freshProductsById = new Dictionary<Guid, Domain.Products.Entities.Product>();
+                    //
+                    // BATCH LOAD (not N+1): collect the distinct product Ids
+                    // across all line items and load them in a single
+                    // GetByIdsAsync round-trip (tracked — we mutate stock
+                    // below). The previous per-line GetByIdAsync loop was an
+                    // N+1 costing one round-trip per distinct product.
+                    var distinctProductIds = freshSale.LineItems
+                        .Select(li => li.ProductId)
+                        .Distinct()
+                        .ToList();
+
+                    var freshProducts = await productRepository.GetByIdsAsync(
+                        distinctProductIds, ct);
+
+                    // Build Id → Product map. If a product is missing from
+                    // the batch result (hard-deleted or category-deactivated
+                    // since the sale was created), surface the first affected
+                    // line's snapshot ProductName in the error — same UX as
+                    // before, just sourced from the batch miss instead of a
+                    // per-line null check.
+                    var freshProductsById = freshProducts.ToDictionary(p => p.Id);
                     foreach (var line in freshSale.LineItems)
                     {
-                        if (freshProductsById.ContainsKey(line.ProductId))
-                        {
-                            continue;
-                        }
-
-                        var product = await productRepository.GetByIdAsync(line.ProductId, ct);
-                        if (product is null)
+                        if (!freshProductsById.ContainsKey(line.ProductId))
                         {
                             return Result.Failure(
                                 CategoryDeactivatedErrors.Format(line.ProductName));
                         }
+                    }
 
+                    // Stock pre-check: sum quantities per product across all
+                    // lines (a sale may legitimately list the same product on
+                    // multiple lines) and compare against current stock.
+                    foreach (var product in freshProductsById.Values)
+                    {
                         var totalQuantityForProduct = freshSale.LineItems
-                            .Where(li => li.ProductId == line.ProductId)
+                            .Where(li => li.ProductId == product.Id)
                             .Sum(li => li.Quantity);
 
                         if (totalQuantityForProduct > product.StockQuantity)
@@ -112,8 +132,6 @@ public sealed class ApproveSaleCommandHandler
                             return Result.Failure(
                                 StockErrors.Format(product.Name, product.StockQuantity, totalQuantityForProduct));
                         }
-
-                        freshProductsById[line.ProductId] = product;
                     }
 
                     // Transition the sale. The aggregate's Approve() calls

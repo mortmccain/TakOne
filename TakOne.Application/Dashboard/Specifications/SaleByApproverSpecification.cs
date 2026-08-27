@@ -11,9 +11,9 @@ namespace TakOne.Application.Dashboard.Specifications;
 /// WHY THIS EXISTS:
 ///   Per roadmap Section 12.2 (Employee dashboard scope — Option D), an
 ///   Employee's dashboard shows ONLY the sales they personally approved.
-///   This is distinct from "sales they created" (which would be
-///   <c>SaleByCreatorSpecification</c>) — Employees who create sales on
-///   behalf of customers see those on /Sales (their own order history),
+///   This is distinct from "sales they created" (which would filter on
+///   <c>CreatedByUserId</c>) — Employees who create sales on behalf of
+///   customers see those on /Sales (their own order history),
 ///   NOT on the dashboard. The dashboard answers a different question:
 ///   "what did I do as an approver?"
 ///
@@ -37,7 +37,7 @@ namespace TakOne.Application.Dashboard.Specifications;
 ///   Infrastructure layer's <c>SpecificationEvaluator</c>. The
 ///   <c>OrderByDescending(CreatedAtUtc)</c> ensures deterministic ordering
 ///   for any subsequent pagination (not used by the dashboard, but kept
-///   for consistency with <c>SaleByCreatorSpecification</c>).
+///   for consistency with the other sale specs).
 /// </summary>
 public sealed class SaleByApproverSpecification : Specification<Sale>
 {

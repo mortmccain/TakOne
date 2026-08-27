@@ -25,8 +25,8 @@ public sealed class GetSaleByIdQueryHandler
         // ------------------------------------------------------------------
         // 0. Defense-in-depth: even though Wolverine's AuthorizationMiddleware
         //    has already rejected unauthenticated calls, this method may also
-        //    be invoked from tests, MediatR-style adapters, or future hosts
-        //    that bypass middleware. Re-checking keeps the invariant honest.
+        //    be invoked from tests or future hosts that bypass middleware.
+        //    Re-checking keeps the invariant honest.
         // ------------------------------------------------------------------
         if (!currentUser.IsAuthenticated || currentUser.UserId == Guid.Empty)
         {
@@ -53,12 +53,17 @@ public sealed class GetSaleByIdQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 2. Authorization. Customers may only see their own sales.
+        // 2. Authorization. Customers may only see sales in which they are
+        //    the Customer (the sale is FOR them) — this includes both
+        //    self-serve purchases (CustomerId == CreatedByUserId) AND
+        //    on-behalf purchases staff made for them (CustomerId == the
+        //    customer, CreatedByUserId == the staff member). Checking only
+        //    CreatedByUserId would hide on-behalf purchases from the very
+        //    customer they were made for — a real bug pre-Round 14.
         //    Admins, Managers, Employees, and ReadOnly staff can view any
         //    sale (the first three need to for approval, invoicing, and
         //    support; ReadOnly is an audit role whose entire purpose is
-        //    to view all sales without modifying them). The check is done
-        //    AFTER the load because we need sale.CreatedByUserId to decide.
+        //    to view all sales without modifying them).
         //
         //    On failure, return a generic "not found" message — never leak
         //    that the sale exists but the caller can't see it.
@@ -69,11 +74,11 @@ public sealed class GetSaleByIdQueryHandler
             currentUser.IsInRole(Roles.Employee) ||
             currentUser.IsInRole(Roles.ReadOnly);
 
-        if (!canViewAnySale && sale.CreatedByUserId != currentUser.UserId)
+        if (!canViewAnySale && sale.CustomerId != currentUser.UserId)
         {
             logger.LogWarning
-                ("GetSaleById: user {UserId} denied access to sale {SaleId} (created by {OwnerId}).",
-                currentUser.UserId, sale.Id, sale.CreatedByUserId);
+                ("GetSaleById: user {UserId} denied access to sale {SaleId} (sale's CustomerId={CustomerId}, CreatedByUserId={CreatedById}).",
+                currentUser.UserId, sale.Id, sale.CustomerId, sale.CreatedByUserId);
 
             return Result<SaleDto>.Failure($"Sale '{query.SaleId}' was not found.");
         }
