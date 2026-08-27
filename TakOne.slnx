@@ -5,4 +5,10 @@
   <Project Path="TakOne.Infrastructure/TakOne.Infrastructure.csproj" />
   <Project Path="TakOne.SharedKernel/TakOne.SharedKernel.csproj" />
   <Project Path="TakOne.WebUI/TakOne.WebUI.csproj" />
+  <Project Path="tests/TakOne.Testing/TakOne.Testing.csproj" />
+  <Project Path="tests/TakOne.SharedKernel.Tests/TakOne.SharedKernel.Tests.csproj" />
+  <Project Path="tests/TakOne.Domain.Tests/TakOne.Domain.Tests.csproj" />
+  <Project Path="tests/TakOne.Application.Tests/TakOne.Application.Tests.csproj" />
+  <Project Path="tests/TakOne.Infrastructure.Tests/TakOne.Infrastructure.Tests.csproj" />
+  <Project Path="tests/TakOne.WebUI.Tests/TakOne.WebUI.Tests.csproj" />
 </Solution>

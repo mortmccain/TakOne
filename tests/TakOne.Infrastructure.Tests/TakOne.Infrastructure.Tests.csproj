@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.Infrastructure.Tests — unit tests for the Infrastructure layer.
+
+    SCOPE:
+      Only PURE (no DB) Infrastructure is unit-tested here. Anything that
+      touches EF Core / SQL Server / Identity belongs in integration tests
+      (not part of this round — would need a TestContainers SQL Server
+      instance, which is beyond the current CI budget).
+
+    TESTS:
+      TakOneIdentityErrorDescriber — every override returns an IdentityError
+        with the correct Code and a localized Description sourced from the
+        IStringLocalizer<IdentityErrorMessages> mock. Placeholder
+        substitution ({0}) for PasswordTooShort, DuplicateUserName,
+        DuplicateEmail, InvalidUserName, InvalidEmail,
+        PasswordRequiresUniqueChars.
+      SaleStateLock — empty-Guid rejection, per-sale serialization, idempotent
+        Releaser.DisposeAsync, concurrent acquisition from two threads for
+        the same saleId blocks.
+      CartMutationLock — empty-Guid rejection, per-user serialization,
+        idempotent Releaser.DisposeAsync, concurrent acquisition blocks.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TakOne.Application\TakOne.Application.csproj" />
+    <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />
+    <ProjectReference Include="..\..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+    <ProjectReference Include="..\TakOne.Testing\TakOne.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

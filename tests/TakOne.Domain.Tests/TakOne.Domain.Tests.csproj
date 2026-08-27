@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.Domain.Tests — unit tests for the Domain layer (the heart of the
+    DDD onion; no infrastructure dependencies).
+
+    TESTS:
+      Product                       — factory + all stock-mutation methods
+                                      (IncreaseStock, DecreaseStock, SetStock,
+                                      AdjustStockTo), purchase-limit lifecycle
+                                      (SetPurchaseLimit, RemovePurchaseLimit,
+                                      GetPurchaseLimitForGroup), UpdateDetails,
+                                      UpdateCategory, and EVERY guard method
+                                      (empty name, >200 chars, negative price,
+                                      negative stock, empty CategoryId,
+                                      SubSubCategory-without-SubCategory).
+      Sale                          — full lifecycle (Create → AddLineItem →
+                                      UpdateLineItemQuantity → RemoveLineItem →
+                                      Submit → Approve → MarkAsInvoiced),
+                                      Cancel-from-each-state, purchase-limit
+                                      enforcement, line-item aggregation,
+                                      line-number stability after removal.
+      SaleLineItem                  — GrossTotal computation, guard methods.
+      SaleNumber                    — Format, Persian-digit rendering, year/sequence
+                                      range guards.
+      Category / SubCategory /
+      SubSubCategory                — full hierarchy add/rename/activate/
+                                      deactivate + cascade behavior + name
+                                      uniqueness within parent.
+      CustomerGroup                 — factory, Rename, UpdateSalary,
+                                      Activate/Deactivate, negative-salary guard.
+      User                          — CreateCustomer vs CreateStaff, AssignToGroup,
+                                      RemoveFromGroup, ChangeFullName, ChangeGender,
+                                      Activate/Deactivate.
+      Notification                  — sale-lifecycle factory, broadcast factory,
+                                      CreateBroadcast kind guard, MarkAsRead
+                                      idempotency.
+      BroadcastNotification        — scope-target consistency invariants
+                                      (All/Role/Group/User), title/message
+                                      bounds, fanoutKind guard.
+      SystemSettings                — CreateDefault, Load, UpdateLimitMode,
+                                      UpdateLastKnownAppVersion idempotency,
+                                      enum-zero rejection guard.
+      SalaryBudgetWindow            — Persian calendar month boundaries,
+                                      rollover to next year at month 12.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />
+    <ProjectReference Include="..\..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+    <ProjectReference Include="..\TakOne.Testing\TakOne.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

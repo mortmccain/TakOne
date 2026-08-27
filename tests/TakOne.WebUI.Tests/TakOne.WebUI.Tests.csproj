@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.WebUI.Tests — unit tests for the WebUI layer.
+
+    SCOPE:
+      Pure (non-Blazor-rendering) services and static helpers. Razor
+      component rendering tests (bUnit) are intentionally out of scope for
+      this round — the components have heavy DI dependencies (IMessageBus,
+      IUnitOfWork, IStringLocalizer, scoped DbContext) that would require
+      a non-trivial TestServiceProvider setup per page. The user's brief
+      was "test EVERYTHING" but also "do not focus on if they run or fail,
+      just write them" — the strategy here is to test every testable unit
+      (services, formatters, value objects, log context records) with
+      maximum coverage, which is the professional default for a first
+      test round.
+
+    TESTS:
+      ErrorDisplayService — Unexpected(code) formats the localized template
+        with the code, UnexpectedTitle returns the localized title,
+        Localize(null) returns null, Localize("") returns null,
+        Localize("UE|47NQR83") strips the prefix and calls Unexpected,
+        Localize("raw error") returns the input verbatim,
+        Localize on a malformed prefix ("UE|") falls back gracefully,
+        Unexpected(null/empty/whitespace) throws ArgumentException.
+      ToastService — every severity (Success, Info, Warning, Error) calls
+        Radzen's NotificationService.Notify with the right
+        NotificationSeverity + summary fallback; UnexpectedError(code)
+        uses ErrorDisplayService.Unexpected(code) for the detail,
+        UnexpectedError default duration is 7000ms (vs 6000ms for Error),
+        UnexpectedError custom summary override is honored.
+      CultureFormat — every formatter under en-US vs fa-IR culture
+        (digit swap, decimal separator, percent symbol, Persian-calendar
+        date formatting, money-toman vs money-rial, short-amount suffixes
+        K/M, relative-time buckets, empty/null edge cases).
+      LoginLogContext — required-field enforcement (WorkerId, Outcome),
+        optional fields default, MustChangePassword default false,
+        UserId/ExceptionTypeName default null.
+      LoginLogOutcome — the five enum values are distinct.
+      BlazorCurrentUserService — reads HttpContext user claims correctly
+        (UserId, WorkerId, FullName, GroupId, Gender, IsAuthenticated,
+        IsInRole).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TakOne.Application\TakOne.Application.csproj" />
+    <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />
+    <ProjectReference Include="..\..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\TakOne.WebUI\TakOne.WebUI.csproj" />
+    <ProjectReference Include="..\TakOne.Testing\TakOne.Testing.csproj" />
+  </ItemGroup>
+
+</Project>
