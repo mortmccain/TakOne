@@ -1,3 +1,4 @@
+using TakOne.Application.Common.Authorization;
 using TakOne.Domain.Notifications.Enums;
 
 namespace TakOne.Application.Notifications.Commands.EmitAppUpdateBroadcast;
@@ -9,15 +10,35 @@ namespace TakOne.Application.Notifications.Commands.EmitAppUpdateBroadcast;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>NO AUTHORIZATION ATTRIBUTE</b>: this command is NOT marked
-/// <c>[RequireRoles(...)]</c> or <c>[RequireAuthentication]</c> because it's
-/// dispatched by a trusted in-process hosted service, not by an HTTP request.
-/// Wolverine's <c>AuthorizationPolicyVerifier</c> middleware only scans types
-/// whose name ends with "Command" or "Query" for auth attributes — but since
-/// this command has NO auth attribute, the middleware skips it. The only
-/// caller is the hosted service, which is itself only callable from inside
-/// the application process. There is no way for an external user to dispatch
-/// this command (the IMessageBus is not exposed over HTTP).
+/// <b>AUTHORIZATION POLICY: <c>[RequireSystemInternal]</c></b>
+/// <list type="bullet">
+///   <item>This command is marked
+///         <c>[RequireSystemInternal]</c> — the third authorization policy
+///         alongside <c>[RequireRoles]</c> and <c>[RequireAuthentication]</c>.
+///         It is NOT dispatched by an HTTP request or a Blazor circuit acting
+///         on behalf of a user; the only caller is the trusted in-process
+///         <c>AppUpdateBroadcasterHostedService</c>.</item>
+///   <item>The <c>AuthorizationMiddleware</c> recognizes
+///         <c>[RequireSystemInternal]</c> and BYPASSES the user-auth check
+///         (the hosted service has no <c>ICurrentUserService</c> identity).
+///         The <c>AuthorizationPolicyVerifier</c> accepts it as a valid
+///         policy so the app launches cleanly.</item>
+///   <item>The trust boundary is enforced by <c>IMessageBus</c> only being
+///         resolvable from in-process DI — external HTTP requests do not
+///         dispatch Wolverine messages directly. A reviewer can grep for
+///         <c>[RequireSystemInternal]</c> to audit exactly which messages
+///         are dispatched by system code.</item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>WHY NOT <c>[RequireAuthentication]</c>?</b> That attribute would
+/// reject the message at runtime — the middleware checks
+/// <c>_currentUser.IsAuthenticated</c> and the hosted service has no
+/// current user, so the broadcast would never go out. And leaving the
+/// message unattributed would trip the fail-closed verifier at startup
+/// (the exact crash the user hit after Round 12). The dedicated
+/// <c>[RequireSystemInternal]</c> attribute is the correct, auditable
+/// way to model this trust level.
 /// </para>
 /// <para>
 /// <b>WHY A SEPARATE COMMAND (vs. reusing SendBroadcastNotificationCommand)</b>:
@@ -45,6 +66,7 @@ namespace TakOne.Application.Notifications.Commands.EmitAppUpdateBroadcast;
 /// hard-codes Scope=All, all targets null, which is always valid.
 /// </para>
 /// </remarks>
+[RequireSystemInternal]
 public sealed record EmitAppUpdateBroadcastCommand(
     string Title,
     string Message);

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Notifications.Entities;
+using TakOne.Domain.Notifications.Enums;
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Infrastructure.Persistence.Repositories;
@@ -43,6 +44,29 @@ public sealed class BroadcastNotificationRepository : IBroadcastNotificationRepo
         CancellationToken cancellationToken = default)
     {
         await _db.BroadcastNotifications.AddAsync(broadcast, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<BroadcastNotification?> GetByTitleAndKindAsync(
+        string title,
+        NotificationKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        // AsNoTracking: pure read path for the idempotency dedup. The
+        // handler does NOT mutate the returned entity; it only reads
+        // RecipientCount to return as the success value. No tracking
+        // means no accidental UPDATE when the surrounding SaveChanges
+        // runs.
+        //
+        // Newest-first (OrderByDescending(SentAtUtc)): if a duplicate
+        // somehow already exists (e.g. a prior redelivery that slipped
+        // through before this dedup was added), return the MOST RECENT
+        // one so the reported RecipientCount reflects the latest fanout.
+        return await _db.BroadcastNotifications
+            .AsNoTracking()
+            .Where(b => b.Title == title && b.FanoutKind == kind)
+            .OrderByDescending(b => b.SentAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     /// <inheritdoc />

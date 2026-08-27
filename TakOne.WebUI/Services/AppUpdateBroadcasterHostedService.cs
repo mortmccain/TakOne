@@ -244,11 +244,18 @@ public sealed class AppUpdateBroadcasterHostedService : BackgroundService
                       "Please reload the page to load the new version.";
 
         var command = new EmitAppUpdateBroadcastCommand(title, message);
-        // Wolverine's IMessageBus.PublishAsync signature doesn't take a
-        // CancellationToken — it queues durably to the message store and
-        // returns. Wolverine's worker threads process the message with
-        // their own cancellation semantics. We don't need to plumb our
-        // host's cancellation token here.
+        // Wolverine 6.23.1's IMessageBus.PublishAsync signature is
+        // (object message, DeliveryOptions? options = null) — there is no
+        // CancellationToken overload. The message is durably queued to the
+        // Wolverine message store and processed by Wolverine's own worker
+        // threads with their own cancellation semantics. If the host
+        // shuts down before the publish completes, the message is simply
+        // lost (the next boot's hosted service will detect the same
+        // version delta via LastKnownAppVersion and re-dispatch). If the
+        // host shuts down AFTER the publish but BEFORE the worker
+        // processes it, the durable outbox ensures it's processed on the
+        // next boot — and the handler's idempotency dedup
+        // (GetByTitleAndKindAsync) prevents a duplicate fanout.
         await messageBus.PublishAsync(command);
     }
 }

@@ -42,6 +42,39 @@ public interface IBroadcastNotificationRepository
     Task AddAsync(BroadcastNotification broadcast, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the most recent existing broadcast audit row matching the
+    /// given (title, kind) tuple, or <c>null</c> if none exists.
+    /// </summary>
+    /// <remarks>
+    /// <b>IDEMPOTENCY DEDUP FOR APP-UPDATE REDISPATCH</b>: the
+    /// <c>EmitAppUpdateBroadcastCommandHandler</c> calls this BEFORE
+    /// fanning out. Wolverine's durable outbox MAY redeliver an
+    /// unacked <c>EmitAppUpdateBroadcastCommand</c> if the process crashes
+    /// between the SaveChanges commit and the worker ack. Without this
+    /// dedup, a redelivery would create a SECOND audit row + a SECOND set
+    /// of per-user fanout rows → every user would see duplicate
+    /// "TakOne updated to vX.Y.Z" notifications.
+    /// <para>
+    /// The title is a safe dedup key for AppUpdate broadcasts because the
+    /// hosted service composes it deterministically from
+    /// <c>AssemblyInformationalVersion</c> (<c>"TakOne updated to
+    /// v{newVersion}"</c>): a redelivered message has the SAME title, while
+    /// a legitimately-new broadcast has a DIFFERENT title (different
+    /// newVersion → different title).
+    /// </para>
+    /// <para>
+    /// Returns the FULL entity (not just a bool) so the handler can read
+    /// the original <c>RecipientCount</c> and return it as the success
+    /// value — the caller (the hosted service) doesn't inspect the return
+    /// value, but returning the correct count keeps the audit log honest.
+    /// </para>
+    /// </remarks>
+    Task<BroadcastNotification?> GetByTitleAndKindAsync(
+        string title,
+        TakOne.Domain.Notifications.Enums.NotificationKind kind,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a paginated slice of past broadcasts, newest-first. Used by
     /// the admin audit page on the new <c>/Admin/Notifications</c> route.
     /// </summary>
