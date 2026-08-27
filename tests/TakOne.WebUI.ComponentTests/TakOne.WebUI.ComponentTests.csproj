@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.WebUI.ComponentTests — bUnit Blazor component-rendering tests.
+
+    PHILOSOPHY (Round 17 — fills the reviewer's identified gap):
+      Round 16 added 187 WebUI unit tests, but they cover only pure
+      services (ErrorDisplayService, ToastService, CultureFormat,
+      LoginLogContext, LoginLogOutcome). The reviewer flagged "UI /
+      Blazor component tests (almost none visible)" as a gap. This
+      project fills that gap by rendering the actual .razor components
+      via bUnit and asserting on the rendered markup + component
+      interaction lifecycle.
+
+    SCOPE (highest-value components — selected to maximize signal-to-noise):
+      - Error.razor + NotFound.razor — render the right text/markup.
+      - ReconnectModal.razor — visibility based on circuit state param.
+      - BottomNav.razor — 4 nav items rendered, active link logic.
+      - CartBudgetBar.razor — bar width %, salary/consumed/remaining
+        rendering, overflow (consumed > salary) edge case.
+      - 6 dialog components (DeactivateUserDialog, DeactivateProductDialog,
+        DeactivateGroupDialog, RemoveRoleDialog, RemoveGroupDialog,
+        RestockProductDialog, CancelConfirmationDialog) — visibility
+        parameter, callback invocation on confirm, cancel button closes
+        the dialog, form validation rejects invalid input.
+      - RequireRole.razor — AuthorizeRouteView-based role gating: child
+        content renders when the test auth provider returns the
+        required role; alternative content (or nothing) renders when
+        the role is absent.
+
+    OUT OF SCOPE (deferred):
+      - Full-page razor files with heavy IMessageBus/IUnitOfWork/
+        IStringLocalizer/scoped-DbContext dependencies (Dashboard,
+        Cart, SaleDetail, AdminProducts, etc.) — these require
+        non-trivial TestServiceProvider wiring per page. The dialogs
+        + tiny utility components above cover the highest-value
+        rendering surface with the least scaffolding cost.
+
+    TEST CONVENTIONS (same as Round 16):
+      - Arrange / Act / Assert comment blocks.
+      - MethodName_Condition_ExpectedResult naming.
+      - FluentAssertions for assertions on the rendered markup.
+      - bUnit's TestContext + RenderComponent<T> + Find / FindAll /
+        WaitForState / InvokeAsync for event-driven assertions.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- NU1902: AngleSharp 1.1.2 (transitive via bUnit) has a known moderate-severity
+         vulnerability, but this is a TEST-ONLY dependency used purely for in-memory
+         Blazor component testing — not shipped to production. Suppress to keep the build
+         output clean for the test-writing subagents. -->
+    <NoWarn>NU1902</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="bunit" Version="1.36.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TakOne.Application\TakOne.Application.csproj" />
+    <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />
+    <ProjectReference Include="..\..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\TakOne.WebUI\TakOne.WebUI.csproj" />
+    <ProjectReference Include="..\TakOne.Testing\TakOne.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

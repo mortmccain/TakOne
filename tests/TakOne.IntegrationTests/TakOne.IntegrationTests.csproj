@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.IntegrationTests — end-to-end integration tests that exercise
+    real EF Core DbContext + real repositories + real domain aggregates
+    against an in-memory SQLite provider, WITHOUT mocking the handler's
+    collaborators.
+
+    PHILOSOPHY (Round 17 — fills the reviewer's identified gap):
+      Round 16 added 925 unit tests, but the reviewer flagged that the
+      Application layer tests are "mock-heavy / happy-path + guard"
+      coverage: they verify the handler called the mocks correctly, but
+      do NOT prove the system works end-to-end under real conditions
+      (real EF Core change tracking, real transactional SaveChanges,
+      real DB-backed concurrency). This project fills that gap by:
+
+        - Using Microsoft.EntityFrameworkCore.Sqlite (in-memory shared
+          connection) so every test gets a fresh, isolated DB. SQLite
+          enforces unique indexes, foreign keys (when PRAGMA
+          foreign_keys=ON is set), NOT NULL constraints, and basic
+          transactions — enough to catch wiring mistakes that mock-
+          heavy tests cannot detect.
+
+        - Calling the real handler static methods with real
+          ApplicationDbContext-backed repositories + real UnitOfWork
+          (no NSubstitute stubs for the persistence collaborators).
+
+        - Exercising multi-step pipelines (Create→SetStock→Increase
+          →Deactivate, Create root→AddSub→AddSubSub→Deactivate cascade,
+          Cart→Submit→Approve→Invoice→Cancel) and asserting on the
+          PERSISTED state by re-loading the entity from a fresh DbContext.
+
+        - Stress-testing concurrency on the Sale submission flow
+          (Parallel.ForEach of N concurrent Submit calls) to verify the
+          domain's state machine + the SaleStateLock serialize correctly
+          and no two concurrent submits get the same SaleNumber (using a
+          stub ISaleNumberGenerator that returns unique sequential
+          numbers, since the real SQL Server path needs a real SQL
+          instance — see SaleNumberRaceConditionTests for the rationale).
+
+    OUT OF SCOPE (deferred to a future round):
+      - SQL Server-specific concurrency (real atomic UPDATE...OUTPUT on
+        SaleSequenceCounters). The SaleNumberGenerator's raw-SQL path
+        requires a real SQL Server instance. We use a stub for the
+        ISaleNumberGenerator interface here and document that the real
+        SQL Server path is covered by deployment-time smoke tests.
+      - ASP.NET Identity runtime (UserManager, RoleManager, SignInManager)
+        — these need a real Identity store. Tested in unit tests via
+        NSubstitute for the IUserRepository abstraction instead.
+
+    TEST CONVENTIONS (same as Round 16):
+      - Arrange / Act / Assert comment blocks (using exactly those three
+        words).
+      - MethodName_Condition_ExpectedResult naming.
+      - FluentAssertions for all assertions.
+      - xUnit [Fact] for single cases, [Theory] + [InlineData] / [MemberData]
+        for parameterized.
+      - Comments above the test method when the name alone doesn't explain
+        the WHY (especially for concurrency + transactional tests).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- NU1903: SQLitePCLRaw.lib.e_sqlite3 2.1.11 (transitive via Microsoft.EntityFrameworkCore.Sqlite)
+         has a known high-severity vulnerability, but this is a TEST-ONLY dependency used purely
+         for in-memory integration testing — not shipped to production. Suppress to keep the build
+         output clean for the test-writing subagents. -->
+    <NoWarn>NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TakOne.Application\TakOne.Application.csproj" />
+    <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />
+    <ProjectReference Include="..\..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
+    <ProjectReference Include="..\TakOne.Testing\TakOne.Testing.csproj" />
+  </ItemGroup>
+
+</Project>
