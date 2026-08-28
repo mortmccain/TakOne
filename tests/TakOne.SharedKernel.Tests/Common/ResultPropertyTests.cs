@@ -169,29 +169,37 @@ public class ResultPropertyTests
         result.Value.Should().Be(value);
     }
 
-    // Property: Result<T>.Failure(error) does NOT set Value — Value equals
-    // default(T) on the failure path. For Result<int>.Failure, Value == 0;
-    // for Result<string>.Failure, Value == null.
+    // Property: Result<T>.Failure(error) makes Value INACCESSIBLE —
+    // accessing Value throws InvalidOperationException (Brutal Code
+    // Review v3 finding #16). Previously, Value returned default(T)
+    // silently (0 for int, null for string), which let callers
+    // propagate 0/null downstream without noticing the failure. The
+    // throw makes the footgun loud: callers MUST check IsSuccess first.
     [Theory]
     [MemberData(nameof(RandomErrorStrings))]
-    public void ResultGenericFailure_LeavesValueAsDefault_HoldsForRandomErrors(string error)
+    public void ResultGenericFailure_ThrowsOnValueAccess_HoldsForRandomErrors(string error)
     {
         // Arrange + Act — construct both an int and string generic failure.
         var intResult = Result<int>.Failure(error);
         var stringResult = Result<string>.Failure(error);
 
-        // Assert — generic failure leaves Value at the type's default.
+        // Assert — the failure state is correct, and Value access throws.
         intResult.IsFailure.Should().BeTrue();
         intResult.IsSuccess.Should().BeFalse();
         intResult.Error.Should().Be(error);
-        // default(int) == 0
-        intResult.Value.Should().Be(0);
+        // Accessing Value on a failed Result throws — the caller must
+        // check IsSuccess first. The message includes the Error for
+        // diagnostics.
+        var intAct = () => intResult.Value;
+        intAct.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cannot access Value of a failed Result*");
 
         stringResult.IsFailure.Should().BeTrue();
         stringResult.IsSuccess.Should().BeFalse();
         stringResult.Error.Should().Be(error);
-        // default(string) == null
-        stringResult.Value.Should().BeNull();
+        var stringAct = () => stringResult.Value;
+        stringAct.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cannot access Value of a failed Result*");
     }
 
     // Property: Result.Failure(error) is idempotent — two calls with the

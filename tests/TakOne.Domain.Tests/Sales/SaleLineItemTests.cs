@@ -96,25 +96,35 @@ public class SaleLineItemTests
     }
 
     // ======================================================================
-    //                          DEFENSIVE COPY OF UNIT PRICE
+    //                          UNIT PRICE VALUE EQUALITY
     // ======================================================================
+    // Brutal Code Review v3 finding #15: the defensive-copy workaround was
+    // removed when Money was converted from OwnsOne (reference-identity
+    // tracking) to ComplexProperty (value semantics). ComplexProperty does
+    // not track the Money instance as a separate entity, so the change
+    // tracker no longer confuses shared owned instances. The test now
+    // verifies VALUE equality (the stored Money equals the passed-in Money
+    // by Amount + Currency), not reference identity.
 
     [Fact]
-    public void SaleLineItem_WhenConstructed_MakesDefensiveCopyOfUnitPrice()
+    public void SaleLineItem_WhenConstructed_StoresUnitPriceByValue()
     {
-        // Arrange — the internal ctor does `new Money(unitPrice.Amount, unitPrice.Currency)`
-        // rather than holding the caller's reference. Verify by checking that
-        // the line's UnitPrice is a DIFFERENT instance from the one we passed in
-        // (but equal by value).
+        // Arrange — AddLineItem now stores the passed-in Money directly
+        // (no defensive copy). With ComplexProperty, EF Core treats Money
+        // as a value type, so reference identity doesn't matter — only
+        // the Amount + Currency values do.
         var sale = BuildDraftSale();
         var passedInPrice = Irr(10m);
 
         // Act
         sale.AddLineItem(TestValues.ProductId, "P", 1, passedInPrice);
 
-        // Assert — different references, but equal by value
+        // Assert — the stored UnitPrice equals the passed-in Money by
+        // value (Amount + Currency), which is what ComplexProperty's
+        // value semantics guarantee.
         var linePrice = sale.LineItems[0].UnitPrice;
-        linePrice.Should().NotBeSameAs(passedInPrice);
+        linePrice.Amount.Should().Be(passedInPrice.Amount);
+        linePrice.Currency.Should().Be(passedInPrice.Currency);
         linePrice.Should().Be(passedInPrice);
     }
 

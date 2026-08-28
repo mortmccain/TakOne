@@ -130,7 +130,7 @@ public class ResultTests
     }
 
     [Fact]
-    public void FailureT_WhenGivenError_ReturnsGenericFailureWithDefault()
+    public void FailureT_WhenGivenError_ReturnsGenericFailureAndThrowsOnValueAccess()
     {
         // Arrange
         const string error = "boom";
@@ -139,10 +139,17 @@ public class ResultTests
         Result<string> result = Result.Failure<string>(error);
 
         // Assert
+        // SECURITY FIX (Brutal Code Review v3 #16): Value access on a
+        // failed Result now throws InvalidOperationException. Previously
+        // it silently returned null/default, propagating the footgun
+        // downstream. Callers must check IsSuccess before accessing Value.
         result.IsSuccess.Should().BeFalse();
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be(error);
-        result.Value.Should().BeNull();
+
+        var act = () => result.Value;
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cannot access Value of a failed Result*");
     }
 
     [Fact]
