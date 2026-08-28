@@ -118,8 +118,31 @@
     @* Shop page (Products) — Ctrl+F focuses the search bar (replaces the
         HTML's Ctrl+K binding). Registered globally; the listener only
         intercepts when the shop search input is present, so other pages
-        keep the browser's native find-in-page behavior. *@
-    <script src="js/products.js?v=4"></script>
+        keep the browser's native find-in-page behavior.
+
+        v5 cache-bust (Round 18-D / Brutal Code Review v3 finding #24,
+        part 1): added the `clearSearch` function so Products.razor's
+        ClearFilters / ClearSearchAsync handlers can call
+        `JS.InvokeVoidAsync("tmShopPage.clearSearch")` instead of the
+        previous `JS.InvokeVoidAsync("eval", "document.getElementById(...) &&
+        (document.getElementById(...).value = '')")`. Without this
+        cache-bust browsers keep serving the old v4 products.js which has
+        no `clearSearch` member on `window.tmShopPage`, so the new .razor
+        call site would throw `JSCallException: 'tmShopPage.clearSearch'
+        not found`. *@
+    <script src="js/products.js?v=5"></script>
+
+    @* Culture cookie helper — Round 18-D / Brutal Code Review v3 finding
+        #24, part 1. Replaces 3 `JS.InvokeVoidAsync("eval",
+        "document.cookie='takone_culture=...;path=/;max-age=31536000;
+        samesite=strict'")` call sites (MobileLayout.razor:362,
+        MainLayout.razor:676, Products.razor:1655) with a named JS
+        function `takone.setCultureCookie(culture)` that builds the
+        cookie value internally (defense-in-depth — the .razor call site
+        passes ONLY a short culture string like "fa-IR"/"en-US", never a
+        full cookie string that could be malformed/attacker-controlled).
+        See the file's header comment for the full rationale. *@
+    <script src="js/culture.js?v=1"></script>
 
     @* Mobile CSS — global styles for mobile pages + layout. Loaded on
        every page so the mobile CSS is available when the mobile redirect

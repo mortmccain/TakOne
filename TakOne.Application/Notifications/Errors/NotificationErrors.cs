@@ -75,4 +75,65 @@ public static class NotificationErrors
     /// different (active) user, or re-activate the target first.
     /// </summary>
     public static string FormatBroadcastUserInactive() => "BroadcastUserInactive";
+
+    // ── APP-UPDATE BROADCAST VALIDATION (Brutal Code Review v3 #30, ──
+    //    Round 18-C) ─────────────────────────────────────────────────
+    //
+    // The EmitAppUpdateBroadcastCommand is dispatched by the in-process
+    // AppUpdateBroadcasterHostedService (marked [RequireSystemInternal] —
+    // no human caller). The inputs are composed deterministically from
+    // the running assembly version, so they're well-formed by
+    // construction. BUT: defense-in-depth is the project's policy — a
+    // future code path that exposes IMessageBus to a Blazor component
+    // (or a developer manually composing the command for testing) could
+    // supply arbitrarily long strings. Without length limits, a 100MB
+    // Title or Message would be persisted to BroadcastNotification +
+    // N fanout Notification rows — one row per active user — easily
+    // exhausting DB storage or causing SQL Server's NVARCHAR(max) pages
+    // to balloon.
+    //
+    // The limits enforced by EmitAppUpdateBroadcastCommandValidator +
+    // the in-handler defense check are:
+    //   - Title:    ≤ 200 chars  (matches SendBroadcastNotificationCommand)
+    //   - Message:  ≤ 2000 chars (twice the admin command's 1000-char
+    //                limit — app-update messages tend to include release
+    //                notes / changelog snippets, so we allow more room).
+    //
+    // The error codes are short Pascal-case strings (no interpolated
+    // values) — matches the convention of the rest of this file. The UI
+    // layer intercepts these via TryParse + looks up the localized
+    // message in the notification resx file.
+
+    /// <summary>
+    /// The Title on an EmitAppUpdateBroadcastCommand exceeded the 200-
+    /// character limit. Returned by the in-handler defense check and
+    /// by the FluentValidation validator. The system-internal caller
+    /// (AppUpdateBroadcasterHostedService) composes the title from the
+    /// assembly version, so this should never fire in production — it's
+    /// a defense-in-depth guard against a future code path that exposes
+    /// the command to external input.
+    /// </summary>
+    public static string FormatAppUpdateTitleTooLong() => "AppUpdateTitleTooLong";
+
+    /// <summary>
+    /// The Title on an EmitAppUpdateBroadcastCommand was empty or
+    /// whitespace. Defense-in-depth guard — the system-internal caller
+    /// (AppUpdateBroadcasterHostedService) always composes a non-empty
+    /// title from the assembly version.
+    /// </summary>
+    public static string FormatAppUpdateTitleRequired() => "AppUpdateTitleRequired";
+
+    /// <summary>
+    /// The Message on an EmitAppUpdateBroadcastCommand exceeded the
+    /// 2000-character limit. Same defense-in-depth rationale as
+    /// <see cref="FormatAppUpdateTitleTooLong"/>.
+    /// </summary>
+    public static string FormatAppUpdateMessageTooLong() => "AppUpdateMessageTooLong";
+
+    /// <summary>
+    /// The Message on an EmitAppUpdateBroadcastCommand was empty or
+    /// whitespace. Defense-in-depth guard — the system-internal caller
+    /// always composes a non-empty message.
+    /// </summary>
+    public static string FormatAppUpdateMessageRequired() => "AppUpdateMessageRequired";
 }

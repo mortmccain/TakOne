@@ -81,9 +81,27 @@
     document.addEventListener('enhanced-load', register);
 
     // Public API — callable from Blazor via JSRuntime.InvokeVoidAsync.
-    // Not currently used (Ctrl+F is enough), but kept for future use
-    // (e.g. a "search" button elsewhere on the page that focuses the bar).
+    // `focusSearch` is currently invoked by future-proofing code paths
+    // (the Ctrl+F listener does the focus directly today). `clearSearch`
+    // is invoked by Products.razor's ClearFilters / ClearSearchAsync
+    // handlers to wipe the visible text in the #tm-shop-search-input
+    // after the bound _searchTerm is reset — Blazor's @bind is one-way
+    // here (we use value="@_searchTerm" + @oninput) so we must push the
+    // cleared value to the DOM explicitly. Previously those two call
+    // sites used `JSRuntime.InvokeVoidAsync("eval", "document
+    // .getElementById('tm-shop-search-input') && (document
+    // .getElementById('tm-shop-search-input').value = '')")` — that's
+    // the `eval()` XSS/perf anti-pattern (Brutal Code Review v3 finding
+    // #24, part 1) and is replaced by this named function.
     window.tmShopPage = {
-        focusSearch: focusShopSearch
+        focusSearch: focusShopSearch,
+        clearSearch: function () {
+            var el = document.getElementById('tm-shop-search-input');
+            // The previous eval() used `el && (el.value = '')` — short-
+            // circuit so a missing element is a no-op. Same behavior here.
+            if (el) {
+                el.value = '';
+            }
+        }
     };
 })();

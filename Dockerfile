@@ -21,7 +21,13 @@
 # =============================================================================
 
 # ---- Stage 1: build + publish + migrations bundle ----
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS builder
+# Base image tags are PINNED to a specific patch version (10.0.10), NOT a
+# floating tag. Floating tags (`10.0`) silently advance the patch level on
+# every `docker build`, which breaks reproducibility and can introduce
+# subtle runtime differences between builds a month apart. Bump this tag
+# deliberately (after testing) when you want to pick up a new patch.
+# See Brutal Code Review v3 finding #12.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.10 AS builder
 
 WORKDIR /src
 
@@ -34,7 +40,6 @@ COPY ["TakOne.Domain/TakOne.Domain.csproj", "TakOne.Domain/"]
 COPY ["TakOne.Infrastructure/TakOne.Infrastructure.csproj", "TakOne.Infrastructure/"]
 COPY ["TakOne.SharedKernel/TakOne.SharedKernel.csproj", "TakOne.SharedKernel/"]
 COPY ["TakOne.Analyzers/TakOne.Analyzers.csproj", "TakOne.Analyzers/"]
-COPY ["TakOne.Analyzer/TakOne.Analyzer.csproj", "TakOne.Analyzer/"]
 
 RUN dotnet restore "TakOne.slnx"
 
@@ -60,7 +65,9 @@ RUN dotnet tool install --global dotnet-ef \
 
 
 # ---- Stage 2: slim runtime image ----
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# Pinned to a specific patch version (see Stage 1 comment). See Brutal
+# Code Review v3 finding #12.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.10 AS runtime
 
 # OCI-standard image labels. `docker inspect takone-web` shows these; useful
 # for inventory / auditing. Version is bumped on each release.
@@ -86,15 +93,21 @@ COPY --from=builder /app/efbundle ./
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Create the uploads directory and make it writable by the ASP.NET user.
+# Create the uploads directory OUTSIDE wwwroot (uploads are no longer
+# served by the static-files middleware; a dedicated minimal-API endpoint
+# serves them with auth + Content-Disposition: attachment). The directory
+# is owned by the ASP.NET user so the runtime can write to it.
+# See Brutal Code Review v3 finding #09.
 # (uid 1654 = `app` on the aspnet:10.0 image.)
-RUN mkdir -p /app/wwwroot/uploads \
-    && chown -R app:app /app/wwwroot/uploads
+RUN mkdir -p /var/lib/takone/uploads \
+    && chown -R app:app /var/lib/takone/uploads
 
 # Install curl + netcat-openbsd. Both are tiny (~1MB total) and are NOT
 # on the base aspnet:10.0 image by default. We need:
 #   - curl          → the web container's healthcheck uses it
-#                     (`curl -fsS http://localhost:8080/` in docker-compose.yml)
+#                     (`curl -fsS http://localhost:8080/health` in
+#                     docker-compose.yml — the ASP.NET Core /health
+#                     endpoint wired in Program.cs)
 #   - netcat-openbsd → docker-entrypoint.sh uses `nc -z` to TCP-probe
 #                     SQL Server before running migrations. The previous
 #                     entrypoint used `/dev/tcp/host/port`, but that's a

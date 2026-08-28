@@ -10,23 +10,29 @@ namespace TakOne.Application.Tests.Common.Errors;
 /// "PurchaseLimitExceeded:{productName}|{limit}" and TryParse splits on
 /// the LAST '|' so a product name containing a pipe still parses.
 /// </summary>
+/// <remarks>
+/// <b>TEST COUNT REDUCTION (Brutal Code Review v3 finding #29):</b>
+/// the previous version of this file had 15 tests covering the literal
+/// prefix contract, Format() with ASCII/Persian/pipe-containing product
+/// names, TryParse positive/negative cases (null, empty, unrelated,
+/// non-integer limit, no-pipe payload, empty limit part, ASCII,
+/// pipe-containing name, Persian name, zero-limit), and a
+/// Format→TryParse round-trip. The review correctly identified these
+/// as "real assertions, but extremely low value — testing that C#
+/// string equality works." The catalog is a pair of one-line static
+/// helpers; the tests verified C# language semantics, not the catalog's
+/// behavior under realistic conditions. Per the review's recommendation,
+/// this file now retains only 2 tests — the Format() happy-path contract
+/// (proves Format returns the literal "PurchaseLimitExceeded:Apple|5"
+/// string for ASCII inputs) and the Format→TryParse round-trip (proves
+/// the catalog's two halves are mutually consistent). Maintenance effort
+/// is now focused on the higher-value Sale handler tests, where the real
+/// bugs live. The deleted edge-case tests are documented in the Round 18
+/// worklog for traceability.
+/// </remarks>
 public class PurchaseLimitErrorsTests
 {
-    // ── Prefix contract ────────────────────────────────────────────────
-
-    [Fact]
-    public void Prefix_WhenRead_ReturnsPurchaseLimitExceededWithColon()
-    {
-        // Arrange
-
-        // Act
-        var prefix = PurchaseLimitErrors.Prefix;
-
-        // Assert
-        prefix.Should().Be("PurchaseLimitExceeded:");
-    }
-
-    // ── Format() ────────────────────────────────────────────────────────
+    // ── Format() happy-path contract ────────────────────────────────────
 
     [Fact]
     public void Format_WhenGivenAsciiProductName_ReturnsExpectedString()
@@ -40,200 +46,6 @@ public class PurchaseLimitErrorsTests
 
         // Assert
         result.Should().Be("PurchaseLimitExceeded:Apple|5");
-    }
-
-    [Fact]
-    public void Format_WhenGivenPersianProductName_PreservesUnicode()
-    {
-        // Arrange
-        // Persian product names with embedded digits + spaces must round-trip
-        // without being mangled — the catalog is explicitly culture-neutral.
-        const string productName = "اسپاگتی 1.2";
-        const int limit = 2;
-
-        // Act
-        var result = PurchaseLimitErrors.Format(productName, limit);
-
-        // Assert
-        result.Should().Be("PurchaseLimitExceeded:اسپاگتی 1.2|2");
-    }
-
-    [Fact]
-    public void Format_WhenGivenProductNameContainingPipes_DoesNotBreakFormat()
-    {
-        // Arrange
-        // The product name can legitimately contain a '|' — Format() must
-        // embed it verbatim (TryParse handles splitting on the LAST pipe).
-
-        // Act
-        var result = PurchaseLimitErrors.Format("Product|With|Pipes", 3);
-
-        // Assert
-        result.Should().Be("PurchaseLimitExceeded:Product|With|Pipes|3");
-    }
-
-    // ── TryParse() — negative cases ────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenNull_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse(null, out var name, out var limit);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        limit.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenEmptyString_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse(string.Empty, out var name, out var limit);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        limit.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenUnrelatedError_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse("OtherError", out var name, out var limit);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        limit.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenLimitIsNotAnInteger_ReturnsFalse()
-    {
-        // Arrange
-        // The last '|' separates the limit from the name. If the part after
-        // the last pipe is not a parseable int, parsing fails.
-        //
-        // NOTE (SUT detail): the SUT sets productName to the part before the
-        // LAST '|' BEFORE the int.TryParse check — so when TryParse returns
-        // false due to a non-int limit, the out `productName` parameter is
-        // NOT reset to empty. We assert only on the boolean return value
-        // here, in keeping with the standard TryParse contract that out
-        // parameters are not meaningful when false is returned.
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse("PurchaseLimitExceeded:Apple|notanint", out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenNoPipeInPayload_ReturnsFalse()
-    {
-        // Arrange
-        // Without a '|' to split on, there's no limit component to extract.
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse("PurchaseLimitExceeded:Apple", out var name, out var limit);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        limit.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenLimitPartIsEmpty_ReturnsFalse()
-    {
-        // Arrange
-        // An empty string after the last '|' is not a parseable int.
-        //
-        // NOTE (SUT detail): same as the non-int-limit case above — the
-        // SUT sets productName to the part before the LAST '|' BEFORE
-        // int.TryParse runs, so productName is NOT empty when TryParse
-        // returns false here.
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse("PurchaseLimitExceeded:Apple|", out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    // ── TryParse() — positive cases ─────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenValidAsciiName_ReturnsNameAndLimit()
-    {
-        // Arrange
-        const string input = "PurchaseLimitExceeded:Apple|5";
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse(input, out var name, out var limit);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("Apple");
-        limit.Should().Be(5);
-    }
-
-    [Fact]
-    public void TryParse_WhenProductNameContainsPipes_SplitsOnLastPipe()
-    {
-        // Arrange
-        // The product name "Product|With|Pipes" contains 2 pipes. The last
-        // pipe is the delimiter — everything before it is the product name.
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse(
-            "PurchaseLimitExceeded:Product|With|Pipes|3",
-            out var name,
-            out var limit);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("Product|With|Pipes");
-        limit.Should().Be(3);
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenPersianName_PreservesUnicode()
-    {
-        // Arrange
-        const string input = "PurchaseLimitExceeded:اسپاگتی 1.2|2";
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse(input, out var name, out var limit);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("اسپاگتی 1.2");
-        limit.Should().Be(2);
-    }
-
-    [Fact]
-    public void TryParse_WhenLimitIsZero_ReturnsTrue()
-    {
-        // Arrange
-        // A limit of 0 is a valid integer (and Parse handles it).
-
-        // Act
-        var ok = PurchaseLimitErrors.TryParse("PurchaseLimitExceeded:Apple|0", out var name, out var limit);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("Apple");
-        limit.Should().Be(0);
     }
 
     // ── Round-trip Format → TryParse ─────────────────────────────────────

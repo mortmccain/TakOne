@@ -5,8 +5,28 @@
     <Router AppAssembly="typeof(Program).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
+                @* Round 18-A / Brutal Review Fix #33: NotAuthorized fires for
+                   TWO distinct cases:
+                     (a) UNAUTHENTICATED user — bounce to /Account/Login.
+                     (b) AUTHENTICATED-but-unauthorized user — must go to
+                         /Account/AccessDenied, NOT /Account/Login. An
+                         authenticated Customer hitting / (Dashboard) was
+                         previously bounced to /Account/Login, which saw
+                         they were authenticated and redirected them to
+                         /Products — broken UX (looked like a redirect
+                         loop). Now: authenticated+unauthorized →
+                         RedirectToAccessDenied → /Account/AccessDenied
+                         (a proper 403 page). The AuthenticationState
+                         is exposed via the Context parameter. *@
+                <NotAuthorized Context="authState">
+                    @if (authState.User.Identity?.IsAuthenticated == true)
+                    {
+                        <RedirectToAccessDenied />
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
                 </NotAuthorized>
                 <Authorizing>
                     <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">

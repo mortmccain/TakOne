@@ -20,15 +20,36 @@ namespace TakOne.Application.Tests.Dashboard.Queries;
 /// <summary>
 /// Unit tests for <see cref="GetDashboardStatsQueryHandler"/>.
 ///
+/// SECURITY FIX (Brutal Code Review v3 #03):
+///   The query DTO no longer carries UserRoles/RequestedByUserId — the
+///   handler resolves roles from ICurrentUserService.IsInRole (server-
+///   verified claims). These tests configure the currentUser mock's
+///   IsInRole return values instead of passing roles through the query.
+///   This is strictly more realistic: it tests the actual code path a
+///   real caller would exercise (claims-based role resolution, not a
+///   client-supplied role list that could be spoofed).
+///
+/// SCALAR QUERY METHODS (Brutal Code Review v3 #23, Round 18-C):
+///   The handler now uses scalar COUNT/SUM/TOP-N methods on
+///   ISaleRepository instead of loading all sales + aggregating in
+///   memory. BuildMocksCore sets up defaults for the new methods:
+///     • CountBySpecificationAsync → 0
+///     • CountByStatusAsync(status, spec) → 0
+///     • SumRevenueAsync → 0m
+///     • SumRevenueByYearAsync(year, spec) → 0m
+///     • GetRecentSalesBySpecificationAsync(count, spec) → empty list
+///   Tests that assert specific scalar values override these per-case.
+///
 /// COVERAGE APPROACH:
-///   The handler is a static method that loads all sales in scope via
-///   <see cref="ISaleRepository.GetAllWithLineItemsBySpecificationAsync"/>,
-///   then aggregates them in-memory into a <see cref="DashboardStatsDto"/>.
-///   We mock every collaborator with NSubstitute. Tests cover:
+///   The handler is a static method. We mock every collaborator with
+///   NSubstitute. Tests cover:
 ///     • auth rejection (unauthenticated OR UserId=Guid.Empty)
 ///     • customer role rejection
-///     • Employee role → uses SaleByApproverSpecification
-///     • Admin role → uses AllSalesSpecification
+///     • Employee role → uses SaleByApproverSpecification (asserted on
+///       GetAllWithLineItemsBySpecificationAsync — the in-memory
+///       aggregation load — which the handler still calls for top-
+///       products/top-categories/top-employees/weekly/monthly)
+///     • Admin role → uses AllSalesSpecification (same assertion)
 ///     • empty sales → all KPIs 0, TotalRevenue 0, TotalSalesCount 0
 ///     • IRR currency → IsToman=true, DisplayCurrency="تومان"
 ///     • non-IRR currency → IsToman=false
@@ -48,6 +69,18 @@ public class GetDashboardStatsQueryHandlerTests
 
     // Builds a fully-wired mock environment. The sale repository returns
     // an empty list by default; tests override per-case.
+    //
+    // SECURITY FIX (Brutal Code Review v3 #03): roles are now configured
+    // on the currentUser mock via IsInRole — NOT passed through the query
+    // DTO (which no longer carries UserRoles). This mirrors the production
+    // handler, which reads currentUser.IsInRole (server-verified claims).
+    //
+    // Two overloads exist because C# params binding: a single optional
+    // `Guid? userId` before `params string[] roles` would make
+    // `BuildMocks(authenticated: true, Roles.Admin)` try to bind
+    // `Roles.Admin` to the `Guid?` parameter. Splitting into
+    // (bool, params string[]) and (bool, Guid?, params string[]) lets
+    // the compiler resolve the correct overload from the call site.
     private static (
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
@@ -55,19 +88,71 @@ public class GetDashboardStatsQueryHandlerTests
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
-        BuildMocks(
-            bool authenticated = true,
-            Guid? userId = null,
-            string fullName = "Test User")
+        BuildMocks(bool authenticated, params string[] roles)
+        => BuildMocksCore(authenticated, userId: null, fullName: "Test User", roles);
+
+    private static (
+        ICurrentUserService currentUser,
+        ISaleRepository saleRepository,
+        IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
+        IUserRepository userRepository,
+        ILogger<GetDashboardStatsQueryHandler> logger)
+        BuildMocks(bool authenticated, Guid? userId, params string[] roles)
+        => BuildMocksCore(authenticated, userId, fullName: "Test User", roles);
+
+    private static (
+        ICurrentUserService currentUser,
+        ISaleRepository saleRepository,
+        IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
+        IUserRepository userRepository,
+        ILogger<GetDashboardStatsQueryHandler> logger)
+        BuildMocksCore(bool authenticated, Guid? userId, string fullName, string[] roles)
     {
         var currentUser = Substitute.For<ICurrentUserService>();
         currentUser.IsAuthenticated.Returns(authenticated);
         currentUser.UserId.Returns(userId ?? TestValues.CreatedByUserId);
         currentUser.FullName.Returns(fullName);
 
+        // Wire up IsInRole for each supplied role. Unconfigured roles
+        // return false (NSubstitute default for bool returns).
+        foreach (var role in roles)
+        {
+            currentUser.IsInRole(role).Returns(true);
+        }
+
         var saleRepo = Substitute.For<ISaleRepository>();
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale>());
+
+        // Brutal Code Review v3 #23 (Round 18-C): the handler now uses
+        // scalar COUNT/SUM/TOP-N methods instead of loading all sales +
+        // aggregating in memory. Provide defaults for each so tests that
+        // don't assert specific scalar values still get sensible 0/empty
+        // returns rather than NSubstitute's default null Task<List<Sale>>
+        // (which would NRE the handler).
+        saleRepo.CountBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(0);
+        saleRepo.CountByStatusAsync(
+                Arg.Any<SaleStatus>(),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(0);
+        saleRepo.SumRevenueAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(0m);
+        saleRepo.SumRevenueByYearAsync(
+                Arg.Any<int>(),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(0m);
+        saleRepo.GetRecentSalesBySpecificationAsync(
+                Arg.Any<int>(),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
             .Returns(new List<Sale>());
 
         var productRepo = Substitute.For<IProductRepository>();
@@ -92,13 +177,11 @@ public class GetDashboardStatsQueryHandlerTests
         return (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger);
     }
 
-    // Builds a query with the supplied UserRoles.
-    private static GetDashboardStatsQuery BuildQuery(params string[] roles)
-        => new()
-        {
-            RequestedByUserId = TestValues.CreatedByUserId,
-            UserRoles = roles
-        };
+    // Builds a query. The query carries NO caller-identity fields — the
+    // handler resolves roles from ICurrentUserService (server-verified
+    // claims). See Brutal Code Review v3 finding #03.
+    private static GetDashboardStatsQuery BuildQuery()
+        => new();
 
     // Builds a Sale in Pending status with one line item at the given
     // unit price. SubmittedAtUtc is set to now so the dashboard's
@@ -164,8 +247,8 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: false);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: false, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -187,8 +270,8 @@ public class GetDashboardStatsQueryHandlerTests
         // IsAuthenticated=true but UserId=Guid.Empty — the second branch of
         // the auth check rejects it (defense-in-depth).
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true, userId: Guid.Empty);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: true, userId: Guid.Empty, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -205,8 +288,8 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: false);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: false, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
@@ -229,9 +312,14 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // Customer role must be rejected — they don't have a dashboard.
+        // NOTE: only Roles.Customer is wired on the mock — the handler's
+        // currentUser.IsInRole(Roles.Customer) returns true, all other
+        // roles return false. This is the exact shape a spoofing
+        // attacker would NOT be able to produce (they can't set server
+        // claims), proving the spoofing hole is closed.
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Customer);
+            = BuildMocks(authenticated: true, Roles.Customer);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -254,8 +342,8 @@ public class GetDashboardStatsQueryHandlerTests
         // An Employee (no Admin/Manager) sees only sales they approved.
         // The handler uses SaleByApproverSpecification(currentUser.UserId).
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Employee);
+            = BuildMocks(authenticated: true, Roles.Employee);
+        var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
@@ -273,8 +361,8 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Employee);
+            = BuildMocks(authenticated: true, Roles.Employee);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -294,8 +382,8 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // Admin → company-wide overview, no approver filter.
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: true, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
@@ -313,8 +401,8 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: true, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -334,8 +422,8 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // saleRepo returns an empty list (the default in BuildMocks).
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        var query = BuildQuery(Roles.Admin);
+            = BuildMocks(authenticated: true, Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -360,13 +448,21 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
-        // A pending sale in IRR currency.
+            = BuildMocks(authenticated: true, Roles.Admin);
+        // A pending sale in IRR currency — used by the handler's currency
+        // detection (iterates the loaded sales list for the first
+        // non-empty Total.Currency).
         var sale = BuildPendingSale(new Money(1000m, IRR));
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Sale> { sale });
-        var query = BuildQuery(Roles.Admin);
+        // Brutal Code Review v3 #23: TotalRevenue now comes from the
+        // scalar SumRevenueAsync query (raw IRR amount). The handler
+        // applies the ÷10 Toman conversion AFTER the SUM.
+        saleRepo.SumRevenueAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(1000m);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -387,12 +483,17 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sale = BuildPendingSale(new Money(100m, USD));
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Sale> { sale });
-        var query = BuildQuery(Roles.Admin);
+        // Brutal Code Review v3 #23: TotalRevenue now comes from the
+        // scalar SumRevenueAsync query. USD = no ÷10 conversion.
+        saleRepo.SumRevenueAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(100m);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -413,12 +514,22 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sale = BuildPendingSale(new Money(2000m, IRR)); // 200 Toman after ÷10.
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Sale> { sale });
-        var query = BuildQuery(Roles.Admin);
+        // Brutal Code Review v3 #23: TotalRevenue + PendingSalesCount
+        // now come from scalar queries.
+        saleRepo.SumRevenueAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(2000m); // raw IRR — handler converts to 200 Toman.
+        saleRepo.CountByStatusAsync(
+                Arg.Is<SaleStatus>(s => s == SaleStatus.Pending),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(1);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -437,12 +548,26 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sale = BuildDraftSale(new Money(2000m, IRR));
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Sale> { sale });
-        var query = BuildQuery(Roles.Admin);
+        // Brutal Code Review v3 #23: KPI counts come from scalar queries.
+        // Draft sales count toward TotalSalesCount (the all-status count)
+        // and DraftSalesCount (the per-status count). They do NOT count
+        // toward SumRevenueAsync (the handler excludes Draft from revenue
+        // — SumRevenueAsync's WHERE clause filters Status IN (Pending,
+        // Approved, Invoiced)), so the default 0m return is correct.
+        saleRepo.CountBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(1); // one sale in scope
+        saleRepo.CountByStatusAsync(
+                Arg.Is<SaleStatus>(s => s == SaleStatus.Draft),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(1); // one draft
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -464,12 +589,21 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sale = BuildCancelledSale(new Money(2000m, IRR));
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(new List<Sale> { sale });
-        var query = BuildQuery(Roles.Admin);
+        // Brutal Code Review v3 #23: CancelledSalesCount is now a scalar
+        // COUNT query. SumRevenueAsync's WHERE clause filters out
+        // Cancelled (only Pending/Approved/Invoiced), so the default 0m
+        // return correctly produces TotalRevenue=0.
+        saleRepo.CountByStatusAsync(
+                Arg.Is<SaleStatus>(s => s == SaleStatus.Cancelled),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(1); // one cancelled sale
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -494,7 +628,7 @@ public class GetDashboardStatsQueryHandlerTests
         // product name. The handler's TopProducts groups by ProductName
         // and takes top 7. The 8th product must be absent from the result.
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
         {
@@ -521,7 +655,7 @@ public class GetDashboardStatsQueryHandlerTests
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(sales);
-        var query = BuildQuery(Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -549,8 +683,18 @@ public class GetDashboardStatsQueryHandlerTests
         // Build 8 sales, each submitted at a slightly different time
         // (we sleep 15ms between each). The handler should return the
         // 6 most-recent in descending order.
+        //
+        // Brutal Code Review v3 #23 (Round 18-C): the handler now uses
+        // GetRecentSalesBySpecificationAsync(6, spec, ct) which runs
+        // SQL TOP 6 ORDER BY SubmittedAtUtc DESC — the "take top 6"
+        // logic moved from the handler to the repo. To exercise the
+        // handler's projection of the bounded slice to RecentOrderDto,
+        // we mock GetRecentSalesBySpecificationAsync to return the
+        // 6 most-recent sales in the expected (desc) order. The test
+        // still proves the handler doesn't accidentally drop or reorder
+        // entries from the bounded slice.
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
         {
@@ -570,14 +714,22 @@ public class GetDashboardStatsQueryHandlerTests
             Thread.Sleep(15);
             sales.Add(sale);
         }
-        // Reverse the list before returning — the handler sorts internally,
-        // so the order from the repo shouldn't matter. This also guards
-        // against the handler accidentally preserving repo order.
+        // Reverse the list before slicing — the repo's SQL ORDER BY
+        // SubmittedAtUtc DESC would return the most-recent first (C7,
+        // C6, C5, ...). Mock the repo to return that exact ordering.
         sales.Reverse();
+        saleRepo.GetRecentSalesBySpecificationAsync(
+                Arg.Any<int>(),
+                Arg.Any<ISpecification<Sale>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(sales.Take(6).ToList()); // repo returns only 6
+        // Also need the GetAllWithLineItemsBySpecificationAsync mock
+        // (used for top products etc) — return all 8 so the rest of
+        // the handler's aggregations still have data.
         saleRepo.GetAllWithLineItemsBySpecificationAsync(
                 Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
             .Returns(sales);
-        var query = BuildQuery(Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -602,10 +754,10 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // userRepo throws — handler catches and defaults ActiveCustomersCount to 0.
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
-        var query = BuildQuery(Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
@@ -624,10 +776,10 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true);
+            = BuildMocks(authenticated: true, Roles.Admin);
         userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
-        var query = BuildQuery(Roles.Admin);
+        var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(

@@ -12,6 +12,45 @@ public abstract class AggregateRoot : BaseEntity
 
     public IReadOnlyCollection<BaseDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
+    /// <summary>
+    /// Optimistic-concurrency token. EF Core maps this as a SQL Server
+    /// <c>rowversion</c> column (the DB auto-increments it on every
+    /// UPDATE). When two concurrent transactions load the same aggregate
+    /// and both try to save, the SECOND save sees the row's RowVersion has
+    /// changed and throws <c>DbUpdateConcurrencyException</c> — which the
+    /// handler catches and surfaces as a friendly "the data was modified
+    /// by another user, please retry" error.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>WHY THIS EXISTS (Brutal Code Review v3 #14):</b> The v1 and v2
+    /// reviews flagged the absence of any concurrency token as the
+    /// highest-impact unfixed issue. The in-process
+    /// <c>ISaleStateLock</c> (added in v2) only protects single-node
+    /// deployments — it does NOT protect multi-node deployments or direct
+    /// DB writes. <c>Product.DecreaseStock</c> was a classic check-then-act
+    /// race: load product → check stock &gt; quantity → decrement → save.
+    /// Two concurrent requests could both read stock=10, both pass the
+    /// check, both decrement to 5, and the second save silently overwrites
+    /// the first.
+    /// </para>
+    /// <para>
+    /// <b>HOW IT MAPPS:</b> The <c>ApplicationDbContext.OnModelCreating</c>
+    /// applies a convention: every entity type that exposes a
+    /// <c>RowVersion</c> property gets <c>.IsRowVersion()</c> configured
+    /// automatically. This means adding the property to
+    /// <c>AggregateRoot</c> is sufficient — no per-entity configuration
+    /// needed.
+    /// </para>
+    /// <para>
+    /// <b>NULLABILITY:</b> The <c>= default!</c> initializer suppresses
+    /// the nullable-warning. EF Core materializes the value from the DB
+    /// on read; for new entities, EF sends the default (null/empty) and
+    /// SQL Server assigns the first rowversion value on INSERT.
+    /// </para>
+    /// </remarks>
+    public byte[] RowVersion { get; private set; } = default!;
+
     protected AggregateRoot(Guid id) : base(id) { }
     protected AggregateRoot() : base() { }
 

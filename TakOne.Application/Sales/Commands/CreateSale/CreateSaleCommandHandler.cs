@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
@@ -72,6 +73,66 @@ public sealed class CreateSaleCommandHandler
 
             return Result<Guid>.Failure(
                 $"User '{command.CustomerWorkerId}' is inactive and cannot be the customer of a sale.");
+        }
+
+        // ------------------------------------------------------------------
+        // 2b. SECURITY: verify the resolved user is actually a Customer,
+        //     AND (if the caller is a Customer) that they're not creating a
+        //     sale on behalf of ANOTHER customer. Brutal Code Review v3
+        //     finding #04: the previous code only checked customer.IsActive
+        //     — it did NOT verify the resolved user had the Customer role,
+        //     NOR that customer.Id == currentUser.UserId when the caller
+        //     was a Customer. Any authenticated user could pass another
+        //     user's WorkerId (any role!) and create a sale with that user
+        //     as CustomerId — bypassing their own purchase limits, salary
+        //     budget, and currency restrictions. An Employee could even
+        //     create a sale with an Admin as CustomerId.
+        // ------------------------------------------------------------------
+        // Fetch the resolved customer's roles. Roles live in ASP.NET
+        // Identity's AspNetUserRoles + AspNetRoles (not on the Domain User),
+        // so we batch-resolve via the repository's role-lookup method.
+        var customerRolesMap = await userRepository.GetRolesByUserIdsAsync(
+            new[] { customer.Id }, cancellationToken);
+
+        // A missing key means "no roles" (rare — incomplete role seeding).
+        // Treat that as a rejection: a user with no roles is NOT a valid
+        // customer for a sale.
+        var customerRoles = customerRolesMap.TryGetValue(customer.Id, out var roles)
+            ? roles
+            : new List<string>();
+
+        var isCustomerRole = customerRoles.Contains(Roles.Customer);
+
+        if (!isCustomerRole)
+        {
+            logger.LogWarning(
+                "CreateSale: resolved user '{WorkerId}' (Id={CustomerId}) is NOT a Customer " +
+                "(roles: {Roles}). Sale creation rejected. Requested by user {UserId}.",
+                command.CustomerWorkerId, customer.Id, string.Join(", ", customerRoles),
+                currentUser.UserId);
+
+            return Result<Guid>.Failure(
+                $"User '{command.CustomerWorkerId}' is not a customer and cannot be the customer of a sale.");
+        }
+
+        // If the CALLER is a Customer (non-staff), they may only create
+        // a sale for THEMSELVES. Staff (Employee/Manager/Admin) may create
+        // sales on behalf of any customer. This closes the impersonation
+        // hole: a Customer can no longer pass another customer's WorkerId
+        // to buy on their behalf (which would bypass the caller's own
+        // purchase limits and salary budget).
+        var callerIsCustomer = currentUser.IsInRole(Roles.Customer);
+
+        if (callerIsCustomer && customer.Id != currentUser.UserId)
+        {
+            logger.LogWarning(
+                "CreateSale: Customer {CallerId} attempted to create a sale for a DIFFERENT " +
+                "customer {TargetId} (WorkerId '{WorkerId}'). Impersonation rejected.",
+                currentUser.UserId, customer.Id, command.CustomerWorkerId);
+
+            return Result<Guid>.Failure(
+                "Customers can only create sales for themselves. " +
+                "Contact a staff member to create a sale on behalf of another customer.");
         }
 
         // ------------------------------------------------------------------

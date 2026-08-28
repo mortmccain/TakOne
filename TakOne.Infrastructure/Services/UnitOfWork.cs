@@ -108,13 +108,23 @@ public sealed class UnitOfWork : IUnitOfWork
     ///     <list type="bullet">
     ///       <item><c>DbUpdateConcurrencyException</c> — EF Core's signal
     ///             that a batched UPDATE/DELETE affected fewer rows than
-    ///             expected. In our codebase this happens when two
-    ///             concurrent INSERTs collide on a unique index (the
-    ///             affected-row count for the conflicting INSERT is 0,
-    ///             but EF Core expected 1), OR when a real optimistic-
-    ///             concurrency token (RowVersion) mismatch occurs. We
-    ///             don't currently use RowVersion on any entity, so the
-    ///             first cause dominates.</item>
+    ///             expected. Two causes in our codebase:
+    ///             <list type="number">
+    ///               <item>Two concurrent INSERTs collide on a unique
+    ///               index (the affected-row count for the conflicting
+    ///               INSERT is 0, but EF Core expected 1).</item>
+    ///               <item>An optimistic-concurrency token
+    ///               (<c>RowVersion</c>) mismatch — two transactions
+    ///               loaded the same aggregate, both mutated it, and
+    ///               the second save's WHERE clause
+    ///               (<c>RowVersion = @original</c>) no longer
+    ///               matches because the first save bumped the
+    ///               rowversion. This is the SECOND cause's path now
+    ///               that every <c>AggregateRoot</c> has a
+    ///               <c>RowVersion</c> column (Brutal Code Review v3
+    ///               finding #14 — previously no aggregate had a
+    ///               concurrency token, so the first cause dominated).</item>
+    ///             </list></item>
     ///       <item><c>DbUpdateException</c> wrapping a SQL Server
     ///             <c>SqlException</c> with error number 2627 (UNIQUE
     ///             CONSTRAINT violation) or 2601 (UNIQUE INDEX

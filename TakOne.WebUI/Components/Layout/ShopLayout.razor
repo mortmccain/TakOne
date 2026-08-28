@@ -36,9 +36,35 @@
             @* Wrap @Body in a CascadingValue so child pages (Products.razor)
                can receive this layout instance via [CascadingParameter] and
                call ToggleSidebar() on it. This is the standard Blazor pattern
-               for a page-to-layout method call. *@
+               for a page-to-layout method call.
+
+               Round 18-A / Brutal Review Fix #34: wrap @Body in <ErrorBoundary>
+               so an unhandled render exception in a ShopLayout child page
+               (e.g. Products.razor throwing on a null product DTO) is caught
+               at the BODY boundary instead of bubbling up + killing the
+               circuit. The sidebar stays rendered so the user can navigate
+               away or hit Retry. The boundary is INSIDE RadzenContent (the
+               body region) so the sidebar is OUTSIDE the boundary — by design.
+               Recover() re-renders ChildContent; if the same exception re-
+               throws, the boundary re-displays ErrorContent (no infinite
+               loop — the boundary captures render exceptions only). *@
             <CascadingValue Value="this" TValue="ShopLayout">
-                @Body
+                <ErrorBoundary @ref="_bodyErrorBoundary">
+                    <ChildContent>
+                        @Body
+                    </ChildContent>
+                    <ErrorContent Context="ex">
+                        <div class="error-boundary-content" style="padding:2rem;text-align:center;">
+                            <h3>خطایی رخ داد / An error occurred</h3>
+                            <p style="color: var(--rz-text-secondary-color); margin: 0.5rem 0 1rem;">@ex.Message</p>
+                            <button class="tm-icon-button"
+                                    style="border:1px solid var(--rz-border-base-color); padding:0.5rem 1.25rem; border-radius:6px; background: var(--rz-base-background-color); cursor:pointer;"
+                                    @onclick="RetryBodyError">
+                                تلاش مجدد / Retry
+                            </button>
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
             </CascadingValue>
         </RadzenContent>
     </RadzenBody>
@@ -60,6 +86,18 @@
 
 @code {
     private RadzenSidebar? sidebar;
+
+    // Round 18-A / Brutal Review Fix #34: ErrorBoundary ref for the body
+    // wrapper. Recover() re-renders the ChildContent (the @Body). If the
+    // child re-throws the same exception on re-render, the boundary will
+    // re-display the ErrorContent — no infinite loop (the boundary catches
+    // render-time exceptions only).
+    private ErrorBoundary? _bodyErrorBoundary;
+
+    private void RetryBodyError()
+    {
+        _bodyErrorBoundary?.Recover();
+    }
 
     protected override async Task OnInitializedAsync()
     {

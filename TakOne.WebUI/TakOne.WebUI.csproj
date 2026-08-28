@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
-	
-	
-	  <!--
+        
+        
+          <!--
     PHASE 0.1 + 0.18 — packages + project references.
 
     The WebUI is the OUTERMOST layer of the onion. It depends on Application
@@ -21,10 +21,10 @@
     The WebUI only ORCHESTRATES: it calls AddTakOneApplication + AddTakOneInfrastructure
     + AddRazorComponents + AddRadzenComponents and wires the middleware pipeline.
   -->
-	
-	
-	
-	
+        
+        
+        
+        
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -37,15 +37,15 @@
 
 
 
-	  <!--
+          <!--
       Microsoft.Extensions.Localization — provides IStringLocalizer<T> and
       the request-localization middleware used for fa-IR (default, RTL) +
       en-US (LTR) language switching. See roadmap Section 5.
     -->
 
-	  
+          
 
-	  <!--
+          <!--
       Radzen.Blazor v11.x — the only component library we use.
       Provides Layout, Sidebar, DataGrid, Charts, Dialogs, Notifications, Theme.
       Replaces the Bootstrap-based scaffolding that ships with the default
@@ -57,13 +57,30 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
 
+    <!--
+      Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore —
+      provides the `AddDbContextCheck<TContext>()` extension method on
+      IHealthChecksBuilder. The base `Microsoft.Extensions.Diagnostics.
+      HealthChecks` package (which IS in the ASP.NET Core shared framework)
+      only provides `AddHealthChecks()` and `AddCheck<T>()`; the EF Core
+      integration that actually calls `Database.CanConnectAsync` lives in
+      this separate NuGet package. Without it, Program.cs's
+      `builder.Services.AddHealthChecks().AddDbContextCheck<ApplicationDbContext>()`
+      fails with CS1061 ("IHealthChecksBuilder does not contain a definition
+      for AddDbContextCheck..."). See Brutal Code Review v3 finding #11.
+
+      Version must match the EF Core / ASP.NET Core stack used elsewhere
+      (10.0.10).
+    -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.10" />
+
     <PackageReference Include="Radzen.Blazor" Version="11.1.8" />
-	  
+          
   </ItemGroup>
-	
-	
-	
-	<!--
+        
+        
+        
+        <!--
       Project references — the WebUI consumes:
         - Application: commands, queries, DTOs, ICurrentUserService, Roles
         - Infrastructure: DI composition root (AddTakOneInfrastructure)
@@ -71,7 +88,21 @@
       Domain is reachable transitively via Application.
     -->
   <ItemGroup>
-    <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj" />
+    <!--
+      Analyzer project reference. The OutputItemType="Analyzer" +
+      ReferenceOutputAssembly="false" attributes are REQUIRED for
+      MSBuild to load the assembly as a Roslyn diagnostic analyzer at
+      build time (it registers the analyzer's diagnostic sources with
+      the C# compiler). Without them, the assembly is loaded as a
+      regular library reference — which does nothing — and the
+      ForbiddenLoggingAnalyzer's TAKONE_LOGIN_001 rule never fires,
+      even though the code is present. This was the bug flagged in
+      Brutal Code Review v3 finding #02: the analyzer was documented
+      as a "CI-level backstop" in 5 files but never actually ran.
+    -->
+    <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />

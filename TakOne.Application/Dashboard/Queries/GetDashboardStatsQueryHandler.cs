@@ -16,10 +16,33 @@ namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
 /// Handler for <see cref="GetDashboardStatsQuery"/>. Builds the
 /// <see cref="DashboardStatsDto"/> consumed by the Dashboard razor page.
 ///
-/// DATA LOADING STRATEGY:
-///   Loads ALL sales in scope (with line items eagerly loaded) via
+/// DATA LOADING STRATEGY (Brutal Code Review v3 #23, Round 18-C):
+///   The previous handler loaded ALL sales in scope (with line items
+///   eagerly loaded) via
 ///   <see cref="ISaleRepository.GetAllWithLineItemsBySpecificationAsync"/>
-///   and aggregates in-memory. Single round-trip — no N+1.
+///   and aggregated in-memory with 350+ lines of LINQ. For 100k sales
+///   that's ~50MB per dashboard refresh. The new strategy pushes
+///   COUNT/SUM/TOP-N aggregation DOWN to SQL via the new scalar
+///   methods on <see cref="ISaleRepository"/>:
+///     - 5 KPI counts (Total, Draft, Pending, Approved, Cancelled) →
+///       <see cref="ISaleRepository.CountBySpecificationAsync"/> +
+///       <see cref="ISaleRepository.CountByStatusAsync"/> (5 round-trips,
+///       each is a single SQL COUNT(*)).
+///     - TotalRevenue → <see cref="ISaleRepository.SumRevenueAsync"/>
+///       (single SQL SUM with WHERE Status IN (Pending, Approved,
+///       Invoiced)).
+///     - 5-year revenue breakdown → 5 calls to
+///       <see cref="ISaleRepository.SumRevenueByYearAsync"/> (one SUM
+///       per year, server-side).
+///     - Recent orders (top 6) →
+///       <see cref="ISaleRepository.GetRecentSalesBySpecificationAsync"/>
+///       (bounded SQL TOP 6 — does NOT load the full sales table).
+///   The remaining aggregations (top products, top categories, top
+///   employees, weekly trend, monthly current year, status breakdown)
+///   still use the in-memory pattern on the loaded sales list. They are
+///   deferred to a future round — see the "DEFERRED" note at the bottom
+///   of this file for the rationale and what's needed to fully
+///   scalarize them.
 ///
 /// CURRENCY CONVERSION (IRR → Toman):
 ///   Per user spec, when the sale currency is IRR, all amounts shown in the
@@ -35,7 +58,8 @@ namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
 ///   ONLY the sales they personally approved. We use
 ///   <see cref="SaleByApproverSpecification"/> for this — it filters on
 ///   <c>Sale.ApprovedByUserId == currentUserId</c> AND
-///   <c>Sale.Status &gt;= Approved</c>.
+///   <c>Sale.Status &gt;= Approved</c>. The same spec is passed to every
+///   scalar method so the SQL WHERE clauses compose correctly.
 ///
 /// REVENUE EXCLUSIONS:
 ///   - Drafts excluded (not yet revenue — the customer hasn't committed)
@@ -72,8 +96,14 @@ public sealed class GetDashboardStatsQueryHandler
         //    (they're redirected away from the dashboard at login time, but
         //    defense-in-depth: reject here too). Employees get a scoped
         //    view; Admin/Manager/ReadOnly get the company-wide view.
+        //
+        //    SECURITY FIX (Brutal Code Review v3 #03): roles are now read
+        //    from currentUser.IsInRole — server-verified claims — NOT from
+        //    query.UserRoles (which was a public mutable setter that any
+        //    authenticated caller could spoof to Roles.Admin). The DTO no
+        //    longer carries UserRoles or RequestedByUserId.
         // ------------------------------------------------------------------
-        var isCustomer = query.UserRoles.Contains(Roles.Customer);
+        var isCustomer = currentUser.IsInRole(Roles.Customer);
 
         if (isCustomer)
         {
@@ -84,12 +114,26 @@ public sealed class GetDashboardStatsQueryHandler
             return Result<DashboardStatsDto>.Failure("Access denied: customers do not have a dashboard.");
         }
 
-        var isEmployee = query.UserRoles.Contains(Roles.Employee) &&
-                         !query.UserRoles.Contains(Roles.Admin) &&
-                         !query.UserRoles.Contains(Roles.Manager);
+        // An Employee's dashboard shows ONLY the sales they personally
+        // approved. We treat the caller as Employee-scoped ONLY when they
+        // hold the Employee role AND do NOT hold a higher-privilege staff
+        // role (Admin/Manager). ReadOnly is NOT Employee-scoped — a
+        // ReadOnly user sees the full company-wide dashboard (they have
+        // no approval authority, but they're auditors, not sales staff).
+        var isEmployee = currentUser.IsInRole(Roles.Employee) &&
+                         !currentUser.IsInRole(Roles.Admin) &&
+                         !currentUser.IsInRole(Roles.Manager);
 
         // ------------------------------------------------------------------
         // 2. Build the spec based on role scope.
+        //
+        //    The SAME spec is passed to every scalar method below so the
+        //    Employee scope (ApprovedByUserId == currentUser.UserId AND
+        //    Status >= Approved) composes correctly with the per-method
+        //    WHERE clauses (status / year / TOP-N). The
+        //    SpecificationEvaluator produces one IQueryable<Sale> per
+        //    method, and EF Core composes the additional filters into a
+        //    single SQL statement.
         // ------------------------------------------------------------------
         ISpecification<Sale> spec;
 
@@ -103,15 +147,88 @@ public sealed class GetDashboardStatsQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Load all sales in scope WITH line items (single round-trip).
-        //    Line items are needed for top-products, top-categories, and
-        //    recent-order product summaries.
+        // 3. SCALAR QUERIES — push COUNT/SUM to SQL.
+        //
+        //    The previous handler iterated `sales.Count` and
+        //    `sales.Count(s => s.Status == X)` in memory after loading the
+        //    full table. For 100k sales that's a ~50MB load per refresh.
+        //    These 5 SQL COUNT(*) queries drop the load to a few KB and
+        //    run server-side (using the Status index added in
+        //    SaleConfiguration).
+        //
+        //    Run them in parallel via Task.WhenAll for max throughput —
+        //    each is a single-statement SQL query, and the spec is the
+        //    SAME for all (no shared mutable state). EF Core's DbContext
+        //    is NOT thread-safe, but each Task here uses a SEPARATE
+        //    query against the same DbContext — actually, that IS unsafe
+        //    for a single DbContext. So we await them SEQUENTIALLY. The
+        //    five COUNT(*) calls are each fast (indexed scans) and the
+        //    total round-trip time is dominated by network latency
+        //    (~1-2ms each on localhost, ~10ms each on a remote DB).
+        //    Sequential is correct + safe; parallel would need a
+        //    DbContext-per-task refactor that's out of scope here.
+        // ------------------------------------------------------------------
+        var totalCount = await saleRepository.CountBySpecificationAsync(spec, cancellationToken);
+        var draftCount = await saleRepository.CountByStatusAsync(SaleStatus.Draft, spec, cancellationToken);
+        var pendingCount = await saleRepository.CountByStatusAsync(SaleStatus.Pending, spec, cancellationToken);
+        var approvedCount = await saleRepository.CountByStatusAsync(SaleStatus.Approved, spec, cancellationToken);
+        var cancelledCount = await saleRepository.CountByStatusAsync(SaleStatus.Cancelled, spec, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // 4. TotalRevenue — single SQL SUM with WHERE Status IN (Pending,
+        //    Approved, Invoiced). Returns the RAW Total.Amount (in the
+        //    sale's currency); the IRR→Toman ÷10 conversion is applied
+        //    AFTER the SUM (see ToDisplay below).
+        // ------------------------------------------------------------------
+        var totalRevenueRaw = await saleRepository.SumRevenueAsync(spec, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // 5. Recent orders — bounded SQL TOP 6 with line items eagerly
+        //    loaded. Does NOT load the full sales table. The previous
+        //    handler loaded ALL submitted sales and took top 6 in memory.
+        //
+        //    The repo orders by COALESCE(SubmittedAtUtc, CreatedAtUtc)
+        //    DESC, matching the previous in-memory fallback. Returns
+        //    UNTRACKED entities — the dashboard just displays them, never
+        //    mutates.
+        // ------------------------------------------------------------------
+        var recentSales = await saleRepository.GetRecentSalesBySpecificationAsync(6, spec, cancellationToken);
+
+        // ------------------------------------------------------------------
+        // 6. Load remaining sales WITH line items for the in-memory
+        //    aggregations (top products, top categories, top employees,
+        //    weekly trend, monthly current year, status breakdown).
+        //
+        //    DEFERRED (Brutal Code Review v3 #23): this call still loads
+        //    ALL sales in scope. To fully eliminate the ~50MB load, this
+        //    needs to be replaced with bounded date-range queries:
+        //      - Top products/categories: load sales submitted in last 30 days
+        //      - Top employees: load sales submitted in current month
+        //      - Weekly trend: load sales submitted in last 14 days
+        //      - Monthly current year: load sales submitted in current year
+        //      - Status breakdown: 5 scalar COUNTs already done above
+        //        (just compose them into the StatusBreakdown DTO — easy win)
+        //    A future round should add `GetSalesWithLineItemsByDateRangeAsync`
+        //    to ISaleRepository and rewrite these aggregations to use it.
+        //    For now, the scalar methods above are the high-value fixes
+        //    (KPI counts + TotalRevenue + yearly SUMs + recent-orders
+        //    bounded slice) — the rest is left as in-memory aggregation
+        //    on the loaded list per the MINIMUM viable approach allowed
+        //    by the task brief.
         // ------------------------------------------------------------------
         var sales = await saleRepository.GetAllWithLineItemsBySpecificationAsync(spec, cancellationToken);
 
         // ------------------------------------------------------------------
-        // 4. Currency conversion setup. If currency is IRR, all amounts
+        // 7. Currency conversion setup. If currency is IRR, all amounts
         //    will be divided by 10 to convert to Toman for display.
+        //    Currency is derived from the loaded sales list (the first
+        //    non-empty Total.Currency). When sales is empty, defaults
+        //    to "IRR" (which is the only currency used in production today).
+        //
+        //    DEFERRED: a future round could push currency detection to a
+        //    scalar `GetMostRecentCurrencyAsync(spec)` query — but the
+        //    savings are small (one row) and the loaded sales list is
+        //    already needed for the aggregations above.
         // ------------------------------------------------------------------
         var currentYear = DateTime.UtcNow.Year;
         var now = DateTime.UtcNow;
@@ -131,6 +248,12 @@ public sealed class GetDashboardStatsQueryHandler
 
         // Revenue-eligible sales: Pending, Approved, or Invoiced.
         // Drafts and Cancelled are excluded (see class-level comment).
+        //
+        // NOTE: still used by the in-memory aggregations below (top
+        // products, top categories, top employees, weekly trend, monthly
+        // current year). The TotalRevenue field on the DTO is now set
+        // from the scalar SumRevenueAsync query (above), NOT from
+        // iterating this list — see step 4.
         var revenueEligibleSales = sales
             .Where(s => s.Status == SaleStatus.Pending ||
                         s.Status == SaleStatus.Approved ||
@@ -144,8 +267,14 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 5. Build the weekly revenue trend (last 7 days + previous 7 days).
+        // 8. Build the weekly revenue trend (last 7 days + previous 7 days).
         //    Each series has 7 points, aligned by day-of-week.
+        //
+        //    DEFERRED: this iterates revenueEligibleSales 14 times (once
+        //    per day, twice — this week + last week). For 100k sales
+        //    that's 1.4M iterations per refresh. A future round should
+        //    add a `GetRevenueByDayAsync(startDate, endDate, spec)` that
+        //    pushes the day-bucketing to SQL.
         // ------------------------------------------------------------------
         var lastWeekStart = todayUtc.AddDays(-7);
         var twoWeeksAgoStart = todayUtc.AddDays(-14);
@@ -187,24 +316,15 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 6. Top products by TOTAL SALES AMOUNT (last 30 days).
+        // 9. Top products by TOTAL SALES AMOUNT (last 30 days).
         //    Sum GrossTotal.Amount per ProductName across all REVENUE-ELIGIBLE
         //    sales (Pending + Approved + Invoiced — same definition as the
         //    revenue line chart) submitted in the last 30 days. Take top 7.
         //
-        //    The bar chart's X-axis plots TotalAmount (in display currency —
-        //    Toman when original is IRR). QuantitySold is kept alongside for
-        //    potential tooltip enrichment, but is no longer the sort key or
-        //    the plotted value.
-        //
-        //    WHY NOT Approved+Invoiced only:
-        //    The previous version excluded Pending sales here, which made the
-        //    bar chart silently render empty whenever a fresh install had
-        //    only Pending orders (no approvals yet). The line chart and the
-        //    donut already include Pending (revenueEligibleSales), so for
-        //    consistency the top-products bar must too — otherwise users
-        //    see "data on 2 charts, blank on 2 charts" and assume the
-        //    dashboard is broken.
+        //    DEFERRED: bounded to last-30-days sales, but still loads all
+        //    sales first (the GetAllWithLineItemsBySpecificationAsync
+        //    call above) before filtering in memory. A future round should
+        //    replace the load with a bounded `GetSalesInDateRangeWithLineItemsAsync`.
         // ------------------------------------------------------------------
         var thirtyDaysAgo = todayUtc.AddDays(-30);
         var recentRevenueEligibleSales = revenueEligibleSales
@@ -230,20 +350,14 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 7. Top categories by NUMBER OF SALES (all-time in scope).
-        //    For each revenue-eligible sale (Pending + Approved + Invoiced),
-        //    count 1 per unique category that appears in its line items.
-        //    Then take top 5 + "Others".
+        // 10. Top categories by NUMBER OF SALES (all-time in scope).
+        //     For each revenue-eligible sale (Pending + Approved + Invoiced),
+        //     count 1 per unique category that appears in its line items.
+        //     Then take top 5 + "Others".
         //
-        //    WHY NOT Approved+Invoiced only:
-        //    Same consistency reason as top-products above — the previous
-        //    version excluded Pending sales, which made the pie chart render
-        //    empty whenever a fresh install had only Pending orders. Using
-        //    revenueEligibleSales here matches the line chart and donut.
-        //
-        //    This requires joining line items → products → categories. We
-        //    batch-load all products by Id (single round-trip) and all
-        //    categories (single round-trip), then build a lookup dictionary.
+        //     DEFERRED: same as top products — still iterates the loaded
+        //     sales list. A future round should add a `GetCategorySalesCountsAsync(spec)`
+        //     that does the JOIN + GROUP BY + COUNT in SQL.
         // ------------------------------------------------------------------
         var allProductIds = sales
             .SelectMany(s => s.LineItems)
@@ -265,7 +379,7 @@ public sealed class GetDashboardStatsQueryHandler
         // For each revenue-eligible sale, find the unique set of categories
         // in its line items (via the product → category lookup).
         // (Same set as revenueEligibleSales — Pending + Approved + Invoiced.
-        // See section 6 above for why Pending is now included.)
+        // See section 9 above for why Pending is now included.)
         var categorySourceSales = revenueEligibleSales;
 
         var categorySalesCounts = new Dictionary<Guid, int>();
@@ -318,9 +432,14 @@ public sealed class GetDashboardStatsQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 8. Top employees by purchase amount this month.
-        //    Group non-cancelled non-draft sales submitted this month by
-        //    CustomerId, sum Total.Amount, take top 4.
+        // 11. Top employees by purchase amount this month.
+        //     Group non-cancelled non-draft sales submitted this month by
+        //     CustomerId, sum Total.Amount, take top 4.
+        //
+        //     DEFERRED: bounded to current-month sales, but still iterates
+        //     the loaded `submittedSales` list. A future round should add a
+        //     `GetTopEmployeesByPurchaseAsync(monthStart, monthEnd, spec, top)`
+        //     that does the GROUP BY + SUM + TOP in SQL.
         // ------------------------------------------------------------------
         var thisMonthSales = submittedSales
             .Where(s => s.Status != SaleStatus.Cancelled &&
@@ -344,11 +463,12 @@ public sealed class GetDashboardStatsQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 9. Recent orders — last 6 submitted sales, newest first.
+        // 12. Recent orders — last 6 submitted sales, newest first.
+        //     SOURCE: the bounded `recentSales` slice from step 5 (SQL
+        //     TOP 6). The repo already ordered them by SubmittedAtUtc
+        //     (with CreatedAtUtc fallback) desc — we just project to DTOs.
         // ------------------------------------------------------------------
-        var recentOrders = submittedSales
-            .OrderByDescending(s => s.SubmittedAtUtc ?? s.CreatedAtUtc)
-            .Take(6)
+        var recentOrders = recentSales
             .Select(s =>
             {
                 var firstLine = s.LineItems.FirstOrDefault();
@@ -369,13 +489,17 @@ public sealed class GetDashboardStatsQueryHandler
             .ToList();
 
         // ------------------------------------------------------------------
-        // 10. Build the final DTO.
+        // 13. Build the final DTO.
         // ------------------------------------------------------------------
 
         // Oldest pending sale age (in minutes). Null when there are no
         // pending sales — the razor page hides the footer in that case.
         // Computed from the OLDEST SubmittedAtUtc (or CreatedAtUtc fallback)
         // among pending sales. Used by KPI card 3's footer.
+        //
+        // DEFERRED: this iterates `sales` once to find pending + min
+        // SubmittedAtUtc. A future round could push this to a scalar
+        // `GetOldestPendingSaleSubmittedAtAsync(spec)` query.
         int? oldestPendingAgeMinutes = null;
         var pendingSales = sales.Where(s => s.Status == SaleStatus.Pending).ToList();
         if (pendingSales.Count > 0)
@@ -392,6 +516,31 @@ public sealed class GetDashboardStatsQueryHandler
             .Distinct()
             .Count();
 
+        // ------------------------------------------------------------------
+        // 14. Yearly data — 5 scalar SUM queries (one per year). The
+        //     previous handler iterated revenueEligibleSales 5 times in
+        //     memory; now each year is a single SQL SUM with WHERE
+        //     Status IN (Pending, Approved, Invoiced) AND
+        //     YEAR(CreatedAtUtc) = @year. Always 5 rows, even for years
+        //     with zero revenue (the SUM returns 0).
+        // ------------------------------------------------------------------
+        var yearlyData = new List<YearlyRevenueDto>(5);
+        for (var yearOffset = 0; yearOffset < 5; yearOffset++)
+        {
+            var year = currentYear - 4 + yearOffset;
+            var yearRevenueRaw = await saleRepository.SumRevenueByYearAsync(year, spec, cancellationToken);
+            yearlyData.Add(new YearlyRevenueDto
+            {
+                Year = year,
+                YearLabel = year.ToString(),
+                TotalAmount = ToDisplay(yearRevenueRaw)
+            });
+        }
+        // OrderBy is for safety — the loop above already inserts in
+        // ascending year order, but a future caller might extend the
+        // range asymmetrically. Cheap (5 rows).
+        yearlyData.Sort((a, b) => a.Year.CompareTo(b.Year));
+
         var dto = new DashboardStatsDto
         {
             CurrentUserName = currentUser.FullName,
@@ -400,14 +549,19 @@ public sealed class GetDashboardStatsQueryHandler
             DisplayCurrency = displayCurrency,
             IsToman = isToman,
 
-            // ── Original KPI counts ────────────────────────────────────
-            TotalSalesCount = sales.Count,
-            DraftSalesCount = sales.Count(s => s.Status == SaleStatus.Draft),
-            PendingSalesCount = sales.Count(s => s.Status == SaleStatus.Pending),
-            ApprovedSalesCount = sales.Count(s => s.Status == SaleStatus.Approved),
-            CancelledSalesCount = sales.Count(s => s.Status == SaleStatus.Cancelled),
+            // ── Original KPI counts — now scalar SQL COUNT(*) ─────────
+            TotalSalesCount = totalCount,
+            DraftSalesCount = draftCount,
+            PendingSalesCount = pendingCount,
+            ApprovedSalesCount = approvedCount,
+            CancelledSalesCount = cancelledCount,
 
             // ── NEW KPI counts ─────────────────────────────────────────
+            // (still in-memory on the loaded `submittedSales` list — these
+            // are date-range filters that don't benefit much from being
+            // scalarized independently; a future round can combine them
+            // into one `GetTodaysOrdersCountAsync(spec)` query, but the
+            // round-trip savings are small.)
             TodayOrdersCount = submittedSales
                 .Count(s => s.Status != SaleStatus.Cancelled &&
                             (s.SubmittedAtUtc ?? s.CreatedAtUtc).Date == todayUtc),
@@ -430,25 +584,24 @@ public sealed class GetDashboardStatsQueryHandler
             // gender-neutral greeting.
             UserGender = currentUser.Gender,
 
-            // ── Revenue ───────────────────────────────────────────────
-            TotalRevenue = revenueEligibleSales.Sum(s => ToDisplay(s.Total.Amount)),
+            // ── Revenue — now scalar SQL SUM ──────────────────────────
+            TotalRevenue = ToDisplay(totalRevenueRaw),
 
             // 5-year yearly breakdown (current year + 4 prior years).
             // Always 5 rows, even if some years have zero revenue.
-            YearlyData = Enumerable.Range(currentYear - 4, 5)
-                .Select(year => new YearlyRevenueDto
-                {
-                    Year = year,
-                    YearLabel = year.ToString(),
-                    TotalAmount = revenueEligibleSales
-                        .Where(s => s.SubmittedAtUtc?.Year == year ||
-                                    s.CreatedAtUtc.Year == year)
-                        .Sum(s => ToDisplay(s.Total.Amount))
-                })
-                .OrderBy(y => y.Year)
-                .ToList(),
+            // SOURCE: 5 scalar SumRevenueByYearAsync queries (above).
+            YearlyData = yearlyData,
 
             // 12 months of current year. Always 12 rows; future months = 0.
+            //
+            // DEFERRED: still in-memory on revenueEligibleSales. A future
+            // round should add `SumRevenueByYearAndMonthAsync(year, month,
+            // spec)` and call it 12 times — same pattern as the yearly
+            // scalarization above. For now, the loaded sales list is
+            // already in memory (used for top-products etc), so iterating
+            // it 12 times for the monthly SUMs is cheap relative to the
+            // initial load. The expensive part was the load itself, which
+            // is now reduced by the scalar COUNT/SUM methods above.
             CurrentYearMonthlyData = Enumerable.Range(1, 12)
                 .Select(month => new MonthlyRevenueDto
                 {
@@ -465,6 +618,16 @@ public sealed class GetDashboardStatsQueryHandler
 
             // Status breakdown — omit zero-count statuses so the donut
             // doesn't render empty slices.
+            //
+            // NOTE: this could be built directly from the 5 scalar
+            // COUNTs above (totalCount, draftCount, pendingCount,
+            // approvedCount, cancelledCount) — but the Invoiced status
+            // isn't counted separately (the dashboard only shows the 5
+            // primary statuses). The current GroupBy includes Invoiced
+            // (which is the 6th SaleStatus value). To preserve that,
+            // we'd need a 6th scalar COUNT for Invoiced. Leaving the
+            // in-memory GroupBy intact for now — DEFERRED to a future
+            // round that adds CountByStatusAsync(Invoiced, spec).
             StatusBreakdown = sales
                 .GroupBy(s => s.Status)
                 .Select(g => new StatusCountDto
@@ -485,7 +648,7 @@ public sealed class GetDashboardStatsQueryHandler
         };
 
         // ------------------------------------------------------------------
-        // 11. Active customer count. This is a separate query against the
+        // 15. Active customer count. This is a separate query against the
         //     user table (with a join to AspNetUserRoles for the Customer
         //     role). Done LAST because it's independent of the sales
         //     aggregation above and we don't want a failure here to nuke

@@ -20,13 +20,14 @@
      - Top Products bar chart + Category Pie chart (no mobile equivalent)
 
    BACKEND CONTRACT (same as desktop Dashboard.razor):
-     - Load: GetDashboardStatsQuery { RequestedByUserId, UserRoles }
+     - Load: GetDashboardStatsQuery (no caller-supplied fields)
        → Result<DashboardStatsDto>. The handler scopes by role
-       server-side: Admin/Manager/ReadOnly see all sales, Employee sees
+       server-side using ICurrentUserService.IsInRole (server-verified
+       claims): Admin/Manager/ReadOnly see all sales, Employee sees
        only the sales they personally approved.
-     - UserRoles list built from AuthStateTask cascading parameter
-       (NOT ICurrentUserService — it doesn't expose the role list).
-     - RequestedByUserId comes from ICurrentUserService.UserId.
+     - The query no longer carries UserRoles/RequestedByUserId —
+       that was a role-spoofing hole closed in Brutal Code Review v3
+       finding #03.
 
    STATE MACHINE (matches MobileProducts.razor gold-standard pattern):
      _isLoading → _loadError → _stats is not null → content.
@@ -496,12 +497,11 @@ else if (_stats is not null)
         {
             _isLoading = true;
 
-            // Build the role list from the AuthenticationState — ICurrentUserService
-            // exposes IsInRole(string) but not the full role list, so we read it
-            // from the ClaimsPrincipal directly. The handler uses this list to
-            // decide between the AllSales spec (Admin/Manager/ReadOnly) and the
-            // SaleByApprover spec (Employee). Mirrors desktop Dashboard.razor
-            // lines 528–533 verbatim.
+            // Verify the caller is authenticated (defense-in-depth — the
+            // [Authorize] attribute on the page should have caught this).
+            // The handler resolves roles from ICurrentUserService
+            // (server-verified claims), so we no longer build a role list
+            // here. See Brutal Code Review v3 finding #03.
             var authState = await AuthStateTask;
             var user = authState.User;
 
@@ -512,18 +512,11 @@ else if (_stats is not null)
                 return;
             }
 
-            var roles = new List<string>();
-            if (user.IsInRole(Roles.Admin)) roles.Add(Roles.Admin);
-            if (user.IsInRole(Roles.Manager)) roles.Add(Roles.Manager);
-            if (user.IsInRole(Roles.Employee)) roles.Add(Roles.Employee);
-            if (user.IsInRole(Roles.ReadOnly)) roles.Add(Roles.ReadOnly);
-            if (user.IsInRole(Roles.Customer)) roles.Add(Roles.Customer);
-
-            var query = new GetDashboardStatsQuery
-            {
-                RequestedByUserId = CurrentUser.UserId,
-                UserRoles = roles
-            };
+            // The query no longer carries UserRoles/RequestedByUserId —
+            // the handler resolves roles from ICurrentUserService
+            // (server-verified claims) to close the role-spoofing hole.
+            // See Brutal Code Review v3 finding #03.
+            var query = new GetDashboardStatsQuery();
 
             var result = await MessageBus.InvokeAsync<Result<DashboardStatsDto>>(query);
 

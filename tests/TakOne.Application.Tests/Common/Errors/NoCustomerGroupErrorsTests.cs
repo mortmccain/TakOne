@@ -16,26 +16,30 @@ namespace TakOne.Application.Tests.Common.Errors;
 /// match would false-positive on unrelated error strings that happen to
 /// start with "NoCustomerGroup".
 /// </summary>
+/// <remarks>
+/// <b>TEST COUNT REDUCTION (Brutal Code Review v3 finding #29):</b>
+/// the previous version of this file had 11 tests covering the literal
+/// prefix contract (noting the no-trailing-colon asymmetry), Format()
+/// happy path, Format() purity (two calls return the same value),
+/// TryParse positive/negative cases (null, empty, whitespace, prefix
+/// with extra suffix, prefix with trailing colon, unrelated error,
+/// exact prefix), and a Format→TryParse round-trip. The review
+/// correctly identified these as "real assertions, but extremely low
+/// value — testing that C# string equality works." The catalog is a
+/// pair of one-line static helpers; the tests verified C# language
+/// semantics, not the catalog's behavior under realistic conditions.
+/// Per the review's recommendation, this file now retains only 2 tests
+/// — the Format() happy-path contract (proves Format returns the
+/// literal "NoCustomerGroup" string) and the Format→TryParse round-trip
+/// (proves the catalog's two halves are mutually consistent, including
+/// the exact-equality asymmetry). Maintenance effort is now focused on
+/// the higher-value Sale handler tests, where the real bugs live. The
+/// deleted edge-case tests are documented in the Round 18 worklog for
+/// traceability.
+/// </remarks>
 public class NoCustomerGroupErrorsTests
 {
-    // ── Prefix contract ────────────────────────────────────────────────
-
-    [Fact]
-    public void Prefix_WhenRead_ReturnsNoCustomerGroupWithoutColon()
-    {
-        // Arrange
-        // Note: this catalog's prefix has NO trailing colon, because there
-        // is no payload to delimit. The catalog uses exact equality on the
-        // whole prefix string.
-
-        // Act
-        var prefix = NoCustomerGroupErrors.Prefix;
-
-        // Assert
-        prefix.Should().Be("NoCustomerGroup");
-    }
-
-    // ── Format() ────────────────────────────────────────────────────────
+    // ── Format() happy-path contract ────────────────────────────────────
 
     [Fact]
     public void Format_WhenCalled_ReturnsExactlyThePrefix()
@@ -49,120 +53,6 @@ public class NoCustomerGroupErrorsTests
         // Assert
         result.Should().Be(NoCustomerGroupErrors.Prefix);
         result.Should().Be("NoCustomerGroup");
-    }
-
-    [Fact]
-    public void Format_WhenCalledTwice_ReturnsSameValue()
-    {
-        // Arrange
-        // Format() is pure — two calls must produce the same string.
-
-        // Act
-        var first = NoCustomerGroupErrors.Format();
-        var second = NoCustomerGroupErrors.Format();
-
-        // Assert
-        first.Should().Be(second);
-    }
-
-    // ── TryParse() — negative cases ────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenNull_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse(null);
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenEmptyString_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse(string.Empty);
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenWhitespaceOnly_ReturnsFalse()
-    {
-        // Arrange
-        // string.IsNullOrEmpty("  ") is false, so the null/empty guard
-        // passes; then the equality check ("  " == "NoCustomerGroup") is
-        // false → overall false.
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse("  ");
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenPrefixWithExtraSuffix_ReturnsFalse()
-    {
-        // Arrange
-        // This catalog uses EXACT equality (==), not StartsWith. So an
-        // input with extra characters after "NoCustomerGroup" must NOT
-        // match — this is the critical difference from the other catalogs.
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse("NoCustomerGroupExtra");
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenPrefixWithTrailingColon_ReturnsFalse()
-    {
-        // Arrange
-        // "NoCustomerGroup:" is NOT equal to "NoCustomerGroup" — the
-        // exact-equality check fails. Other catalogs in this namespace
-        // (CartConflict, PurchaseLimit, etc.) use StartsWith so the
-        // trailing-colon case parses true there; here it must be false.
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse("NoCustomerGroup:");
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenUnrelatedError_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse("OtherError");
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    // ── TryParse() — positive cases ─────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenExactPrefixString_ReturnsTrue()
-    {
-        // Arrange
-        // The exact prefix string is the canonical Format() output and
-        // must parse true.
-
-        // Act
-        var result = NoCustomerGroupErrors.TryParse("NoCustomerGroup");
-
-        // Assert
-        result.Should().BeTrue();
     }
 
     // ── Round-trip Format → TryParse ─────────────────────────────────────

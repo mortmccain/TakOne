@@ -1,5 +1,6 @@
 ﻿using TakOne.Domain.Sales.Entities;
 using Ardalis.Specification;
+using TakOne.Domain.Sales.Enums;
 
 using TakOne.SharedKernel.Common;
 
@@ -172,5 +173,106 @@ public interface ISaleRepository
         Guid customerId,
         DateTime windowStartUtc,
         DateTime windowEndUtc,
+        CancellationToken cancellationToken = default);
+
+    // ------------------------------------------------------------------
+    // SCALAR + BOUNDED-SLICE METHODS (Brutal Code Review v3 #23, Round 18-C)
+    //
+    // The methods below push COUNT/SUM/TOP-N aggregation DOWN to SQL
+    // instead of materializing all sales into memory. Used by
+    // GetDashboardStatsQueryHandler — the previous handler loaded ALL
+    // sales in scope (with line items) via
+    // GetAllWithLineItemsBySpecificationAsync and aggregated in-memory
+    // with 350+ lines of LINQ. For 100k sales that's ~50MB per dashboard
+    // refresh. These methods drop that to a few KB.
+    //
+    // Each method takes an ISpecification<Sale> so the existing Employee
+    // scoping (SaleByApproverSpecification — only sales the employee
+    // personally approved) is preserved. The Admin path passes
+    // AllSalesSpecification (no extra filter). The SpecificationEvaluator
+    // composes the spec's Where clauses with the method's own
+    // (status / year / Take(N)) filter into a single SQL statement.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Counts ALL sales matching the given specification via SQL COUNT(*)
+    /// — no materialization. Used by GetDashboardStatsQueryHandler for
+    /// the <c>TotalSalesCount</c> KPI (the big number on the primary card).
+    /// </summary>
+    /// <param name="specification">The scope spec — typically
+    /// <c>AllSalesSpecification</c> (Admin view) or
+    /// <c>SaleByApproverSpecification(userId)</c> (Employee view).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of sales matching the spec.</returns>
+    Task<int> CountBySpecificationAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts sales matching the spec AND having the given
+    /// <paramref name="status"/>. Single SQL COUNT(*) with
+    /// <c>WHERE [spec.Where] AND Status = @status</c>. Used by the
+    /// dashboard's per-status KPI counts (Draft, Pending, Approved,
+    /// Cancelled).
+    /// </summary>
+    Task<int> CountByStatusAsync(
+        SaleStatus status,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sums <c>Total.Amount</c> across sales matching the spec AND
+    /// <c>Status</c> in (Pending, Approved, Invoiced) — i.e. the
+    /// revenue-eligible sales. Single SQL SUM with WHERE clause.
+    /// Returns 0 when no rows match.
+    /// </summary>
+    /// <remarks>
+    /// The returned amount is the RAW <c>Total.Amount</c> (in the sale's
+    /// currency). The caller (<c>GetDashboardStatsQueryHandler</c>)
+    /// applies the IRR→Toman ÷10 conversion AFTER the SUM — i.e. the
+    /// SQL SUM is on the original currency's Amount column. This keeps
+    /// the SQL simple and lets one cached query feed multiple display
+    /// currencies if multi-currency is ever supported.
+    /// </remarks>
+    Task<decimal> SumRevenueAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sums <c>Total.Amount</c> across sales matching the spec AND
+    /// <c>Status</c> in (Pending, Approved, Invoiced) AND
+    /// <c>CreatedAtUtc.Year == year</c>. Single SQL SUM with WHERE
+    /// clause. Returns 0 when no rows match. Used by the dashboard's
+    /// 5-year revenue breakdown (5 calls, one per year) — far cheaper
+    /// than materializing all sales to aggregate in-memory.
+    /// </summary>
+    /// <remarks>
+    /// Year filter uses <c>CreatedAtUtc.Year</c> (always non-null).
+    /// SQL Server can use the <c>CreatedAtUtc</c> index (added in
+    /// <c>SaleConfiguration</c>) for the year filter.
+    /// </remarks>
+    Task<decimal> SumRevenueByYearAsync(
+        int year,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Latest N sales matching the spec, WITH line items eagerly
+    /// loaded, ordered by <c>SubmittedAtUtc</c> desc (with
+    /// <c>CreatedAtUtc</c> as fallback for drafts). Bounded result
+    /// set — does NOT load the full sales table.
+    /// </summary>
+    /// <remarks>
+    /// Used by <c>GetDashboardStatsQueryHandler</c> for the "Recent
+    /// Orders" widget (top 6) AND for currency detection (the most
+    /// recent sale's <c>Total.Currency</c> is used as the display
+    /// currency — matches the previous in-memory behavior of taking
+    /// the first non-empty currency from the loaded sales list).
+    /// SQL: <c>SELECT TOP N ... ORDER BY COALESCE(SubmittedAtUtc,
+    /// CreatedAtUtc) DESC</c>. AsNoTracking — pure read.
+    /// </remarks>
+    Task<List<Sale>> GetRecentSalesBySpecificationAsync(
+        int count,
+        ISpecification<Sale> specification,
         CancellationToken cancellationToken = default);
 }

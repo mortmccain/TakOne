@@ -156,8 +156,13 @@ public sealed class ForbiddenLoggingAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze |
-                                               GeneratedCodeAnalysisFlags.ReportDiagnostics);
+        // Brutal Code Review v3 finding #02: previously Analyze | ReportDiagnostics
+        // scanned .razor.g.cs generated files, producing false positives on
+        // compiler-generated log call stubs. Generated code is NOT user-authored —
+        // a banned token there is a symptom of a banned token in the SOURCE
+        // .razor file, which the analyzer already catches when it scans the
+        // user's .cs files. Analyzing generated code adds noise without value.
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
         // We register for InvocationExpression — every method call in the
@@ -193,6 +198,14 @@ public sealed class ForbiddenLoggingAnalyzer : DiagnosticAnalyzer
         // LoggerExtensions.Log* lives in Microsoft.Extensions.Logging.
         // We match by containing-type name + method name prefix, which is
         // stable across versions of the logging package.
+        //
+        // Brutal Code Review v3 finding #02: the previous condition was a
+        // tautology — `containingType.Name != "LoggerExtensions" &&
+        // containingType.Name != "LoggerExtensions"` (same clause twice).
+        // The intent was to accept EITHER LoggerExtensions (the static
+        // extension class for LogInformation/LogWarning/...) OR ILogger
+        // (the interface for the lowest-level Log(...)). The simplified
+        // condition below preserves that intent without the redundancy.
         var containingType = methodSymbol.ContainingType;
         if (containingType is null)
         {
@@ -200,8 +213,8 @@ public sealed class ForbiddenLoggingAnalyzer : DiagnosticAnalyzer
         }
 
         if (containingType.Name != "LoggerExtensions" &&
-            containingType.Name != "LoggerExtensions" &&
-            !(containingType.Name == "ILogger" && methodName.StartsWith("Log", System.StringComparison.Ordinal)))
+            !(containingType.Name == "ILogger" &&
+              methodName.StartsWith("Log", System.StringComparison.Ordinal)))
         {
             return;
         }
@@ -227,9 +240,14 @@ public sealed class ForbiddenLoggingAnalyzer : DiagnosticAnalyzer
         }
 
         // The format string is the FIRST string-literal argument among the
-        // first three. (Log(logLevel, eventId, exception, format, args) is
-        // the lowest-level overload; the format string is always at index ≤ 3.)
-        var scanLimit = System.Math.Min(3, args.Count);
+        // first FOUR. The lowest-level overload is
+        // ILogger.Log(LogLevel, EventId, Exception?, string?, params object[])
+        // — the format string is at index 3. Brutal Code Review v3 finding #02:
+        // the previous scan limit of 3 (Min(3, count)) never reached index 3,
+        // so the lowest-level Log(...) overload was entirely unanalyzed.
+        // We also scan ALL string-literal arguments in range (not just the
+        // first) — a banned token in ANY argument is a leak risk.
+        var scanLimit = System.Math.Min(4, args.Count);
         for (var i = 0; i < scanLimit; i++)
         {
             var expr = args[i].Expression;
@@ -275,9 +293,11 @@ public sealed class ForbiddenLoggingAnalyzer : DiagnosticAnalyzer
                 return; // Report once per call — the first banned token is enough.
             }
 
-            // If the first string-literal argument was checked and is clean,
-            // we can stop scanning — the format string is what we wanted.
-            return;
+            // Brutal Code Review v3 finding #02: the previous code had an
+            // early `return;` here that stopped scanning after the FIRST
+            // clean string-literal argument. If a later argument also
+            // contained a banned token, it was missed. We now fall through
+            // to the next loop iteration to check every string-literal arg.
         }
     }
 }

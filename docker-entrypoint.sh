@@ -11,13 +11,21 @@
 #   3. Hand off to `dotnet TakOne.WebUI.dll` via `exec` so dotnet becomes
 #      PID 1 and receives SIGTERM cleanly when you `docker stop`.
 #
-# DEBUGGING: `docker compose logs takone-web` shows every command (the
-# `set -x` below echoes them). Comment out the `set -x` line once stable
-# for quieter logs.
+# DEBUGGING: to echo every shell command to stdout (like the old `set -x`
+# default), set ENTRYPOINT_TRACE=1 in the container environment. This is
+# OFF by default — `set -x` was previously unconditionally on, which
+# echoed the SQL Server SA connection string (including the password) to
+# stdout on every container start. That output lands in `docker compose
+# logs takone-web` and any log aggregator (Seq, ELK, Datadog). See
+# Brutal Code Review v3 finding #05.
 # =============================================================================
-
 set -e   # exit immediately if any command fails
-set -x   # echo every command — comment out for quieter logs once stable
+
+# Trace mode is opt-in via env var (default: off). Never echo the
+# connection string (which contains the SA password) in normal operation.
+if [ "${ENTRYPOINT_TRACE:-0}" = "1" ]; then
+    set -x
+fi
 
 # ── Read connection string from env ──
 # docker-compose.yml sets TAKONE_CONNECTION_STRING. The .NET config system

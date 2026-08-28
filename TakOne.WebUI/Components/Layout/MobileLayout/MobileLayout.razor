@@ -104,7 +104,31 @@
     <div class="m-gold-bar">@Loc["GoldBarText"]</div>
 
     <main class="m-content" style="padding-bottom: @(_cartLineCount > 0 ? "140px" : "72px");">
-        @Body
+        @* Round 18-A / Brutal Review Fix #34: wrap @Body in <ErrorBoundary>
+           so an unhandled render exception in a mobile child page is caught
+           at the BODY boundary instead of bubbling up + killing the circuit.
+           The header + gold bar + BottomNav stay rendered so the user can
+           navigate away or hit Retry. The boundary is INSIDE .m-content
+           (the body region) so the header + BottomNav are OUTSIDE the
+           boundary — by design. Recover() re-renders ChildContent; if the
+           same exception re-throws, the boundary re-displays ErrorContent
+           (no infinite loop — the boundary captures render exceptions only). *@
+        <ErrorBoundary @ref="_bodyErrorBoundary">
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent Context="ex">
+                <div class="error-boundary-content" style="padding:2rem;text-align:center;">
+                    <h3 style="margin:0 0 0.5rem;">خطایی رخ داد / An error occurred</h3>
+                    <p style="color: var(--rz-text-secondary-color); margin: 0.5rem 0 1rem; font-size:0.9rem;">@ex.Message</p>
+                    <button class="m-btn m-btn-secondary"
+                            style="padding:0.5rem 1.25rem;"
+                            @onclick="RetryBodyError">
+                        تلاش مجدد / Retry
+                    </button>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
     </main>
 </div>
 
@@ -141,6 +165,18 @@
     private int _cartLineCount;
     private int _unreadCount;
     private string _userFullName = string.Empty;
+
+    // Round 18-A / Brutal Review Fix #34: ErrorBoundary ref for the body
+    // wrapper. Recover() re-renders the ChildContent (the @Body). If the
+    // child re-throws the same exception on re-render, the boundary will
+    // re-display the ErrorContent — no infinite loop (the boundary catches
+    // render-time exceptions only).
+    private ErrorBoundary? _bodyErrorBoundary;
+
+    private void RetryBodyError()
+    {
+        _bodyErrorBoundary?.Recover();
+    }
 
     private string GreetingText
     {
@@ -321,9 +357,18 @@
     {
         var currentCulture = System.Globalization.CultureInfo.CurrentUICulture.Name;
         var newCulture = currentCulture == "fa-IR" ? "en-US" : "fa-IR";
-        // Write the culture cookie (same pattern as MainLayout.razor)
-        var cookieValue = $"c={newCulture}|uic={newCulture}";
-        JS.InvokeVoidAsync("eval", $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        // Write the culture cookie via the named JS function (Brutal Code
+        // Review v3 finding #24, part 1 — replaces the previous
+        // `JS.InvokeVoidAsync("eval", "document.cookie='takone_culture=...')`
+        // anti-pattern). The JS function `takone.setCultureCookie(culture)`
+        // is defined in wwwroot/js/culture.js and builds the cookie value
+        // internally (defense-in-depth — we pass ONLY the culture name, a
+        // short validated primitive string, never a full cookie string).
+        // Cookie name (`takone_culture`), value format (`c=...|uic=...`),
+        // and attributes (path=/, max-age=31536000, samesite=strict) are
+        // identical to the previous eval() implementation — verified in
+        // wwwroot/js/culture.js's header comment.
+        JS.InvokeVoidAsync("takone.setCultureCookie", newCulture);
         // Reload the page so the server picks up the new culture
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }

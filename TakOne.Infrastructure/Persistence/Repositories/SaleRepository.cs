@@ -356,4 +356,138 @@ public sealed class SaleRepository : ISaleRepository
         // Coalesce to 0 — empty carts are a normal state (no consumption).
         return consumed ?? 0m;
     }
+
+    // ==================================================================
+    // SCALAR + BOUNDED-SLICE IMPLEMENTATIONS
+    // (Brutal Code Review v3 #23, Round 18-C — see ISaleRepository docs)
+    // ==================================================================
+
+    /// <inheritdoc />
+    public async Task<int> CountBySpecificationAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // Spec evaluator produces an IQueryable<Sale> with all the spec's
+        // Where/OrderBy/Include clauses applied. CountAsync ignores the
+        // ORDER BY (SQL Server optimizes it out) and any Include (COUNT
+        // doesn't need joined rows). The result is a single SQL
+        // SELECT COUNT(*) FROM Sales WHERE [spec.Where].
+        //
+        // AsNoTracking: pure read — caller never mutates these sales.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        return await query.CountAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountByStatusAsync(
+        SaleStatus status,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // The .Where(s => s.Status == status) is composed ON TOP of the
+        // spec's Where clauses. EF Core combines them into a single
+        // SQL WHERE: WHERE [spec.Where] AND Status = @status.
+        //
+        // The Status index (SaleConfiguration adds HasIndex(s => s.Status))
+        // makes the status filter fast for high-cardinality statuses
+        // (Pending is the typical bottleneck — sales pile up while
+        // approval is slow).
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        return await query.CountAsync(s => s.Status == status, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<decimal> SumRevenueAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // Revenue-eligible sales: Pending (submitted, awaiting approval),
+        // Approved (signed off), Invoiced (delivered). Drafts are excluded
+        // (not committed) and Cancelled excluded (didn't happen). Matches
+        // the handler's revenueEligibleSales filter exactly.
+        //
+        // The SumAsync(s => (decimal?)s.Total.Amount) cast to nullable
+        // returns null when no rows match — we coalesce to 0 (empty carts
+        // are normal).
+        //
+        // AsNoTracking: pure read — caller never mutates these sales.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        var sum = await query
+            .Where(s => s.Status == SaleStatus.Pending
+                        || s.Status == SaleStatus.Approved
+                        || s.Status == SaleStatus.Invoiced)
+            .SumAsync(s => (decimal?)s.Total.Amount, cancellationToken);
+        return sum ?? 0m;
+    }
+
+    /// <inheritdoc />
+    public async Task<decimal> SumRevenueByYearAsync(
+        int year,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // Year filter uses CreatedAtUtc.Year (CreatedAtUtc is always
+        // non-null and set in the Sale constructor). SubmittedAtUtc.Year
+        // would also work for submitted sales, but we want a stable
+        // year-bucket that doesn't depend on the submit transition
+        // (which can happen long after the sale was created).
+        //
+        // The WHERE clause: [spec.Where] AND Status IN (Pending, Approved,
+        // Invoiced) AND YEAR(CreatedAtUtc) = @year. SQL Server can use
+        // the CreatedAtUtc index (SaleConfiguration adds
+        // HasIndex(s => s.CreatedAtUtc)) for the year filter — the
+        // YEAR() function call prevents direct index seek, but SQL Server
+        // can still do an index scan with a range predicate if the
+        // query optimizer rewrites it (it usually does for simple
+        // year-extraction).
+        //
+        // AsNoTracking: pure read — caller never mutates these sales.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        var sum = await query
+            .Where(s => (s.Status == SaleStatus.Pending
+                         || s.Status == SaleStatus.Approved
+                         || s.Status == SaleStatus.Invoiced)
+                        && s.CreatedAtUtc.Year == year)
+            .SumAsync(s => (decimal?)s.Total.Amount, cancellationToken);
+        return sum ?? 0m;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<Sale>> GetRecentSalesBySpecificationAsync(
+        int count,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // Defensive: clamp count to a sane range. The handler asks for
+        // 6; a future caller might pass a negative or huge number by
+        // mistake. We never want to load thousands of sales with line
+        // items just because the caller passed int.MaxValue.
+        if (count < 0) count = 0;
+        if (count > 100) count = 100;
+
+        // SQL: SELECT TOP N ... FROM Sales s LEFT JOIN SaleLineItems li
+        //      ON s.Id = li.SaleId WHERE [spec.Where]
+        //      ORDER BY COALESCE(s.SubmittedAtUtc, s.CreatedAtUtc) DESC
+        //
+        // The OrderByDescending(s => s.SubmittedAtUtc ?? s.CreatedAtUtc)
+        // matches the handler's previous in-memory
+        // (s.SubmittedAtUtc ?? s.CreatedAtUtc) fallback. Drafts
+        // (SubmittedAtUtc=null) sort by their CreatedAtUtc; submitted
+        // sales sort by their SubmittedAtUtc.
+        //
+        // AsNoTracking: pure read — the recent-orders widget displays
+        // these sales but never mutates them. AsNoTracking keeps the
+        // change tracker lean.
+        //
+        // NOTE: this returns UNTRACKED entities. The caller does not
+        // mutate them — the dashboard just reads them for display.
+        // This is different from GetByIdAsync / GetActiveDraftForUserAsync,
+        // which return tracked entities because their callers DO mutate
+        // them.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking().Include(s => s.LineItems), specification);
+        return await query
+            .OrderByDescending(s => s.SubmittedAtUtc ?? s.CreatedAtUtc)
+            .Take(count)
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -20,8 +20,14 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD}
       MSSQL_PID: "Developer"
-    ports:
-      - "1433:1433"
+    # No `ports:` mapping — SQL Server must NOT be exposed to the host.
+    # The web container reaches takone-db:1433 over the internal Docker
+    # network. Exposing 1433 to the host combined with the SA password
+    # (still echoed nowhere now that set -x is gone, but still present
+    # in env) lets anyone with host access connect with full SA creds.
+    # To inspect the DB, use: docker compose exec takone-db
+    # /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SQL_SA_PASSWORD" -C -Q '...'
+    # See Brutal Code Review v3 finding #06.
     volumes:
       - takone_sqldata:/var/opt/mssql
     mem_limit: 3g
@@ -59,7 +65,10 @@ services:
       # the container defaults to UTC and the greeting is wrong
       # for Iranian users (e.g. 15:00 Tehran = 11:30 UTC → "morning").
       TZ: "Asia/Tehran"
-      FileStorage__RootPath: "/app/wwwroot/uploads"
+      # Uploads now live outside wwwroot (see the volume mount below) so
+      # they are never served by the unauthenticated UseStaticFiles
+      # middleware. See Brutal Code Review v3 finding #09.
+      FileStorage__RootPath: "/var/lib/takone/uploads"
       TakOne__DefaultAdmin__Enabled: "true"
       TakOne__DefaultAdmin__WorkerId: "ADMIN-0001"
       TakOne__DefaultAdmin__Email: "admin@takone.local"
@@ -67,11 +76,37 @@ services:
       TakOne__DefaultAdmin__ForcePasswordChangeOnFirstLogin: "true"
     ports:
       - "8080:8080"
+    # Uploads live OUTSIDE the app's wwwroot so they are not served by
+    # the unauthenticated static-files middleware, and so the container
+    # can run read-only. A dedicated minimal-API endpoint serves uploads
+    # with authentication + Content-Disposition: attachment. See Brutal
+    # Code Review v3 findings #09 + #10.
     volumes:
-      - takone_uploads:/app/wwwroot/uploads
+      - takone_uploads:/var/lib/takone/uploads
+    # Container hardening (least privilege). `no-new-privileges` blocks
+    # setuid escalation; `cap_drop: ALL` strips Linux capabilities;
+    # `read_only` makes the rootfs immutable; tmpfs mounts give the few
+    # directories that need write access a RAM-backed scratch space. The
+    # uploads volume above is the only persistent writable path. See
+    # Brutal Code Review v3 finding #10.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.dotnet
     mem_limit: 1g
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ || exit 1"]
+      # Hit the ASP.NET Core health endpoint (mapped via
+      # MapHealthChecks("/health") in Program.cs) which itself runs an
+      # AddDbContextCheck against SQL Server. A 200 means the DB is
+      # reachable AND migrations are applied AND Kestrel is up — not
+      # just "Kestrel is listening" (the old `curl /` returned 302 to
+      # /Account/Login and passed even when the DB was down). See
+      # Brutal Code Review v3 finding #11.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

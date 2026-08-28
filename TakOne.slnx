@@ -13,5 +13,6 @@
   <Project Path="tests/TakOne.WebUI.Tests/TakOne.WebUI.Tests.csproj" />
   <Project Path="tests/TakOne.IntegrationTests/TakOne.IntegrationTests.csproj" />
   <Project Path="tests/TakOne.WebUI.ComponentTests/TakOne.WebUI.ComponentTests.csproj" />
+  <Project Path="tests/TakOne.Analyzers.Tests/TakOne.Analyzers.Tests.csproj" />
 </Solution>
 

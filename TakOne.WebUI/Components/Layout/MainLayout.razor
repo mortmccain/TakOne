@@ -331,7 +331,33 @@
         </header>
 
         <RadzenContent Style="padding: 24px;">
-            @Body
+            @* Round 18-A / Brutal Review Fix #34: wrap @Body in <ErrorBoundary>
+               so an unhandled render exception in a child page (e.g. a
+               null-reference in OnInitializedAsync of a Dashboard tile) is
+               caught at the BODY boundary instead of bubbling up + killing
+               the whole circuit. The sidebar + top bar stay rendered so the
+               user can navigate away or hit Retry. The boundary is INSIDE
+               RadzenContent (the body region) so the sidebar/top bar are
+               outside the boundary — by design. Recover() re-renders
+               ChildContent; if the same exception re-throws, the boundary
+               re-displays ErrorContent (no infinite loop — the boundary
+               captures render exceptions only, not post-render ones). *@
+            <ErrorBoundary @ref="_bodyErrorBoundary">
+                <ChildContent>
+                    @Body
+                </ChildContent>
+                <ErrorContent Context="ex">
+                    <div class="error-boundary-content" style="padding:2rem;text-align:center;">
+                        <h3>خطایی رخ داد / An error occurred</h3>
+                        <p style="color: var(--rz-text-secondary-color); margin: 0.5rem 0 1rem;">@ex.Message</p>
+                        <button class="tm-icon-button"
+                                style="border:1px solid var(--rz-border-base-color); padding:0.5rem 1.25rem; border-radius:6px; background: var(--rz-base-background-color); cursor:pointer;"
+                                @onclick="RetryBodyError">
+                            تلاش مجدد / Retry
+                        </button>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
         </RadzenContent>
     </RadzenBody>
 </RadzenLayout>
@@ -382,6 +408,18 @@
 
 @code {
     private RadzenSidebar? sidebar;
+
+    // Round 18-A / Brutal Review Fix #34: ErrorBoundary ref for the body
+    // wrapper. Recover() re-renders the ChildContent (the @Body). If the
+    // child re-throws the same exception on re-render, the boundary will
+    // re-display the ErrorContent — no infinite loop (the boundary catches
+    // render-time exceptions only).
+    private ErrorBoundary? _bodyErrorBoundary;
+
+    private void RetryBodyError()
+    {
+        _bodyErrorBoundary?.Recover();
+    }
 
     // Theme + culture backing fields for the new top bar (matching the
     // Products.razor pattern). The previous MainLayout used _selectedTheme /
@@ -634,9 +672,20 @@
         //
         // Cookie name MUST match `CookieRequestCultureProvider.CookieName`
         // configured in Program.cs (currently `takone_culture`).
-        var cookieValue = $"c={culture}|uic={culture}";
-        await JS.InvokeVoidAsync("eval",
-            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        //
+        // Brutal Code Review v3 finding #24, part 1: the previous
+        // implementation called `JS.InvokeVoidAsync("eval",
+        // "document.cookie='takone_culture=...;path=/;max-age=31536000;
+        // samesite=strict')` — that's the `eval()` XSS/perf anti-pattern.
+        // Replaced by the named JS function `takone.setCultureCookie(culture)`
+        // defined in wwwroot/js/culture.js (registered in App.razor's
+        // <head>). The JS function builds the cookie value internally so
+        // this call site passes ONLY the culture name (a short validated
+        // primitive string) — never a full cookie string. Cookie name,
+        // value format, and attributes (path=/, max-age=31536000,
+        // samesite=strict) are preserved EXACTLY — see culture.js's header
+        // comment for the verification.
+        await JS.InvokeVoidAsync("takone.setCultureCookie", culture);
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 

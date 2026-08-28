@@ -1,0 +1,94 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    TakOne.Analyzers.Tests — unit tests for the ForbiddenLoggingAnalyzer
+    (Brutal Code Review v3 finding #02 — analyzer was previously WIRED into
+    WebUI but had ZERO tests covering its own behavior; the analyzer itself
+    had 4 bugs that went undetected for exactly that reason).
+
+    TESTS:
+      ForbiddenLoggingAnalyzerTests — 11 cases covering:
+        - Positive: each banned token (DIAG Login, PasswordLength,
+          EmailConfirmed, LockoutEnd, AccessFailedCount, Password=,
+          Password:) on each Log* method (LogInformation, LogWarning,
+          LogError, LogCritical, LogDebug, LogTrace) → diagnostic fired
+          at Error severity with id TAKONE_LOGIN_001.
+        - The scan-limit-4 regression: the lowest-level Log(... overload
+          has the format string at index 3 — the previous Min(3, count)
+          scan limit never reached index 3, so the lowest-level overload
+          was entirely unanalyzed. The fix raised the limit to 4.
+        - Negative: clean messages, compound Password identifiers (the
+          word-boundary check on Password= / Password:), Console.WriteLine
+          (not an ILogger.Log* call), and a non-ILogger type whose method
+          happens to be named LogInformation.
+
+    WHY NOT Microsoft.CodeAnalysis.CSharp.Analyzer.Testing:
+      The official test framework package (1.1.x line) pins a hard
+      dependency on Microsoft.CodeAnalysis.Workspaces.Common 1.0.1 (Roslyn
+      1.0.x from 2015). Our analyzer project uses Roslyn 4.11.0 — the
+      version conflict makes restoring the official test framework
+      impossible in a clean graph. Instead, we ship a minimal local
+      harness (AnalyzerTestHarness.cs) that uses the same Roslyn 4.11.0
+      APIs the analyzer is built against, sidestepping the conflict
+      entirely. The contract the official package's AnalyzerVerifier
+      exposes — "give me a source string + an analyzer, I'll return the
+      reported diagnostics" — is what AnalyzerTestHarness.RunAsync
+      replicates.
+
+    CONVENTIONS:
+      xUnit + FluentAssertions. Arrange/Act/Assert comment block headers.
+      Method naming: MethodName_Condition_ExpectedResult.
+      Inline `//` comments for non-trivial setup (the per-test source code
+      is intentionally verbose — the analyzer scans C# source, so each
+      test must spell out the C# it analyzes).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+
+    <!--
+      Bring in Microsoft.Extensions.Logging.Abstractions so the test source
+      strings can `using Microsoft.Extensions.Logging;` and call
+      `logger.LogInformation(...)`, `logger.LogWarning(...)`, etc. —
+      i.e. the exact call shape the analyzer scans for in production code.
+      Without this reference the test-source compilation would fail with
+      CS0103 ("ILogger not found").
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+
+    <!--
+      Roslyn 4.11.0 — same version the analyzer project uses. The test
+      harness builds a CSharpCompilation programmatically and calls
+      `compilation.WithAnalyzers(...).GetAnalyzerDiagnosticsAsync()`.
+      TakOne.Analyzers.csproj already pulls this transitively, but we
+      add it here explicitly so the harness's Roslyn API surface is
+      unambiguous (and survives any future change to the analyzer
+      project's dependency footprint).
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Reference the analyzer as a REGULAR ProjectReference (NOT as
+      OutputItemType="Analyzer"). The test harness loads the analyzer
+      type directly via the WithAnalyzers API; we don't need the
+      analyzer wired into our test project's own compilation (which would
+      scan our test code — the tests themselves use the banned tokens
+      intentionally, so they'd trip the analyzer if it were wired in).
+    -->
+    <ProjectReference Include="..\..\TakOne.Analyzers\TakOne.Analyzers.csproj" />
+  </ItemGroup>
+
+</Project>

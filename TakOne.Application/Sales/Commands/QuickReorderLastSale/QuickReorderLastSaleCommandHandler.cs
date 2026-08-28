@@ -4,6 +4,7 @@ using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.ValueObjects;
 
 namespace TakOne.Application.Sales.Commands.QuickReorderLastSale;
 
@@ -78,10 +79,17 @@ public sealed class QuickReorderLastSaleCommandHandler
         // 2. Resolve the current user's per-product purchase limits in one
         //    round-trip. We need to fetch the products anyway (for stock +
         //    current price + name snapshot), and the limits come with the
-        //    product aggregate. We use IProductRepository.GetByIdsAsync.
+        //    product aggregate. We use IProductRepository.GetByIdsReadOnlyAsync
+        //    — the read-only variant that does NOT track entities in EF Core's
+        //    change tracker. This handler only READS the products (price/name/
+        //    stock snapshot); the Sale aggregate is the only entity we WRITE.
+        //    Brutal Code Review v3 finding #18: the previous call used the
+        //    TRACKED GetByIdsAsync, which caused EF Core's change tracker to
+        //    confuse owned Money instances between the tracked Product and the
+        //    new SaleLineItem, throwing DbUpdateConcurrencyException on save.
         // ------------------------------------------------------------------
         var productIds = lastSale.LineItems.Select(li => li.ProductId).Distinct().ToList();
-        var products = await productRepository.GetByIdsAsync(productIds, cancellationToken);
+        var products = await productRepository.GetByIdsReadOnlyAsync(productIds, cancellationToken);
         var productById = products.ToDictionary(p => p.Id);
 
         // ------------------------------------------------------------------
@@ -362,7 +370,14 @@ public sealed class QuickReorderLastSaleCommandHandler
                 productId: product.Id,
                 productName: product.Name,
                 quantity: quantity,
-                unitPrice: product.Price,
+                // SNAPSHOT the price — pass a NEW Money instance, NOT
+                // product.Price by reference. Every other caller correctly
+                // snapshots; this one was the sole by-reference offender.
+                // EF Core's change tracker confuses owned Money instances
+                // shared between the Product and the SaleLineItem and
+                // throws DbUpdateConcurrencyException on save. Brutal
+                // Code Review v3 finding #18.
+                unitPrice: new Money(product.Price.Amount, product.Price.Currency),
                 purchaseLimit: purchaseLimit
                 );
         }

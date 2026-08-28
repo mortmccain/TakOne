@@ -85,6 +85,7 @@
 @inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 @inject IJSRuntime JS
+@inject Microsoft.Extensions.Logging.ILogger<EditGroup> Logger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -903,7 +904,25 @@
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"HandleDeactivateAsync: dialog open failed: {ex}");
+            // Brutal Code Review v3 finding #24, part 2: replaced
+            // `System.Diagnostics.Debug.WriteLine(...)` with
+            // `Logger.LogWarning(...)`. Debug.WriteLine is stripped in
+            // Release builds (so production lost the diagnostic), doesn't
+            // go through the logging pipeline (so it isn't filtered /
+            // structured / centralized), and clutters the VS Immediate
+            // Window. LogWarning flows through ILogger → the configured
+            // sinks (Console / Debug / OpenTelemetry) and survives into
+            // production. Severity = Warning (not Error) because the user
+            // already sees a friendly toast via Toast.UnexpectedError below
+            // — this isn't a fatal, request-failing exception, it's an
+            // unexpected UI-dialog-open failure that warrants operator
+            // attention but doesn't crash the circuit. The exception
+            // instance is passed as a structured argument (named
+            // "Exception" — passes the ForbiddenLoggingAnalyzer's
+            // banned-token check: "Exception" is not in the banned-token
+            // list [DIAG Login, PasswordLength, EmailConfirmed,
+            // LockoutEnd, AccessFailedCount, Password=, Password:]).
+            Logger.LogWarning("HandleDeactivateAsync: dialog open failed: {Exception}", ex);
             await Toast.UnexpectedError(UnexpectedErrorCodes.EditGroup_DialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }

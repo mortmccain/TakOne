@@ -1170,9 +1170,17 @@
         // Clear the visible text in the search input — see ClearSearchAsync
         // for the rationale (one-way binding means the input's visible
         // text would otherwise stay stale).
+        //
+        // Brutal Code Review v3 finding #24, part 1: replaced the previous
+        // `JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')")`
+        // anti-pattern with a call to the named JS function
+        // `tmShopPage.clearSearch` (defined in wwwroot/js/products.js).
+        // Same behavior — short-circuit no-op when the element is missing
+        // (the JS function uses `if (el)` instead of `el && (el.value='')`,
+        // but the outcome is identical).
         try
         {
-            await JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')");
+            await JS.InvokeVoidAsync("tmShopPage.clearSearch");
         }
         catch
         {
@@ -1198,9 +1206,15 @@
         // one-way here (we use value="@_searchTerm" + @oninput), so we
         // must push the cleared value to the DOM explicitly. The input
         // has id="tm-shop-search-input" — see the markup above.
+        //
+        // Brutal Code Review v3 finding #24, part 1: replaced the previous
+        // `JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')")`
+        // anti-pattern with a call to the named JS function
+        // `tmShopPage.clearSearch` (defined in wwwroot/js/products.js).
+        // Same behavior — short-circuit no-op when the element is missing.
         try
         {
-            await JS.InvokeVoidAsync("eval", "document.getElementById('tm-shop-search-input') && (document.getElementById('tm-shop-search-input').value = '')");
+            await JS.InvokeVoidAsync("tmShopPage.clearSearch");
         }
         catch
         {
@@ -1651,9 +1665,19 @@
             return;
         }
 
-        var cookieValue = $"c={culture}|uic={culture}";
-        await JS.InvokeVoidAsync("eval",
-            $"document.cookie = 'takone_culture={cookieValue}; path=/; max-age=31536000; samesite=strict'");
+        // Brutal Code Review v3 finding #24, part 1: the previous
+        // implementation called `JS.InvokeVoidAsync("eval",
+        // "document.cookie='takone_culture=...;path=/;max-age=31536000;
+        // samesite=strict')` — that's the `eval()` XSS/perf anti-pattern.
+        // Replaced by the named JS function `takone.setCultureCookie(culture)`
+        // defined in wwwroot/js/culture.js (registered in App.razor's
+        // <head>). The JS function builds the cookie value internally so
+        // this call site passes ONLY the culture name (a short validated
+        // primitive string) — never a full cookie string. Cookie name,
+        // value format, and attributes (path=/, max-age=31536000,
+        // samesite=strict) are preserved EXACTLY — see culture.js's header
+        // comment for the verification.
+        await JS.InvokeVoidAsync("takone.setCultureCookie", culture);
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }
 

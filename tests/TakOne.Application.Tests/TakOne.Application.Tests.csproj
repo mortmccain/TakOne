@@ -39,6 +39,33 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <!--
+    FrameworkReference Microsoft.AspNetCore.App — needed by the Round 18-E
+    config-binding regression test (IdentityOptionsBindingTests.cs).
+
+    WHY:
+      The binding test calls
+        `configuration.GetSection("TakOne:Identity").GetSection("Password").Bind(options.Password)`
+      on a real Microsoft.AspNetCore.Identity.IdentityOptions instance — the
+      EXACT pattern the production ServiceCollectionExtensions.cs uses. The
+      IdentityOptions type lives in Microsoft.AspNetCore.Identity, which is
+      part of the ASP.NET Core shared framework. Without this FrameworkReference,
+      the test project can't see IdentityOptions and won't compile.
+
+    The same framework also brings in Microsoft.Extensions.Configuration.Json
+      (used by AddJsonFile / AddJsonStream) and Microsoft.Extensions.Configuration.Binder
+      (used by Bind()), so a single FrameworkReference covers all three needs.
+
+    SIDE EFFECTS:
+      None observed. The framework reference is heavier than individual
+      PackageReferences, but TakOne.WebUI.Tests already uses the same pattern
+      and builds cleanly. The size of the test project's dependency graph
+      is irrelevant — tests don't ship.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\..\TakOne.Domain\TakOne.Domain.csproj" />

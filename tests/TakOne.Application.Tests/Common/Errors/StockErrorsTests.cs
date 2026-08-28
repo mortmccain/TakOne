@@ -11,23 +11,30 @@ namespace TakOne.Application.Tests.Common.Errors;
 /// splits on the LAST two pipes so a product name containing pipes still
 /// parses.
 /// </summary>
+/// <remarks>
+/// <b>TEST COUNT REDUCTION (Brutal Code Review v3 finding #29):</b>
+/// the previous version of this file had 15 tests covering the literal
+/// prefix contract, Format() with ASCII/Persian/pipe-containing product
+/// names, TryParse positive/negative cases (null, empty, unrelated,
+/// non-integer required, non-integer stock, no-pipe payload, one-pipe
+/// payload, empty product name, ASCII, pipe-containing name), and a
+/// Format→TryParse round-trip. The review correctly identified these as
+/// "real assertions, but extremely low value — testing that C#
+/// string equality works." The catalog is a pair of one-line static
+/// helpers; the tests verified C# language semantics, not the catalog's
+/// behavior under realistic conditions. Per the review's recommendation,
+/// this file now retains only 2 tests — the Format() happy-path contract
+/// (proves Format returns the literal "StockExceeded:Apple|0|4" string
+/// for ASCII inputs at the canonical ApproveSale boundary) and the
+/// Format→TryParse round-trip (proves the catalog's two halves are
+/// mutually consistent). Maintenance effort is now focused on the
+/// higher-value Sale handler tests, where the real bugs live. The
+/// deleted edge-case tests are documented in the Round 18 worklog for
+/// traceability.
+/// </remarks>
 public class StockErrorsTests
 {
-    // ── Prefix contract ────────────────────────────────────────────────
-
-    [Fact]
-    public void Prefix_WhenRead_ReturnsStockExceededWithColon()
-    {
-        // Arrange
-
-        // Act
-        var prefix = StockErrors.Prefix;
-
-        // Assert
-        prefix.Should().Be("StockExceeded:");
-    }
-
-    // ── Format() ────────────────────────────────────────────────────────
+    // ── Format() happy-path contract ────────────────────────────────────
 
     [Fact]
     public void Format_WhenGivenAsciiProductName_ReturnsExpectedString()
@@ -44,190 +51,6 @@ public class StockErrorsTests
 
         // Assert
         result.Should().Be("StockExceeded:Apple|0|4");
-    }
-
-    [Fact]
-    public void Format_WhenGivenPersianProductName_PreservesUnicode()
-    {
-        // Arrange
-        const string productName = "اسپاگتی";
-        const int stock = 5;
-        const int required = 10;
-
-        // Act
-        var result = StockErrors.Format(productName, stock, required);
-
-        // Assert
-        result.Should().Be("StockExceeded:اسپاگتی|5|10");
-    }
-
-    [Fact]
-    public void Format_WhenGivenProductNameContainingPipes_DoesNotBreakFormat()
-    {
-        // Arrange
-        // The product name "Product|With|Pipes" contains pipes; Format()
-        // must embed it verbatim — TryParse splits on the LAST 2 pipes.
-
-        // Act
-        var result = StockErrors.Format("Product|With|Pipes", 0, 4);
-
-        // Assert
-        result.Should().Be("StockExceeded:Product|With|Pipes|0|4");
-    }
-
-    // ── TryParse() — negative cases ────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenNull_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = StockErrors.TryParse(null, out var name, out var stock, out var required);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        stock.Should().Be(0);
-        required.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenEmptyString_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = StockErrors.TryParse(string.Empty, out var name, out var stock, out var required);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        stock.Should().Be(0);
-        required.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenGivenUnrelatedError_ReturnsFalse()
-    {
-        // Arrange
-
-        // Act
-        var ok = StockErrors.TryParse("OtherError", out var name, out var stock, out var required);
-
-        // Assert
-        ok.Should().BeFalse();
-        name.Should().BeEmpty();
-        stock.Should().Be(0);
-        required.Should().Be(0);
-    }
-
-    [Fact]
-    public void TryParse_WhenRequiredPartIsNotAnInteger_ReturnsFalse()
-    {
-        // Arrange
-        // The part after the LAST pipe must be the {required} integer.
-
-        // Act
-        var ok = StockErrors.TryParse("StockExceeded:Apple|0|notanint", out _, out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenStockPartIsNotAnInteger_ReturnsFalse()
-    {
-        // Arrange
-        // After splitting off {required}, the part after the second-to-last
-        // pipe must be the {stock} integer.
-
-        // Act
-        var ok = StockErrors.TryParse("StockExceeded:Apple|notanint|4", out _, out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenNoPipeInPayload_ReturnsFalse()
-    {
-        // Arrange
-        // No pipes → cannot split off {required}.
-
-        // Act
-        var ok = StockErrors.TryParse("StockExceeded:Apple", out _, out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenOnlyOnePipeInPayload_ReturnsFalse()
-    {
-        // Arrange
-        // One pipe is enough to split off {required}, but then the remainder
-        // has no pipe to split off {stock} → secondPipe < 0 → false.
-
-        // Act
-        var ok = StockErrors.TryParse("StockExceeded:Apple|0", out _, out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    [Fact]
-    public void TryParse_WhenProductNameIsEmpty_ReturnsFalse()
-    {
-        // Arrange
-        // After splitting off {required} and {stock}, the remaining
-        // productName must be non-empty (length > 0).
-
-        // Act
-        var ok = StockErrors.TryParse("StockExceeded:|0|4", out _, out _, out _);
-
-        // Assert
-        ok.Should().BeFalse();
-    }
-
-    // ── TryParse() — positive cases ─────────────────────────────────────
-
-    [Fact]
-    public void TryParse_WhenGivenValidAsciiName_ReturnsAllThreeComponents()
-    {
-        // Arrange
-        const string input = "StockExceeded:Apple|0|4";
-
-        // Act
-        var ok = StockErrors.TryParse(input, out var name, out var stock, out var required);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("Apple");
-        stock.Should().Be(0);
-        required.Should().Be(4);
-    }
-
-    [Fact]
-    public void TryParse_WhenProductNameContainsPipes_SplitsOnLastTwoPipes()
-    {
-        // Arrange
-        // "StockExceeded:Product|With|Pipes|0|4" — the product name is
-        // "Product|With|Pipes" (containing 2 pipes), and the last 2 pipes
-        // are the {stock}|{required} delimiters.
-
-        // Act
-        var ok = StockErrors.TryParse(
-            "StockExceeded:Product|With|Pipes|0|4",
-            out var name,
-            out var stock,
-            out var required);
-
-        // Assert
-        ok.Should().BeTrue();
-        name.Should().Be("Product|With|Pipes");
-        stock.Should().Be(0);
-        required.Should().Be(4);
     }
 
     // ── Round-trip Format → TryParse ─────────────────────────────────────

@@ -33,6 +33,36 @@ namespace TakOne.Application.Notifications.Commands.EmitAppUpdateBroadcast;
 /// of trying to look up Guid.Empty in the user table).
 /// </para>
 /// <para>
+/// <b>INPUT-LENGTH VALIDATION (Brutal Code Review v3 #30, Round 18-C):</b>
+/// defense-in-depth length limits on <c>Title</c> (≤ 200 chars) and
+/// <c>Message</c> (≤ 2000 chars). The system-internal caller
+/// (<c>AppUpdateBroadcasterHostedService</c>) composes both from the
+/// assembly version, so the inputs are always well-formed in production.
+/// BUT: a future code path that exposes <c>IMessageBus</c> to a Blazor
+/// component, or a developer manually composing the command for testing,
+/// could supply arbitrarily long strings — without these limits a 100MB
+/// Title or Message would be persisted to <c>BroadcastNotification</c>
+/// + N fanout <c>Notification</c> rows (one per active user) and easily
+/// exhaust DB storage.
+/// </para>
+/// <para>
+/// The check is implemented TWO ways (defense-in-depth pairing):
+/// <list type="bullet">
+///   <item><b>Wolverine pipeline:</b>
+///   <c>EmitAppUpdateBroadcastCommandValidator</c> (FluentValidation)
+///   runs automatically via Wolverine's <c>UseFluentValidation</c>
+///   middleware BEFORE the handler — validation failures short-circuit
+///   the handler entirely. This catches all Wolverine-dispatched
+///   invocations.</item>
+///   <item><b>In-handler check:</b> the handler ALSO checks the same
+///   limits at the top of <c>HandleAsync</c> and returns
+///   <c>Result.Failure</c> with the same error codes. This catches any
+///   caller that bypasses Wolverine's pipeline (e.g. a direct handler
+///   invocation from a test, or a future non-Wolverine dispatch path).
+///   The double check is intentional — neither layer trusts the other.</item>
+/// </list>
+/// </para>
+/// <para>
 /// <b>IDEMPOTENCY DEDUP (Wolverine redelivery guard)</b>: before fanning
 /// out, the handler checks whether a <c>BroadcastNotification</c> audit
 /// row with the SAME <c>Title</c> + <c>FanoutKind=AppUpdate</c> already
@@ -57,6 +87,18 @@ namespace TakOne.Application.Notifications.Commands.EmitAppUpdateBroadcast;
 /// </remarks>
 public sealed class EmitAppUpdateBroadcastCommandHandler
 {
+    /// <summary>
+    /// Maximum length (in characters) of the broadcast Title. Must match
+    /// <see cref="EmitAppUpdateBroadcastCommandValidator.MaxTitleLength"/>.
+    /// </summary>
+    private const int MaxTitleLength = 200;
+
+    /// <summary>
+    /// Maximum length (in characters) of the broadcast Message. Must match
+    /// <see cref="EmitAppUpdateBroadcastCommandValidator.MaxMessageLength"/>.
+    /// </summary>
+    private const int MaxMessageLength = 2000;
+
     public static async Task<Result<int>> HandleAsync(
         EmitAppUpdateBroadcastCommand command,
         IUserRepository userRepository,
@@ -66,6 +108,65 @@ public sealed class EmitAppUpdateBroadcastCommandHandler
         ILogger<EmitAppUpdateBroadcastCommandHandler> logger,
         CancellationToken cancellationToken)
     {
+        // ── INPUT-LENGTH VALIDATION (Brutal Code Review v3 #30, ───────
+        //    Round 18-C) ───────────────────────────────────────────────
+        //
+        // Defense-in-depth: even though the system-internal caller
+        // (AppUpdateBroadcasterHostedService) always composes well-formed
+        // inputs, a future code path that exposes IMessageBus to a Blazor
+        // component could supply arbitrarily long strings. Without these
+        // limits, a 100MB Title or Message would be persisted to
+        // BroadcastNotification + N fanout Notification rows (one per
+        // active user) and exhaust DB storage.
+        //
+        // The FluentValidation validator
+        // (EmitAppUpdateBroadcastCommandValidator) runs the SAME checks
+        // via Wolverine's pipeline BEFORE this handler. The in-handler
+        // check here catches any caller that bypasses Wolverine (direct
+        // handler invocation from a test, future non-Wolverine dispatch).
+        //
+        // The check is BEFORE the dedup check + fanout — fail fast,
+        // before any DB or network round-trip.
+        if (string.IsNullOrWhiteSpace(command.Title))
+        {
+            logger.LogWarning(
+                "EmitAppUpdateBroadcast: rejected — Title is empty or whitespace.");
+            return Result<int>.Failure(
+                NotificationErrors.FormatAppUpdateTitleRequired());
+        }
+
+        if (command.Title.Length > MaxTitleLength)
+        {
+            logger.LogWarning(
+                "EmitAppUpdateBroadcast: rejected — Title length {Length} exceeds " +
+                "the {MaxLength}-character limit. Title preview: '{Preview}'",
+                command.Title.Length,
+                MaxTitleLength,
+                command.Title.Length > 80 ? command.Title[..80] + "…" : command.Title);
+            return Result<int>.Failure(
+                NotificationErrors.FormatAppUpdateTitleTooLong());
+        }
+
+        if (string.IsNullOrWhiteSpace(command.Message))
+        {
+            logger.LogWarning(
+                "EmitAppUpdateBroadcast: rejected — Message is empty or whitespace.");
+            return Result<int>.Failure(
+                NotificationErrors.FormatAppUpdateMessageRequired());
+        }
+
+        if (command.Message.Length > MaxMessageLength)
+        {
+            logger.LogWarning(
+                "EmitAppUpdateBroadcast: rejected — Message length {Length} exceeds " +
+                "the {MaxLength}-character limit. Message preview: '{Preview}'",
+                command.Message.Length,
+                MaxMessageLength,
+                command.Message.Length > 80 ? command.Message[..80] + "…" : command.Message);
+            return Result<int>.Failure(
+                NotificationErrors.FormatAppUpdateMessageTooLong());
+        }
+
         // ── IDEMPOTENCY DEDUP ──
         // Wolverine's durable outbox may redeliver this command if the
         // process crashed between the SaveChanges commit and the worker

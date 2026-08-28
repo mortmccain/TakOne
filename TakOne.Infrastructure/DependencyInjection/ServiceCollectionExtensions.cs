@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Configuration;
@@ -281,6 +282,27 @@ public static class ServiceCollectionExtensions
             // Without this, weak-password errors came back in English
             // even when the rest of the page was Persian.
             .AddErrorDescriber<TakOneIdentityErrorDescriber>();
+
+        // ------------------------------------------------------------------
+        // 3a-bis. Fail-fast Identity options validator.
+        //
+        // Registers TakOneIdentityOptionsValidator as an IValidateOptions
+        // <IdentityOptions>. ASP.NET Core runs all registered
+        // IValidateOptions<T> the first time the IOptions<IdentityOptions>
+        // value is resolved. If the bound values do not meet our security
+        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10,
+        // RequireUniqueEmail = true), startup throws
+        // OptionsValidationException BEFORE traffic is served.
+        //
+        // This is the fail-fast safety net for the structural config-
+        // binding bug (Brutal Code Review v3 finding #01): if the JSON
+        // path is ever re-broken so Identity options don't reach the bound
+        // instance, ASP.NET Identity DEFAULTS take over (RequiredLength=6,
+        // RequireUniqueEmail=false), which FAIL the validator — so a
+        // broken binding cannot boot silently.
+        // ------------------------------------------------------------------
+        services.AddSingleton<IValidateOptions<Microsoft.AspNetCore.Identity.IdentityOptions>,
+            TakOneIdentityOptionsValidator>();
 
         // ------------------------------------------------------------------
         // 3b. Cookie auth configuration (Concern F — locked in).
@@ -576,6 +598,32 @@ public static class ServiceCollectionExtensions
         //       for the full design.
         // ------------------------------------------------------------------
         services.AddSingleton<ISaleStateLock, SaleStateLock>();
+
+        // ------------------------------------------------------------------
+        // 5b-2b. SaleStateLock cleanup hosted service (Brutal Code Review
+        //        v3 #26, Round 18-C). Periodically removes idle
+        //        semaphores from the SaleStateLock's internal
+        //        ConcurrentDictionary to bound memory growth (the
+        //        dictionary used to grow unbounded — at 100k sales it
+        //        would hold 100k idle semaphores forever; at 1M+ sales
+        //        over months of operation, that's 40+MB of dead memory
+        //        with no eviction path).
+        //
+        //        The hosted service calls SaleStateLock.Cleanup() every
+        //        5 minutes (configurable via SaleStateLock:CleanupIntervalMinutes).
+        //        The cleanup removes only semaphores whose CurrentCount == 1
+        //        (idle — no holder, no waiters). Race-safe with concurrent
+        //        AcquireAsync; see SaleStateLock.cs for the full race-window
+        //        analysis.
+        //
+        //        Registered as a Singleton IHostedService — depends on the
+        //        SaleStateLock singleton (resolved via ISaleStateLock and
+        //        downcast to the concrete type). If a test double is
+        //        registered instead, the cleanup loop no-ops (the hosted
+        //        service logs once and exits — the test double is
+        //        responsible for its own memory management).
+        // ------------------------------------------------------------------
+        services.AddHostedService<SaleStateLockCleanupHostedService>();
 
         // ------------------------------------------------------------------
         // 5b-3. Notification repository — Scoped (shares the scoped

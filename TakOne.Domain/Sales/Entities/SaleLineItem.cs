@@ -72,12 +72,25 @@ public sealed class SaleLineItem : BaseEntity
     /// can create SaleLineItems, via <see cref="Sale.AddLineItem"/>.
     /// </summary>
     /// <remarks>
-    /// <b>DEFENSIVE COPY OF <paramref name="unitPrice"/>:</b>
-    /// <see cref="Money"/> is a reference type. Even though Money is
-    /// immutable, we construct a fresh instance here rather than holding
-    /// the caller's reference — this is a DDD best practice that keeps
-    /// the SaleLineItem's state independent of the caller's Money instance
-    /// and protects against any future mutability being added to Money.
+    /// <para>
+    /// <b>UNIT PRICE ASSIGNMENT — NO DEFENSIVE COPY:</b> Money is a sealed,
+    /// immutable value object (all setters private; arithmetic operators
+    /// always return new instances). Holding the caller's Money reference
+    /// directly is safe — there is no API surface on Money that mutates an
+    /// existing instance. The historical defensive-copy workaround
+    /// (<c>new Money(unitPrice.Amount, unitPrice.Currency)</c>) was a leftover
+    /// from when Money was mapped as an EF Core OWNED ENTITY: the change
+    /// tracker tracked Money by reference identity, so two SaleLineItems
+    /// holding the same caller Money instance could confuse the tracker
+    /// into thinking both lines were "the same owned entity". With the
+    /// EF Core 9+ <c>ComplexProperty</c> mapping (see SaleLineItemConfiguration
+    /// for the full rationale), Money has no identity of its own in the
+    /// change tracker — it's compared by value (via
+    /// <see cref="BaseValueObject.GetEqualityComponents"/>), and the
+    /// reference-replacement pattern (<c>li.UnitPrice = someNewMoney</c>)
+    /// works correctly. The defensive copy was therefore removed in
+    /// Brutal Code Review v3 finding #15 (Round 18-C).
+    /// </para>
     /// </remarks>
     internal SaleLineItem(
         Guid productId,
@@ -96,8 +109,10 @@ public sealed class SaleLineItem : BaseEntity
         ProductName = productName;
         Quantity = quantity;
 
-        // DEFENSIVE COPY — see XML doc above.
-        UnitPrice = new Money(unitPrice.Amount, unitPrice.Currency);
+        // Money is sealed + immutable (private setters, no mutating methods).
+        // With ComplexProperty mapping (no reference-identity tracking),
+        // holding the caller's Money reference is safe — see the XML doc above.
+        UnitPrice = unitPrice;
 
         LineNumber = lineNumber;
     }

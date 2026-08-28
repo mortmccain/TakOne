@@ -511,11 +511,11 @@ else if (_stats is not null)
         {
             _isLoading = true;
 
-            // Build the role list from the AuthenticationState — ICurrentUserService
-            // exposes IsInRole(string) but not the full role list, so we read it
-            // from the ClaimsPrincipal directly. The handler uses this list to
-            // decide between the AllSales spec (Admin/Manager/ReadOnly) and the
-            // SaleByApprover spec (Employee).
+            // Verify the caller is authenticated (defense-in-depth — the
+            // [Authorize] attribute on the page should have caught this).
+            // The handler resolves roles from ICurrentUserService
+            // (server-verified claims), so we no longer build a role list
+            // here. See Brutal Code Review v3 finding #03.
             var authState = await AuthStateTask;
             var user = authState.User;
 
@@ -526,18 +526,11 @@ else if (_stats is not null)
                 return;
             }
 
-            var roles = new List<string>();
-            if (user.IsInRole(Roles.Admin)) roles.Add(Roles.Admin);
-            if (user.IsInRole(Roles.Manager)) roles.Add(Roles.Manager);
-            if (user.IsInRole(Roles.Employee)) roles.Add(Roles.Employee);
-            if (user.IsInRole(Roles.ReadOnly)) roles.Add(Roles.ReadOnly);
-            if (user.IsInRole(Roles.Customer)) roles.Add(Roles.Customer);
-
-            var query = new GetDashboardStatsQuery
-            {
-                RequestedByUserId = CurrentUser.UserId,
-                UserRoles = roles
-            };
+            // The query no longer carries UserRoles/RequestedByUserId —
+            // the handler resolves roles from ICurrentUserService
+            // (server-verified claims) to close the role-spoofing hole.
+            // See Brutal Code Review v3 finding #03.
+            var query = new GetDashboardStatsQuery();
 
             var result = await MessageBus.InvokeAsync<Result<DashboardStatsDto>>(query);
 

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Radzen;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Errors;
@@ -284,29 +285,6 @@ builder.Services.AddScoped<TakOne.WebUI.Services.NotificationRefreshService>();
 // both singletons, so Scoped is fine and Singleton would also work.
 builder.Services.AddScoped<LoginAuditLogger>();
 
-// --- HttpClient for client-side API calls from Blazor Server circuits ---
-//
-// Used by the RadzenUpload component on CreateProduct.razor / ProductDetail.razor
-// to POST uploaded product images to the /api/product-image minimal API endpoint.
-// The browser's auth cookie is automatically attached to the request by the
-// underlying fetch() call, so the same auth flow that protects pages protects
-// the upload endpoint — no separate token wiring needed.
-//
-// Registered as a transient factory because HttpClient is lightweight and
-// IHttpClientFactory-based clients are the recommended pattern (avoids socket
-// exhaustion). The BaseAddress is set from the current request so relative
-// URLs like "/api/product-image" resolve correctly.
-builder.Services.AddHttpClient("TakOne", (sp, client) =>
-{
-    var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
-    var request = httpContextAccessor.HttpContext?.Request;
-    if (request is not null)
-    {
-        client.BaseAddress = new Uri($"{request.Scheme}://{request.Host}");
-    }
-});
-builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("TakOne"));
-
 // --- Localization (Persian default + English secondary, see roadmap Section 5) ---
 //
 // AddLocalization() registers IStringLocalizer<T> and IStringLocalizerFactory
@@ -403,6 +381,62 @@ builder.Services.Configure<RequestLocalizationOptions>(opts =>
 // booting. See AppUpdateBroadcasterHostedService class doc for the
 // full rationale.
 builder.Services.AddHostedService<AppUpdateBroadcasterHostedService>();
+
+// --- ASP.NET Core health checks (Brutal Code Review v3 finding #11) ---
+//
+// WHY THIS EXISTS:
+//   The Docker Compose healthcheck for the `takone-app` container was
+//   previously `curl -fsS http://localhost:8080/` — a request that hit the
+//   Blazor SSR route `/`, which the cookie middleware 302-redirected to
+//   /Account/Login whenever Kestrel was listening. That meant the
+//   healthcheck PASSED even when:
+//     - The SQL Server database was completely down (the redirect didn't
+//       touch the DB).
+//     - EF Core migrations were half-applied (same reason).
+//     - Wolverine's message store was unreachable (same reason).
+//   Docker would mark the container "healthy", the reverse proxy would
+//   route traffic to it, and users would hit a broken app.
+//
+//   The docker-compose.yml healthcheck is now
+//   `curl -fsS http://localhost:8080/health` — which hits the
+//   MapHealthChecks("/health") endpoint registered below. That endpoint
+//   runs AddDbContextCheck<ApplicationDbContext>, which actually opens a
+//   SQL Server connection and runs `SELECT 1;` against the database.
+//   A 200 means the DB is reachable AND Kestrel is up — not just
+//   "Kestrel is listening".
+//
+// WHAT AddDbContextCheck DOES:
+//   - Resolves ApplicationDbContext from the DI container (Scoped — fresh
+//     instance per probe).
+//   - Calls `Database.CanConnectAsync(CancellationToken)` under the hood
+//     (the EF Core extension method on DatabaseFacade).
+//   - Returns Unhealthy on any failure (SQL Server down, connection
+//     refused, login failed, timeout). Returns Healthy on success.
+//   - Default failure status is Unhealthy with a 503 response code; the
+//     MapHealthChecks endpoint surfaces that to the curl probe.
+//
+// AUTHENTICATION:
+//   /health is intentionally PUBLIC (no .RequireAuthorization() call).
+//   The Docker healthcheck is `curl -fsS` from INSIDE the container — it
+//   has no auth cookie. A protected /health endpoint would 401 and the
+//   healthcheck would always fail → Docker would mark the container
+//   unhealthy → the reverse proxy would stop routing traffic → outage.
+//   The endpoint only reveals whether the DB is reachable (no business
+//   data, no PII), so public visibility is acceptable.
+//
+// WHAT THIS DOES NOT CHECK:
+//   AddDbContextCheck only verifies the SQL Server connection works. It
+//   does NOT verify:
+//     - Wolverine's message store is healthy (separate SQL Server
+//       connection, separate table).
+//     - Identity's auth system can issue cookies.
+//     - The Blazor circuit can connect.
+//   These are deliberate omissions — every probe adds load, and the DB
+//   connection check covers the most common failure mode (SQL Server
+//   unreachable). If deeper probes are needed later, chain them with
+//   .AddCheck<T>() calls on the same builder.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>();
 
 var app = builder.Build();
 
@@ -585,6 +619,170 @@ app.MapRazorComponents<App>()
 
 app.MapHub<NotificationHub>("/notificationHub");
 
+// --- Public health endpoint (Brutal Code Review v3 finding #11) ---
+//
+// MapHealthChecks exposes the AddHealthChecks() + AddDbContextCheck<
+// ApplicationDbContext> probe registered above as an HTTP endpoint.
+// Docker's healthcheck (curl -fsS http://localhost:8080/health) hits
+// this. A 200 = healthy DB; 503 = DB unreachable. The endpoint is
+// PUBLIC (no .RequireAuthorization()) so the container's curl probe —
+// which has no auth cookie — can reach it. See the services-section
+// comment above for the full rationale.
+app.MapHealthChecks("/health");
+
+// ==================================================================================================================================
+//                                                          AUTHENTICATED UPLOADS ENDPOINT (Brutal Code Review v3 finding #09)
+// ==================================================================================================================================
+// Serves uploaded product images from the IFileStorage root directory
+// (NOT from wwwroot). In docker-compose.yml the uploads directory was
+// relocated to /var/lib/takone/uploads — OUTSIDE wwwroot — so
+// app.UseStaticFiles() above no longer serves them. This closes the
+// unauthenticated-static-files hole where anyone could fetch
+// /uploads/products/anything.jpg without logging in (just by knowing
+// the URL).
+//
+// AUTHORIZATION:
+//   .RequireAuthorization() with NO role restriction — every authenticated
+//   user (Customer, Employee, Manager, Admin, ReadOnly) can view product
+//   images, because product images appear in Browse, Cart, Order Detail,
+//   and Product Detail pages that are visible to all roles. The browser's
+//   auth cookie is automatically attached when an <img src> tag fetches
+//   the URL on a Blazor Server page, so this works seamlessly for the
+//   existing .razor files that build URLs like /uploads/products/abc.jpg
+//   from Product.PictureUrl.
+//
+// XSS DEFENSE (defense-in-depth, layered with Fix #08):
+//   - Fix #08: LocalFileStorage.SanitizeExtension now ALWAYS uses the
+//     sniffed content type's canonical extension (image/jpeg→.jpg,
+//     image/png→.png, image/webp→.webp). A JPEG file uploaded as
+//     "evil.html" is saved as randomhex.jpg — never randomhex.html —
+//     so the on-disk filename can't be a browser-renderable HTML name.
+//   - This endpoint sets Content-Disposition: attachment; filename=...
+//     which FORCES the browser to download instead of rendering inline.
+//     Even if a future bug let a non-image file slip through and the
+//     Content-Type was wrong, the attachment disposition prevents the
+//     browser from rendering it as HTML.
+//   - The Content-Type we set is derived from the on-disk extension
+//     (jpg→image/jpeg, png→image/png, webp→image/webp) — the only
+//     extensions SanitizeExtension can ever produce, so we know
+//     exactly which types to map.
+//
+// PATH-TRAVERSAL DEFENSE:
+//   The {fileName} route parameter is sanitized to reject any `..`
+//   segments, path separators (`/`, `\`), or absolute-path markers
+//   (`:` for Windows drive specs). After that, the canonical-resolved
+//   path is verified to be under the configured products folder —
+//   defense-in-depth against any symlink or traversal trick that could
+//   escape the root. The canonical-path check mirrors the one in
+//   LocalFileStorage.DeleteAsync — same logic, same intent.
+//
+// WHY THIS DUPLICATES THE PATH LOGIC IN LocalFileStorage:
+//   The IFileStorage interface is WRITE-ONLY (SaveAsync + DeleteAsync).
+//   It does NOT expose a "get physical file path" method. We deliberately
+//   don't expand the interface for this concern — expanding it would
+//   force every IFileStorage mock across multiple test projects to gain
+//   a new method, and the path scheme ({rootPath}/products/{fileName})
+//   is stable. The same `FileStorage:RootPath` configuration key is
+//   read here and in LocalFileStorage's ctor; both fall back to the
+//   same default ("wwwroot/uploads") if unset. The IFileStorage.SaveAsync
+//   return URL ("/uploads/products/{fileName}") is the contract that
+//   links them: this endpoint's route template matches that prefix
+//   exactly.
+//
+// WHY NOT UseStaticFiles WITH A SECOND FileProvider:
+//   ASP.NET Core's UseStaticFiles CAN be wired with a custom
+//   PhysicalFileProvider pointing at /var/lib/takone/uploads to serve
+//   those files. But UseStaticFiles has NO auth gate — it runs BEFORE
+//   UseAuthorization, so any auth check would have to be hand-rolled
+//   per-request via a custom IFileAuthorizationFilter or by stacking
+//   additional middleware. A minimal-API endpoint with
+//   .RequireAuthorization() is simpler, idiomatic, and uses the same
+//   authorization pipeline as every other protected resource.
+// ==================================================================================================================================
+app.MapGet("/uploads/products/{fileName}", async (
+    string fileName,
+    HttpContext httpContext,
+    IConfiguration configuration) =>
+{
+    // ── Sanitize fileName: reject anything that could traverse the filesystem.
+    // The route parameter binds the URL-decoded value, so "%2F" or "%5C"
+    // sequences are already decoded to "/" or "\" by the time we see them.
+    if (string.IsNullOrWhiteSpace(fileName)
+        || fileName.Contains("..", StringComparison.Ordinal)
+        || fileName.Contains('/', StringComparison.Ordinal)
+        || fileName.Contains('\\', StringComparison.Ordinal)
+        || fileName.Contains(':', StringComparison.Ordinal))
+    {
+        return Results.NotFound();
+    }
+
+    // ── Resolve the physical path from the SAME config key LocalFileStorage
+    // reads (FileStorage:RootPath), with the SAME default. The "products"
+    // subfolder matches LocalFileStorage.ProductImagesSubfolder.
+    var rootPath = configuration["FileStorage:RootPath"] ?? "wwwroot/uploads";
+    var productsPath = Path.Combine(rootPath, "products");
+    var absolutePath = Path.Combine(productsPath, fileName);
+
+    // Canonical-path check: resolve both to absolute paths and verify the
+    // file is still under the products folder. Defends against any symlink
+    // or path-traversal trick that could escape the root.
+    var canonicalProductsPath = Path.GetFullPath(productsPath);
+    string canonicalFilePath;
+    try
+    {
+        canonicalFilePath = Path.GetFullPath(absolutePath);
+    }
+    catch (Exception ex) when (ex is ArgumentException or System.Security.SecurityException or PathTooLongException or NotSupportedException)
+    {
+        return Results.NotFound();
+    }
+
+    if (!canonicalFilePath.StartsWith(canonicalProductsPath + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+    {
+        return Results.NotFound();
+    }
+
+    if (!File.Exists(canonicalFilePath))
+    {
+        return Results.NotFound();
+    }
+
+    // ── Set Content-Type from the on-disk extension. SanitizeExtension (after
+    // Fix #08) ensures the extension is one of: jpg, png, webp (the only types
+    // SniffContentType recognizes). Anything else is unreachable via this
+    // endpoint (SaveAsync would have rejected it), but we map to
+    // application/octet-stream as a safe default for defense-in-depth.
+    var ext = Path.GetExtension(fileName).ToLowerInvariant();
+    var contentType = ext switch
+    {
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png" => "image/png",
+        ".webp" => "image/webp",
+        _ => "application/octet-stream"
+    };
+
+    // ── Results.File with a physical file path:
+    //   - Streams the file from disk (no full-byte-buffer load — same
+    //     streaming posture as UseStaticFiles would use).
+    //   - Sets Content-Type from the contentType arg.
+    //   - Sets Content-Disposition: attachment; filename={fileName} when
+    //     fileDownloadName is non-null — FORCES the browser to download
+    //     instead of rendering inline as a navigable HTML page.
+    //   - Returns 200 OK.
+    // The fileName here is the on-disk filename (e.g. "abc123def.jpg"),
+    // NOT any client-supplied original name — we don't trust that string,
+    // and the on-disk name is what LocalFileStorage generated via
+    // RandomNumberGenerator.GetHexString (cryptographically random hex,
+    // filesystem-safe, no user-controlled bytes).
+    return Results.File(
+        canonicalFilePath,
+        contentType,
+        fileDownloadName: fileName);
+})
+.RequireAuthorization()
+.WithName("ServeProductImage")
+.WithTags("Uploads");
+
 // ==================================================================================================================================
 //                                                          LOGOUT ENDPOINT (Issue #05 — CSRF-safe logout, v2 route rename)
 // ==================================================================================================================================
@@ -608,9 +806,8 @@ app.MapHub<NotificationHub>("/notificationHub");
 //        In .NET 8+, minimal-API POST endpoints are validated by the
 //        UseAntiforgery middleware AUTOMATICALLY (no RequireAntiforgery()
 //        call exists — antiforgery is the default; only DisableAntiforgery()
-//        opts OUT, as the /api/product-image endpoint below does). The
-//        <AntiforgeryToken /> component inside the logout <form> in
-//        MainLayout / ShopLayout / AccessDenied renders the
+//        opts OUT). The <AntiforgeryToken /> component inside the logout
+//        <form> in MainLayout / ShopLayout / AccessDenied renders the
 //        __RequestVerificationToken hidden field. A forged cross-site
 //        POST has no token → 400 Bad Request → no logout.
 //
@@ -670,11 +867,12 @@ app.MapPost("/Account/SignOut",
     });
 // ↑ NOTE: no .DisableAntiforgery() here — antiforgery validation is the
 //   DEFAULT for minimal-API POST endpoints in .NET 8+. The
-//   UseAntiforgery middleware (line ~471) automatically validates the
+//   UseAntiforgery middleware (called above) automatically validates the
 //   __RequestVerificationToken field on every unsafe-method request.
-//   Only the /api/product-image endpoint below calls DisableAntiforgery()
-//   to opt OUT — that's the explicit opt-out path. For logout we want
-//   the default (validate), so we do nothing.
+//   NO endpoint in the codebase calls DisableAntiforgery() to opt out —
+//   the dead /api/product-image endpoint that used to was removed in
+//   Brutal Code Review v3 finding #20. For logout we want the default
+//   (validate), so we do nothing.
 //
 //   The <form method="post" action="/Account/SignOut"> in MainLayout.razor
 //   and AccessDenied.razor submits to this endpoint. The <AntiforgeryToken />
@@ -682,205 +880,31 @@ app.MapPost("/Account/SignOut",
 //   that the UseAntiforgery middleware validates.
 
 // ==================================================================================================================================
-//                                                          PRODUCT IMAGE UPLOAD ENDPOINT
+//                                                          DEAD /api/product-image ENDPOINT REMOVED
 // ==================================================================================================================================
-// Phase 7 item C — minimal API endpoint that accepts a single image upload
-// from the CreateProduct / EditProduct forms, streams it through
-// IFileStorage (LocalFileStorage), and returns the public URL the file can
-// be retrieved from. The URL is stored on Product.PictureUrl.
+// Brutal Code Review v3 finding #20 (Round 18-B) — the entire POST
+// /api/product-image minimal-API endpoint, the multipart form-post size-
+// limit middleware that gated it, AND the IHttpClientFactory registration
+// (whose doc-comment claimed it fed a "RadzenUpload component on
+// CreateProduct.razor / ProductDetail.razor" — FALSE: those pages call
+// IFileStorage.SaveAsync directly via the Blazor Server circuit, never
+// round-tripping through this HTTP endpoint) were ALL DEAD CODE.
 //
-// WHY A MINIMAL API ENDPOINT (not a Wolverine command):
-//   Wolverine's command pipeline is designed for business transactions —
-//   it validates, runs in a DB transaction, publishes domain events. A file
-//   upload is a pure I/O concern with no business rules to validate, no
-//   transaction needed, no events to publish. Routing it through Wolverine
-//   would add overhead with zero benefit. A minimal API endpoint is the
-//   correct tool for the job.
+// The endpoint was also the ONLY place in the codebase that called
+// .DisableAntiforgery() — leaving a live CSRF surface that nothing used.
+// Removal closes that hole and eliminates ~150 lines of dead code.
 //
-// AUTHORIZATION:
-//   [Authorize(Roles = "Employee,Manager,Admin")] — matches the
-//   CreateProduct.razor / EditProduct.razor page authorization. A customer
-//   can't upload product images even if they craft the request manually.
-//   The role check runs against the same auth cookie the page uses, so
-//   there's no separate credential flow.
-//
-// REQUEST SHAPE:
-//   POST /api/product-image
-//   Content-Type: multipart/form-data
-//   Body: IFormFile "file" (single file; multiple files not supported —
-//         Product.PictureUrl is a single string)
-//
-// RESPONSE (200 OK):
-//   { "url": "/uploads/products/abc123def456...jpg" }
-//
-// RESPONSE (4xx):
-//   401 Unauthorized — not logged in
-//   403 Forbidden — logged in but not Employee/Manager/Admin
-//   400 Bad Request — no file, empty file, content-type not in allowlist,
-//                     file size over limit, content-type doesn't match
-//                     actual file content (magic-byte sniffing fails)
-//   413 Payload Too Large — Kestrel-level size limit hit before our handler
-//                            runs (configured via RequestFormLimits below)
-//
-// ANTIFORGERY:
-//   Exempted via IAntiforgery.IsValidRequestAsync. The Blazor Server circuit
-//   already establishes an antiforgery token for the user's session; the
-//   RadzenUpload component sends it automatically as a header. We validate
-//   it here to prevent CSRF on direct API calls. (The Antiforgery middleware
-//   at line 251 handles this automatically for unsafe methods — no explicit
-//   validation code needed in the handler.)
+// Before deleting, the entire repo was grepped for "product-image",
+// "IHttpClientFactory", "HttpClient", "UploadProductImage", and
+// "RadzenUpload" — zero live references in any .razor or .cs file outside
+// Program.cs itself (the .razor hits were CSS class names like
+// .m-product-image / .tm-product-image, not endpoint URLs). The
+// UnexpectedErrorCodes constants ProductImageEndpoint_InvalidUpload and
+// ProductImageEndpoint_UploadFailed in TakOne.Application are LEFT IN PLACE
+// because they are referenced by tests in TakOne.Application.Tests (which
+// are out of scope for this Round 18-B task) — they become unused constants
+// that can be purged in a future cleanup round.
 // ==================================================================================================================================
-
-// Raise Kestrel's per-request multipart body size limit to 50 MB so a
-// 5 MB image upload (LocalFileStorage's max) plus multipart overhead doesn't
-// get rejected before our handler runs. The previous 10 MB limit was too
-// tight — a single modern phone photo (often 8-12 MB) could exceed it and
-// crash with an unhandled InvalidDataException before LocalFileStorage had
-// a chance to return a clean 400. With 50 MB headroom, LocalFileStorage's
-// 5 MB cap is what users actually hit, producing a friendly error message
-// instead of a crash.
-//
-// We do this by replacing the IFormFeature on the request features collection
-// with one configured with a FormOptions that has our 50 MB limit. The
-// replacement happens only for the /api/product-image path so other endpoints
-// keep their default behavior.
-app.Use((context, next) =>
-{
-    if (context.Request.Path.StartsWithSegments("/api/product-image", StringComparison.OrdinalIgnoreCase))
-    {
-        context.Features.Set<Microsoft.AspNetCore.Http.Features.IFormFeature>(
-            new Microsoft.AspNetCore.Http.Features.FormFeature(
-                context.Request,
-                new Microsoft.AspNetCore.Http.Features.FormOptions
-                {
-                    MultipartBodyLengthLimit = 50 * 1024 * 1024 // 50 MB
-                }));
-    }
-    return next();
-});
-
-app.MapPost
-    (
-    "/api/product-image",
-    async
-    (
-    HttpContext httpContext,
-    IFileStorage fileStorage,
-    ILogger<Program> logger) =>
-    {
-        // ── Authorization check: Employee/Manager/Admin only.
-        // The endpoint route is decorated with [Authorize(Roles=...)] below via
-        // RequireAuthorization, but we double-check here for defense-in-depth —
-        // if someone removes RequireAuthorization in a refactor, this still
-        // prevents a customer from uploading.
-        if (!httpContext.User.Identity?.IsAuthenticated ?? true)
-            return Results.Unauthorized();
-
-        var isStaff = httpContext.User.IsInRole(Roles.Employee)
-                   || httpContext.User.IsInRole(Roles.Manager)
-                   || httpContext.User.IsInRole(Roles.Admin);
-        if (!isStaff)
-            return Results.Forbid();
-
-        // ── Extract the uploaded file from the multipart form.
-        var form = await httpContext.Request.ReadFormAsync(httpContext.RequestAborted);
-        if (form.Files.Count == 0)
-            return Results.BadRequest(new { error = "No file was uploaded." });
-
-        if (form.Files.Count > 1)
-            return Results.BadRequest(new { error = "Only one file can be uploaded at a time." });
-
-        var file = form.Files[0];
-        if (file.Length == 0)
-            return Results.BadRequest(new { error = "The uploaded file is empty." });
-
-        // ── Content-type allowlist (advisory check; LocalFileStorage sniffs
-        // magic bytes for the authoritative check).
-        var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "image/jpeg", "image/png", "image/webp"
-    };
-        if (!allowedContentTypes.Contains(file.ContentType))
-        {
-            return Results.BadRequest(new
-            {
-                error = $"Unsupported file type '{file.ContentType}'. Allowed: JPEG, PNG, WebP."
-            });
-        }
-
-        // ── Stream the file to storage. LocalFileStorage handles:
-        //   - Magic-byte sniffing (rejects if actual content ≠ declared content type)
-        //   - Max size enforcement (rejects if > 5 MB)
-        //   - Atomic write (write to .tmp, then File.Move)
-        //   - Filename generation (crypto-random hex, no client filename trusted)
-        try
-        {
-            // OpenReadStream returns a streaming, non-buffering view of the
-            // uploaded file's bytes. The actual 5 MB size limit is enforced
-            // INSIDE LocalFileStorage via BoundedStream (which throws as soon
-            // as the cumulative byte count crosses 5 MB), and Kestrel's
-            // per-request multipart limit (10 MB, set via the IFormFeature
-            // replacement in the middleware above) is the outer gate. No need
-            // to also cap at the OpenReadStream layer — that would be a third
-            // defense-in-depth layer, but two layers are enough.
-            await using var stream = file.OpenReadStream();
-            var url = await fileStorage.SaveAsync(
-                stream,
-                file.FileName,
-                file.ContentType,
-                httpContext.RequestAborted);
-
-            logger.LogInformation(
-                "Product image uploaded by {User} ({Bytes} bytes, {ContentType}) → {Url}",
-                httpContext.User.Identity?.Name ?? "?",
-                file.Length,
-                file.ContentType,
-                url);
-
-            return Results.Ok(new { url });
-        }
-        catch (InvalidDataException ex)
-        {
-            // LocalFileStorage throws this for: unrecognized content type,
-            // content-type mismatch, or file size over limit. Map to 400.
-            // The response body carries the UnexpectedErrorCodes reference
-            // so the user (or support team) can pinpoint the file:line via
-            // the developer reference PDF.
-            logger.LogWarning(
-                "Product image upload rejected: {Message}. User: {User} [{UnexpectedCode}]",
-                ex.Message, httpContext.User.Identity?.Name ?? "?",
-                UnexpectedErrorCodes.ProductImageEndpoint_InvalidUpload);
-            return Results.BadRequest(new
-            {
-                error = $"An unexpected error occurred. Error code: {UnexpectedErrorCodes.ProductImageEndpoint_InvalidUpload}",
-            });
-        }
-        catch (Exception ex)
-        {
-            // Unexpected failure (disk full, permission denied, etc.). Don't leak
-            // the exception message to the client — return a generic 500 with
-            // the UnexpectedErrorCodes reference in the title.
-            logger.LogError(
-                ex,
-                "Unexpected error during product image upload. User: {User} [{UnexpectedCode}]",
-                httpContext.User.Identity?.Name ?? "?",
-                UnexpectedErrorCodes.ProductImageEndpoint_UploadFailed);
-            return Results.Problem(
-                title: $"Upload failed. Error code: {UnexpectedErrorCodes.ProductImageEndpoint_UploadFailed}",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
-    })
-.RequireAuthorization(new Microsoft.AspNetCore.Authorization.AuthorizeAttribute { Roles = "Employee,Manager,Admin" })
-.WithName("UploadProductImage")
-.WithTags("Products")
-.DisableAntiforgery(); // The RadzenUpload component doesn't send our antiforgery token;
-                       // we'd need to wire that up explicitly. CSRF risk is low because
-                       // this endpoint only writes a file to disk — it doesn't mutate any
-                       // business state. A CSRF attack that uploads a file just leaves an
-                       // orphan file; it doesn't compromise the user's account. If this
-                       // assumption changes (e.g. endpoint starts recording upload
-                       // metadata to the DB), remove DisableAntiforgery and wire the token
-                       // in the RadzenUpload request headers.
 
 // ==================================================================================================================================
 //                                                          STARTUP-TIME SEEDING

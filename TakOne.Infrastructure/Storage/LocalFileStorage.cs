@@ -19,10 +19,17 @@ namespace TakOne.Infrastructure.Storage;
 /// =========
 /// Three layers of defense against malicious uploads:
 ///
-/// 1. <b>Filename sanitization</b> — the client-supplied filename is used ONLY
-///    to extract the file extension (lower-cased, max 5 chars including dot,
-///    must match <c>[a-z0-9]+</c>). The actual on-disk filename is a
-///    cryptographically random 32-char hex string. Path traversal attacks
+/// 1. <b>Filename sanitization</b> — the client-supplied filename is NOT USED
+///    AT ALL after Brutal Code Review v3 finding #08 (Round 18-B). The
+///    on-disk extension is ALWAYS derived from the SNIFFED content type's
+///    canonical extension (image/jpeg→.jpg, image/png→.png, image/webp→.webp)
+///    via <see cref="SanitizeExtension"/>. The previous implementation
+///    trusted the client extension if it passed a weak regex, which allowed
+///    JPEG bytes named "evil.html" to be saved as
+///    "randomhex.html" — and the static-files middleware then served the
+///    file with a text/html Content-Type, enabling XSS via direct URL
+///    navigation. The actual on-disk filename is a cryptographically
+///    random 32-char hex string. Path traversal attacks
 ///    (<c>../../etc/passwd</c>), Unicode tricks, and filename collisions are
 ///    all rendered impossible.
 ///
@@ -173,11 +180,20 @@ internal sealed class LocalFileStorage : IFileStorage
                 $"Declared content type '{contentType}' does not match the actual file content '{sniffedContentType}'.");
         }
 
-        // ── Step 2: extract + sanitize the file extension from the suggested name.
-        // We keep the extension because it's useful for browser content-type
-        // inference when the file is later served. We DON'T keep any other part
-        // of the client filename.
-        var extension = SanitizeExtension(suggestedFileName, sniffedContentType);
+        // ── Step 2: resolve the canonical file extension from the SNIFFED
+        // content type. The client-supplied filename is NOT USED AT ALL —
+        // the caller has no control over the on-disk extension. This is
+        // Brutal Code Review v3 finding #08 (Round 18-B): the old code's
+        // "use the client extension if it passes a weak regex" path allowed
+        // JPEG bytes named "evil.html" to be saved as randomhex.html,
+        // enabling XSS via the static-files middleware's text/html serving.
+        // SanitizeExtension now ALWAYS returns the sniffed type's canonical
+        // extension, and throws InvalidDataException for unknown types
+        // (defense-in-depth — SniffContentType should have rejected the
+        // upload before reaching this point, but if SniffContentType is
+        // ever extended without updating the extension map, the upload
+        // fails closed instead of falling back to a guessed extension).
+        var extension = SanitizeExtension(sniffedContentType);
 
         // ── Step 3: ensure the target directory exists. Create it if not.
         // Idempotent — safe to call even if it already exists.
@@ -408,33 +424,70 @@ internal sealed class LocalFileStorage : IFileStorage
     }
 
     /// <summary>
-    /// Extract + sanitize the file extension from the client-supplied filename.
+    /// Resolve the canonical file extension for the SNIFFED content type.
     ///
-    /// Rules:
-    ///   - If the declared content type doesn't match the sniffed content type,
-    ///     we trust the SNIFFED type for the extension (e.g. a .jpg file that's
-    ///     actually a PNG gets saved as .png).
-    ///   - Extension is lower-cased.
-    ///   - Must match [a-z0-9]{1,4} after the dot.
-    ///   - If the client filename has no usable extension, fall back to the
-    ///     canonical extension for the sniffed content type.
+    /// SECURITY POSTURE (Brutal Code Review v3 finding #08, Round 18-B):
+    ///   The previous implementation read the client-supplied filename's
+    ///   extension and only fell back to the sniffed type's canonical
+    ///   extension when the client extension failed a weak regex. That
+    ///   meant: upload JPEG bytes named "evil.html" → sniffed=image/jpeg
+    ///   → matches the declared type → client extension "html" passes the
+    ///   regex → file saved as "randomhex.html" → static-files middleware
+    ///   serves as text/html → XSS via direct URL navigation.
+    ///
+    ///   The fix: ALWAYS use the sniffed type's canonical extension. The
+    ///   client filename is no longer a parameter — the caller cannot
+    ///   influence the on-disk extension at all. If the sniffed type isn't
+    ///   in our mapping (which shouldn't happen because <see cref="SniffContentType"/>
+    ///   is the only caller and only returns 3 known types), we REJECT the
+    ///   upload with <see cref="InvalidDataException"/> — fail-closed.
+    ///
+    /// MAPPING:
+    ///   - <c>image/jpeg</c> → <c>"jpg"</c>  (NOT "jpeg" — filesystem
+    ///     convention; browsers serve both as image/jpeg, but .jpg is
+    ///     shorter and matches what every camera and stock-photo site uses.)
+    ///   - <c>image/png</c> → <c>"png"</c>
+    ///   - <c>image/webp</c> → <c>"webp"</c>
+    ///   - anything else → throw <see cref="InvalidDataException"/>
+    ///     (defense-in-depth — <see cref="SniffContentType"/> should have
+    ///     already returned null and caused <see cref="SaveAsync"/> to
+    ///     reject the upload before reaching this method, but if
+    ///     <see cref="SniffContentType"/> is ever extended to recognize
+    ///     new types without updating this map, the upload fails closed
+    ///     instead of being saved with a guessed extension).
+    ///
+    /// WHY THE OLD XML DOC COMMENT WAS WRONG:
+    ///   The previous XML doc on this method claimed "we trust the SNIFFED
+    ///   type for the extension" — that was a LIE. The actual code used the
+    ///   client extension whenever it passed a weak regex (1-4 letters/digits,
+    ///   lower-cased). The new comment accurately describes the new behavior:
+    ///   the client filename is not even a parameter anymore.
     /// </summary>
-    private static string SanitizeExtension(string suggestedFileName, string sniffedContentType)
+    /// <param name="sniffedContentType">
+    /// The content type determined by <see cref="SniffContentType"/> from the
+    /// file's magic bytes. The CLIENT-declared content type is NOT accepted
+    /// here — only the sniffed type, which is authoritative.
+    /// </param>
+    /// <returns>
+    /// The canonical extension (without leading dot), lower-cased. Always
+    /// one of: <c>jpg</c>, <c>png</c>, <c>webp</c>.
+    /// </returns>
+    /// <exception cref="InvalidDataException">
+    /// Thrown if <paramref name="sniffedContentType"/> is not one of the
+    /// supported types. Defense-in-depth — <see cref="SniffContentType"/>
+    /// should have already rejected the upload (returned null) before
+    /// <see cref="SaveAsync"/> reached this method.
+    /// </exception>
+    private static string SanitizeExtension(string sniffedContentType)
     {
-        // Try to extract from the suggested name first.
-        var ext = Path.GetExtension(suggestedFileName)?.ToLowerInvariant().TrimStart('.');
-        if (string.IsNullOrEmpty(ext) || ext.Length > 4 || !ext.All(c => char.IsLetterOrDigit(c)))
+        return sniffedContentType switch
         {
-            // Fall back to the canonical extension for the sniffed type.
-            return sniffedContentType switch
-            {
-                "image/jpeg" => "jpg",
-                "image/png" => "png",
-                "image/webp" => "webp",
-                _ => "bin"
-            };
-        }
-        return ext;
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            "image/webp" => "webp",
+            _ => throw new InvalidDataException(
+                $"Cannot determine canonical extension for sniffed content type '{sniffedContentType}'.")
+        };
     }
 
     /// <summary>

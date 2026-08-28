@@ -14,13 +14,13 @@ namespace TakOne.SharedKernel.ValueObjects;
 /// <remarks>
 /// <para>
 /// <b>EF CORE MAPPING — <c>ComplexProperty</c> (value semantics):</b>
-/// Money is mapped as a <c>ComplexProperty</c> on three entities in this
+/// Money is mapped as a <c>ComplexProperty</c> on FOUR entities in this
 /// codebase (NOT <c>OwnsOne</c>): <c>Product.Price</c>,
-/// <c>SaleLineItem.UnitPrice</c>, and <c>Sale.Total</c>.
-/// <c>ComplexProperty</c> (EF Core 9+) has VALUE SEMANTICS: EF Core
-/// compares complex type instances BY VALUE (using
-/// <see cref="BaseValueObject"/>'s <c>GetEqualityComponents</c> override),
-/// so reference replacement (e.g. <c>Total = sum + line.GrossTotal</c>)
+/// <c>SaleLineItem.UnitPrice</c>, <c>Sale.Total</c>, and
+/// <c>CustomerGroup.Salary</c>. <c>ComplexProperty</c> (EF Core 9+) has
+/// VALUE SEMANTICS: EF Core compares complex type instances BY VALUE
+/// (using <see cref="BaseValueObject"/>'s <c>GetEqualityComponents</c>
+/// override), so reference replacement (e.g. <c>Total = sum + line.GrossTotal</c>)
 /// works correctly — EF detects the value change and generates a clean
 /// UPDATE. <c>OwnsOne</c> tracked by reference identity, which broke
 /// this pattern with <c>DbUpdateConcurrencyException</c>.

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using TakOne.Domain.Categories.Entities;
 using TakOne.Domain.Common.Entities;
 using TakOne.Domain.Customers.Entities;
@@ -11,6 +12,7 @@ using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Users;
 using TakOne.Infrastructure.Identity;
 using TakOne.SharedKernel.Common;
+using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.Infrastructure.Persistence;
 
@@ -274,5 +276,72 @@ public class ApplicationDbContext
         // `20260805092026_AddDataProtectionKeys` for the concrete schema.
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly);
+
+        // ------------------------------------------------------------------
+        // Optimistic-concurrency convention (Brutal Code Review v3 #14).
+        //
+        // AggregateRoot now exposes a `byte[] RowVersion` property. We
+        // configure EVERY entity type that has a RowVersion property as a
+        // SQL Server `rowversion` column via `.IsRowVersion()`. This is
+        // the EF Core convention for optimistic concurrency: the DB
+        // auto-increments the rowversion on every UPDATE; when two
+        // concurrent transactions load the same row and both try to save,
+        // the second save's WHERE clause (RowVersion = @original) fails
+        // to match, and EF throws DbUpdateConcurrencyException — which
+        // handlers catch and surface as a friendly retry error.
+        //
+        // This convention-based approach means: adding RowVersion to
+        // AggregateRoot is the ONLY change needed — no per-entity
+        // IEntityTypeConfiguration boilerplate. Every aggregate that
+        // inherits AggregateRoot (Sale, Product, Category, User,
+        // CustomerGroup, Notification, etc.) gets the token automatically.
+        // ------------------------------------------------------------------
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            // Find a RowVersion property on this entity type (declared
+            // or inherited). Skip if none — owned/complex types and
+            // ASP.NET Identity entities (ApplicationUser is NOT an
+            // AggregateRoot) don't have it.
+            var rowVersionProperty = entityType.FindProperty(nameof(AggregateRoot.RowVersion));
+            if (rowVersionProperty is null)
+            {
+                continue;
+            }
+
+            // Configure as a SQL Server rowversion column. This is what
+            // the `.IsRowVersion()` fluent-API extension does internally,
+            // expressed via the low-level IMutableProperty API so it
+            // works in a convention loop without a PropertyBuilder:
+            //   1. IsConcurrencyToken = true  → EF includes the column
+            //      in the WHERE clause of UPDATE/DELETE statements
+            //      (the concurrency check).
+            //   2. SetColumnType("rowversion") → SQL Server maps the
+            //      column as a rowversion (auto-incrementing binary).
+            //   3. ValueGenerated = OnAddOrUpdate → the DB assigns the
+            //      value on INSERT and updates it on every UPDATE; EF
+            //      reads back the new value so the in-memory entity
+            //      stays consistent with the DB.
+            //   4. SetDefaultValue(Array.Empty<byte>()) → CRITICAL for
+            //      the SQLite in-memory integration tests. SQLite has
+            //      no native rowversion type (the "rowversion" column
+            //      type is treated as an opaque BLOB), so SQLite does
+            //      NOT auto-generate a value on INSERT. Without a
+            //      default, every seed INSERT (e.g. SystemSettings
+            //      singleton seed) fails with "NOT NULL constraint
+            //      failed: <Table>.RowVersion". The default (empty
+            //      byte array) lets the INSERT succeed; EF Core's
+            //      concurrency check still fires on UPDATE (it
+            //      compares the original RowVersion to the DB's current
+            //      value in the WHERE clause). On SQL Server (production),
+            //      the default is only used by the ALTER TABLE ADD
+            //      COLUMN migration step to populate existing rows —
+            //      new INSERTs auto-generate a real rowversion value
+            //      and the default is never read. See Brutal Code Review
+            //      v3 finding #14 + the Round 18-F test discovery.
+            rowVersionProperty.IsConcurrencyToken = true;
+            rowVersionProperty.SetColumnType("rowversion");
+            rowVersionProperty.ValueGenerated = ValueGenerated.OnAddOrUpdate;
+            rowVersionProperty.SetDefaultValue(Array.Empty<byte>());
+        }
     }
 }

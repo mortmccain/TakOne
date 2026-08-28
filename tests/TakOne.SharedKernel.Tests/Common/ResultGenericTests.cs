@@ -38,7 +38,7 @@ public class ResultGenericTests
     }
 
     [Fact]
-    public void Failure_WhenGivenError_ReturnsIsFailureTrueWithDefaultValue()
+    public void Failure_WhenGivenError_ReturnsIsFailureTrueAndThrowsOnValueAccess()
     {
         // Arrange
         const string error = "kaboom";
@@ -47,14 +47,21 @@ public class ResultGenericTests
         var result = Result<int>.Failure(error);
 
         // Assert
+        // SECURITY FIX (Brutal Code Review v3 #16): the Value getter now
+        // throws on a failed Result — previously it silently returned
+        // default(int) = 0, which let callers propagate 0 downstream
+        // without noticing the failure. The throw makes the footgun loud.
         result.IsSuccess.Should().BeFalse();
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be(error);
-        result.Value.Should().Be(default(int));
+
+        var act = () => result.Value;
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cannot access Value of a failed Result*");
     }
 
     [Fact]
-    public void Failure_WhenGivenErrorForReferenceType_ReturnsNullValue()
+    public void Failure_WhenGivenErrorForReferenceType_ThrowsOnValueAccess()
     {
         // Arrange
         const string error = "missing";
@@ -63,10 +70,18 @@ public class ResultGenericTests
         var result = Result<string>.Failure(error);
 
         // Assert
+        // SECURITY FIX (Brutal Code Review v3 #16): the Value getter now
+        // throws on a failed Result — previously it silently returned
+        // null for reference-type T, which let callers propagate null
+        // downstream (NullReferenceException at an unpredictable call
+        // site, far from the actual failure). The throw makes the footgun
+        // loud and localizes the error to the misuse site.
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Be(error);
-        // For reference-type T, default! is null.
-        result.Value.Should().BeNull();
+
+        var act = () => result.Value;
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cannot access Value of a failed Result*");
     }
 
     [Fact]
@@ -121,7 +136,7 @@ public class ResultGenericTests
     }
 
     [Fact]
-    public void Constructor_WhenDefaultFalseAndError_ReturnsFailureWithError()
+    public void Constructor_WhenDefaultFalseAndError_ReturnsFailureWithErrorAndThrowsOnValueAccess()
     {
         // Arrange
         const string error = "bad";
@@ -130,9 +145,14 @@ public class ResultGenericTests
         var result = new TestResult<int>(default!, false, error);
 
         // Assert
+        // SECURITY FIX (Brutal Code Review v3 #16): Value access on a
+        // failed Result throws — even when constructed via the protected
+        // internal ctor. This closes the footgun for ALL construction paths.
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Be(error);
-        result.Value.Should().Be(default(int));
+
+        var act = () => result.Value;
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
