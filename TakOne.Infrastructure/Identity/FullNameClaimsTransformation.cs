@@ -109,6 +109,53 @@ public sealed class FullNameClaimsTransformation : IClaimsTransformation
     private readonly IMemoryCache _cache;
     private readonly ILogger<FullNameClaimsTransformation> _logger;
 
+    /// <summary>
+    /// Builds the cache key used to store per-user state (FullName +
+    /// IsActive + MustChangePassword). Exposed as a public static method
+    /// so other services (notably <c>UserAccountService</c>) can invalidate
+    /// the cache entry when they mutate any of those flags — preventing
+    /// the stale-cache bugs documented on <see cref="InvalidateUserStateCache"/>.
+    /// </summary>
+    /// <param name="userId">The user's immutable Id (the AspNetUsers PK).</param>
+    /// <returns>The cache key string, e.g. <c>"user_state:00000000-000-0000-0000-000000000000"</c>.</returns>
+    public static string GetUserStateCacheKey(Guid userId)
+        => $"user_state:{userId}";
+
+    /// <summary>
+    /// Removes the per-user state cache entry (FullName + IsActive +
+    /// MustChangePassword) from the supplied <see cref="IMemoryCache"/>.
+    ///
+    /// WHY THIS EXISTS:
+    ///   <see cref="TransformAsync"/> caches the DB-read state for 30
+    ///   seconds per user. When a service mutates one of the cached flags
+    ///   (e.g. <c>UserAccountService.ChangePasswordAsync</c> clears
+    ///   <c>MustChangePassword</c>, or <c>UserAccountService.ResetPasswordAsync</c>
+    ///   sets it back to <c>true</c>), the stale cache would otherwise:
+    ///     - For <c>MustChangePassword=false→true</c>: skip the forced
+    ///       password-change redirect for up to 30 seconds after an admin
+    ///       reset (security hole — the user could log in with the temp
+    ///       password and access the app without being forced to change it).
+    ///     - For <c>MustChangePassword=true→false</c>: RE-ADD the
+    ///       <c>must_change_password</c> claim to the transformed principal
+    ///       for up to 30 seconds after the user just changed their
+    ///       password, causing the <c>MustChangePasswordRedirectMiddleware</c>
+    ///       to bounce them back to <c>/Account/ChangePassword</c> on the
+    ///       very next request — which the user perceives as "I have to
+    ///       change my password twice on first login."
+    ///
+    ///   Both directions are fixed by having the mutating service call this
+    ///   method immediately after committing the DB change, so the next
+    ///   authenticated request re-reads the fresh state from the DB.
+    /// </summary>
+    /// <param name="cache">The process-wide <see cref="IMemoryCache"/>
+    /// (the same singleton instance this transformation resolves via DI).</param>
+    /// <param name="userId">The user whose cache entry should be evicted.</param>
+    public static void InvalidateUserStateCache(IMemoryCache cache, Guid userId)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        cache.Remove(GetUserStateCacheKey(userId));
+    }
+
     public FullNameClaimsTransformation(
         IServiceScopeFactory scopeFactory,
         IMemoryCache cache,
@@ -138,7 +185,7 @@ public sealed class FullNameClaimsTransformation : IClaimsTransformation
             return principal;
 
         // ── Fetch the current FullName + IsActive (from cache or DB) ──
-        var cacheKey = $"user_state:{userId}";
+        var cacheKey = GetUserStateCacheKey(userId);
         if (!_cache.TryGetValue(cacheKey, out UserState? state) || state is null)
         {
             // IMemoryCache doesn't resolve scoped services, so we create a

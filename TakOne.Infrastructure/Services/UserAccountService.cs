@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
@@ -105,15 +106,39 @@ public sealed class UserAccountService : IUserAccountService
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ApplicationDbContext _db;
+    private readonly IMemoryCache _userStateCache;
     private readonly ILogger<UserAccountService> _logger;
 
+    /// <summary>
+    /// Constructs the service.
+    /// </summary>
+    /// <param name="userManager">ASP.NET Identity <c>UserManager</c> for
+    /// password hashing, role assignment, etc.</param>
+    /// <param name="db">The scoped <c>ApplicationDbContext</c>. Identity
+    /// is wired to use the same context (<c>AddEntityFrameworkStores&lt;ApplicationDbContext&gt;</c>),
+    /// so password changes and our flag mutations commit on the same
+    /// tracked-entity graph as the rest of the request.</param>
+    /// <param name="userStateCache">The process-wide <c>IMemoryCache</c>
+    /// (singleton). Used to invalidate the per-user state cache entry
+    /// maintained by <see cref="FullNameClaimsTransformation"/> after we
+    /// mutate <c>MustChangePassword</c> — without this, the cached state
+    /// would be stale for up to 30 seconds, causing the
+    /// "user has to change their password twice on first login" bug
+    /// (true→false direction) and a security hole where the forced-
+    /// change-after-reset redirect is skipped for up to 30 seconds
+    /// (false→true direction). See
+    /// <see cref="FullNameClaimsTransformation.InvalidateUserStateCache"/>
+    /// for the full rationale.</param>
+    /// <param name="logger">Structured logger.</param>
     public UserAccountService(
         UserManager<ApplicationUser> userManager,
         ApplicationDbContext db,
+        IMemoryCache userStateCache,
         ILogger<UserAccountService> logger)
     {
         _userManager = userManager;
         _db = db;
+        _userStateCache = userStateCache;
         _logger = logger;
     }
 
@@ -374,6 +399,20 @@ public sealed class UserAccountService : IUserAccountService
         // ------------------------------------------------------------------
         appUser.MustChangePassword = true;
         await _db.SaveChangesAsync(cancellationToken);
+
+        // ── Invalidate the per-user state cache ─────────────────────────
+        // Symmetric to the invalidation in ChangePasswordAsync above.
+        // Without this, the stale cache entry (still showing
+        // MustChangePassword=false from before the reset) would cause
+        // FullNameClaimsTransformation to STRIP the must_change_password
+        // claim from the principal for up to 30 seconds after the admin
+        // reset — meaning the user could log in with the temporary
+        // password and access the app WITHOUT being forced to change it
+        // first. That's a security hole (admin-set temp passwords would
+        // be usable for 30 seconds after a reset). Evicting the cache
+        // here forces the next request to re-read the fresh (true) state.
+        // ─────────────────────────────────────────────────────────────────
+        FullNameClaimsTransformation.InvalidateUserStateCache(_userStateCache, userId);
 
         _logger.LogInformation(
             "UserAccountService.ResetPasswordAsync: password reset for userId {UserId}. " +
@@ -703,6 +742,22 @@ public sealed class UserAccountService : IUserAccountService
             // AFTER ChangePasswordAsync's internal save, so we need our
             // own save here to persist the flag clear.
             await _db.SaveChangesAsync(cancellationToken);
+
+            // ── Invalidate the per-user state cache ─────────────────────
+            // FullNameClaimsTransformation caches (FullName, IsActive,
+            // MustChangePassword) per-user for 30 seconds. Without this
+            // invalidation, the stale cache entry (still showing
+            // MustChangePassword=true) would cause the transformation to
+            // RE-ADD the must_change_password claim to the principal on
+            // the user's next authenticated request — which makes the
+            // MustChangePasswordRedirectMiddleware bounce them back to
+            // /Account/ChangePassword even though they JUST changed their
+            // password. The user perceives this as "I have to change my
+            // password twice on first login." Evicting the cache entry
+            // here forces the next request to re-read the fresh (false)
+            // state from the DB.
+            // ─────────────────────────────────────────────────────────────
+            FullNameClaimsTransformation.InvalidateUserStateCache(_userStateCache, userId);
         }
 
         _logger.LogInformation(
@@ -801,6 +856,19 @@ public sealed class UserAccountService : IUserAccountService
         //    for symmetry + defense-in-depth.
         // ------------------------------------------------------------------
         await _userManager.UpdateSecurityStampAsync(appUser);
+
+        // ── Invalidate the per-user state cache ─────────────────────────
+        // FullNameClaimsTransformation caches (FullName, IsActive,
+        // MustChangePassword) per-user for 30 seconds. Without this
+        // invalidation, a just-deactivated user's cached IsActive=true
+        // state would let them through the TransformAsync deactivation
+        // gate for up to 30 seconds — relying SOLELY on the
+        // SecurityStampValidator to reject their cookie. Defense-in-depth:
+        // evict the cache here so the next authenticated request reads the
+        // fresh (false) IsActive state immediately, even if the
+        // SecurityStampValidator's own interval hasn't ticked yet.
+        // ─────────────────────────────────────────────────────────────────
+        FullNameClaimsTransformation.InvalidateUserStateCache(_userStateCache, userId);
 
         _logger.LogInformation(
             "UserAccountService.SetUserActiveStatusAsync: IsActive set to {IsActive} " +
