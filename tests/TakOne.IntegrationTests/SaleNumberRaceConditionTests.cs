@@ -60,7 +60,7 @@ public class SaleNumberRaceConditionTests
     // correctness) and the resulting Sale rows persist with those numbers.
     private sealed class SequentialSaleNumberGenerator : ISaleNumberGenerator
     {
-        private int _next = 0;
+        private int _next;
 
         public Task<SaleNumber> NextAsync(CancellationToken cancellationToken = default)
         {
@@ -92,7 +92,6 @@ public class SaleNumberRaceConditionTests
             var sale = Sale.Create(
                 customerId,
                 customerName: $"Customer {i}",
-                saleNumber: null,
                 createdByUserId: customerId,
                 createdByName: $"Customer {i}");
             await saleRepo.AddAsync(sale, CancellationToken.None);
@@ -326,7 +325,6 @@ public class SaleNumberRaceConditionTests
         var sale = Sale.Create(
             TestValues.CustomerId,
             customerName: "John Customer",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Staff");
         await saleRepo.AddAsync(sale, CancellationToken.None);

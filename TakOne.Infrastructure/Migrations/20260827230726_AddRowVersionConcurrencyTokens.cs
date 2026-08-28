@@ -16,7 +16,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -24,7 +24,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -32,7 +32,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -40,7 +40,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -48,7 +48,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -56,7 +56,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -64,7 +64,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
 
             migrationBuilder.AddColumn<byte[]>(
                 name: "RowVersion",
@@ -72,7 +72,7 @@ namespace TakOne.Infrastructure.Migrations
                 type: "rowversion",
                 rowVersion: true,
                 nullable: false,
-                defaultValue: new byte[0]);
+                defaultValue: Array.Empty<byte>());
         }
 
         /// <inheritdoc />

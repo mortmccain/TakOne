@@ -23,7 +23,6 @@ public class SaleTests
     private static Sale BuildDraftSale() => Sale.Create(
         customerId: TestValues.CustomerId,
         customerName: "Alice Customer",
-        saleNumber: null,
         createdByUserId: TestValues.CreatedByUserId,
         createdByName: "Alice Creator");
 
@@ -86,7 +85,6 @@ public class SaleTests
         Action act = () => Sale.Create(
             customerId: Guid.Empty,
             customerName: "Alice",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
 
@@ -99,7 +97,6 @@ public class SaleTests
         Action act = () => Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
 
@@ -112,7 +109,6 @@ public class SaleTests
         Action act = () => Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "   ",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
 
@@ -125,7 +121,6 @@ public class SaleTests
         Action act = () => Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "Alice",
-            saleNumber: null,
             createdByUserId: Guid.Empty,
             createdByName: "Creator");
 
@@ -138,7 +133,6 @@ public class SaleTests
         Action act = () => Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "Alice",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "");
 

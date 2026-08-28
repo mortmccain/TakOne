@@ -85,7 +85,7 @@ public class DeactivateCategoryCommandValidatorTests
         var baseType = validatorType!.BaseType;
 
         // Assert
-        baseType.Should().Be(typeof(object));
+        baseType.Should().Be<object>();
     }
 
     // The stub has no public instance methods of its own (it's an empty

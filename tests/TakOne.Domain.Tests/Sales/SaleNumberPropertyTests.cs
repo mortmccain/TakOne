@@ -2,6 +2,7 @@ using Bogus;
 using FluentAssertions;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using TakOne.Domain.Sales.ValueObjects;
 using Xunit;
@@ -169,7 +170,11 @@ public class SaleNumberPropertyTests
     {
         // Arrange — pre-compute the expected Persian-digit year string.
         var persianDigits = new[] { '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' };
-        var expectedPersianYear = new string(year.ToString().Select(c => persianDigits[c - '0']).ToArray());
+        // Use InvariantCulture for the digit conversion so the test
+        // is deterministic regardless of the host's CurrentCulture (some
+        // cultures, e.g. ar-SA, render int.ToString() with non-ASCII
+        // digits, which would break the c - '0' index math below).
+        var expectedPersianYear = new string(year.ToString(CultureInfo.InvariantCulture).Select(c => persianDigits[c - '0']).ToArray());
 
         // Act
         var value = SaleNumber.Create(year, seq).Value;

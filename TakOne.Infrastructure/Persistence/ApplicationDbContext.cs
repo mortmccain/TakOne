@@ -300,7 +300,7 @@ public class ApplicationDbContext
         // inherits AggregateRoot (Sale, Product, Category, User,
         // CustomerGroup, Notification, etc.) gets the token automatically.
         // ------------------------------------------------------------------
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var entityType in builder.Model.GetEntityTypes())
         {
             // Find a RowVersion property on this entity type (declared
             // or inherited). Skip if none — owned/complex types and

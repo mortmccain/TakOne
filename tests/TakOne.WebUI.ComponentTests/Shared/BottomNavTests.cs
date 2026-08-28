@@ -11,7 +11,7 @@ using TakOne.Application.Common.Authorization;
 using TakOne.WebUI.Components.Shared;
 using Xunit;
 
-namespace TakOne.WebUI.ComponentTests.Shared;
+namespace TakOne.WebUI.ComponentTests.SharedComponents;
 
 /// <summary>
 /// bUnit tests for <see cref="BottomNav"/> razor component

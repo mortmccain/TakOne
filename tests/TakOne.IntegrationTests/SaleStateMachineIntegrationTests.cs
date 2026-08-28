@@ -77,7 +77,6 @@ public class SaleStateMachineIntegrationTests
             var sale = Sale.Create(
                 customerId: TestValues.CustomerId,
                 customerName: CustomerName,
-                saleNumber: null,
                 createdByUserId: TestValues.CreatedByUserId,
                 createdByName: CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
@@ -111,7 +110,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -143,7 +142,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -174,7 +173,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -208,7 +207,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -244,7 +243,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -283,7 +282,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -320,7 +319,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -358,7 +357,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -401,7 +400,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
@@ -434,7 +433,7 @@ public class SaleStateMachineIntegrationTests
         await using (db)
         {
             var sale = Sale.Create(
-                TestValues.CustomerId, CustomerName, saleNumber: null,
+                TestValues.CustomerId, CustomerName,
                 TestValues.CreatedByUserId, CreatedByName);
             await saleRepo.AddAsync(sale, CancellationToken.None);
             await unitOfWork.SaveChangesAsync(CancellationToken.None);

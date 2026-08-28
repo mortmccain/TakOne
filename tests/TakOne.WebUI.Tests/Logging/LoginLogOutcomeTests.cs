@@ -182,7 +182,7 @@ public class LoginLogOutcomeTests
         var underlying = Enum.GetUnderlyingType(typeof(LoginLogOutcome));
 
         // Assert — default enum underlying type is int (System.Int32)
-        underlying.Should().Be(typeof(int));
+        underlying.Should().Be<int>();
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public class LoginLogOutcomeTests
         var baseType = typeof(LoginLogOutcome).BaseType;
 
         // Assert — all C# enums derive from System.Enum
-        baseType.Should().Be(typeof(Enum));
+        baseType.Should().Be<Enum>();
     }
 
     // ───────────────────────────────────────────────────────────────────────

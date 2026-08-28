@@ -191,7 +191,6 @@ public class GetDashboardStatsQueryHandlerTests
         var sale = Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "C1",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
         sale.AddLineItem(
@@ -209,7 +208,6 @@ public class GetDashboardStatsQueryHandlerTests
         var sale = Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "C1",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
         sale.AddLineItem(
@@ -226,7 +224,6 @@ public class GetDashboardStatsQueryHandlerTests
         var sale = Sale.Create(
             customerId: TestValues.CustomerId,
             customerName: "C1",
-            saleNumber: null,
             createdByUserId: TestValues.CreatedByUserId,
             createdByName: "Creator");
         sale.AddLineItem(
@@ -641,7 +638,6 @@ public class GetDashboardStatsQueryHandlerTests
             var sale = Sale.Create(
                 customerId: TestValues.CustomerId,
                 customerName: $"C{i}",
-                saleNumber: null,
                 createdByUserId: TestValues.CreatedByUserId,
                 createdByName: "Creator");
             sale.AddLineItem(
@@ -701,7 +697,6 @@ public class GetDashboardStatsQueryHandlerTests
             var sale = Sale.Create(
                 customerId: TestValues.CustomerId,
                 customerName: $"C{i}",
-                saleNumber: null,
                 createdByUserId: TestValues.CreatedByUserId,
                 createdByName: "Creator");
             sale.AddLineItem(

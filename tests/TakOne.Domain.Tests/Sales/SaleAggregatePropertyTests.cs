@@ -431,7 +431,6 @@ public class SaleAggregatePropertyTests
     private static Sale BuildDraftSale() => Sale.Create(
         customerId: TestValues.CustomerId,
         customerName: "Alice Customer",
-        saleNumber: null,
         createdByUserId: TestValues.CreatedByUserId,
         createdByName: "Alice Creator");
 }

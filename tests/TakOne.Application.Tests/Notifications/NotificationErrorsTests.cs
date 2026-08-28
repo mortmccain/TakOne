@@ -178,7 +178,7 @@ public class NotificationErrorsTests
         // Assert
         foreach (var method in formatMethods)
         {
-            method.ReturnType.Should().Be(typeof(string),
+            method.ReturnType.Should().Be<string>(
                 $"{method.Name} must return string");
         }
     }

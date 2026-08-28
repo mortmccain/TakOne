@@ -72,10 +72,12 @@ public sealed class ErrorDisplayService
 
     /// <summary>
     /// Formats a fully-localized user-facing "unexpected error" message
-    /// carrying the visible reference code. Uses the user's
-    /// <c>CurrentUICulture</c> for the wrapper text; the code itself
-    /// stays in Latin alphanumeric chars (NOT Persian digits) for
-    /// copy-paste reliability into the support system.
+    /// carrying the visible reference code. The wrapper template is
+    /// fetched via <c>IStringLocalizer</c> (which respects
+    /// <c>CurrentUICulture</c>); the format substitution then uses
+    /// <c>CurrentCulture</c> for any locale-sensitive token. The code
+    /// itself stays in Latin alphanumeric chars (NOT Persian digits)
+    /// for copy-paste reliability into the support system.
     /// </summary>
     /// <param name="code">
     /// The 7-character opaque code from
@@ -90,7 +92,7 @@ public sealed class ErrorDisplayService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         return string.Format(
-            CultureInfo.CurrentUICulture,
+            CultureInfo.CurrentCulture,
             _localizer["Unexpected_Error_Format"],
             code);
     }

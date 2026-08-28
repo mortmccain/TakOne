@@ -93,7 +93,7 @@ public class TakOneIdentityErrorDescriberTests
         var only = ctors[0];
         var args = only.GetParameters();
         args.Should().HaveCount(1);
-        args[0].ParameterType.Should().Be(typeof(IStringLocalizer<IdentityErrorMessages>));
+        args[0].ParameterType.Should().Be<IStringLocalizer<IdentityErrorMessages>>();
     }
 
     // ── Password complexity overrides ─────────────────────────────────

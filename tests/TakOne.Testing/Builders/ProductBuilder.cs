@@ -18,9 +18,9 @@ public sealed class ProductBuilder
     private Money _price = new(100m, TestValues.USD);
     private int _stockQuantity = 10;
     private Guid _categoryId = TestValues.CategoryId;
-    private string? _pictureUrl = null;
-    private Guid? _subCategoryId = null;
-    private Guid? _subSubCategoryId = null;
+    private string? _pictureUrl;
+    private Guid? _subCategoryId;
+    private Guid? _subSubCategoryId;
 
     public ProductBuilder WithName(string name) { return new() { _name = name, _description = _description, _price = _price, _stockQuantity = _stockQuantity, _categoryId = _categoryId, _pictureUrl = _pictureUrl, _subCategoryId = _subCategoryId, _subSubCategoryId = _subSubCategoryId }; }
     public ProductBuilder WithDescription(string description) { return new() { _name = _name, _description = description, _price = _price, _stockQuantity = _stockQuantity, _categoryId = _categoryId, _pictureUrl = _pictureUrl, _subCategoryId = _subCategoryId, _subSubCategoryId = _subSubCategoryId }; }

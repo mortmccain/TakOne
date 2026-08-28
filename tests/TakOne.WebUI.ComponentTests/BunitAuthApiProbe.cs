@@ -9,7 +9,7 @@ namespace TakOne.WebUI.ComponentTests.SmokeTests;
 /// </summary>
 public class BunitAuthApiProbe
 {
-    public void Probe()
+    public static void Probe()
     {
         using var ctx = new TestContext();
         // bUnit v1.36: AddTestAuthorization (not AddAuthorization). Returns

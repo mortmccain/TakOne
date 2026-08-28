@@ -2,6 +2,7 @@ using Bogus;
 using FluentAssertions;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.ValueObjects;
@@ -355,7 +356,10 @@ public class MoneyPropertyTests
         // F2 format produces at least one decimal point + two decimal digits.
         s.Should().Contain(".");
         // The string should start with the Amount formatted to 2 decimals.
-        var expectedAmountPrefix = amount.ToString("F2");
+        // Use InvariantCulture so the test's expected prefix matches
+        // the SUT's output deterministically regardless of the host's
+        // CurrentCulture decimal-separator convention.
+        var expectedAmountPrefix = amount.ToString("F2", CultureInfo.InvariantCulture);
         s.Should().StartWith(expectedAmountPrefix);
     }
 }

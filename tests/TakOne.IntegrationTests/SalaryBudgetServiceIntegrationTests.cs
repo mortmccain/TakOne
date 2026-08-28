@@ -132,7 +132,6 @@ public class SalaryBudgetServiceIntegrationTests
         var sale = Sale.Create(
             customerId,
             customerName: "Test Customer",
-            saleNumber: null,
             createdByUserId: customerId,
             createdByName: "Test Customer");
 

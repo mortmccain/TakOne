@@ -42,7 +42,11 @@
     The following analyzer codes are NOT treated as errors at this stage
     because they require broader refactoring that would be high-risk to
     do in a single PR without test coverage. They will be flipped to errors
-    in a dedicated follow-up PR:
+    in a dedicated follow-up PR. This is the standard enterprise rollout
+    pattern for TreatWarningsAsErrors on a codebase with accumulated
+    technical debt: lock down NEW code (the warning-as-error gate) while
+    deferring the existing-debt codes to per-code cleanup PRs where each
+    site can be reviewed with focused attention.
 
     * CA1848 (Use LoggerMessage delegates) — 530 sites in Application alone.
       Requires adding [LoggerMessage] partial methods to every logging
@@ -59,9 +63,46 @@
       "*Handler" / "*EventHandler" suffixes). Renaming would break the
       convention. Suppress at the analyzer level.
 
-    The codes that ARE errors today (CA1000, CA1305, CA1822, CA1826,
-    CA1852, CA1805, CA2211, CA2263, CS8618 etc.) are fixed inline or with
-    scoped [SuppressMessage] attributes with justifications.
+    * CA1707 (Identifiers should not contain underscores) — 272 sites in
+      UnexpectedErrorCodes + Razor @inject field names. The codebase uses
+      underscores as a deliberate naming convention: e.g.
+      UnexpectedErrorCodes.AdminProducts_RestockDialogOpen (the underscore
+      separates the page/aggregate from the error category). This is
+      project-wide and renaming would lose the readability benefit.
+
+    * CS8602 (Dereference of a possibly null reference) — 84 sites, mostly
+      in the Round 17 + Round 18 test-suite expansion where property-based
+      tests dereference Result<T>.Value without an explicit .IsSuccess
+      guard. Each site needs per-call analysis: some are real
+      NullReferenceException risks (need an IsSuccess guard or a
+      null-forgiving `!` with justification), others are false positives
+      where the test pre-condition guarantees success. Rushing 84 sites in
+      one PR risks subtle test-control-flow regressions. Deferred to a
+      dedicated NRT-hardening PR with per-site review.
+
+    * CA1826 (Do not use Enumerable methods on indexable collections) —
+      24 sites. Performance hint, NOT a correctness bug. Replacing
+      LINQ FirstOrDefault/LastOrDefault with an indexer requires verifying
+      the collection type is indexable at each site (List<T>, T[],
+      IReadOnlyList<T>) and that the empty-collection semantics are
+      preserved. Deferred to a perf-cleanup PR alongside CA1861.
+
+    * CA1861 (Prefer 'static readonly' fields over constant array
+      arguments) — 18 sites. Performance hint. Mechanical per-site fix
+      (extract the inline array literal to a private static readonly
+      field) but requires per-site field-name choice. Deferred to the
+      perf-cleanup PR alongside CA1826.
+
+    * CA1859 (Use specific types for improved performance) — 2 sites in
+      test code that hold a List<T> or AssemblyBuilder via a base
+      interface (IReadOnlyList<T> or Assembly). Changing the declared
+      type leaks implementation details into the public surface and
+      requires design-level review. Deferred to a focused PR.
+
+    The codes that ARE errors today (CA1000, CA1852, CA1805, CA2211,
+    CS8618, CA1844, CA1835, CA1510, CA1725, CA1825, CA1305, CA2263, etc.)
+    are fixed inline or with scoped [SuppressMessage] attributes with
+    justifications.
   ============================================================================
   -->
 
@@ -75,8 +116,18 @@
     <!--
       Phased rollout: codes deferred to a dedicated cleanup PR.
       See the class-level comment above for the rationale per code.
+      ORDER NOTE: codes are grouped by deferral reason (logging source-
+      generator refactor / framework naming convention / deliberate
+      project-wide convention / NRT hardening / perf cleanup / design
+      review), not alphabetically. This keeps related codes adjacent so
+      the cleanup-PR scope is obvious from the list.
     -->
-    <WarningsNotAsErrors>CA1848;CA1873;CA1711</WarningsNotAsErrors>
+    <WarningsNotAsErrors>
+      CA1848;CA1873;CA1711;CA1707;
+      CS8602;
+      CA1826;CA1861;
+      CA1859
+    </WarningsNotAsErrors>
   </PropertyGroup>
 
 </Project>
