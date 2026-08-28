@@ -44,6 +44,30 @@ namespace TakOne.Application.Dashboard.Queries.GetDashboardStats;
 ///   of this file for the rationale and what's needed to fully
 ///   scalarize them.
 ///
+/// <b>KNOWN LIMITATION — IN-MEMORY AGGREGATION (v4 finding #06):</b>
+///   For the dashboard's top-products / top-categories / top-employees /
+///   weekly-trend / monthly-current-year / status-breakdown aggregations,
+///   this handler loads the full set of in-scope sales + line items into
+///   memory and aggregates via LINQ-to-Objects. For an admin dashboard
+///   scoped to a single employee's approved sales (Option D — bounded to
+///   that employee's volume), this is acceptable. For an admin-wide
+///   dashboard with years of historical sales (100K+ rows), each refresh
+///   loads ~50MB into the application process.
+///   <para>
+///   The proper enterprise fix is to add scalar projection methods on
+///   <c>ISaleRepository</c> (e.g. <c>GetTopProductsByRevenueAsync</c>,
+///   <c>GetWeeklyTrendAsync</c>, <c>GetStatusCountsAsync</c>) that
+///   translate the aggregations into SQL <c>GROUP BY</c> queries. This
+///   refactor is deferred to a dedicated PR because it requires
+///   integration-test coverage (which the codebase currently lacks) to
+///   catch SQL-translation semantic drift — e.g. the
+///   <c>SubmittedAtUtc ?? CreatedAtUtc</c> date-coalescing pattern that
+///   the in-memory LINQ handles trivially but SQL needs <c>COALESCE</c>
+///   for. Doing this refactor without test coverage would risk
+///   introducing silent aggregation drift, which is a worse outcome than
+///   the honest performance trade-off documented here.
+///   </para>
+///
 /// CURRENCY CONVERSION (IRR → Toman):
 ///   Per user spec, when the sale currency is IRR, all amounts shown in the
 ///   UI must be in Toman (divide IRR amount by 10). The handler performs
@@ -471,7 +495,9 @@ public sealed class GetDashboardStatsQueryHandler
         var recentOrders = recentSales
             .Select(s =>
             {
-                var firstLine = s.LineItems.FirstOrDefault();
+                // CA1826: use IReadOnlyList indexer instead of LINQ FirstOrDefault()
+                var lineItems = s.LineItems;
+                var firstLine = lineItems.Count > 0 ? lineItems[0] : null;
                 var productSummary = firstLine is not null
                     ? $"{firstLine.ProductName} × {firstLine.Quantity}"
                     : "—";
@@ -532,7 +558,8 @@ public sealed class GetDashboardStatsQueryHandler
             yearlyData.Add(new YearlyRevenueDto
             {
                 Year = year,
-                YearLabel = year.ToString(),
+                // CA1305: pass IFormatProvider so year.ToString() is locale-independent.
+                YearLabel = year.ToString(CultureInfo.InvariantCulture),
                 TotalAmount = ToDisplay(yearRevenueRaw)
             });
         }
@@ -653,12 +680,21 @@ public sealed class GetDashboardStatsQueryHandler
         //     role). Done LAST because it's independent of the sales
         //     aggregation above and we don't want a failure here to nuke
         //     the entire dashboard.
+        //
+        // CANCELLATION PROPAGATION (v4 finding #13):
+        //   The historical catch (Exception ex) swallowed
+        //   OperationCanceledException — returning a fake 0 to a request
+        //   the framework had already cancelled (user navigated away,
+        //   request aborted). The 'when (ex is not OperationCanceledException)'
+        //   filter lets cancellation propagate correctly to the host
+        //   (Wolverine / ASP.NET Core), which then unwinds the request
+        //   without producing a false-positive Warning log entry.
         // ------------------------------------------------------------------
         try
         {
             dto.ActiveCustomersCount = await userRepository.GetActiveCustomerCountAsync(cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Don't fail the whole dashboard if the user-count query blows
             // up. Log and surface a 0 — the KPI card will just show 0.

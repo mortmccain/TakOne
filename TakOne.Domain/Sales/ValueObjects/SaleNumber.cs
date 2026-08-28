@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.Domain.Sales.ValueObjects;
@@ -128,7 +129,7 @@ public class SaleNumber : BaseValueObject
     ///   of formatting two short ints is negligible.
     /// </summary>
     public string Value =>
-        $"{Prefix}-{ToPersianDigits(Year.ToString())}-{ToPersianDigits(Sequence.ToString("D8"))}";
+        $"{Prefix}-{ToPersianDigits(Year.ToString(CultureInfo.InvariantCulture))}-{ToPersianDigits(Sequence.ToString("D8", CultureInfo.InvariantCulture))}";
 
 
 

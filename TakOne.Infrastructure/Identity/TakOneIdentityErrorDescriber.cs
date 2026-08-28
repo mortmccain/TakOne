@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using System.Globalization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Localization;
 using TakOne.Infrastructure.Localization;
 
@@ -71,7 +72,9 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(PasswordTooShort),
-            Description = string.Format(_localizer["PasswordTooShort"], length)
+            // CA1305: pass CurrentCulture (not InvariantCulture) so numeric placeholders
+            // in the localized resx strings render in the user's locale (e.g. Persian digits).
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["PasswordTooShort"], length)
         };
     }
 
@@ -121,7 +124,8 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(PasswordRequiresUniqueChars),
-            Description = string.Format(_localizer["PasswordRequiresUniqueChars"], uniqueChars)
+            // CA1305: pass CurrentCulture so the numeric placeholder renders in the user's locale.
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["PasswordRequiresUniqueChars"], uniqueChars)
         };
     }
 
@@ -138,7 +142,8 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(DuplicateUserName),
-            Description = string.Format(_localizer["DuplicateUserName"], userName)
+            // CA1305: pass CurrentCulture so any placeholders render in the user's locale.
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["DuplicateUserName"], userName)
         };
     }
 
@@ -148,7 +153,8 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(DuplicateEmail),
-            Description = string.Format(_localizer["DuplicateEmail"], email)
+            // CA1305: pass CurrentCulture so any placeholders render in the user's locale.
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["DuplicateEmail"], email)
         };
     }
 
@@ -160,7 +166,8 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(InvalidUserName),
-            Description = string.Format(_localizer["InvalidUserName"], userName)
+            // CA1305: pass CurrentCulture so any placeholders render in the user's locale.
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["InvalidUserName"], userName)
         };
     }
 
@@ -170,7 +177,8 @@ public sealed class TakOneIdentityErrorDescriber : IdentityErrorDescriber
         return new IdentityError
         {
             Code = nameof(InvalidEmail),
-            Description = string.Format(_localizer["InvalidEmail"], email)
+            // CA1305: pass CurrentCulture so any placeholders render in the user's locale.
+            Description = string.Format(CultureInfo.CurrentCulture, _localizer["InvalidEmail"], email)
         };
     }
 

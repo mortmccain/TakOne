@@ -15,7 +15,8 @@
         button advances pages.
 *@
 @page "/m/Admin/Notifications"
-@attribute [Authorize(Roles = "Admin")]
+@* Policy: Policies.AdminOnly *@
+@attribute [Authorize(Policy = "AdminOnly")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

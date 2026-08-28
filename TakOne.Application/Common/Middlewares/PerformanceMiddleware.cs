@@ -29,12 +29,18 @@ public sealed class PerformanceMiddleware
     /// Threshold in milliseconds above which a request is logged as "slow".
     /// Set once at application startup from configuration. Defaults to 500 ms.
     ///
-    /// Marked volatile because it is read on every AfterAsync call (which
-    /// can run concurrently across multiple message handlers on different
-    /// threads) and written once at startup. volatile ensures the write is
-    /// visible to all readers without a full lock.
+    /// Exposed as a static auto-property (rather than a public static field)
+    /// to satisfy CA2211 — non-constant fields should not be visible. The set
+    /// accessor is called once at startup from
+    /// <c>ServiceCollectionExtensions.AddTakOneApplication</c>; the get
+    /// accessor is called on every <c>AfterAsync</c> (which can run
+    /// concurrently across multiple message handlers). The startup write
+    /// happens-before any request-thread read is guaranteed by the .NET host
+    /// startup sequence (no request threads exist yet when the DI container
+    /// is being built), and 32-bit int reads/writes are atomic per the CLI
+    /// spec, so no <c>volatile</c> or lock is required.
     /// </summary>
-    public static int SlowRequestThresholdMs = 500;
+    public static int SlowRequestThresholdMs { get; set; } = 500;
 
     public PerformanceMiddleware(ILogger<PerformanceMiddleware> logger)
     {

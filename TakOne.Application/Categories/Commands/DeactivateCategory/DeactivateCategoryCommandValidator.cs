@@ -4,7 +4,7 @@ using System.Text;
 
 namespace TakOne.Application.Categories.Commands.DeactivateCategory
 {
-    internal class DeactivateCategoryCommandValidator
+    internal sealed class DeactivateCategoryCommandValidator
     {
     }
 }

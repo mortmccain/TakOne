@@ -112,7 +112,8 @@
      EditForm validates it automatically. *@
 
 @page "/Admin/Users/Create"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@* Policy: Policies.StaffManagement *@
+@attribute [Authorize(Policy = "StaffManagement")]
 @using System.Globalization
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.Authorization

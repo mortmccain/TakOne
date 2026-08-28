@@ -14,4 +14,4 @@
 /// <c>TakOne.Application.Common.Localization.TakOneLanguageManager</c> for the
 /// consumer of these resources.
 /// </summary>
-internal class ValidationMessages { }
+internal sealed class ValidationMessages { }

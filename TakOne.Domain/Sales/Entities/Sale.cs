@@ -203,13 +203,17 @@ public sealed class Sale : AggregateRoot
     /// <summary>
     /// Private constructor used by the static factory method.
     /// Creates a Sale in <see cref="SaleStatus.Draft"/> status with NO sale
-    /// number (the number is allocated later, on Submit()).
+    /// number (the number is allocated later, on Submit() — see the B2
+    /// deferred-allocation rationale on the <see cref="SaleNumber"/>
+    /// property doc above). The constructor does NOT accept a SaleNumber
+    /// parameter: drafts never have a number, and accepting one would
+    /// silently burn the pre-allocated number if the customer abandons
+    /// the draft — a defect flagged in v4 of the brutal review.
     /// </summary>
     private Sale
         (
         Guid customerId,
         string customerName,
-        SaleNumber? saleNumber,
         Guid createdByUserId,
         string createdByName
         ) : base(Guid.NewGuid())
@@ -223,7 +227,8 @@ public sealed class Sale : AggregateRoot
         CustomerName = customerName;
         CreatedByUserId = createdByUserId;
         CreatedByName = createdByName;
-        SaleNumber = saleNumber;
+        // SaleNumber intentionally NOT set here — it's allocated only on
+        // Submit(). The property remains null until then.
 
         Status = SaleStatus.Draft;
         Total = Money.Zero("IRR");
@@ -243,13 +248,20 @@ public sealed class Sale : AggregateRoot
     /// sale number assigned yet. The sale number is allocated later, when the
     /// customer submits the cart (see Submit()).
     ///
-    /// This is the ONLY way to create a Sale from application code.
+    /// This is the ONLY way to create a Sale from application code. The
+    /// factory deliberately does NOT accept a SaleNumber parameter —
+    /// drafts have no number (B2 deferred-allocation design). Allowing a
+    /// caller to pass one would create a foot-gun: the number would be
+    /// silently burned if the customer abandoned the draft.
+    ///
+    /// If a pre-allocated SaleNumber must be associated with a sale (e.g.
+    /// for an admin recovery flow), call Submit() with the allocated
+    /// number — Submit is the only path that assigns SaleNumber.
     /// </summary>
     public static Sale Create
         (
         Guid customerId,
         string customerName,
-        SaleNumber? saleNumber,
         Guid createdByUserId,
         string createdByName
         )
@@ -258,7 +270,6 @@ public sealed class Sale : AggregateRoot
             (
             customerId,
             customerName,
-            saleNumber,
             createdByUserId,
             createdByName
             );
@@ -324,14 +335,22 @@ public sealed class Sale : AggregateRoot
             existingLine.UpdateQuantity(newQuantity);
             RecalculateTotal();
 
+            // Use the STORED snapshot (existingLine.ProductName) — NOT the
+            // input productName — for consistency with UpdateLineItemQuantity
+            // (which also uses the stored snapshot). The input parameter
+            // reflects what the caller happened to pass THIS time; the
+            // stored snapshot is the authoritative value the line was
+            // created with. Using the input would let a caller overwrite
+            // the snapshot via the event without going through any
+            // rename flow — a subtle consistency bug.
             AddDomainEvent
                 (
                 new SaleLineItemUpdatedDomainEvent
                 (
                 Id,
                 existingLine.Id,
-                productId,
-                productName,
+                existingLine.ProductId,
+                existingLine.ProductName,
                 newQuantity,
                 existingLine.UnitPrice,
                 existingLine.LineNumber
@@ -660,7 +679,7 @@ public sealed class Sale : AggregateRoot
             throw new DomainException("Cannot submit a sale with zero or negative total.");
     }
 
-    private void EnsurePurchaseLimitRespected(Guid productId, int requestedQuantity, int? purchaseLimit)
+    private static void EnsurePurchaseLimitRespected(Guid productId, int requestedQuantity, int? purchaseLimit)
     {
         if (purchaseLimit is null)
             return; // No limit for this buyer/product combination.

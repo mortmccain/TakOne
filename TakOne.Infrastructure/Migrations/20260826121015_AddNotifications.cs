@@ -8,6 +8,20 @@ namespace TakOne.Infrastructure.Migrations
     /// <inheritdoc />
     public partial class AddNotifications : Migration
     {
+        // CA1861: extract constant column-name arrays to private static readonly
+        // fields so they are allocated once per type load (not once per
+        // migration apply call). Migrations run at most once per deployment,
+        // so the allocation saving is negligible — but the analyzer still
+        // fires because the migration apply methods are syntactically called
+        // repeatedly, so we centralize the arrays here to satisfy it cleanly
+        // rather than suppress the rule.
+        private static readonly string[] s_ixNotificationsUserIdCreatedAtUtc =
+            { "UserId", "CreatedAtUtc" };
+        private static readonly string[] s_ixNotificationsUserIdReadAtUtcUnread =
+            { "UserId", "ReadAtUtc" };
+        private static readonly string[] s_uxNotificationsUserIdSaleIdKind =
+            { "UserId", "SaleId", "Kind" };
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -33,18 +47,18 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Notifications_UserId_CreatedAtUtc",
                 table: "Notifications",
-                columns: new[] { "UserId", "CreatedAtUtc" });
+                columns: s_ixNotificationsUserIdCreatedAtUtc);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Notifications_UserId_ReadAtUtc_Unread",
                 table: "Notifications",
-                columns: new[] { "UserId", "ReadAtUtc" },
+                columns: s_ixNotificationsUserIdReadAtUtcUnread,
                 filter: "[ReadAtUtc] IS NULL");
 
             migrationBuilder.CreateIndex(
                 name: "UX_Notifications_UserId_SaleId_Kind",
                 table: "Notifications",
-                columns: new[] { "UserId", "SaleId", "Kind" },
+                columns: s_uxNotificationsUserIdSaleIdKind,
                 unique: true,
                 filter: "[SaleId] IS NOT NULL");
         }

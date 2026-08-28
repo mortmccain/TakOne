@@ -304,9 +304,18 @@ public sealed class SaleConfiguration : IEntityTypeConfiguration<Sale>
         // their parent). We model the FK as a SHADOW PROPERTY named "SaleId"
         // so the DB schema and EF model still see the column, but the domain
         // class doesn't. EF writes/reads it transparently during SaveChanges.
+        //
+        // .IsRequired() — the shadow SaleId column is NOT NULL. A
+        // SaleLineItem cannot exist without a parent Sale (it would be
+        // semantically invalid — an orphaned line item invisible to any
+        // join). The original InitialCreate migration declared the column
+        // as nullable: true (a defect flagged in v4 of the brutal review);
+        // the migration MakeSaleLineItemSaleIdNotNull enforces the
+        // invariant at the DB level going forward.
         builder.HasMany(s => s.LineItems)
             .WithOne()
             .HasForeignKey("SaleId")
+            .IsRequired()
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Metadata.FindNavigation(nameof(Sale.LineItems))!

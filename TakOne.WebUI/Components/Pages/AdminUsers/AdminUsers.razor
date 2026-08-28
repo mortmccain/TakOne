@@ -69,7 +69,8 @@
      over the Blazor circuit. *@
 
 @page "/Admin/Users"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 @attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

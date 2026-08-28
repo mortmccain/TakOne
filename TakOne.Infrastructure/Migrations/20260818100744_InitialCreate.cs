@@ -8,6 +8,25 @@ namespace TakOne.Infrastructure.Migrations
     /// <inheritdoc />
     public partial class InitialCreate : Migration
     {
+        // CA1861: extract constant column-name arrays to private static readonly
+        // fields so they are allocated once per type load (not once per migration
+        // apply call). Migrations run at most once per deployment, so the allocation
+        // saving is negligible — but the analyzer still fires because the migration
+        // apply methods are syntactically called repeatedly, so we centralize the
+        // arrays here to satisfy it cleanly rather than suppress the rule.
+        private static readonly string[] s_insertSystemSettingsColumns =
+            { "Id", "LimitMode", "UpdatedAt" };
+        private static readonly string[] s_ixProductPurchaseLimitsProductIdGroupId =
+            { "ProductId", "GroupId" };
+        private static readonly string[] s_ixSaleLineItemsSaleIdLineNumber =
+            { "SaleId", "LineNumber" };
+        private static readonly string[] s_ixSalesSaleNumberYearSequence =
+            { "SaleNumber_Year", "SaleNumber_Sequence" };
+        private static readonly string[] s_ixSubCategoriesCategoryIdName =
+            { "CategoryId", "Name" };
+        private static readonly string[] s_ixSubSubCategoriesSubCategoryIdName =
+            { "SubCategoryId", "Name" };
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -394,7 +413,7 @@ namespace TakOne.Infrastructure.Migrations
 
             migrationBuilder.InsertData(
                 table: "SystemSettings",
-                columns: new[] { "Id", "LimitMode", "UpdatedAt" },
+                columns: s_insertSystemSettingsColumns,
                 values: new object[] { new Guid("00000000-0000-0000-0000-000000000000"), 1, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc) });
 
             migrationBuilder.CreateIndex(
@@ -461,7 +480,7 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_ProductPurchaseLimits_ProductId_GroupId",
                 table: "ProductPurchaseLimits",
-                columns: new[] { "ProductId", "GroupId" },
+                columns: s_ixProductPurchaseLimitsProductIdGroupId,
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -492,7 +511,7 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_SaleLineItems_SaleId_LineNumber",
                 table: "SaleLineItems",
-                columns: new[] { "SaleId", "LineNumber" },
+                columns: s_ixSaleLineItemsSaleIdLineNumber,
                 unique: true,
                 filter: "[SaleId] IS NOT NULL");
 
@@ -514,7 +533,7 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Sales_SaleNumber_Year_SaleNumber_Sequence",
                 table: "Sales",
-                columns: new[] { "SaleNumber_Year", "SaleNumber_Sequence" },
+                columns: s_ixSalesSaleNumberYearSequence,
                 unique: true,
                 filter: "[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
 
@@ -532,13 +551,13 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_SubCategories_CategoryId_Name",
                 table: "SubCategories",
-                columns: new[] { "CategoryId", "Name" },
+                columns: s_ixSubCategoriesCategoryIdName,
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_SubSubCategories_SubCategoryId_Name",
                 table: "SubSubCategories",
-                columns: new[] { "SubCategoryId", "Name" },
+                columns: s_ixSubSubCategoriesSubCategoryIdName,
                 unique: true);
 
             migrationBuilder.CreateIndex(

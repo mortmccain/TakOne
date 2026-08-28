@@ -1,4 +1,5 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Domain.Users.Events;
+using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.Domain.Users;
@@ -158,7 +159,10 @@ public sealed class User : AggregateRoot
     public static User CreateCustomer(string workerId, string fullName, Guid groupId, Gender gender = Gender.Male)
     {
         EnsureGroupIdValid(groupId);
-        return new User(workerId, fullName, groupId, gender);
+        var user = new User(workerId, fullName, groupId, gender);
+        user.AddDomainEvent(new UserCreatedDomainEvent(
+            user.Id, user.WorkerId, user.FullName, user.GroupId, user.Gender));
+        return user;
     }
 
     /// <summary>
@@ -173,7 +177,10 @@ public sealed class User : AggregateRoot
     /// </param>
     public static User CreateStaff(string workerId, string fullName, Gender gender = Gender.Male)
     {
-        return new User(workerId, fullName, groupId: null, gender);
+        var user = new User(workerId, fullName, groupId: null, gender);
+        user.AddDomainEvent(new UserCreatedDomainEvent(
+            user.Id, user.WorkerId, user.FullName, user.GroupId, user.Gender));
+        return user;
     }
 
 
@@ -191,7 +198,9 @@ public sealed class User : AggregateRoot
     public void AssignToGroup(Guid groupId)
     {
         EnsureGroupIdValid(groupId);
+        var previousGroupId = GroupId;
         GroupId = groupId;
+        AddDomainEvent(new UserAssignedToGroupDomainEvent(Id, previousGroupId, groupId));
     }
 
     /// <summary>
@@ -202,7 +211,9 @@ public sealed class User : AggregateRoot
     /// </summary>
     public void RemoveFromGroup()
     {
+        var previousGroupId = GroupId;
         GroupId = null;
+        AddDomainEvent(new UserRemovedFromGroupDomainEvent(Id, previousGroupId));
     }
 
     /// <summary>
@@ -230,12 +241,28 @@ public sealed class User : AggregateRoot
     /// Deactivates the user. They cannot log in while inactive.
     /// This is the soft-delete path; we keep the row for audit/history.
     /// </summary>
-    public void Deactivate() => IsActive = false;
+    public void Deactivate()
+    {
+        // Idempotent — no-op if already inactive (avoids spurious audit events).
+        if (!IsActive)
+            return;
+
+        IsActive = false;
+        AddDomainEvent(new UserDeactivatedDomainEvent(Id));
+    }
 
     /// <summary>
     /// Reactivates a previously deactivated user.
     /// </summary>
-    public void Activate() => IsActive = true;
+    public void Activate()
+    {
+        // Idempotent — no-op if already active.
+        if (IsActive)
+            return;
+
+        IsActive = true;
+        AddDomainEvent(new UserActivatedDomainEvent(Id));
+    }
 
 
 
@@ -292,10 +319,10 @@ public sealed class User : AggregateRoot
     /// </summary>
     private static void EnsureGenderValid(Gender gender)
     {
-        if (!Enum.IsDefined(typeof(Gender), gender))
+        if (!Enum.IsDefined(gender))
         {
             throw new DomainException(
-                $"Gender must be one of: {string.Join(", ", Enum.GetNames(typeof(Gender)))}.");
+                $"Gender must be one of: {string.Join(", ", Enum.GetNames<Gender>())}.");
         }
     }
 }

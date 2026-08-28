@@ -221,14 +221,18 @@ public class ApplicationDbContext
     /// everything lives in dedicated configuration classes for testability
     /// and separation of concerns.
     /// </summary>
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating(ModelBuilder builder)
     {
         // IMPORTANT: must be called first. IdentityDbContext registers its
         // own entities (ApplicationUser, IdentityRole, IdentityUserClaim, etc.)
         // and any override of those (e.g. renaming Identity tables). Our
         // configurations are applied AFTER, so we can override Identity
         // defaults if we ever need to.
-        base.OnModelCreating(modelBuilder);
+        // CA1725: parameter renamed from `modelBuilder` to `builder` to match
+        // the base IdentityDbContext.OnModelCreating(ModelBuilder builder)
+        // signature — parameter-name drift between override and base is what
+        // the analyzer catches.
+        base.OnModelCreating(builder);
 
         // ------------------------------------------------------------------
         // Domain Events are NOT persisted — they're in-memory only.
@@ -254,11 +258,11 @@ public class ApplicationDbContext
         // SaleCreatedDomainEvent, SaleApprovedDomainEvent,
         // CategoryCreatedDomainEvent, etc. No per-event Ignore needed.
         // ------------------------------------------------------------------
-        modelBuilder.Ignore<BaseDomainEvent>();
+        builder.Ignore<BaseDomainEvent>();
 
         // Apply all IEntityTypeConfiguration<T> classes in this assembly.
         // This is the modern alternative to manually calling
-        // `modelBuilder.Entity<Category>().HasKey(...)` etc. — each entity's
+        // `builder.Entity<Category>().HasKey(...)` etc. — each entity's
         // mapping lives in its own file, which is easier to read, test, and
         // maintain.
         //
@@ -274,7 +278,7 @@ public class ApplicationDbContext
         // DbSet<DataProtectionKey> (declared above) is sufficient for the
         // conventions to map it. See migration
         // `20260805092026_AddDataProtectionKeys` for the concrete schema.
-        modelBuilder.ApplyConfigurationsFromAssembly(
+        builder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly);
 
         // ------------------------------------------------------------------

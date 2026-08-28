@@ -1,4 +1,5 @@
 ﻿using TakOne.Domain.Common.Enums;
+using TakOne.Domain.Common.Events;
 using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.Primitives;
 
@@ -198,8 +199,10 @@ public sealed class SystemSettings : AggregateRoot
 
         if (newMode == LimitMode) return;
 
+        var previousMode = LimitMode;
         LimitMode = newMode;
         UpdatedAt = DateTime.UtcNow;
+        AddDomainEvent(new SystemSettingsLimitModeChangedDomainEvent(previousMode, newMode));
     }
 
     /// <summary>
@@ -229,8 +232,10 @@ public sealed class SystemSettings : AggregateRoot
             return;
         }
 
+        var previousVersion = LastKnownAppVersion;
         LastKnownAppVersion = version;
         UpdatedAt = DateTime.UtcNow;
+        AddDomainEvent(new SystemSettingsAppVersionUpdatedDomainEvent(previousVersion, version));
     }
 
 
@@ -243,10 +248,10 @@ public sealed class SystemSettings : AggregateRoot
 
     private static void EnsureLimitModeValid(LimitMode mode)
     {
-        if (!Enum.IsDefined(typeof(LimitMode), mode))
+        if (!Enum.IsDefined(mode))
         {
             throw new DomainException(
-                $"LimitMode must be one of: {string.Join(", ", Enum.GetNames(typeof(LimitMode)))}.");
+                $"LimitMode must be one of: {string.Join(", ", Enum.GetNames<LimitMode>())}.");
         }
 
         // Reject the implicit-zero value (0) explicitly — our enum starts

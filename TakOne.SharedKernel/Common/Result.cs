@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 namespace TakOne.SharedKernel.Common;
@@ -49,6 +50,15 @@ public class Result
 ///   the bug downstream. The throw makes the footgun LOUD: you must
 ///   check <c>IsSuccess</c> before accessing <c>Value</c>.
 /// </summary>
+/// <remarks>
+/// CA1000 (Do not declare static members on generic types) is intentionally
+/// suppressed for the <c>Success</c>/<c>Failure</c> factory methods. The
+/// pattern is the idiomatic DDD Result-type API (mirrors Ardalis.Result,
+/// CSharpFunctionalExtensions, ErrorOr). Callers MUST be able to write
+/// <c>Result&lt;int&gt;.Success(5)</c> for type inference to work at the
+/// call site — moving the factories to a non-generic helper class would
+/// break the fluent API and force every caller to specify the type twice.
+/// </remarks>
 public class Result<T> : Result
 {
     // Backing field for Value. Stored separately so the getter can
@@ -85,9 +95,17 @@ public class Result<T> : Result
         _value = value;
     }
 
+    [SuppressMessage("Microsoft.Design", "CA1000:DoNotDeclareStaticMembersOnGenericTypes",
+        Justification = "Idiomatic DDD Result-type pattern (mirrors Ardalis.Result, CSharpFunctionalExtensions). " +
+                        "Generic factory methods are required for the fluent API at call sites " +
+                        "(Result<int>.Success(5)). Moving to a non-generic helper would break type inference.")]
     public static Result<T> Success(T value) => new(value, true, string.Empty);
 
     // Creates a failed Result. The Value is NOT accessible (the getter
     // throws) — callers must check IsSuccess and read Error instead.
+    [SuppressMessage("Microsoft.Design", "CA1000:DoNotDeclareStaticMembersOnGenericTypes",
+        Justification = "Idiomatic DDD Result-type pattern (mirrors Ardalis.Result, CSharpFunctionalExtensions). " +
+                        "Generic factory methods are required for the fluent API at call sites " +
+                        "(Result<int>.Failure(\"err\")). Moving to a non-generic helper would break type inference.")]
     public static new Result<T> Failure(string error) => new(default!, false, error);
 }

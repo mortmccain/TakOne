@@ -254,10 +254,10 @@ public sealed class BroadcastNotification : AggregateRoot
 
     private static void EnsureScopeValid(BroadcastScope scope)
     {
-        if (!Enum.IsDefined(typeof(BroadcastScope), scope))
+        if (!Enum.IsDefined(scope))
         {
             throw new DomainException(
-                $"BroadcastScope must be one of: {string.Join(", ", Enum.GetNames(typeof(BroadcastScope)))}.");
+                $"BroadcastScope must be one of: {string.Join(", ", Enum.GetNames<BroadcastScope>())}.");
         }
 
         // Reject the implicit-zero value (0). Our enum starts at 1, so a

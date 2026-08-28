@@ -1,4 +1,5 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using System;
+using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.SharedKernel.ValueObjects;
@@ -32,6 +33,17 @@ namespace TakOne.SharedKernel.ValueObjects;
 /// EF populate via reflection while keeping Money immutable to all
 /// application and domain code (the class is sealed; no Money method
 /// calls the setters after construction).
+/// </para>
+/// <para>
+/// <b>EXCEPTION POLICY:</b> The constructor throws
+/// <see cref="ArgumentException"/>/<see cref="ArgumentNullException"/>
+/// for argument-validation failures (null/empty currency, wrong-length
+/// currency code, negative amount). These are PROGRAMMER errors and
+/// must NOT be surfaced to end users as business-rule violations —
+/// <c>DomainExceptionMiddleware</c> does not translate them to 400 Bad
+/// Request. <see cref="EnsureSameCurrency"/> retains
+/// <see cref="DomainException"/> because mixing currencies in
+/// arithmetic IS a business-rule violation that should surface as 400.
 /// </para>
 /// </remarks>
 public sealed class Money : BaseValueObject
@@ -72,9 +84,16 @@ public sealed class Money : BaseValueObject
 
     public Money(decimal amount, string currency)
     {
-        if (string.IsNullOrWhiteSpace(currency)) throw new DomainException("Currency cannot be empty.");
-
-        if (currency.Length != 3) throw new DomainException("Currency must be a 3-letter ISO code.");
+        // Argument validation — programmer errors, NOT business rules.
+        // Throwing ArgumentException (not DomainException) so these don't
+        // get translated to 400 Bad Request by DomainExceptionMiddleware.
+        ArgumentNullException.ThrowIfNull(currency);
+        if (string.IsNullOrWhiteSpace(currency))
+            throw new ArgumentException("Currency cannot be empty or whitespace.", nameof(currency));
+        if (currency.Length != 3)
+            throw new ArgumentException("Currency must be a 3-letter ISO 4217 code.", nameof(currency));
+        if (amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), amount, "Money amount cannot be negative.");
 
         Amount = amount;
         Currency = currency.ToUpperInvariant();
@@ -90,33 +109,41 @@ public sealed class Money : BaseValueObject
 
     public static Money operator +(Money left, Money right)
     {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         EnsureSameCurrency(left, right);
         return new Money(left.Amount + right.Amount, left.Currency);
     }
 
     public static Money operator -(Money left, Money right)
     {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
         EnsureSameCurrency(left, right);
         return new Money(left.Amount - right.Amount, left.Currency);
     }
 
     public static Money operator *(Money unitPrice, int quantity)
     {
+        ArgumentNullException.ThrowIfNull(unitPrice);
         return new Money(unitPrice.Amount * quantity, unitPrice.Currency);
     }
 
     public static Money operator *(int quantity, Money unitPrice)
     {
+        ArgumentNullException.ThrowIfNull(unitPrice);
         return new Money(unitPrice.Amount * quantity, unitPrice.Currency);
     }
 
     public static Money operator *(decimal multiplier, Money unitPrice)
     {
+        ArgumentNullException.ThrowIfNull(unitPrice);
         return new Money(unitPrice.Amount * multiplier, unitPrice.Currency);
     }
 
     public static Money operator *(Money unitPrice, decimal multiplier)
     {
+        ArgumentNullException.ThrowIfNull(unitPrice);
         return new Money(unitPrice.Amount * multiplier, unitPrice.Currency);
     }
 

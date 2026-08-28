@@ -45,7 +45,8 @@
 *@
 
 @page "/m/Dashboard"
-@attribute [Authorize(Roles = "Admin,Manager,Employee,ReadOnly")]
+@* Policy: Policies.DashboardAccess *@
+@attribute [Authorize(Policy = "DashboardAccess")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

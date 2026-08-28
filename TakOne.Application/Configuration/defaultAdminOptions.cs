@@ -138,7 +138,7 @@ public sealed class DefaultAdminOptions
     /// This avoids the previous behavior of unconditionally attempting to
     /// seed on every startup in every environment.
     /// </summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Whether the seeded admin must change their password on first login.

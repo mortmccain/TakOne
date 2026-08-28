@@ -132,7 +132,8 @@
      token is established at circuit start. (Same as SaleDetail.razor.) *@
 
 @page "/Admin/Users/{Id:guid}"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine

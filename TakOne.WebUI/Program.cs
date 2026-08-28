@@ -365,6 +365,62 @@ builder.Services.Configure<RequestLocalizationOptions>(opts =>
     });
 });
 
+// --- Named authorization policies (Issue #05 — typo-class bug) ---
+//
+// Before this block, every protected Razor page declared
+//   @attribute [Authorize(Roles = "Admin,Manager,Employee")]
+// directly. That has a silent-failure mode: a typo like
+//   @attribute [Authorize(Roles = "Adming")]
+// compiles cleanly and denies every user (the page appears to be
+// secured, but nobody can ever get in — including the admins who were
+// supposed to have access). The same defect exists for any role-string
+// permutation drift across pages: there is no compile-time check that
+// the role-set on the page is the role-set the business actually wants.
+//
+// FIX: register NAMED POLICIES here, one per unique role-set used by
+// any page. Pages now declare
+//   // Policy: Policies.DashboardAccess
+//   @attribute [Authorize(Policy = "DashboardAccess")]
+// and the role-set lives in exactly one place — this block — where a
+// single audit grep can verify every page maps to a registered policy.
+//
+// Razor `@attribute` directives require string LITERALS — they do not
+// support constant references, so `[Authorize(Policy = Policies.X)]`
+// will not compile. Pages therefore use the literal string with a
+// `// Policy: Policies.X` comment so the literal is grep-cross-checkable
+// against the constants in TakOne.Application/Common/Authorization/
+// Policies.cs. See the SAFETY note in Policies.cs for the residual
+// typo risk and the grep-audit mitigation.
+//
+// The per-handler `[RequireRole(Roles.X)]` attribute on Application-
+// layer CQRS handlers is a SEPARATE defense-in-depth layer (per-handler,
+// not per-page) and stays in place regardless of these policies.
+builder.Services.AddAuthorization(options =>
+{
+    // Admin only — admin notifications console.
+    options.AddPolicy(Policies.AdminOnly, p => p.RequireRole(Roles.Admin));
+
+    // Admin + Manager — group/category/user creation that employees
+    // must not access.
+    options.AddPolicy(Policies.StaffManagement,
+        p => p.RequireRole(Roles.Admin, Roles.Manager));
+
+    // Admin + Manager + Employee — the default staff page policy.
+    // Product, user-detail, group-management, and admin-list pages.
+    options.AddPolicy(Policies.ProductManagement,
+        p => p.RequireRole(Roles.Admin, Roles.Manager, Roles.Employee));
+
+    // Admin + Manager + Employee + ReadOnly — dashboard analytics;
+    // read-only auditors can view.
+    options.AddPolicy(Policies.DashboardAccess,
+        p => p.RequireRole(Roles.Admin, Roles.Manager, Roles.Employee, Roles.ReadOnly));
+
+    // Admin + Manager + Employee + Customer — shopping-cart page;
+    // staff can preview a customer's cart, customers shop for themselves.
+    options.AddPolicy(Policies.CartAccess,
+        p => p.RequireRole(Roles.Admin, Roles.Manager, Roles.Employee, Roles.Customer));
+});
+
 // --- App-update auto-broadcaster (hosted service) ---
 //
 // Runs ONCE at startup, after the DI container is built and Wolverine's

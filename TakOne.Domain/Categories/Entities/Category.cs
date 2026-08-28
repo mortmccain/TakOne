@@ -192,6 +192,14 @@ public sealed class Category : AggregateRoot
 
     public void ActivateSubCategory(Guid subCategoryId)
     {
+        // Defense-in-depth: refuse to reactivate a child SubCategory under
+        // a deactivated parent Category. The hierarchy invariant is
+        // "an active child requires an active parent" — reactivating a
+        // SubCategory while its parent Category is deactivated would leave
+        // the catalog in a semantically invalid state (the SubCategory is
+        // "active" but its parent is hidden, so it's unreachable in the
+        // shop). The admin must reactivate the parent Category first.
+        EnsureActive();
         var sub = EnsureSubCategoryExists(subCategoryId);
         sub.Activate();
     }
@@ -232,7 +240,13 @@ public sealed class Category : AggregateRoot
 
     public void ActivateSubSubCategory(Guid subCategoryId, Guid subSubCategoryId)
     {
+        // Defense-in-depth: refuse to reactivate a SubSubCategory under a
+        // deactivated parent Category or SubCategory. See the rationale on
+        // ActivateSubCategory above. The admin must reactivate the parent
+        // Category and SubCategory first.
+        EnsureActive();
         var sub = EnsureSubCategoryExists(subCategoryId);
+        EnsureSubCategoryActive(sub);
         sub.ActivateSubSubCategory(subSubCategoryId);
     }
 

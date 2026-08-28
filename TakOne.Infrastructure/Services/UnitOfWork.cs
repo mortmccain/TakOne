@@ -195,8 +195,11 @@ public sealed class UnitOfWork : IUnitOfWork
         int maxAttempts = 3,
         CancellationToken cancellationToken = default)
     {
-        if (operation is null)
-            throw new ArgumentNullException(nameof(operation));
+        // CA1510: use the modern ArgumentNullException.ThrowIfNull helper instead
+        // of `if (operation is null) throw new ArgumentNullException(nameof(operation));`.
+        // Same behavior, less ceremony, consistent with the rest of the BCL's
+        // modern argument-validation pattern.
+        ArgumentNullException.ThrowIfNull(operation);
         if (maxAttempts < 1)
             maxAttempts = 1;
 

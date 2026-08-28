@@ -17,7 +17,8 @@
 *@
 
 @page "/m/Admin/Groups"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

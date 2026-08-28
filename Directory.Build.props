@@ -1,0 +1,82 @@
+<Project>
+
+  <!--
+  ============================================================================
+  Directory.Build.props — repo-wide MSBuild defaults.
+  ============================================================================
+
+  This file is automatically picked up by MSBuild for every project under
+  the repo root (csproj files inherit these properties unless they override
+  them). It enforces a uniform, opinionated, enterprise-grade compilation
+  policy across all TakOne projects (Domain, Application, Infrastructure,
+  WebUI, Analyzers, SharedKernel).
+
+  WHY THIS FILE EXISTS (v4 brutal-review finding #34):
+    The repo had no Directory.Build.props anywhere. Each csproj declared its
+    own (minimal) settings, and warnings accumulated silently — including
+    nullable-warning suppressions (#pragma warning disable CS8618) scattered
+    across 15 entity files. The Round 18 commit message could claim "0
+    warnings, 0 errors" only because warnings were never errors. This file
+    flips that posture.
+
+  POLICY:
+    * TreatWarningsAsErrors=true — a warning is a bug. Either fix the
+      underlying issue or, if the warning is a false positive, suppress it
+      with a scoped #pragma + a justifying comment. NO blanket suppressions.
+    * Nullable=enable — the codebase already opted in per-project; this
+      enforces it repo-wide for any future project added without explicit
+      settings.
+    * ImplicitUsings=enable — same rationale as Nullable.
+    * AnalysisLevel=latest-recommended — opt in to the latest Roslyn
+      analyzer rules (catches more bugs at compile time).
+    * EnforceCodeStyleInBuild=true — .editorconfig code-style rules run as
+      build-time errors (not just IDE squiggles).
+    * GenerateDocumentationFile is deliberately NOT set to true here.
+      Enabling it would surface CS1591 (missing XML doc comment) on every
+      public member — a cascade that would block the build until every
+      public API is documented. The codebase has rich XML docs on most
+      public surfaces already; enabling GenerateDocumentationFile is a
+      separate, dedicated cleanup PR.
+
+  PHASED WARNINGS-NOT-AS-ERRORS:
+    The following analyzer codes are NOT treated as errors at this stage
+    because they require broader refactoring that would be high-risk to
+    do in a single PR without test coverage. They will be flipped to errors
+    in a dedicated follow-up PR:
+
+    * CA1848 (Use LoggerMessage delegates) — 530 sites in Application alone.
+      Requires adding [LoggerMessage] partial methods to every logging
+      class. High-risk without integration tests to catch log-message-
+      template drift.
+
+    * CA1873 (Logger argument evaluation may be unnecessary) — 158 sites,
+      same root cause as CA1848. Fixed automatically once the LoggerMessage
+      source generator refactor lands.
+
+    * CA1711 (Identifiers should not have certain suffixes) — 8 sites where
+      Wolverine domain-event handler classes end in "EventHandler". This is
+      the framework's own naming convention (Wolverine + MediatR both use
+      "*Handler" / "*EventHandler" suffixes). Renaming would break the
+      convention. Suppress at the analyzer level.
+
+    The codes that ARE errors today (CA1000, CA1305, CA1822, CA1826,
+    CA1852, CA1805, CA2211, CA2263, CS8618 etc.) are fixed inline or with
+    scoped [SuppressMessage] attributes with justifications.
+  ============================================================================
+  -->
+
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!--
+      Phased rollout: codes deferred to a dedicated cleanup PR.
+      See the class-level comment above for the rationale per code.
+    -->
+    <WarningsNotAsErrors>CA1848;CA1873;CA1711</WarningsNotAsErrors>
+  </PropertyGroup>
+
+</Project>

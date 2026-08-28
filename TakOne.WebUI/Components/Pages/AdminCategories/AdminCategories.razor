@@ -57,7 +57,8 @@
 *@
 
 @page "/Admin/Categories"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@* Policy: Policies.StaffManagement *@
+@attribute [Authorize(Policy = "StaffManagement")]
 
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

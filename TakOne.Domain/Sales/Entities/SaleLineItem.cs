@@ -127,8 +127,14 @@ public sealed class SaleLineItem : BaseEntity
 
     /// <summary>
     /// Replaces the quantity on this line. The parent Sale is responsible for
-    /// re-validating the purchase limit AFTER calling this, because the limit
-    /// check needs the GroupName context which lives on the Sale.
+    /// re-validating the purchase limit BEFORE calling this method (see
+    /// <see cref="Sale.AddLineItem"/> and
+    /// <see cref="Sale.UpdateLineItemQuantity"/>, which both call
+    /// <see cref="Sale.EnsurePurchaseLimitRespected"/> BEFORE
+    /// <c>UpdateQuantity</c>). The purchase-limit check is the Sale's
+    /// responsibility (not the line item's) because it needs the
+    /// <c>int? purchaseLimit</c> value that the application layer resolves
+    /// from the buyer's group + the Product's per-group limit.
     /// </summary>
     internal void UpdateQuantity(int newQuantity)
     {

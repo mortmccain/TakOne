@@ -161,5 +161,5 @@ public class ApplicationUser : IdentityUser<Guid>
     /// UI — they set their own password at creation time, so there's no
     /// need to force a change.
     /// </summary>
-    public bool MustChangePassword { get; set; } = false;
+    public bool MustChangePassword { get; set; }
 }

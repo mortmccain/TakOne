@@ -61,7 +61,8 @@
      Keys defined in CreateProduct.en-US.resx + CreateProduct.fa-IR.resx. *@
 
 @page "/Admin/Products/Create"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
@@ -84,6 +85,7 @@
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
 @inject IFileStorage FileStorage
+@inject Microsoft.Extensions.Logging.ILogger<CreateProduct> Logger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -1105,13 +1107,17 @@
         }
         catch (Exception ex)
         {
-            // Log the full exception so we can diagnose the root cause
-            // server-side. Surface a wire-format unexpected error so the
-            // consumer (HandleSubmitAsync) recognizes the UE| prefix and
-            // routes through ErrorDisplay.Localize for the localized
-            // message + visible code.
-            Console.Error.WriteLine(
-                $"[CreateProduct] UploadSelectedFileAsync caught {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
+            // Log the full exception server-side via the structured ILogger
+            // pipeline (v4 #15: replaced Console.Error.WriteLine that dumped
+            // ex.GetType().FullName + ex.StackTrace to stdout — ILogger
+            // captures the full type name + stack trace server-side
+            // without leaking them to the container's stdout log driver).
+            //
+            // Surface a wire-format unexpected error so the consumer
+            // (HandleSubmitAsync) recognizes the UE| prefix and routes
+            // through ErrorDisplay.Localize for the localized message +
+            // visible code.
+            Logger.LogError(ex, "UploadSelectedFileAsync failed");
             return (Url: null, Error: $"{ErrorDisplayService.WireFormatPrefix}{UnexpectedErrorCodes.CreateProduct_UploadFailure}");
         }
     }
@@ -1349,8 +1355,11 @@
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine(
-                $"[CreateProduct] HandleSubmitAsync caught {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}");
+            // v4 #15: Console.Error.WriteLine dumped ex.GetType().FullName +
+            // ex.StackTrace to stdout — replaced with structured ILogger
+            // (full exception captured server-side, nothing leaked to
+            // container stdout).
+            Logger.LogError(ex, "HandleSubmitAsync failed");
             _submitError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.CreateProduct_SubmitFailure);
         }
         finally

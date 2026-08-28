@@ -22,7 +22,8 @@
 *@
 
 @page "/m/Admin/Categories"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@* Policy: Policies.StaffManagement *@
+@attribute [Authorize(Policy = "StaffManagement")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

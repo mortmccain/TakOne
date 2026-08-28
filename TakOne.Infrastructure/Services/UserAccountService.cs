@@ -269,6 +269,42 @@ public sealed class UserAccountService : IUserAccountService
         }
 
         // ------------------------------------------------------------------
+        // PRE-VALIDATE the new password BEFORE calling RemovePasswordAsync.
+        //
+        // The historical brick-the-user bug: RemovePasswordAsync succeeds
+        // (Identity auto-saves, the user now has NO password), then
+        // AddPasswordAsync fails (weak password, duplicate, etc.) — the
+        // user is left with NO password and cannot log in. We cannot
+        // restore the old password (it was hashed).
+        //
+        // The fix: pre-validate the new password via UserManager's
+        // PasswordValidators BEFORE mutating state. If the password is
+        // rejected by any validator, we return Result.Failure WITHOUT
+        // touching the existing password. The user's current password
+        // remains intact — they can still log in.
+        //
+        // PasswordValidator.ValidateAsync runs every configured
+        // IPasswordValidator<TUser> (default + any custom), checking
+        // length/complexity/uniqueness rules. It does NOT mutate state.
+        // ------------------------------------------------------------------
+        foreach (var validator in _userManager.PasswordValidators)
+        {
+            var validationResult = await validator.ValidateAsync(_userManager, appUser, newPassword);
+            if (validationResult != IdentityResult.Success)
+            {
+                var validationError = FlattenErrors(validationResult);
+                _logger.LogWarning(
+                    "UserAccountService.ResetPasswordAsync: pre-validation rejected the new " +
+                    "password for userId {UserId}. Errors: {Errors}. The existing password " +
+                    "was NOT touched — the user can still log in with their current password.",
+                    userId, validationError);
+                return Result.Failure(
+                    $"The new password was rejected before any change was made. " +
+                    $"Errors: {validationError}. The user's existing password is intact.");
+            }
+        }
+
+        // ------------------------------------------------------------------
         // UserManager.ResetPasswordAsync normally requires a token (issued
         // via UserManager.GeneratePasswordResetTokenAsync). That's the
         // user-driven "forgot password" flow. For an ADMIN-driven reset
@@ -278,6 +314,12 @@ public sealed class UserAccountService : IUserAccountService
         // This is a deliberate choice: admin resets don't need the user to
         // click a link in an email. The admin is authenticated, and the
         // audit log captures who did it (the calling handler logs the actor).
+        //
+        // Pre-validation above eliminates the realistic failure modes for
+        // AddPasswordAsync (weak password, complexity rules). The remaining
+        // failure modes (race with another concurrent reset, store-level
+        // concurrency error) are vanishingly rare — but if AddPasswordAsync
+        // DOES fail, we surface it loudly so the admin can retry.
         // ------------------------------------------------------------------
         var removeResult = await _userManager.RemovePasswordAsync(appUser);
         if (!removeResult.Succeeded)
@@ -301,11 +343,11 @@ public sealed class UserAccountService : IUserAccountService
                 "for userId {UserId}. Errors: {Errors}.",
                 userId, error);
 
-            // We've removed the old password but couldn't set the new one —
-            // the user now has NO password and CANNOT log in. Surface this
-            // loudly so the admin knows to retry immediately. We do NOT
-            // attempt to restore the old password (we don't have it; it was
-            // hashed).
+            // Pre-validation should have caught this. If we get here, a
+            // rare concurrent change or store error occurred. The user
+            // now has NO password — surface this loudly so the admin
+            // retries immediately. We do NOT attempt to restore the old
+            // password (we don't have it; it was hashed).
             return Result.Failure(
                 $"Password reset FAILED for user '{userId}'. The old password was removed " +
                 $"but the new password was rejected. Errors: {error}. " +

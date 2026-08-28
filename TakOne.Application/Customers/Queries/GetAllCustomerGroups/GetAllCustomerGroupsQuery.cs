@@ -27,5 +27,5 @@ public sealed class GetAllCustomerGroupsQuery
     /// page passes true to show the full list with deactivated rows greyed
     /// out + a "reactivate" action.
     /// </summary>
-    public bool IncludeInactive { get; init; } = false;
+    public bool IncludeInactive { get; init; }
 }

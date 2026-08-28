@@ -71,7 +71,8 @@
      token is established at circuit start. *@
 
 @page "/Admin/Products"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 @attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
@@ -95,6 +96,7 @@
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
+@inject Microsoft.Extensions.Logging.ILogger<AdminProducts> Logger
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -681,7 +683,10 @@
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"Restock dialog open failed: {ex.Message}");
+            // v4 #15: Console.WriteLine → structured ILogger pipeline. The
+            // ILogger<T> is injected at the top of the file (matches the
+            // SaleDetail.razor convention).
+            Logger.LogError(ex, "Restock dialog open failed for product {ProductId}", product.Id);
             await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_RestockDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }
@@ -771,7 +776,8 @@
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"Deactivate dialog open failed: {ex.Message}");
+            // v4 #15: Console.WriteLine → structured ILogger pipeline.
+            Logger.LogError(ex, "Deactivate dialog open failed for product {ProductId}", product.Id);
             await Toast.UnexpectedError(UnexpectedErrorCodes.AdminProducts_DeactivateDialogOpen, summary: Loc["ErrorTitle"]);
             return;
         }

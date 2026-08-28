@@ -150,7 +150,6 @@ public sealed class CreateSaleCommandHandler
         var sale = Sale.Create(
             customerId: customer.Id,
             customerName: customer.FullName,
-            saleNumber: null,
             createdByUserId: currentUser.UserId,
             createdByName: currentUser.FullName);
 

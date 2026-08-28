@@ -28,7 +28,8 @@
    state. The submit flow navigates to /m/Sales instead. *@
 
 @page "/m/Cart"
-@attribute [Authorize(Roles = "Admin,Manager,Employee,Customer")]
+@* Policy: Policies.CartAccess *@
+@attribute [Authorize(Policy = "CartAccess")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

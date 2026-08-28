@@ -41,7 +41,8 @@
      --tm-radius variable is only defined in tak-light.css / tak-dark.css. *@
 
 @page "/"
-@attribute [Authorize(Roles = "Admin,Manager,Employee,ReadOnly")]
+@* Policy: Policies.DashboardAccess *@
+@attribute [Authorize(Policy = "DashboardAccess")]
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Globalization

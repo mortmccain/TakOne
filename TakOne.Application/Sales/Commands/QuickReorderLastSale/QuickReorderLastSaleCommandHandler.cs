@@ -352,7 +352,6 @@ public sealed class QuickReorderLastSaleCommandHandler
                 (
                 customerId: currentUser.UserId,
                 customerName: currentUser.FullName,
-                saleNumber: null,
                 createdByUserId: currentUser.UserId,
                 createdByName: currentUser.FullName
                 );

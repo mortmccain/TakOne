@@ -482,6 +482,11 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -526,7 +531,8 @@ namespace TakOne.Infrastructure.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("Name");
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.HasIndex("SubCategoryId");
 
@@ -641,7 +647,7 @@ namespace TakOne.Infrastructure.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("SaleId")
+                    b.Property<Guid>("SaleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "UnitPrice", "TakOne.Domain.Sales.Entities.SaleLineItem.UnitPrice#Money", b1 =>
@@ -665,8 +671,7 @@ namespace TakOne.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.HasIndex("SaleId", "LineNumber")
-                        .IsUnique()
-                        .HasFilter("[SaleId] IS NOT NULL");
+                        .IsUnique();
 
                     b.ToTable("SaleLineItems", (string)null);
                 });
@@ -957,7 +962,8 @@ namespace TakOne.Infrastructure.Migrations
                     b.HasOne("TakOne.Domain.Sales.Entities.Sale", null)
                         .WithMany("LineItems")
                         .HasForeignKey("SaleId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TakOne.Domain.Users.User", b =>

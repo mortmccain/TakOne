@@ -5,7 +5,14 @@ using TakOne.SharedKernel.Common;
 namespace TakOne.Application.Products.Commands.DeactivateProduct;
 
 /// <summary>
-/// Deactivates a Product by setting its StockQuantity to 0.
+/// Deactivates a Product by calling its <see cref="Domain.Products.Entities.Product.Deactivate"/>
+/// method. Deactivation is the domain's soft-delete operation:
+///   - Sets <c>IsActive</c> to <c>false</c> (product is excluded from shop listings
+///     and cannot be added to carts).
+///   - Zeros out stock (an inactive product cannot hold inventory).
+///   - Raises <c>ProductDeactivatedDomainEvent</c> + <c>ProductStockAdjustedDomainEvent</c>
+///     so subscribers (catalog cache invalidation, search index removal, audit) react
+///     without polling.
 ///
 /// See <see cref="DeactivateProductCommand"/> for the business rule that
 /// justifies "stock = 0" as the deactivation operation, and for the
@@ -38,7 +45,7 @@ public sealed class DeactivateProductCommandHandler
 
         // ------------------------------------------------------------------
         // 1. Load the product. Tracked (not AsNoTracking) because we're
-        //    about to mutate StockQuantity and need EF Core's change
+        //    about to mutate state and need EF Core's change
         //    tracker to detect + persist the change.
         // ------------------------------------------------------------------
         var product = await productRepository.GetByIdAsync(command.ProductId, cancellationToken);
@@ -61,19 +68,22 @@ public sealed class DeactivateProductCommandHandler
         var stockBefore = product.StockQuantity;
 
         // ------------------------------------------------------------------
-        // 3. Delegate to the aggregate. SetStock(0) goes through the
-        //    domain's EnsureStockQuantityValid guard (which only rejects
-        //    NEGATIVE values — 0 is valid). Idempotent: setting an already-
-        //    zero stock to 0 is a no-op at the aggregate level.
+        // 3. Delegate to the aggregate. Product.Deactivate() performs the
+        //    full soft-delete operation:
+        //      - Idempotent: a no-op if the product is already inactive
+        //        (prevents spurious audit entries when an admin double-clicks).
+        //      - Zeros stock (if non-zero) and raises a
+        //        ProductStockAdjustedDomainEvent with reason="deactivation".
+        //      - Sets IsActive=false and raises ProductDeactivatedDomainEvent.
         // ------------------------------------------------------------------
-        product.SetStock(0);
+        product.Deactivate();
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation
             ("DeactivateProduct: product {ProductId} ('{Name}') deactivated by user {UserId}. " +
-             "Previous stock was {PreviousStock} (now 0).",
-             product.Id, product.Name, currentUser.UserId, stockBefore);
+             "Previous stock was {PreviousStock} (now 0). IsActive={IsActive}.",
+             product.Id, product.Name, currentUser.UserId, stockBefore, product.IsActive);
 
         return Result.Success();
     }

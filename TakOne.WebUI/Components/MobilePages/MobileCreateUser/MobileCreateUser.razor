@@ -30,7 +30,8 @@
    create staff (groups only show in customer mode). *@
 
 @page "/m/Admin/Users/Create"
-@attribute [Authorize(Roles = "Admin,Manager")]
+@* Policy: Policies.StaffManagement *@
+@attribute [Authorize(Policy = "StaffManagement")]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization

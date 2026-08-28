@@ -85,8 +85,18 @@ public sealed class SubCategory : BaseEntity
     /// publicly via <see cref="Category.AddSubSubCategory"/>, which routes
     /// the call here after looking up the parent SubCategory.
     /// </summary>
+    /// <remarks>
+    /// <see cref="Category.AddSubSubCategory"/> already calls
+    /// <c>EnsureSubCategoryActive(sub)</c> before delegating here, but
+    /// we re-check <c>IsActive</c> as defense-in-depth: this internal
+    /// method could be re-exposed or invoked from a future code path
+    /// that forgets to check. The check is cheap (one bool read) and
+    /// the invariant (cannot add children to a deactivated parent) is
+    /// important enough to enforce at every entry point.
+    /// </remarks>
     internal SubSubCategory AddSubSubCategory(string name)
     {
+        EnsureActive();
         EnsureSubSubCategoryNameUnique(name, excludeId: null);
 
         var subSub = new SubSubCategory(Id, name);
@@ -160,6 +170,17 @@ public sealed class SubCategory : BaseEntity
 
     internal void Deactivate() => IsActive = false;
     internal void Activate() => IsActive = true;
+
+    /// <summary>
+    /// Throws if this SubCategory is deactivated. Used as a defense-in-depth
+    /// guard at the top of mutation methods.
+    /// </summary>
+    /// <exception cref="DomainException">Thrown when <see cref="IsActive"/> is false.</exception>
+    private void EnsureActive()
+    {
+        if (!IsActive)
+            throw new DomainException($"Cannot modify SubCategory '{Name}' because it is deactivated.");
+    }
 
 
 

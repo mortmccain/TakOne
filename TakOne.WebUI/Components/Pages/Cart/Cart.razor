@@ -83,7 +83,8 @@
      token is established at circuit start. *@
 
 @page "/Cart"
-@attribute [Authorize(Roles = "Admin,Manager,Employee,Customer")]
+@* Policy: Policies.CartAccess *@
+@attribute [Authorize(Policy = "CartAccess")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine

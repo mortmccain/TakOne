@@ -32,7 +32,8 @@
 *@
 
 @page "/Admin/Notifications"
-@attribute [Authorize(Roles = "Admin")]
+@* Policy: Policies.AdminOnly *@
+@attribute [Authorize(Policy = "AdminOnly")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.Extensions.Localization

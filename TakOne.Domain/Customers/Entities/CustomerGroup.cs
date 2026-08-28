@@ -1,4 +1,5 @@
-﻿using TakOne.SharedKernel.Common;
+﻿using TakOne.Domain.Customers.Events;
+using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.Primitives;
 using TakOne.SharedKernel.ValueObjects;
 
@@ -147,7 +148,9 @@ public sealed class CustomerGroup : AggregateRoot
     /// <param name="salary">Monthly salary budget (Money = amount + currency).</param>
     public static CustomerGroup Create(string name, Money salary)
     {
-        return new CustomerGroup(name, salary);
+        var group = new CustomerGroup(name, salary);
+        group.AddDomainEvent(new CustomerGroupCreatedDomainEvent(group.Id, group.Name, group.Salary));
+        return group;
     }
 
 
@@ -192,8 +195,10 @@ public sealed class CustomerGroup : AggregateRoot
 
         if (newSalary == Salary) return;
 
+        var previousSalary = Salary;
         Salary = newSalary;
         UpdatedAt = DateTime.UtcNow;
+        AddDomainEvent(new CustomerGroupSalaryUpdatedDomainEvent(Id, previousSalary, newSalary));
     }
 
     /// <summary>
@@ -208,6 +213,7 @@ public sealed class CustomerGroup : AggregateRoot
 
         IsActive = false;
         UpdatedAt = DateTime.UtcNow;
+        AddDomainEvent(new CustomerGroupDeactivatedDomainEvent(Id));
     }
 
     /// <summary>
@@ -219,6 +225,7 @@ public sealed class CustomerGroup : AggregateRoot
 
         IsActive = true;
         UpdatedAt = DateTime.UtcNow;
+        AddDomainEvent(new CustomerGroupActivatedDomainEvent(Id));
     }
 
 

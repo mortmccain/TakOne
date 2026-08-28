@@ -13,12 +13,13 @@ namespace TakOne.Infrastructure.Persistence.Configurations;
 ///
 /// COLUMNS:
 ///   - Id                (uniqueidentifier, PK)
-///   - Name              (nvarchar(200), NOT NULL)
+///   - Name              (nvarchar(200), NOT NULL, UNIQUE INDEX — see HasIndex below)
 ///   - Description       (nvarchar(2000), NOT NULL)
 ///   - PictureUrl        (nvarchar(max), NULL)
 ///   - Price_Amount      (decimal(18, 2), NOT NULL) — owned Money value object
 ///   - Price_Currency    (nvarchar(3), NOT NULL)    — owned Money value object
 ///   - StockQuantity     (int, NOT NULL)
+///   - IsActive          (bit, NOT NULL, default 1) — soft-delete flag (true = active)
 ///   - CategoryId        (uniqueidentifier, NOT NULL, INDEXED — cross-aggregate ref, NO FK)
 ///   - SubCategoryId     (uniqueidentifier, NULL, INDEXED — cross-aggregate ref, NO FK)
 ///   - SubSubCategoryId  (uniqueidentifier, NULL, INDEXED — cross-aggregate ref, NO FK)
@@ -79,6 +80,14 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.PictureUrl).HasMaxLength(int.MaxValue);
 
         builder.Property(p => p.StockQuantity).IsRequired();
+
+        // IsActive — soft-delete flag. Defaults to true for new rows
+        // (and for existing rows after the migration adds the column
+        // with a default of 1). When false, the product is excluded
+        // from shop queries and cannot be added to carts.
+        builder.Property(p => p.IsActive)
+            .IsRequired()
+            .HasDefaultValue(true);
 
         // Cross-aggregate references — indexed for query performance, but NO
         // foreign key constraints (see class-level docs for rationale).
@@ -214,8 +223,16 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex(p => p.SubCategoryId);
         builder.HasIndex(p => p.SubSubCategoryId);
 
-        // Non-unique index on Name for the admin product-search feature
-        // (LIKE 'term%' queries can use this index for prefix matches).
-        builder.HasIndex(p => p.Name);
+        // UNIQUE index on Name — the application-layer NameExistsAsync check
+        // (called by CreateProductCommandHandler + UpdateProductDetailsCommandHandler)
+        // implies uniqueness, but a DB constraint is the source of truth. Without
+        // a unique index, two concurrent CreateProduct calls both pass the
+        // NameExistsAsync check and both INSERT — the race condition produces
+        // duplicate product names. This matches the pattern used by
+        // CategoryConfiguration (line 82) and CustomerGroupConfiguration (line 89).
+        // The LIKE 'term%' prefix-match queries used by the admin product-search
+        // feature still benefit from this index (unique indexes are usable for
+        // prefix LIKE searches).
+        builder.HasIndex(p => p.Name).IsUnique();
     }
 }

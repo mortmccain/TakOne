@@ -525,9 +525,15 @@ internal sealed class LocalFileStorage : IFileStorage
             return read;
         }
 
-        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        // CA1844 + CA1835: also override the memory-based ReadAsync so callers
+        // using the Span/Memory API don't fall back to the array-based default
+        // (which would allocate an array per call). The array-based overload
+        // below delegates to this memory-based one to keep the size-enforcement
+        // validation logic in a single place and to call the inner stream's
+        // memory-based ReadAsync (avoids an array allocation on the inner call).
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
         {
-            var read = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
+            var read = await _inner.ReadAsync(buffer, cancellationToken);
             _bytesRead += read;
             if (_bytesRead > _maxRemainingBytes)
             {
@@ -536,6 +542,9 @@ internal sealed class LocalFileStorage : IFileStorage
             }
             return read;
         }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => await ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
 
         public override void Flush() => _inner.Flush();
         public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);

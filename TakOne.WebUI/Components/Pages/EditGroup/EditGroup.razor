@@ -58,7 +58,8 @@
      Keys defined in EditGroup.en-US.resx + EditGroup.fa-IR.resx. *@
 
 @page "/Admin/Groups/{GroupId:guid}"
-@attribute [Authorize(Roles = "Admin,Manager,Employee")]
+@* Policy: Policies.ProductManagement *@
+@attribute [Authorize(Policy = "ProductManagement")]
 @using System.ComponentModel.DataAnnotations
 @using System.Globalization
 @using System.Text
