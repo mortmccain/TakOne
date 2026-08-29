@@ -30,12 +30,10 @@ public enum UsersTextOperator
 ///     <item><c>FullName</c> → ORDER BY FullName</item>
 ///     <item><c>Gender</c> → ORDER BY Gender (enum → int ordinal)</item>
 ///     <item><c>IsActive</c> → ORDER BY IsActive</item>
+///     <item><c>GroupName</c> (Round 6) → ORDER BY the LEFT-JOINed
+///     CustomerGroup.Name — see the repository's ApplySort for the join
+///     mechanics and the NULL-ordering contract for groupless users</item>
 ///   </list>
-/// The GroupName column is deliberately NOT sortable server-side: the
-/// group name lives on the CustomerGroup aggregate (no navigation property
-/// on User), so a name sort would require a cross-table LEFT JOIN in the
-/// ORDER BY. The column stays filterable (via GroupId) — only its header
-/// sort is disabled in the UI.
 /// A null <see cref="UsersListFilters.SortBy"/> means "no user sort
 /// active" — the repository falls back to FullName ascending (the
 /// pre-Round-5 default order, which the mobile admin-users list and the
@@ -47,7 +45,18 @@ public enum UsersSortBy
     WorkerId = 1,
     FullName = 2,
     Gender = 3,
-    IsActive = 4
+    IsActive = 4,
+
+    /// <summary>
+    /// Sort by the user's group NAME (the CustomerGroup aggregate's
+    /// Name, reached via a LEFT JOIN in the repository — User carries
+    /// only the GroupId FK, no navigation property, to keep the
+    /// aggregates decoupled). Groupless users (GroupId null) surface
+    /// with a NULL sort key: they sort FIRST ascending and LAST
+    /// descending — the native NULL ordering of both SQL Server and
+    /// SQLite, deliberately not coerced so the two providers agree.
+    /// </summary>
+    GroupName = 5
 }
 
 /// <summary>

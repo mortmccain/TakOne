@@ -1,8 +1,8 @@
-﻿@* AdminProducts.razor — Phase 3.3 (refactored to AdminUsers pattern)
+﻿@* AdminProducts.razor — Phase 3.3 (Round 6: server-driven grid, Radzen LoadData)
 
    Staff-facing product catalog management page at route `/Admin/Products`.
-   Reached from the sidebar's "Admin → Manage Products" link (already wired in
-   MainLayout.razor). Role-gated to Admin / Manager / Employee via
+   Reached from the sidebar's "Admin → Manage Products" link (already wired
+   in MainLayout.razor). Role-gated to Admin / Manager / Employee via
    [Authorize(Roles=...)] — customers and read-only users get a 403.
 
    PURPOSE:
@@ -18,33 +18,38 @@
        5. View a product's full details → /Products/{Id} (the customer
           detail page already exists; we just link to it).
 
-   STYLE PARITY WITH ADMINUSERS:
-     Phase 3.3 refactor — this page now mirrors AdminUsers.razor's structure
-     and styling:
-       - Same .admin-header layout (icon + page heading + primary action button).
-       - Same RadzenDataGrid configuration: AllowSorting, AllowFiltering with
-         FilterMode.SimpleWithMenu, AllowPaging with PageSize=20, RowRender
-         hook for opacity-cue on rows in a "down" state.
-       - Same per-column FilterTemplate pattern for dropdown filters
-         (colored badge + AllowClear).
-       - Same .row-actions flex container for the Actions column buttons.
-       - Same loading / error / empty state markup.
-
-   COLUMNS (in order — Actions is LAST; do NOT wrap any column in
-   <AuthorizeView> because that re-orders columns at render time — see the
-   comment block on the Sales.razor fix in this same session):
-     1. Picture (60px, no filter, no sort)
-     2. Name (text filter, clickable link to /Products/{Id})
-     3. Price (text filter on Price.Amount, right-aligned tabular-nums)
-     4. Stock (text filter, colored: green=in-stock, amber=low ≤10, red=out)
-     5. Category (text filter, shows "(deactivated)" suffix if the referenced
-        Category has been soft-deleted)
-     6. Sub-Category (text filter, "(deactivated)" suffix when applicable;
-        em-dash when product has no sub-category)
-     7. Sub-Sub-Category (text filter, same pattern as Sub-Category)
-     8. Status (dropdown filter: All / In stock / Out of stock — colored
-        badges; Out-of-stock = red, In-stock = green)
-     9. Actions (View + Restock + Deactivate; last column; no filter)
+   FILTERING + SORTING (Round 6 — SERVER-SIDE, Radzen LoadData mode):
+     The grid runs in server-driven paging mode (same architecture as the
+     Round-5 AdminUsers grid and the Round-4 Sales grid): Data + Count +
+     LoadData. Radzen re-fires LoadData on mount, on pager clicks, on
+     sort-header clicks, and on column-filter changes, and the page
+     translates the descriptors into GetProductsPaginatedQuery fields
+     (ProductsGridStateTranslator):
+       - Name     → server-side text filter (LOWER()/LIKE in SQL)
+       - Price    → numeric comparison filter on Price.Amount (complex
+                    property — EF flattens it, same translation the
+                    Round-4 shop sorts rely on)
+       - Stock    → numeric comparison filter on StockQuantity
+       - Status   → dropdown with colored tags (In stock=green,
+                    Out of stock=red); the dropdown's culture-neutral key
+                    travels as the filter descriptor's payload
+       - Category / Sub-Category / Sub-Sub-Category → text filters on the
+         RESOLVED display names; the query handler resolves the term
+         against the category tree it already loads for DTO enrichment
+         and pushes the matched Id sets into SQL as IN clauses (the
+         product row stores only Guid FKs — see
+         ProductsListFilters.CategoryIds). This keeps the page's existing
+         free-text filter UX rather than swapping in a dropdown.
+     Sorting is server-side too (Name asc/desc, Price asc/desc via the
+     Round-4 keys, Stock asc/desc — each with a total tiebreaker). The
+     three category columns are filterable but NOT sortable: their names
+     live on the Category aggregate, so a sort would need a cross-table
+     LEFT JOIN in the ORDER BY (the same trade-off documented for the
+     users list's GroupName column).
+     This removes the pre-Round-6 100-row ceiling: the page used to load
+     PageSize=100 once (the handler's MaxPageSize cap) and filter/sort
+     client-side — every product past the first 100 (name-ordered) was
+     INVISIBLE to staff, and the pager described only those 100 rows.
 
    DEACTIVATION FLOW (matches the user's spec):
      1. User clicks the Deactivate icon (block icon, Danger color) on a row
@@ -55,15 +60,38 @@
         stock number yourself — the system does not remember it. Confirm?"
         The dialog shows the current stock value for clarity.
      3. If the user clicks Confirm, DeactivateProductCommand is dispatched
-        (sets StockQuantity to 0). On success: toast + grid reload. The
-        row's Stock column now shows 0 in red, the Status column shows
-        "Out of stock" (red badge), and the row itself is rendered at
-        reduced opacity (RowRender hook).
+        (sets StockQuantity to 0). On success: toast + grid.Reload() (the
+        CURRENT page + filters reload in place — Round 6; the old full-list
+        reload also reset every client-side filter). The row's Stock column
+        now shows 0 in red, the Status column shows "Out of stock" (red
+        badge), and the row itself is rendered at reduced opacity
+        (RowRender hook).
      4. If the user clicks Cancel (or X / Esc), no command is dispatched.
 
      For products whose StockQuantity is already 0, the Deactivate button
      is HIDDEN (the product is already deactivated — there's nothing to do).
      A Restock button is shown instead so the user can reactivate.
+
+   COLUMNS (in order — Actions is LAST; do NOT wrap any column in
+   <AuthorizeView> because that re-orders columns at render time — see the
+   comment block on the Sales.razor fix in this same session):
+     1. Picture (60px, no filter, no sort)
+     2. Name (text filter, clickable link to /Products/{Id})
+     3. Price (numeric filter on Price.Amount, right-aligned tabular-nums)
+     4. Stock (numeric filter, colored: green=in-stock, amber=low ≤10, red=out)
+     5. Category (text filter, shows "(deactivated)" suffix if the referenced
+        Category has been soft-deleted; NOT sortable — cross-aggregate)
+     6. Sub-Category (text filter, "(deactivated)" suffix when applicable;
+        em-dash when product has no sub-category; NOT sortable)
+     7. Sub-Sub-Category (text filter, same pattern as Sub-Category;
+        NOT sortable)
+     8. Status (dropdown filter: All / In stock / Out of stock — colored
+        badges; Out-of-stock = red, In-stock = green)
+     9. Actions (View + Restock + Deactivate; last column; no filter)
+
+   LOCALIZATION:
+     All user-visible strings go through IStringLocalizer<AdminProducts>
+     (Loc). Keys in AdminProducts.en-US.resx + AdminProducts.fa-IR.resx.
 
    ANTIFORGERY:
      Not needed — no EditForm. All button clicks are async event handlers
@@ -76,9 +104,7 @@
 @attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Components.Authorization
 @using Wolverine
-@using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductsPaginated
 @using TakOne.Application.Products.Commands.IncreaseProductStock
@@ -89,10 +115,8 @@
 @using TakOne.WebUI.Components.Dialogs.DeactivateProductDialog
 @using TakOne.WebUI.Components.Dialogs.RestockProductDialog
 @inject IMessageBus MessageBus
-@inject ICurrentUserService CurrentUser
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminProducts> Loc
-@inject AuthenticationStateProvider AuthStateProvider
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
@@ -186,6 +210,53 @@
                 justify-content: flex-end;
                 align-items: center;
             }
+
+            /* ── Loading veil (Round 6, mirrors the AdminUsers/Sales grids) ──
+               Covers the MOUNTED grid while a server round trip is in
+               flight. The grid must stay mounted underneath — unmounting
+               it would discard its LoadData state and re-fire the initial
+               load in a loop. First load (no data yet): the full skeleton
+               rhythm; subsequent loads: a spinner glyph. */
+            .admin-products-grid-wrap {
+                position: relative;
+            }
+
+            .admin-products-loading-veil {
+                position: absolute;
+                inset: 0;
+                z-index: 5;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding-top: 3rem;
+                background: var(--rz-base-background-color);
+                opacity: 0.72;
+            }
+
+            .admin-products-loading-veil--skeleton {
+                align-items: stretch;
+                padding: 0.5rem;
+                background: var(--rz-base-background-color);
+            }
+
+            .admin-products-loading-spin {
+                font-size: 2.2rem;
+                color: var(--rz-primary);
+                animation: admin-products-spin 1.1s linear infinite;
+            }
+
+            @@keyframes admin-products-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            /* Reduced motion: the spinner becomes a static glyph. */
+            @@media (prefers-reduced-motion: reduce) {
+                .admin-products-loading-spin {
+                    animation: none;
+                }
+            }
     </style>
 </HeadContent>
 
@@ -198,15 +269,22 @@
         </RadzenStack>
 
         <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-            @* Export CSV (Round 3) — exports the currently loaded products
-               (the same rows the grid shows). Admin-only page ⇒ admin-only
-               export; no extra server round-trip. *@
+            @* Export CSV (Round 6) — exports EVERY product matching the active
+               filters (all pages, capped at 2,000) with the same filters +
+               sort the grid shows. Previously it could only ship the ≤100
+               loaded rows. Admin-only page ⇒ no extra authorization needed
+               beyond the page's [Authorize]. *@
             <RadzenButton Text="@Loc["ExportCsvButton"]"
                           Icon="download"
                           ButtonStyle="ButtonStyle.Secondary"
                           Variant="Variant.Outlined"
-                          Disabled="@(_isLoading || _products.Count == 0)"
-                          Click="@ExportProductsCsvAsync" />
+                          Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                          Click="@ExportProductsCsvAsync">
+                @if (_isExporting)
+                {
+                    <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
+                }
+            </RadzenButton>
             <RadzenButton Text="@Loc["CreateProductButton"]"
                           Icon="add"
                           ButtonStyle="ButtonStyle.Primary"
@@ -215,33 +293,11 @@
         </RadzenStack>
     </div>
 
-    @* ── Loading skeleton (Round 3 styling) ──
-       Mirrors the product grid's column rhythm (thumbnail, name+category,
-       price, stock, status, actions) so the layout doesn't jump when real
-       rows replace the skeleton. *@
-    @if (_isLoading)
-    {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
-            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
-                @for (var i = 0; i < 8; i++)
-                {
-                    <div class="tm-skel-row">
-                        <div class="tm-skel tm-skel--thumb"></div>
-                        <div class="tm-skel-stack" style="gap:.4rem; flex:1;">
-                            <div class="tm-skel tm-skel--line"></div>
-                            <div class="tm-skel tm-skel--line tm-skel--w40"></div>
-                        </div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                        <div class="tm-skel tm-skel--line" style="width:5rem;"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                    </div>
-                }
-            </div>
-        </RadzenCard>
-    }
-
-    @* ── Error banner ── *@
-    else if (!string.IsNullOrEmpty(_loadError))
+    @* ── Error banner ──
+       On load failure the grid is replaced entirely: there is nothing
+       meaningful to page through, and the Retry button re-mounts the
+       grid (which re-fires LoadData from scratch). *@
+    @if (!string.IsNullOrEmpty(_loadError))
     {
         <RadzenAlert Title="@Loc["ErrorTitle"]"
                      Text="@_loadError"
@@ -252,34 +308,68 @@
                           Icon="refresh"
                           ButtonStyle="ButtonStyle.Primary"
                           Variant="Variant.Outlined"
-                          Click="@LoadProductsAsync"
+                          Click="@RetryLoadAsync"
                           Style="margin-top: 0.5rem;" />
         </RadzenAlert>
     }
 
-    @* ── Empty state ── *@
-    else if (_products.Count == 0)
+    @* ── Empty state (no products at all, or none matching the filters) ──
+       _totalCount is the SERVER-side count of every row matching the
+       active filters — zero here means "no products exist for this filter
+       combination". When NO filter is active and the count is zero, this
+       is a fresh install with no products yet — the "create the first
+       product" state. When a filter IS active and matches zero rows, a
+       targeted message (plus the Clear button) beats a bare "no products
+       found". *@
+    else if (_totalCount == 0 && !_isLoading)
     {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                <RadzenIcon Icon="inventory_2" Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                <RadzenText Text="@Loc["EmptyTitle"]" TextStyle="TextStyle.H6" />
-                <RadzenText Text="@Loc["EmptyMessage"]"
-                            Style="color: var(--rz-text-secondary-color); max-width: 420px;" />
-                <RadzenButton Text="@Loc["CreateFirstProductButton"]"
-                              Icon="add"
-                              ButtonStyle="ButtonStyle.Primary"
-                              Variant="Variant.Filled"
-                              Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
-            </RadzenStack>
-        </RadzenCard>
+        @if (HasActiveFilters)
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="filter_alt_off"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                  Icon="restart_alt"
+                                  ButtonStyle="ButtonStyle.Secondary"
+                                  Variant="Variant.Outlined"
+                                  Click="@ClearAllFiltersAsync" />
+                </RadzenStack>
+            </RadzenCard>
+        }
+        else
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="inventory_2"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitle"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessage"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    <RadzenButton Text="@Loc["CreateFirstProductButton"]"
+                                  Icon="add"
+                                  ButtonStyle="ButtonStyle.Primary"
+                                  Variant="Variant.Filled"
+                                  Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+                </RadzenStack>
+            </RadzenCard>
+        }
     }
 
-    @* ── Product table ──
-       Mirrors AdminUsers.razor's RadzenDataGrid configuration. All filtering
-       is client-side via the per-column FilterTemplate (no external filter
-       bar). Loads all products in one round-trip (PageSize=100 = backend cap)
-       and lets Radzen handle client-side filter + paging. The grid uses
+    @* ── Product table (Round 6 — Radzen LoadData, server-driven) ──
+       Data + Count + LoadData: the grid fires LoadData on mount, on pager
+       clicks, on sort-header clicks, and on filter changes; the page
+       translates the descriptors into the typed query. The grid stays
+       MOUNTED under the loading veil (unmounting would discard its
+       LoadData state and re-fire the initial load in a loop). Name,
+       Price, Stock and Status sort server-side; the three category
+       columns are deliberately NOT sortable (the names live on another
+       aggregate — see the ProductSortBy doc). The grid uses
        AllowColumnReorder="false" so the source-order columns are respected
        (defense against stale persisted reorder state from a prior session).
        IMPORTANT: do NOT wrap any <RadzenDataGridColumn> in <AuthorizeView> —
@@ -287,18 +377,28 @@
        the full root-cause explanation. *@
     else
     {
-        <RadzenCard Variant="Variant.Filled" Class="admin-products-grid" Style="padding: 0.5rem;">
+        <div class="admin-products-grid-wrap">
+            <RadzenCard Variant="Variant.Filled" Class="admin-products-grid" Style="padding: 0.5rem;">
             <RadzenDataGrid @ref="grid"
                             Data="@_products"
+                            Count="@_totalCount"
+                            LoadData="@LoadGridDataAsync"
                             TItem="ProductListItemDto"
                             AllowSorting="true"
+                            GotoFirstPageOnSort="true"
                             AllowFiltering="true"
                             FilterMode="FilterMode.SimpleWithMenu"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                             AllowPaging="true"
                             PageSize="20"
+                            PagerAlwaysVisible="true"
+                            PageSizeOptions="@(new[] { 20, 50, 100 })"
+                            PageSizeText="@Loc["PagerPageSizeText"]"
                             PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            PagingSummaryFormat="@Loc["PagerSummaryFormat"]"
                             EmptyText="@Loc["EmptyText"]"
+                            IsLoading="@(_isLoading && _products is { Count: > 0 })"
                             AllowColumnReorder="false"
                             Style="width: 100%;"
                             RowRender="@OnRowRender">
@@ -323,7 +423,8 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Name — text filter, clickable link to /Products/{Id} ── *@
+                    @* ── Name — text filter (Radzen default, translated
+                           server-side), clickable link to /Products/{Id} ── *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="Name"
                                           Title="@Loc["ColName"]"
@@ -335,7 +436,10 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Price — text filter on Price.Amount, right-aligned ── *@
+                    @* ── Price — numeric filter on Price.Amount, right-aligned ──
+                       The complex-property path is what Radzen emits in the
+                       filter/sort descriptors; the translator maps it to the
+                       typed numeric filter + the Round-4 price sort keys. *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="Price.Amount"
                                           Title="@Loc["ColPrice"]"
@@ -346,7 +450,13 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Stock — text filter, color-coded (red=0, amber ≤10, green >10) ── *@
+                    @* ── Stock — numeric filter, color-coded (red=0, amber ≤10, green >10) ──
+                       NOTE: this column shares Property="StockQuantity" with
+                       the Status column below. Their filter descriptors are
+                       told apart by payload shape (number vs the status
+                       dropdown's string key) — see
+                       ProductsGridStateTranslator's class remarks. Both
+                       filters can be active at once and AND in SQL. *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="StockQuantity"
                                           Title="@Loc["ColStock"]"
@@ -359,15 +469,22 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Category — text filter, "(deactivated)" badge when CategoryIsActive=false ──
+                    @* ── Category — text filter (resolved to a CategoryId set
+                           server-side), "(deactivated)" badge when
+                           CategoryIsActive=false, NOT sortable ──
                        The Property is bound to CategoryName so Radzen's text
-                       filter operates on the resolved display name (not the
-                       Guid). The deactivated badge is appended in the
-                       Template; it's not part of the filter value. *@
+                       filter operates on the resolved display name. The
+                       deactivated badge is appended in the Template; it's not
+                       part of the filter value. Sortable=false: the name
+                       lives on the Category aggregate (no navigation
+                       property on Product), so a sort would need a
+                       cross-table LEFT JOIN in the ORDER BY — deferred, see
+                       the ProductSortBy doc comment. *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="CategoryName"
                                           Title="@Loc["ColCategory"]"
-                                          Width="200px">
+                                          Width="200px"
+                                          Sortable="false">
                         <Template Context="product">
                             <span class="cat-cell">
                                 @if (string.IsNullOrEmpty(product.CategoryName))
@@ -386,11 +503,13 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Sub-Category — text filter, em-dash when null, "(deactivated)" when inactive ── *@
+                    @* ── Sub-Category — text filter, em-dash when null,
+                           "(deactivated)" when inactive, NOT sortable ── *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="SubCategoryName"
                                           Title="@Loc["ColSubCategory"]"
-                                          Width="200px">
+                                          Width="200px"
+                                          Sortable="false">
                         <Template Context="product">
                             <span class="cat-cell">
                                 @if (string.IsNullOrEmpty(product.SubCategoryName))
@@ -409,11 +528,13 @@
                         </Template>
                     </RadzenDataGridColumn>
 
-                    @* ── Sub-Sub-Category — text filter, em-dash when null, "(deactivated)" when inactive ── *@
+                    @* ── Sub-Sub-Category — text filter, em-dash when null,
+                           "(deactivated)" when inactive, NOT sortable ── *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="SubSubCategoryName"
                                           Title="@Loc["ColSubSubCategory"]"
-                                          Width="200px">
+                                          Width="200px"
+                                          Sortable="false">
                         <Template Context="product">
                             <span class="cat-cell">
                                 @if (string.IsNullOrEmpty(product.SubSubCategoryName))
@@ -436,9 +557,17 @@
                        Two-state filter mirroring AdminUsers' Status column:
                        "In stock" (StockQuantity > 0, green badge) vs
                        "Out of stock" (StockQuantity == 0, red badge).
-                       The dropdown uses string keys mapped to a custom
-                       filter that compares StockQuantity > 0 (In stock) or
-                       == 0 (Out of stock). AllowClear resets to null (All). *@
+                       Round 6: the dropdown writes its culture-neutral
+                       string key ("InStock"/"OutOfStock") into the column's
+                       programmatic FilterValue — the key travels as the
+                       descriptor payload (the same pattern as the Sales
+                       page's status column) and the translator maps it to
+                       the typed ProductStockStatus filter. The pre-Round-6
+                       GreaterThanOrEquals+1 dance existed to dodge Radzen's
+                       0-value sentinel on the BUILT-IN filter path; with a
+                       custom FilterTemplate + LoadData mode the key is the
+                       only thing that travels, so the sentinel is gone.
+                       AllowClear resets to null (All). *@
                     <RadzenDataGridColumn TItem="ProductListItemDto"
                                           Property="StockQuantity"
                                           Title="@Loc["ColStatus"]"
@@ -533,18 +662,83 @@
                     </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>
-        </RadzenCard>
+            </RadzenCard>
+
+            @* ── Loading veil (Round 6) ──
+               Covers the mounted grid while a server round trip is in
+               flight. First load (no data yet): the full skeleton rhythm
+               (tm-skel utilities from app.css — theme-adaptive,
+               reduced-motion aware; the column rhythm mirrors the product
+               grid: thumb, name, price, stock, 3 category columns, status,
+               actions). Subsequent loads: a spinner glyph. The grid MUST
+               stay mounted underneath — unmounting it would discard its
+               LoadData state and re-fire the initial load in a loop. *@
+            @if (_isLoading)
+            {
+                @if (_products is not { Count: > 0 })
+                {
+                    <div class="admin-products-loading-veil admin-products-loading-veil--skeleton"
+                         role="status"
+                         aria-live="polite"
+                         aria-label="@Loc["LoadingAriaLabel"]">
+                        <div class="tm-skel-stack" style="padding: 0.5rem; width: 100%;">
+                            @for (var i = 0; i < 8; i++)
+                            {
+                                <div class="tm-skel-grid" style="--tm-skel-cols: 0.6fr 1.6fr 0.7fr 0.5fr 1fr 1fr 1fr 0.7fr 0.8fr;">
+                                    <div class="tm-skel tm-skel--thumb"></div>
+                                    <div class="tm-skel tm-skel--line"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w40"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="admin-products-loading-veil" role="status" aria-live="polite" aria-label="@Loc["LoadingAriaLabel"]">
+                        <RadzenIcon Icon="progress_activity" Class="admin-products-loading-spin" />
+                    </div>
+                }
+            }
+        </div>
     }
 </RadzenStack>
 
 @code {
     // ── State ────────────────────────────────────────────────────────────
 
-    private List<ProductListItemDto> _products = new();
+    /// <summary>
+    /// The CURRENT PAGE of products returned by the backend (Round 6:
+    /// server-driven paging — exactly one page, not the pre-Round-6
+    /// "first 100 products" client-side working set).
+    ///
+    /// NULL until the first load completes: Radzen only fires LoadData
+    /// on mount when <c>Data</c> is null (binding an empty list at mount
+    /// suppresses the initial load — pinned by the contract probes).
+    /// Paths that REMOUNT the grid (retry after error, the empty state's
+    /// Clear-all) reset this to null so the fresh mount fires its
+    /// initial load.
+    /// </summary>
+    private List<ProductListItemDto>? _products;
+
+    /// <summary>
+    /// The SERVER-SIDE total count of rows matching the active filters
+    /// (drives the grid's Count parameter → pager page count + summary).
+    /// </summary>
+    private int _totalCount;
+
     private RadzenDataGrid<ProductListItemDto> grid = default!;
 
     // Status filter state — null = "no filter" (AllowClear=true on the
-    // RadzenDropDown passes null when the user clears).
+    // RadzenDropDown passes null when the user clears). String keys
+    // "InStock"/"OutOfStock" (culture-neutral); the display text comes
+    // from GetStatusLabel(string).
     private string? _selectedStatusFilter;
 
     // Status filter options — string keys "InStock"/"OutOfStock"
@@ -554,8 +748,57 @@
         "InStock", "OutOfStock"
     };
 
+    /// <summary>
+    /// Loading/error state. _isLoading starts TRUE: the grid mounts under
+    /// the skeleton veil and fires its initial LoadData, which flips it to
+    /// false on completion.
+    /// </summary>
     private bool _isLoading = true;
     private string _loadError = string.Empty;
+
+    /// <summary>
+    /// True while the CSV export's multi-page fetch loop is running —
+    /// disables the export button so double-clicks can't race two loops.
+    /// </summary>
+    private bool _isExporting;
+
+    // ── Round 6 server-side filter/sort state (translated from the
+    //    grid's LoadDataArgs on every load; also reused by the CSV
+    //    export so it ships exactly what the filters select) ──────
+
+    private ProductsTextFilter? _activeNameFilter;
+    private ProductStockStatus? _activeStockStatus;
+    private ProductsNumberFilter? _activePriceFilter;
+    private ProductsNumberFilter? _activeStockFilter;
+    private ProductsTextFilter? _activeCategoryNameFilter;
+    private ProductsTextFilter? _activeSubCategoryNameFilter;
+    private ProductsTextFilter? _activeSubSubCategoryNameFilter;
+    private ProductSortBy? _activeSortBy;
+    private bool _activeSortDescending;
+
+    /// <summary>
+    /// True when ANY server-side column filter is active — drives the
+    /// filtered-empty state's copy and the one-click Clear-all button.
+    /// (The sort is deliberately not "active filter" state: sorting
+    /// never changes WHICH rows match, so it must not flip the empty
+    /// state's variant.)
+    /// </summary>
+    private bool HasActiveFilters =>
+        _activeNameFilter is not null ||
+        _activeStockStatus is not null ||
+        _activePriceFilter is not null ||
+        _activeStockFilter is not null ||
+        _activeCategoryNameFilter is not null ||
+        _activeSubCategoryNameFilter is not null ||
+        _activeSubSubCategoryNameFilter is not null;
+
+    /// <summary>
+    /// Re-entrancy guard for the out-of-range auto-heal (see
+    /// LoadGridDataAsync): a heal fires grid.FirstPage(true), which
+    /// re-enters LoadGridDataAsync — the guard keeps a pathological
+    /// sequence of loads from healing recursively.
+    /// </summary>
+    private bool _healingPage;
 
     /// <summary>
     /// The Id of the product whose action button is currently in flight.
@@ -566,73 +809,159 @@
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            await LoadProductsAsync();
-        }
-        finally
-        {
-            _isLoading = false;
-        }
-    }
+    // No OnInitializedAsync: there is no pre-grid work to do (the status
+    // filter options are static, and no lookup lists need loading — the
+    // category-name filters resolve server-side against the handler's own
+    // category-tree load). The data load is NOT kicked off here either —
+    // the grid mounts in the first render and fires its LoadData-on-init,
+    // which drives LoadGridDataAsync. Kicking a manual load here too would
+    // double the initial query.
 
-    // ── Data loading ────────────────────────────────────────────────────
+    // ── Data loading (Radzen LoadData — Round 6) ────────────────────────
 
-    private async Task LoadProductsAsync()
+    /// <summary>
+    /// The grid's LoadData callback: translates Radzen's descriptors into
+    /// the typed query fields (ProductsGridStateTranslator), dispatches, and
+    /// hands the page back via Data + Count. Fired on mount, on pager
+    /// clicks, on sort-header clicks, and on column-filter changes.
+    /// </summary>
+    private async Task LoadGridDataAsync(LoadDataArgs args)
     {
         _isLoading = true;
         _loadError = string.Empty;
 
         try
         {
-            // Load up to 100 products (the backend cap) so the grid has
-            // enough rows for client-side filtering + paging. Same approach
-            // as AdminUsers.razor.
-            //
-            // IncludeInactive=true so deactivated (zero-stock) products are
-            // visible to staff. The handler enforces role-gating on this
-            // flag — non-staff callers silently get active-only.
-            var query = new GetProductsPaginatedQuery
-            {
-                PageNumber = 1,
-                PageSize = 100,
-                SearchTerm = null,
-                CategoryId = null,
-                IncludeInactive = true
-            };
+            (_activeSortBy, _activeSortDescending) = ProductsGridStateTranslator.TranslateSort(args.Sorts);
+            var columnFilters = ProductsGridStateTranslator.TranslateFilters(args.Filters);
+            _activeNameFilter = columnFilters.Name;
+            _activeStockStatus = columnFilters.StockStatus;
+            _activePriceFilter = columnFilters.Price;
+            _activeStockFilter = columnFilters.Stock;
+            _activeCategoryNameFilter = columnFilters.CategoryName;
+            _activeSubCategoryNameFilter = columnFilters.SubCategoryName;
+            _activeSubSubCategoryNameFilter = columnFilters.SubSubCategoryName;
 
-            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+            var pageSize = args.Top is > 0 ? args.Top.Value : 20;
+            var pageNumber = (args.Skip ?? 0) / pageSize + 1;
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(
+                BuildQuery(pageNumber, pageSize));
+
             _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // OUT-OF-RANGE AUTO-HEAL: if the filters shrank the result set
+            // while the grid sat on a high page (the built-in filter-row
+            // inputs reload with the CURRENT page offset), the loaded page
+            // is empty but the total is not — jump back to page 1 instead
+            // of showing a mystifying blank page. FirstPage(true) re-fires
+            // LoadData with Skip=0; the heal guard prevents recursion.
+            if (!_healingPage &&
+                _products.Count == 0 &&
+                _totalCount > 0 &&
+                (args.Skip ?? 0) >= _totalCount)
+            {
+                _healingPage = true;
+                try
+                {
+                    if (grid is not null)
+                    {
+                        await grid.FirstPage(true);
+                        return; // the re-fired load owns the state now
+                    }
+                }
+                finally
+                {
+                    _healingPage = false;
+                }
+            }
         }
         catch (Exception)
         {
             _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.AdminProducts_LoadFailure);
+            _products = null; // the retry remount must fire LoadData again
+            _totalCount = 0;
         }
         finally
         {
             _isLoading = false;
+            StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// Builds the typed query from the page-level filter/sort state (kept
+    /// current by <see cref="ProductsGridStateTranslator"/> on every load).
+    /// Shared by the grid load and the CSV export so the export ships
+    /// exactly what the filters select. IncludeInactive=true: this is the
+    /// staff view — deactivated (zero-stock) products must be visible (the
+    /// handler re-verifies the caller's Admin/Manager role anyway).
+    /// </summary>
+    private GetProductsPaginatedQuery BuildQuery(int pageNumber, int pageSize) => new()
+    {
+        PageNumber = pageNumber,
+        PageSize = pageSize,
+        IncludeInactive = true,
+        NameFilter = _activeNameFilter,
+        StockStatus = _activeStockStatus,
+        PriceFilter = _activePriceFilter,
+        StockFilter = _activeStockFilter,
+        CategoryNameFilter = _activeCategoryNameFilter,
+        SubCategoryNameFilter = _activeSubCategoryNameFilter,
+        SubSubCategoryNameFilter = _activeSubSubCategoryNameFilter,
+        SortBy = _activeSortBy,
+        SortDescending = _activeSortDescending
+    };
+
+    /// <summary>
+    /// Retry after a load error: clears the error so the grid branch
+    /// re-renders — the grid re-mounts and its LoadData-on-init performs
+    /// the fresh load.
+    /// </summary>
+    private async Task RetryLoadAsync()
+    {
+        _loadError = string.Empty;
+        _isLoading = true;
+        _products = null; // Data=null at remount → the grid fires LoadData
+        await Task.CompletedTask;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Clears EVERY column filter, then reloads. The filtered-empty
+    /// state's one-click escape hatch. This button only renders when the
+    /// grid is UNMOUNTED (the empty state replaced it), so the reload
+    /// happens via REMOUNT: the grid mounts with Data=null and fires its
+    /// LoadData-on-init with every filter naturally reset (fresh column
+    /// instances carry no filter values). Do NOT call grid.FirstPage(true)
+    /// here — the disposed grid's methods must not be touched.
+    /// </summary>
+    private async Task ClearAllFiltersAsync()
+    {
+        _selectedStatusFilter = null;
+
+        // REMOUNT TRIGGER: _products=null makes the grid mount with Data=null
+        // (which fires LoadData — the pinned Radzen contract), and
+        // _isLoading=true keeps the grid branch rendered (instead of
+        // flashing the empty state) until the fresh load completes.
+        _products = null;
+        _isLoading = true;
+
+        await Task.CompletedTask;
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Status filter handler. Maps the string key ("InStock"/"OutOfStock")
-    /// to a Radzen filter on the StockQuantity column:
-    ///   - "InStock"     → FilterOperator.GreaterThanOrEquals, FilterValue = 1
-    ///   - "OutOfStock"  → FilterOperator.Equals,                FilterValue = 0
-    ///   - null / empty  → clear the filter (All)
-    ///
-    /// WHY GreaterThanOrEquals + 1 (not GreaterThan + 0):
-    ///   Radzen's column filter treats FilterValue == 0 (the default int
-    ///   value) as "no filter" in some code paths — so setting
-    ///   FilterValue = 0 + GreaterThan silently no-op'd and the grid
-    ///   showed out-of-stock products when the user picked "In stock".
-    ///   Using GreaterThanOrEquals with a value of 1 avoids the 0-sentinel
-    ///   and produces the equivalent predicate (StockQuantity >= 1 ⟺
-    ///   StockQuantity > 0 for integers).
+    /// The status dropdown's Change handler: sets the column's
+    /// programmatic filter value (Radzen's documented API — same
+    /// BL0005-suppressed contract as Sales/AdminUsers), then restarts
+    /// from PAGE 1 via grid.FirstPage(true): a status filter narrows the
+    /// result set, and page N of the wider set is usually past the end of
+    /// the narrower one. The bound field is updated by @bind-Value before
+    /// the Change event fires, so we pass the field (not the args
+    /// parameter) to the handler.
     /// </summary>
     private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<ProductListItemDto> column)
     {
@@ -642,20 +971,18 @@
         {
             column.FilterValue = null;
         }
-        else if (value == "InStock")
+        else
         {
-            // Set the operator BEFORE the value so the column's filter
-            // logic is in place when FilterValue's setter re-evaluates.
-            column.FilterOperator = FilterOperator.GreaterThanOrEquals;
-            column.FilterValue = 1;
-        }
-        else // "OutOfStock"
-        {
+            // The culture-neutral string key travels as the descriptor
+            // payload; the translator maps "InStock"/"OutOfStock" to the
+            // typed ProductStockStatus filter (see the column's markup
+            // comment for why the old GreaterThanOrEquals+1 sentinel
+            // dance is gone).
+            column.FilterValue = value;
             column.FilterOperator = FilterOperator.Equals;
-            column.FilterValue = 0;
         }
 
-        await grid.Reload();
+        await grid.FirstPage(true);
     }
 
     // ── Restock ─────────────────────────────────────────────────────────
@@ -732,7 +1059,12 @@
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["RestockSuccess"], quantity, product.Name),
                     summary: Loc["RestockSuccessTitle"]);
-                await LoadProductsAsync();
+                // Refresh the CURRENT page (Round 6): grid.Reload() re-fires
+                // LoadData with the current page/filters — the row's stock
+                // + status badge update in place without losing the user's
+                // place. (The old full-list reload also reset every
+                // client-side filter.)
+                await grid.Reload();
             }
             else
             {
@@ -821,7 +1153,8 @@
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], product.Name),
                     summary: Loc["DeactivateSuccessTitle"]);
-                await LoadProductsAsync();
+                // Refresh the CURRENT page (Round 6 — see HandleRestockAsync).
+                await grid.Reload();
             }
             else
             {
@@ -879,68 +1212,6 @@
     private string GetStatusLabel(bool inStock)
         => inStock ? Loc["StatusInStockBadge"] : Loc["StatusOutOfStockBadge"];
 
-    // ── CSV export (Round 3) ────────────────────────────────────────
-
-    /// <summary>
-    /// Builds a CSV of the currently loaded products (the same rows the
-    /// grid shows) and downloads it via takDownload.js. Column shape
-    /// mirrors the grid: name, full category path, price (+currency as
-    /// its own column), stock, and in/out-of-stock status.
-    /// See Sales.razor's ExportSalesCsvAsync for the format rationale
-    /// (RFC 4180 + invariant numbers + ISO-8601 + BOM-at-save).
-    /// </summary>
-    private async Task ExportProductsCsvAsync()
-    {
-        if (_products.Count == 0)
-        {
-            return; // the button is disabled for empty lists — belt + braces
-        }
-
-        try
-        {
-            var builder = new CsvBuilder();
-            builder.AddHeader(
-                Loc["ColName"],
-                Loc["ColCategory"],
-                Loc["ColSubCategory"],
-                Loc["ColSubSubCategory"],
-                Loc["ColPrice"],
-                Loc["ColCurrency"],
-                Loc["ColStock"],
-                Loc["ColStatus"]);
-
-            foreach (var product in _products)
-            {
-                builder.AddRow(
-                    product.Name,
-                    AppendDeactivated(product.CategoryName, product.CategoryIsActive),
-                    AppendDeactivated(product.SubCategoryName, product.SubCategoryIsActive),
-                    AppendDeactivated(product.SubSubCategoryName, product.SubSubCategoryIsActive),
-                    product.Price?.Amount,
-                    product.Price?.Currency,
-                    product.StockQuantity,
-                    GetStatusLabel(product.StockQuantity > 0));
-            }
-
-            var fileName = $"takone-products-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
-            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
-        }
-        catch (Exception)
-        {
-            // JS interop can fail after a circuit reconnect — a visible
-            // toast beats a silently dead button.
-            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
-        }
-    }
-
-    /// <summary>
-    /// Renders a category cell for the export: the name, suffixed with a
-    /// marker when the category is deactivated (mirrors the grid's
-    /// "(deactivated)" badge so the export doesn't hide deactivations).
-    /// </summary>
-    private string AppendDeactivated(string name, bool isActive)
-        => isActive || string.IsNullOrEmpty(name) ? name : $"{name} ({Loc["DeactivatedSuffix"]})";
-
     private string GetStatusLabel(string? status)
         => status switch
         {
@@ -959,4 +1230,101 @@
             "OutOfStock" => BadgeStyle.Danger,
             _ => BadgeStyle.Base
         };
+
+    // ── CSV export (Round 6 — all filtered rows, capped) ─────────────
+
+    /// <summary>
+    /// Hard cap on exported rows: generous enough for any real export,
+    /// small enough that a pathological filter can't hang the Blazor
+    /// circuit building a giant string (same value as the Sales/Users
+    /// exports).
+    /// </summary>
+    private const int ExportRowCap = 2000;
+
+    /// <summary>
+    /// Builds a CSV of EVERY product matching the active filters (all
+    /// pages — a genuine improvement over the pre-Round-6 export, which
+    /// could only ship the ≤100 loaded rows), capped at
+    /// <see cref="ExportRowCap"/>, and downloads it via the takDownload
+    /// helper. Column shape mirrors the grid: name, full category path,
+    /// price (+currency as its own column), stock, and in/out-of-stock
+    /// status. See Sales.razor's ExportSalesCsvAsync for the format
+    /// rationale (RFC 4180 + invariant numbers + BOM-at-save).
+    /// </summary>
+    private async Task ExportProductsCsvAsync()
+    {
+        if (_totalCount == 0 || _isExporting)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColName"],
+                Loc["ColCategory"],
+                Loc["ColSubCategory"],
+                Loc["ColSubSubCategory"],
+                Loc["ColPrice"],
+                Loc["ColCurrency"],
+                Loc["ColStock"],
+                Loc["ColStatus"]);
+
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
+            {
+                var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(
+                    BuildQuery(pageNumber, exportPageSize)); // SAME active filters + sort as the grid
+
+                foreach (var product in result.Items)
+                {
+                    if (exported >= ExportRowCap) break;
+
+                    builder.AddRow(
+                        product.Name,
+                        AppendDeactivated(product.CategoryName, product.CategoryIsActive),
+                        AppendDeactivated(product.SubCategoryName, product.SubCategoryIsActive),
+                        AppendDeactivated(product.SubSubCategoryName, product.SubSubCategoryIsActive),
+                        product.Price?.Amount,
+                        product.Price?.Currency,
+                        product.StockQuantity,
+                        GetStatusLabel(product.StockQuantity > 0));
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize) break;
+                pageNumber++;
+            }
+
+            var fileName = $"takone-products-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageHeading"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button.
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Renders a category cell for the export: the name, suffixed with a
+    /// marker when the category is deactivated (mirrors the grid's
+    /// "(deactivated)" badge so the export doesn't hide deactivations).
+    /// </summary>
+    private string AppendDeactivated(string name, bool isActive)
+        => isActive || string.IsNullOrEmpty(name) ? name : $"{name} ({Loc["DeactivatedSuffix"]})";
 }

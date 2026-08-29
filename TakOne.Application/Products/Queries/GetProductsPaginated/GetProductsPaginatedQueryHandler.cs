@@ -10,9 +10,11 @@ namespace TakOne.Application.Products.Queries.GetProductsPaginated;
 /// <summary>
 /// Handler for <see cref="GetProductsPaginatedQuery"/>.
 ///
-/// The repository's <c>GetPaginatedAsync</c> accepts the same filter
-/// arguments as this query, so most of the work is just clamping
-/// parameters and projecting to the DTO.
+/// The repository's <c>GetPaginatedAsync</c> accepts a
+/// <see cref="ProductsListFilters"/> aggregate (Round 6 — same shape as the
+/// users list's <c>UsersListFilters</c>), so most of the work is clamping
+/// parameters, resolving the category-NAME filters against the category
+/// tree, and projecting to the DTO.
 ///
 /// CATEGORY HIERARCHY ENRICHMENT:
 ///   After loading the page of products, the handler makes a SINGLE call
@@ -24,6 +26,20 @@ namespace TakOne.Application.Products.Queries.GetProductsPaginated;
 ///   aggregate boundaries (the Product table only stores Guid FKs, no
 ///   navigation properties). One round-trip for the category tree is
 ///   cheaper than one round-trip per product for its category names.
+///
+/// CATEGORY-NAME FILTER RESOLUTION (Round 6):
+///   The same tree load doubles as the resolver for the grid's category
+///   NAME filters: the AdminProducts grid filters its Category columns by
+///   free text, but Product rows store only Guid FKs — so the handler
+///   resolves each name filter to the set of category Ids whose display
+///   name matches (all six text operators, case-insensitive) and hands the
+///   Id sets to the repository, which applies them as SQL IN clauses. This
+///   reuses the exact id-set technique <see cref="ProductVisibilityFilter"/>
+///   pioneered for the customer-visibility predicates. NULL vs EMPTY set
+///   semantics (null = no filter; empty = nothing matches) mirror that
+///   filter's contract; when the tree load itself fails, the name filters
+///   degrade to null (no clause) rather than zeroing the grid — the same
+///   graceful-degradation posture the visibility filter takes.
 /// </summary>
 public sealed class GetProductsPaginatedQueryHandler
 {
@@ -101,7 +117,9 @@ public sealed class GetProductsPaginatedQueryHandler
         //    LOADED BEFORE THE PRODUCT PAGE (reordered): the active-id sets
         //    computed below feed the customer-visibility filter that is
         //    pushed INTO the SQL query, so pagination is computed over
-        //    exactly the rows the caller can see.
+        //    exactly the rows the caller can see. (Round 6: the same tree
+        //    also resolves the category-NAME filters into Id sets — see
+        //    the class doc.)
         // ------------------------------------------------------------------
         List<Domain.Categories.Entities.Category>? categories = null;
         var categoriesLoaded = false;
@@ -116,7 +134,9 @@ public sealed class GetProductsPaginatedQueryHandler
             // products with empty category-name fields. The UI renders an
             // em-dash for empty category names, which is acceptable. The
             // customer-visibility filter degrades to in-stock-only (null
-            // id-sets) instead of hiding the whole catalog.
+            // id-sets) instead of hiding the whole catalog, and the
+            // category-NAME filters degrade to no-clause (null id-sets)
+            // instead of zeroing the grid — both documented degradations.
             logger.LogWarning(ex,
                 "GetProductsPaginated: failed to load category tree for enrichment. "
                 + "Products will be returned without category names.");
@@ -174,21 +194,68 @@ public sealed class GetProductsPaginatedQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 3b. Load the page of products — with the visibility predicates
+        // 3b. Resolve the category-NAME filters (Round 6) into Id sets.
+        //
+        // Each of the grid's three category columns filters by free text
+        // on the RESOLVED display name; the product row stores only the
+        // Guid FK, so the name match happens HERE — over the tree we
+        // already loaded — and the repository applies the resulting Id
+        // sets as IN clauses. NULL = no filter (including the
+        // tree-load-failed degradation); EMPTY = "no category matches
+        // the term", which correctly yields zero rows.
+        // ------------------------------------------------------------------
+        var categoryIds = ResolveCategoryIds(
+            categories.Select(c => (c.Id, c.Name)),
+            query.CategoryNameFilter,
+            categoriesLoaded);
+        var subCategoryIds = ResolveCategoryIds(
+            subCategoryById.Select(kv => (kv.Key, kv.Value.Name)),
+            query.SubCategoryNameFilter,
+            categoriesLoaded);
+        var subSubCategoryIds = ResolveCategoryIds(
+            subSubCategoryById.Select(kv => (kv.Key, kv.Value.Name)),
+            query.SubSubCategoryNameFilter,
+            categoriesLoaded);
+
+        // ------------------------------------------------------------------
+        // 3c. Load the page of products — with ALL filters (legacy +
+        //     Round-6 column filters) and the visibility predicates
         //     applied at the DATABASE level, so pages are full and
         //     TotalCount matches what the caller can actually see.
+        //
+        //     The pre-Round-6 AdminProducts page loaded PageSize=100 once
+        //     and filtered/sorted CLIENT-side — every product past the
+        //     first 100 (name-ordered) was invisible to staff. The grid
+        //     now runs Radzen LoadData mode (Round 5's proven pattern)
+        //     and this handler is its single source of truth.
         // ------------------------------------------------------------------
+        var filters = new ProductsListFilters(
+            SearchTerm: query.SearchTerm,
+            CategoryId: query.CategoryId,
+            SubCategoryId: query.SubCategoryId,
+            SubSubCategoryId: query.SubSubCategoryId,
+            Name: query.NameFilter,
+            StockStatus: query.StockStatus,
+            Price: query.PriceFilter,
+            Stock: query.StockFilter,
+            CategoryIds: categoryIds,
+            SubCategoryIds: subCategoryIds,
+            SubSubCategoryIds: subSubCategoryIds,
+            // Null SortBy = the explicit Name default (kept from Round 4 so
+            // the repository's contract is exercised with a defined key);
+            // SortDescending is only meaningful when the caller actually
+            // picked a sort — a stray direction flag must never flip the
+            // default order.
+            SortBy: query.SortBy ?? ProductSortBy.Name,
+            SortDescending: query.SortBy is not null && query.SortDescending);
+
         var paginated = await productRepository.GetPaginatedAsync
             (
-            categoryId: query.CategoryId,
-            subCategoryId: query.SubCategoryId,
-            subSubCategoryId: query.SubSubCategoryId,
-            searchTerm: query.SearchTerm,
-            pageNumber: pageNumber,
-            pageSize: pageSize,
-            visibility: visibility,
-            sortBy: query.SortBy ?? ProductSortBy.Name,
-            cancellationToken: cancellationToken
+            filters,
+            visibility,
+            pageNumber,
+            pageSize,
+            cancellationToken
             );
 
         // ------------------------------------------------------------------
@@ -199,6 +266,12 @@ public sealed class GetProductsPaginatedQueryHandler
         //    StockQuantity == 0. If includeInactive=false, hide zero-stock
         //    products from non-staff callers. (Staff callers always pass
         //    includeInactive=true from the AdminProducts page.)
+        //
+        //    NOTE: the search-term Name filter now runs INSIDE the SQL
+        //    query (via ProductsListFilters.SearchTerm), so the historical
+        //    post-pagination re-filter below is a no-op belt-and-braces
+        //    pass — kept because it predates Round 6 and costs nothing on
+        //    an already-filtered page.
         //
         //    MY PURCHASE LIMIT:
         //    The current user's per-product limit is resolved here. We
@@ -253,12 +326,6 @@ public sealed class GetProductsPaginatedQueryHandler
         var limitByProductId = await purchaseLimitPolicy.GetCountLimitsAsync
             (paginated.Items.Select(p => p.Id).ToList(), groupId, cancellationToken);
 
-        // NOTE: the in-stock and category-deactivated filters that used to
-        // run HERE (after DB pagination) now run INSIDE the SQL query via
-        // the ProductVisibilityFilter passed to GetPaginatedAsync above —
-        // pages are full and TotalCount/pager math is exact. The
-        // IsProductCategoryHierarchyActive helper below is still used by
-        // other call sites for point lookups.
         var dtos = paginated.Items
             .Where(p => !hasSearch ||
                         p.Name.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase))
@@ -328,47 +395,66 @@ public sealed class GetProductsPaginatedQueryHandler
         return new PaginatedResult<ProductListItemDto>(dtos, paginated.TotalCount, pageNumber, pageSize);
     }
 
+    // ── Category-name → Id-set resolution (Round 6) ────────────────────
+
     /// <summary>
-    /// Returns <c>true</c> only if every level of the product's category
-    /// hierarchy that IS set is currently active. A null SubCategoryId /
-    /// SubSubCategoryId is treated as "not set, skip". A missing-from-tree
-    /// Category (e.g. hard-deleted — should not happen since Category uses
-    /// soft-delete, but defensive) is treated as inactive.
-    ///
-    /// Used by the customer-facing <c>includeInactive == false</c> path
-    /// to hide products whose category was deactivated, WITHOUT zeroing
-    /// their StockQuantity.
+    /// Resolves one category-name text filter against the flattened
+    /// (Id, Name) pairs of a category level, producing the Id set the
+    /// repository applies as a SQL IN clause.
+    /// <list type="bullet">
+    /// <item>Null filter (or whitespace term) → <c>null</c> — no clause.</item>
+    /// <item>Tree load failed (<paramref name="categoriesLoaded"/> false)
+    /// → <c>null</c> — graceful degradation, same posture as the
+    /// visibility filter's null id-sets (the grid stays usable rather
+    /// than mysteriously empty).</item>
+    /// <item>No category matches → an EMPTY set — the term legitimately
+    /// matches nothing, so the filtered result is zero rows (the page
+    /// shows its filtered-empty state with a Clear-all escape hatch).</item>
+    /// </list>
+    /// The name comparison is case-insensitive in memory
+    /// (<see cref="StringComparison.OrdinalIgnoreCase"/>), matching what
+    /// the SQL-side name filter achieves via LOWER() and what the grid's
+    /// FilterCaseSensitivity=CaseInsensitive promised client-side.
     /// </summary>
-    private static bool IsProductCategoryHierarchyActive(
-        Domain.Products.Entities.Product p,
-        Dictionary<Guid, Domain.Categories.Entities.Category> categoryById,
-        Dictionary<Guid, (string Name, bool IsActive)> subCategoryById,
-        Dictionary<Guid, (string Name, bool IsActive)> subSubCategoryById)
+    private static IReadOnlyCollection<Guid>? ResolveCategoryIds(
+        IEnumerable<(Guid Id, string Name)> level,
+        ProductsTextFilter? filter,
+        bool categoriesLoaded)
     {
-        // Top-level Category — required on Product, always set.
-        if (!categoryById.TryGetValue(p.CategoryId, out var cat) || cat is null || !cat.IsActive)
+        var term = filter?.Value?.Trim();
+        if (filter is null || string.IsNullOrEmpty(term) || !categoriesLoaded)
         {
-            return false;
+            return null;
         }
 
-        // SubCategory — optional. If set, must be active.
-        if (p.SubCategoryId is not null)
-        {
-            if (!subCategoryById.TryGetValue(p.SubCategoryId.Value, out var sub) || !sub.IsActive)
-            {
-                return false;
-            }
-        }
+        return level
+            .Where(entry => MatchesCategoryName(entry.Name, term, filter.Operator))
+            .Select(entry => entry.Id)
+            .ToList();
+    }
 
-        // SubSubCategory — optional. If set, must be active.
-        if (p.SubSubCategoryId is not null)
+    /// <summary>
+    /// Applies one <see cref="ProductsTextOperator"/> to a category
+    /// display name, case-insensitively. In-memory by design: the name
+    /// lives on the Category aggregate, not on the Product row, so the
+    /// match happens here (over the already-loaded tree) and only the
+    /// resulting Id set travels into SQL.
+    /// </summary>
+    private static bool MatchesCategoryName(string name, string term, ProductsTextOperator op)
+    {
+        return op switch
         {
-            if (!subSubCategoryById.TryGetValue(p.SubSubCategoryId.Value, out var subSub) || !subSub.IsActive)
-            {
-                return false;
-            }
-        }
-
-        return true;
+            ProductsTextOperator.Contains => name.Contains(term, StringComparison.OrdinalIgnoreCase),
+            ProductsTextOperator.NotContains => !name.Contains(term, StringComparison.OrdinalIgnoreCase),
+            ProductsTextOperator.Equals => string.Equals(name, term, StringComparison.OrdinalIgnoreCase),
+            ProductsTextOperator.NotEquals => !string.Equals(name, term, StringComparison.OrdinalIgnoreCase),
+            ProductsTextOperator.StartsWith => name.StartsWith(term, StringComparison.OrdinalIgnoreCase),
+            ProductsTextOperator.EndsWith => name.EndsWith(term, StringComparison.OrdinalIgnoreCase),
+            // Unknown operator values (a malformed message could carry an
+            // out-of-range enum) match nothing here — but the empty result
+            // set is then indistinguishable from "no category matches",
+            // which is the same lenient dead-end the SQL filters choose.
+            _ => false
+        };
     }
 }

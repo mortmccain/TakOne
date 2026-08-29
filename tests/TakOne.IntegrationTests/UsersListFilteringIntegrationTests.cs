@@ -478,4 +478,95 @@ public class UsersListFilteringIntegrationTests
             result.Items.Should().BeEmpty();
         }
     }
+
+    // ── ROUND 6 — GroupName sort (LEFT JOIN to CustomerGroups) ────────
+
+    [Fact]
+    public async Task GetPaginatedAsync_GroupNameSort_OrdersByJoinedName()
+    {
+        // Three groups + users spread across them, PLUS a groupless user
+        // (GroupId null → NULL sort key). Ascending: NULL first, then the
+        // group names alphabetically; descending mirrors. This proves the
+        // GroupJoin + DefaultIfEmpty LEFT JOIN translates and orders on
+        // the JOINED column (the thing unit tests cannot prove).
+        var groupA = MakeGroup("Alpha Group");
+        var groupB = MakeGroup("Beta Group");
+        var groupC = MakeGroup("Gamma Group");
+
+        var users = new[]
+        {
+            MakeUser("EMP-1", "Alice", groupId: groupB.Id),   // Beta Group
+            MakeUser("EMP-2", "Bob", groupId: groupA.Id),     // Alpha Group
+            MakeUser("EMP-3", "Charlie"),                     // no group → NULL
+            MakeUser("EMP-4", "Diana", groupId: groupC.Id),   // Gamma Group
+            MakeUser("EMP-5", "Eve", groupId: groupA.Id),     // Alpha Group (tie)
+        };
+
+        var (repo, db) = await CreateSeededAsync(users, groupA, groupB, groupC);
+        await using (db)
+        {
+            // The Ids are random Guids (not creation-sequential), so the
+            // expected tie order is DERIVED from them — the test pins the
+            // CONTRACT (NULL first, names alphabetical, Id tiebreak),
+            // not a hard-coded worker order.
+            var alphaOrder = users
+                .Where(u => u.WorkerId is "EMP-2" or "EMP-5")
+                .OrderBy(u => u.Id)
+                .Select(u => u.WorkerId)
+                .ToArray();
+
+            var ascending = await repo.GetPaginatedAsync(
+                Filters(sortBy: UsersSortBy.GroupName), 1, 10, CancellationToken.None);
+
+            // NULL first, then Alpha ×2 (Id tiebreak), Beta, Gamma.
+            ascending.Items.Select(u => u.WorkerId).Should().Equal(
+                new[] { "EMP-3" }.Concat(alphaOrder).Concat(new[] { "EMP-1", "EMP-4" }).ToArray(),
+                "groupless users carry a NULL sort key (first ascending); " +
+                "equal names tiebreak by Id");
+
+            var descending = await repo.GetPaginatedAsync(
+                Filters(sortBy: UsersSortBy.GroupName, sortDescending: true), 1, 10, CancellationToken.None);
+
+            // Mirror: Gamma, Beta, Alpha ×2 (Id desc tiebreak), NULL last.
+            descending.Items.Select(u => u.WorkerId).Should().Equal(
+                new[] { "EMP-4", "EMP-1" }.Concat(alphaOrder.Reverse()).Concat(new[] { "EMP-3" }).ToArray(),
+                "descending puts the NULL sort key last, Id tiebreak descends");
+        }
+    }
+
+    [Fact]
+    public async Task GetPaginatedAsync_GroupNameSort_ComposesWithGroupIdFilter()
+    {
+        // Sort ∘ filter composes in one SQL statement: two users of the
+        // same group, name-sorted with the Id tiebreaker — the LEFT JOIN
+        // must compose with the WHERE clause.
+        var groupA = MakeGroup("Alpha Group");
+
+        var users = new[]
+        {
+            MakeUser("EMP-9", "Zed", groupId: groupA.Id),
+            MakeUser("EMP-1", "Ann", groupId: groupA.Id),
+            MakeUser("EMP-5", "NoGroup User"),
+        };
+
+        var (repo, db) = await CreateSeededAsync(users, groupA);
+        await using (db)
+        {
+            var result = await repo.GetPaginatedAsync(
+                Filters(groupId: groupA.Id, sortBy: UsersSortBy.GroupName),
+                1, 10, CancellationToken.None);
+
+            result.TotalCount.Should().Be(2, "only Alpha Group members pass the filter");
+
+            // Random Guids → derive the expected Id-tiebreak order.
+            var expectedNames = users
+                .Where(u => u.GroupId == groupA.Id)
+                .OrderBy(u => u.Id)
+                .Select(u => u.FullName)
+                .ToArray();
+            result.Items.Select(u => u.FullName).Should().Equal(expectedNames,
+                "the Id tiebreaker orders the equal group names deterministically");
+        }
+    }
 }
+

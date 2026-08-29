@@ -1,4 +1,4 @@
-using Ardalis.Specification;
+using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -7,6 +7,7 @@ using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Dashboard.Queries.GetDashboardStats;
 using TakOne.Application.Dashboard.Specifications;
 using TakOne.Application.Sales.Specifications;
+using TakOne.Domain.Categories.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
 using TakOne.Domain.Sales.ValueObjects;
@@ -29,36 +30,35 @@ namespace TakOne.Application.Tests.Dashboard.Queries;
 ///   real caller would exercise (claims-based role resolution, not a
 ///   client-supplied role list that could be spoofed).
 ///
-/// SCALAR QUERY METHODS (Brutal Code Review v3 #23, Round 18-C):
-///   The handler now uses scalar COUNT/SUM/TOP-N methods on
-///   ISaleRepository instead of loading all sales + aggregating in
-///   memory. BuildMocksCore sets up defaults for the new methods:
-///     • CountBySpecificationAsync → 0
-///     • CountByStatusAsync(status, spec) → 0
-///     • SumRevenueAsync → 0m
-///     • SumRevenueByYearAsync(year, spec) → 0m
-///     • GetRecentSalesBySpecificationAsync(count, spec) → empty list
-///   Tests that assert specific scalar values override these per-case.
+/// ROUND 6 — FULL SCALARIZATION:
+///   The handler now consumes ONLY the SQL-side aggregation methods on
+///   ISaleRepository (the full-table load was deleted). Tests seed a
+///   <see cref="FakeSaleRepository"/> — an in-memory double whose
+///   aggregation semantics mirror the SQLite integration suite's contract
+///   (half-open windows, COALESCE anchor, revenue-status filters, TOP-N
+///   ordering) — and assert the handler's slicing/composition/conversion
+///   logic on top of it. Scope selection (Employee vs Admin) is asserted
+///   via the specs the fake records.
 ///
 /// COVERAGE APPROACH:
-///   The handler is a static method. We mock every collaborator with
-///   NSubstitute. Tests cover:
-///     • auth rejection (unauthenticated OR UserId=Guid.Empty)
-///     • customer role rejection
-///     • Employee role → uses SaleByApproverSpecification (asserted on
-///       GetAllWithLineItemsBySpecificationAsync — the in-memory
-///       aggregation load — which the handler still calls for top-
-///       products/top-categories/top-employees/weekly/monthly)
-///     • Admin role → uses AllSalesSpecification (same assertion)
-///     • empty sales → all KPIs 0, TotalRevenue 0, TotalSalesCount 0
-///     • IRR currency → IsToman=true, DisplayCurrency="تومان"
-///     • non-IRR currency → IsToman=false
-///     • Pending sale counted in revenueEligibleSales
-///     • Draft sale excluded from revenueEligibleSales
-///     • Cancelled sale excluded from revenueEligibleSales
-///     • top products sorted by TotalAmount desc + take top 7
-///     • recent orders sorted by SubmittedAtUtc desc + take 6
-///     • userRepository.GetActiveCustomerCountAsync throws → ActiveCustomersCount=0
+///   • auth rejection (unauthenticated OR UserId=Guid.Empty) — no repo call
+///   • customer role rejection — no repo call
+///   • Employee role → every aggregation gets SaleByApproverSpecification
+///   • Admin role → every aggregation gets AllSalesSpecification
+///   • empty sales → all KPIs 0, TotalRevenue 0, TotalSalesCount 0
+///   • IRR currency → IsToman=true, DisplayCurrency="تومان"
+///   • non-IRR currency → IsToman=false
+///   • Pending sale counted in revenue; Draft/Cancelled excluded
+///   • status breakdown: one row per PRESENT status, descending, incl. Invoiced
+///   • fixed-anchor daily KPIs (today/yesterday/this-month/last-month)
+///   • weekly trend: 7+7 UTC-day buckets
+///   • top products: top 7 by amount desc; period window re-anchors the card
+///   • top employees: rank 1..4; period window re-anchors the card
+///   • recent orders sorted by SubmittedAtUtc desc + take 6
+///   • oldest pending age minutes
+///   • period selector: KPIs vs previous window; chart series = Tehran-day
+///     buckets of the window; degenerate window = zeros without throwing
+///   • userRepository.GetActiveCustomerCountAsync throws → ActiveCustomersCount=0
 /// </summary>
 public class GetDashboardStatsQueryHandlerTests
 {
@@ -67,24 +67,17 @@ public class GetDashboardStatsQueryHandlerTests
     private const string IRR = "IRR";
     private const string USD = "USD";
 
-    // Builds a fully-wired mock environment. The sale repository returns
-    // an empty list by default; tests override per-case.
-    //
-    // SECURITY FIX (Brutal Code Review v3 #03): roles are now configured
-    // on the currentUser mock via IsInRole — NOT passed through the query
-    // DTO (which no longer carries UserRoles). This mirrors the production
-    // handler, which reads currentUser.IsInRole (server-verified claims).
-    //
-    // Two overloads exist because C# params binding: a single optional
-    // `Guid? userId` before `params string[] roles` would make
-    // `BuildMocks(authenticated: true, Roles.Admin)` try to bind
-    // `Roles.Admin` to the `Guid?` parameter. Splitting into
-    // (bool, params string[]) and (bool, Guid?, params string[]) lets
-    // the compiler resolve the correct overload from the call site.
+    /// <summary>Tehran's fixed UTC offset — matches the handler + razor.</summary>
+    private static readonly TimeSpan TehranUtcOffset = TimeSpan.FromHours(3.5);
+
+    // Builds a fully-wired mock environment around a seeded (or empty)
+    // FakeSaleRepository. Roles are configured on the currentUser mock
+    // via IsInRole — NOT passed through the query DTO (which no longer
+    // carries UserRoles). This mirrors the production handler, which
+    // reads currentUser.IsInRole (server-verified claims).
     private static (
         ICurrentUserService currentUser,
-        ISaleRepository saleRepository,
-        IProductRepository productRepository,
+        FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
@@ -93,8 +86,7 @@ public class GetDashboardStatsQueryHandlerTests
 
     private static (
         ICurrentUserService currentUser,
-        ISaleRepository saleRepository,
-        IProductRepository productRepository,
+        FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
@@ -103,8 +95,7 @@ public class GetDashboardStatsQueryHandlerTests
 
     private static (
         ICurrentUserService currentUser,
-        ISaleRepository saleRepository,
-        IProductRepository productRepository,
+        FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
@@ -122,48 +113,8 @@ public class GetDashboardStatsQueryHandlerTests
             currentUser.IsInRole(role).Returns(true);
         }
 
-        var saleRepo = Substitute.For<ISaleRepository>();
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale>());
+        var saleRepo = new FakeSaleRepository();
 
-        // Brutal Code Review v3 #23 (Round 18-C): the handler now uses
-        // scalar COUNT/SUM/TOP-N methods instead of loading all sales +
-        // aggregating in memory. Provide defaults for each so tests that
-        // don't assert specific scalar values still get sensible 0/empty
-        // returns rather than NSubstitute's default null Task<List<Sale>>
-        // (which would NRE the handler).
-        saleRepo.CountBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(0);
-        saleRepo.CountByStatusAsync(
-                Arg.Any<SaleStatus>(),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(0);
-        saleRepo.SumRevenueAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(0m);
-        saleRepo.SumRevenueByYearAsync(
-                Arg.Any<int>(),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(0m);
-        saleRepo.GetRecentSalesBySpecificationAsync(
-                Arg.Any<int>(),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new List<Sale>());
-
-        var productRepo = Substitute.For<IProductRepository>();
-        // The handler calls GetByIdsReadOnlyAsync when the sales have line
-        // items (to resolve productId → categoryId for the category chart).
-        // Default to an empty list so the handler's downstream ToDictionary
-        // call doesn't NPE. Tests that need real category mappings override
-        // this per-case.
-        productRepo.GetByIdsReadOnlyAsync(
-                Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Domain.Products.Entities.Product>());
         var categoryRepo = Substitute.For<ICategoryRepository>();
         categoryRepo.GetAllAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Domain.Categories.Entities.Category>());
@@ -174,7 +125,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var logger = Substitute.For<ILogger<GetDashboardStatsQueryHandler>>();
 
-        return (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger);
+        return (currentUser, saleRepo, categoryRepo, userRepo, logger);
     }
 
     // Builds a query. The query carries NO caller-identity fields — the
@@ -237,27 +188,48 @@ public class GetDashboardStatsQueryHandlerTests
         return sale;
     }
 
+    /// <summary>
+    /// Writes a Sale's SubmittedAtUtc via reflection — the dashboard's
+    /// KPI date filters key on (SubmittedAtUtc ?? CreatedAtUtc), and the
+    /// aggregate API sets it to UtcNow inside Submit(). Test-only; the
+    /// domain API stays immutable in production code.
+    /// </summary>
+    private static void SetSubmittedAt(Sale sale, DateTime utc)
+    {
+        typeof(Sale).GetProperty(nameof(Sale.SubmittedAtUtc))!
+            .SetValue(sale, utc);
+    }
+
+    /// <summary>
+    /// The Tehran-local midnight of a UTC instant, expressed back as a
+    /// UTC instant (localDate − 03:30) — the same contract as
+    /// Dashboard.razor's ToUtcInstant. Used to build the
+    /// Tehran-midnight-aligned period windows the page's presets send.
+    /// </summary>
+    private static DateTime TehranMidnightUtc(DateTime utcInstant)
+        => DateTime.SpecifyKind((utcInstant + TehranUtcOffset).Date, DateTimeKind.Utc) - TehranUtcOffset;
+
     // ── Auth rejection ─────────────────────────────────────────────
 
     [Fact]
     public async Task HandleAsync_WhenUnauthenticated_ReturnsAuthenticationRequired()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: false, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be("Authentication required.");
-        // Auth reject short-circuits BEFORE any DB call.
-        await saleRepo.DidNotReceive().GetAllWithLineItemsBySpecificationAsync(
-            Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>());
+        // Auth reject short-circuits BEFORE any DB call (Round 6: the
+        // fake counts every aggregation call).
+        saleRepo.CallCount.Should().Be(0);
     }
 
     [Fact]
@@ -266,13 +238,13 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // IsAuthenticated=true but UserId=Guid.Empty — the second branch of
         // the auth check rejects it (defense-in-depth).
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, userId: Guid.Empty, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -284,13 +256,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUnauthenticated_LogsWarning()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: false, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -314,20 +286,19 @@ public class GetDashboardStatsQueryHandlerTests
         // roles return false. This is the exact shape a spoofing
         // attacker would NOT be able to produce (they can't set server
         // claims), proving the spoofing hole is closed.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Customer);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Be("Access denied: customers do not have a dashboard.");
-        await saleRepo.DidNotReceive().GetAllWithLineItemsBySpecificationAsync(
-            Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>());
+        saleRepo.CallCount.Should().Be(0);
     }
 
     // ── Employee role → uses SaleByApproverSpecification ───────────
@@ -337,33 +308,34 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // An Employee (no Admin/Manager) sees only sales they approved.
-        // The handler uses SaleByApproverSpecification(currentUser.UserId).
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        // Round 6: the handler passes the SAME scope spec to EVERY
+        // aggregation method — the fake records them all.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Employee);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
-        // Assert — the spec passed to the repo is a SaleByApproverSpecification.
-        await saleRepo.Received(1).GetAllWithLineItemsBySpecificationAsync(
-            Arg.Is<ISpecification<Sale>>(spec => spec is SaleByApproverSpecification),
-            Arg.Any<CancellationToken>());
+        // Assert — every recorded spec is the approver scope.
+        saleRepo.ReceivedSpecs.Should().NotBeEmpty();
+        saleRepo.ReceivedSpecs.Should().OnlyContain(
+            spec => spec is SaleByApproverSpecification);
     }
 
     [Fact]
     public async Task HandleAsync_WhenUserIsEmployee_SetsIsEmployeeScopedTrue()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Employee);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -378,32 +350,32 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // Admin → company-wide overview, no approver filter.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
-        await saleRepo.Received(1).GetAllWithLineItemsBySpecificationAsync(
-            Arg.Is<ISpecification<Sale>>(spec => spec is AllSalesSpecification),
-            Arg.Any<CancellationToken>());
+        saleRepo.ReceivedSpecs.Should().NotBeEmpty();
+        saleRepo.ReceivedSpecs.Should().OnlyContain(
+            spec => spec is AllSalesSpecification);
     }
 
     [Fact]
     public async Task HandleAsync_WhenUserIsAdmin_SetsIsEmployeeScopedFalse()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -416,15 +388,14 @@ public class GetDashboardStatsQueryHandlerTests
     [Fact]
     public async Task HandleAsync_WithNoSales_AllKpisAreZero()
     {
-        // Arrange
-        // saleRepo returns an empty list (the default in BuildMocks).
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        // Arrange — an unseeded fake (no sales anywhere).
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -436,6 +407,11 @@ public class GetDashboardStatsQueryHandlerTests
         dto.ApprovedSalesCount.Should().Be(0);
         dto.CancelledSalesCount.Should().Be(0);
         dto.TotalRevenue.Should().Be(0);
+        dto.StatusBreakdown.Should().BeEmpty();
+        dto.TopProducts.Should().BeEmpty();
+        dto.TopEmployees.Should().BeEmpty();
+        dto.RecentOrders.Should().BeEmpty();
+        dto.OldestPendingSaleAgeMinutes.Should().BeNull();
     }
 
     // ── IRR currency → IsToman=true ────────────────────────────────
@@ -444,26 +420,17 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithIrrSale_SetsIsTomanTrueAndDisplayCurrencyToToman()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
-        // A pending sale in IRR currency — used by the handler's currency
-        // detection (iterates the loaded sales list for the first
-        // non-empty Total.Currency).
-        var sale = BuildPendingSale(new Money(1000m, IRR));
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { sale });
-        // Brutal Code Review v3 #23: TotalRevenue now comes from the
-        // scalar SumRevenueAsync query (raw IRR amount). The handler
-        // applies the ÷10 Toman conversion AFTER the SUM.
-        saleRepo.SumRevenueAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(1000m);
+        // A pending sale in IRR currency — the handler detects the
+        // display currency from the recent-sales slice (Round 6) and
+        // sums revenue server-side from the same seed.
+        saleRepo.Seed(BuildPendingSale(new Money(1000m, IRR)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -479,22 +446,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithUsdSale_SetsIsTomanFalseAndDisplayCurrencyToUsd()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
-        var sale = BuildPendingSale(new Money(100m, USD));
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { sale });
-        // Brutal Code Review v3 #23: TotalRevenue now comes from the
-        // scalar SumRevenueAsync query. USD = no ÷10 conversion.
-        saleRepo.SumRevenueAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(100m);
+        saleRepo.Seed(BuildPendingSale(new Money(100m, USD)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -510,32 +469,20 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithPendingSale_IncludesInTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
-        var sale = BuildPendingSale(new Money(2000m, IRR)); // 200 Toman after ÷10.
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { sale });
-        // Brutal Code Review v3 #23: TotalRevenue + PendingSalesCount
-        // now come from scalar queries.
-        saleRepo.SumRevenueAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(2000m); // raw IRR — handler converts to 200 Toman.
-        saleRepo.CountByStatusAsync(
-                Arg.Is<SaleStatus>(s => s == SaleStatus.Pending),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(1);
+        saleRepo.Seed(BuildPendingSale(new Money(2000m, IRR))); // 200 Toman after ÷10.
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
         result.Value.TotalRevenue.Should().Be(200m);
         result.Value.PendingSalesCount.Should().Be(1);
+        result.Value.TotalSalesCount.Should().Be(1);
     }
 
     // ── Draft sale excluded from revenueEligibleSales ──────────────
@@ -544,31 +491,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithDraftSale_ExcludesFromTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
-        var sale = BuildDraftSale(new Money(2000m, IRR));
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { sale });
-        // Brutal Code Review v3 #23: KPI counts come from scalar queries.
-        // Draft sales count toward TotalSalesCount (the all-status count)
-        // and DraftSalesCount (the per-status count). They do NOT count
-        // toward SumRevenueAsync (the handler excludes Draft from revenue
-        // — SumRevenueAsync's WHERE clause filters Status IN (Pending,
-        // Approved, Invoiced)), so the default 0m return is correct.
-        saleRepo.CountBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(1); // one sale in scope
-        saleRepo.CountByStatusAsync(
-                Arg.Is<SaleStatus>(s => s == SaleStatus.Draft),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(1); // one draft
+        saleRepo.Seed(BuildDraftSale(new Money(2000m, IRR)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -577,6 +507,9 @@ public class GetDashboardStatsQueryHandlerTests
         // But TotalSalesCount counts ALL sales (including Draft).
         result.Value.TotalSalesCount.Should().Be(1);
         result.Value.DraftSalesCount.Should().Be(1);
+        // The draft's recent-slice presence drives currency detection —
+        // a draft with an IRR total still yields IRR/Toman display.
+        result.Value.IsToman.Should().BeTrue();
     }
 
     // ── Cancelled sale excluded from revenueEligibleSales ──────────
@@ -585,34 +518,70 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithCancelledSale_ExcludesFromTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
-        var sale = BuildCancelledSale(new Money(2000m, IRR));
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { sale });
-        // Brutal Code Review v3 #23: CancelledSalesCount is now a scalar
-        // COUNT query. SumRevenueAsync's WHERE clause filters out
-        // Cancelled (only Pending/Approved/Invoiced), so the default 0m
-        // return correctly produces TotalRevenue=0.
-        saleRepo.CountByStatusAsync(
-                Arg.Is<SaleStatus>(s => s == SaleStatus.Cancelled),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(1); // one cancelled sale
+        saleRepo.Seed(BuildCancelledSale(new Money(2000m, IRR)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
         result.Value.TotalRevenue.Should().Be(0);
         result.Value.CancelledSalesCount.Should().Be(1);
         // Cancelled sales don't count in this-month's submitted totals
-        // (the handler filters them out of thisMonthSales).
+        // (the revenue-status filter excludes them).
         result.Value.ThisMonthEmployeePurchaseTotal.Should().Be(0);
+    }
+
+    // ── Status breakdown: present statuses, descending, incl. Invoiced ──
+
+    [Fact]
+    public async Task HandleAsync_StatusBreakdown_IncludesInvoicedAndOrdersDescending()
+    {
+        // Arrange — 2 pending, 1 approved, 3 invoiced, 1 cancelled.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Admin);
+
+        Sale MakeInvoiced(decimal amount)
+        {
+            var sale = BuildPendingSale(new Money(amount, IRR));
+            sale.Approve(TestValues.ApprovedByUserId);
+            sale.MarkAsInvoiced(TestValues.InvoicedByUserId);
+            return sale;
+        }
+
+        saleRepo.Seed(new[]
+        {
+            BuildPendingSale(new Money(10m, IRR)),
+            BuildPendingSale(new Money(10m, IRR)),
+            BuildPendingSale(new Money(10m, IRR)).AlsoApprove(),
+            MakeInvoiced(20m),
+            MakeInvoiced(20m),
+            MakeInvoiced(20m),
+            BuildCancelledSale(new Money(30m, IRR)),
+        });
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        // Assert — one row per present status, Invoiced INCLUDED (the
+        // old per-status COUNTs never fed it), counts descending (ties
+        // between equal counts have no guaranteed order — by-count is
+        // the contract).
+        var breakdown = result.Value.StatusBreakdown;
+        breakdown.Should().HaveCount(4);
+        breakdown.Select(s => s.Count).Should().BeInDescendingOrder();
+        breakdown.Single(s => s.Status == nameof(SaleStatus.Invoiced)).Count.Should().Be(3);
+        breakdown.Single(s => s.Status == nameof(SaleStatus.Pending)).Count.Should().Be(2);
+        breakdown.Single(s => s.Status == nameof(SaleStatus.Approved)).Count.Should().Be(1);
+        breakdown.Single(s => s.Status == nameof(SaleStatus.Cancelled)).Count.Should().Be(1);
+        // The donut center total = sum of all statuses.
+        breakdown.Sum(s => s.Count).Should().Be(7);
     }
 
     // ── Top products sorted by TotalAmount desc + take top 7 ───────
@@ -622,19 +591,17 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // Build 8 pending sales, each with ONE line item for a distinct
-        // product name. The handler's TopProducts groups by ProductName
-        // and takes top 7. The 8th product must be absent from the result.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        // product name. The handler's TopProducts takes the SQL GROUP
+        // BY's top 7 by amount. The 8th product must be absent.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
         {
-            // Amounts: 100, 200, ..., 800 IRR — the handler sums GrossTotal.
-            // After ÷10 they become 10, 20, ..., 80 Toman.
-            // The LAST product (i=7) has amount 800 → TotalAmount=80 —
-            // it's the highest, so it stays in the top-7. The product with
-            // the LOWEST amount (i=0, amount=100 → 10 Toman) gets dropped.
-            // We assert the dropped one (i=0) is NOT in the result.
+            // Amounts: 100, 200, ..., 800 IRR — the aggregation sums
+            // Quantity × UnitPrice per line. After ÷10 they become 10,
+            // 20, ..., 80 Toman. The product with the LOWEST amount
+            // (i=0) gets dropped from the top-7.
             var sale = Sale.Create(
                 customerId: TestValues.CustomerId,
                 customerName: $"C{i}",
@@ -648,14 +615,12 @@ public class GetDashboardStatsQueryHandlerTests
             sale.Submit(SaleNumber.Create(1403, i + 10));
             sales.Add(sale);
         }
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(sales);
+        saleRepo.Seed(sales);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -668,6 +633,9 @@ public class GetDashboardStatsQueryHandlerTests
         // The list must be ordered descending by TotalAmount.
         result.Value.TopProducts.Select(p => p.TotalAmount).Should()
             .BeInDescendingOrder();
+        // IRR→Toman conversion applies to the aggregated row amounts.
+        result.Value.TopProducts.Single(p => p.ProductName == "Product7").TotalAmount
+            .Should().Be(80m, "800 IRR ÷ 10");
     }
 
     // ── Recent orders sorted by SubmittedAtUtc desc + take 6 ───────
@@ -678,18 +646,11 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // Build 8 sales, each submitted at a slightly different time
         // (we sleep 15ms between each). The handler should return the
-        // 6 most-recent in descending order.
-        //
-        // Brutal Code Review v3 #23 (Round 18-C): the handler now uses
-        // GetRecentSalesBySpecificationAsync(6, spec, ct) which runs
-        // SQL TOP 6 ORDER BY SubmittedAtUtc DESC — the "take top 6"
-        // logic moved from the handler to the repo. To exercise the
-        // handler's projection of the bounded slice to RecentOrderDto,
-        // we mock GetRecentSalesBySpecificationAsync to return the
-        // 6 most-recent sales in the expected (desc) order. The test
-        // still proves the handler doesn't accidentally drop or reorder
-        // entries from the bounded slice.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
+        // 6 most-recent in descending order. Round 6: the bounded slice
+        // comes straight from the (fake) repo's TOP 6 — the handler
+        // just projects it; the fake computes the same TOP 6 the SQL
+        // ORDER BY ... DESC LIMIT 6 produces.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
@@ -709,108 +670,35 @@ public class GetDashboardStatsQueryHandlerTests
             Thread.Sleep(15);
             sales.Add(sale);
         }
-        // Reverse the list before slicing — the repo's SQL ORDER BY
-        // SubmittedAtUtc DESC would return the most-recent first (C7,
-        // C6, C5, ...). Mock the repo to return that exact ordering.
-        sales.Reverse();
-        saleRepo.GetRecentSalesBySpecificationAsync(
-                Arg.Any<int>(),
-                Arg.Any<ISpecification<Sale>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(sales.Take(6).ToList()); // repo returns only 6
-        // Also need the GetAllWithLineItemsBySpecificationAsync mock
-        // (used for top products etc) — return all 8 so the rest of
-        // the handler's aggregations still have data.
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(sales);
+        saleRepo.Seed(sales);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert
         result.Value.RecentOrders.Count.Should().Be(6);
         // The most-recent 6 sales are C7, C6, ..., C2 (since we submitted
-        // C0..C7 in time order and then reversed the list).
+        // C0..C7 in time order).
         result.Value.RecentOrders.Select(o => o.CustomerName).Should()
             .BeInDescendingOrder(); // not by name — but the order is reverse-chronological
         // CustomerName "C7" should be first (most recent).
         result.Value.RecentOrders.First().CustomerName.Should().Be("C7");
+        // "C0" and "C1" (the two oldest) must be absent.
+        result.Value.RecentOrders.Select(o => o.CustomerName).Should()
+            .NotContain(new[] { "C0", "C1" });
     }
 
-    // ── userRepository.GetActiveCustomerCountAsync throws → defaults to 0
-
-    [Fact]
-    public async Task HandleAsync_WhenUserRepoThrowsActiveCustomerCount_DefaultsToZero()
-    {
-        // Arrange
-        // userRepo throws — handler catches and defaults ActiveCustomersCount to 0.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true, Roles.Admin);
-        userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
-        var query = BuildQuery();
-
-        // Act
-        var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
-            CancellationToken.None);
-
-        // Assert
-        // The handler must NOT propagate the exception — it returns Success
-        // with ActiveCustomersCount=0.
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ActiveCustomersCount.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task HandleAsync_WhenUserRepoThrows_LogsWarning()
-    {
-        // Arrange
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger)
-            = BuildMocks(authenticated: true, Roles.Admin);
-        userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
-        var query = BuildQuery();
-
-        // Act
-        await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
-            CancellationToken.None);
-
-        // Assert
-        // The handler should log a warning (with the exception attached).
-        logger.Received(1).Log(
-            LogLevel.Warning,
-            Arg.Any<EventId>(),
-            Arg.Any<Arg.AnyType>(),
-            Arg.Any<Exception>(),
-            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
-    }
-
-    // ── Round 4: KPI trend-delta (previous-period) computations ──────
-
-    /// <summary>
-    /// Writes a Sale's SubmittedAtUtc via reflection — the dashboard's
-    /// KPI date filters key on (SubmittedAtUtc ?? CreatedAtUtc), and the
-    /// aggregate API sets it to UtcNow inside Submit(). Test-only; the
-    /// domain API stays immutable in production code.
-    /// </summary>
-    private static void SetSubmittedAt(Sale sale, DateTime utc)
-    {
-        typeof(Sale).GetProperty(nameof(Sale.SubmittedAtUtc))!
-            .SetValue(sale, utc);
-    }
+    // ── Round 4: fixed-anchor KPI trend-delta computations ──────────
 
     [Fact]
     public async Task HandleAsync_ComputesPreviousPeriodKpiValues()
     {
         // Arrange — sales at three well-separated instants: today,
         // yesterday, and five days into last month.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var today = DateTime.UtcNow.Date;
@@ -830,13 +718,11 @@ public class GetDashboardStatsQueryHandlerTests
         // different last-month day than the 6th).
         SetSubmittedAt(lastMonthSale, lastMonthStart.AddDays(5).AddHours(1));
 
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { todaySale, yesterdaySale, lastMonthSale });
+        saleRepo.Seed(new List<Sale> { todaySale, yesterdaySale, lastMonthSale });
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         // Assert — today vs yesterday (counts, status-filtered).
@@ -860,7 +746,7 @@ public class GetDashboardStatsQueryHandlerTests
         result.Value.LastMonthInvoicedSalesCount.Should().Be(0);
     }
 
-    // ── ROUND 5 — period selector (the FromUtc/ToUtc window) ──────────
+    // ── ROUND 5/6 — period selector (the FromUtc/ToUtc window) ───────
 
     [Fact]
     public async Task HandleAsync_WithoutPeriodWindow_PeriodFieldsAreZeroAndNotScoped()
@@ -869,14 +755,12 @@ public class GetDashboardStatsQueryHandlerTests
         // behavior — every Period* field stays zero and IsPeriodScoped is
         // false. This is the back-compat contract for every existing
         // caller.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { BuildPendingSale(new Money(100m, "IRR")) });
+        saleRepo.Seed(BuildPendingSale(new Money(100m, "IRR")));
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeFalse();
@@ -890,6 +774,11 @@ public class GetDashboardStatsQueryHandlerTests
         result.Value.PeriodInvoicedSalesCount.Should().Be(0);
         // The fixed-anchor fields still work.
         result.Value.TodayOrdersCount.Should().Be(1);
+        // The fixed-anchor weekly trend renders 7+7 UTC-day points.
+        result.Value.ThisWeekRevenue.Should().HaveCount(7);
+        result.Value.LastWeekRevenue.Should().HaveCount(7);
+        // Today's bucket carries the seeded sale's amount (100 IRR → 10).
+        result.Value.ThisWeekRevenue.Last().TotalAmount.Should().Be(10m);
     }
 
     [Fact]
@@ -898,7 +787,7 @@ public class GetDashboardStatsQueryHandlerTests
         // Window [now-10d, now); previous window [now-20d, now-10d). Seeded
         // sales: two in the window, one in the previous window, one far
         // outside both. Also verifies the window echo fields.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -914,13 +803,11 @@ public class GetDashboardStatsQueryHandlerTests
         var outsideSale = BuildPendingSale(new Money(999m, "IRR"));
         SetSubmittedAt(outsideSale, now.AddDays(-90));
 
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { inWindowSale1, inWindowSale2, previousWindowSale, outsideSale });
+        saleRepo.Seed(new List<Sale> { inWindowSale1, inWindowSale2, previousWindowSale, outsideSale });
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeTrue();
@@ -942,7 +829,7 @@ public class GetDashboardStatsQueryHandlerTests
         // The period KPIs apply the SAME status filters as their
         // fixed-anchor counterparts: orders/purchase exclude Cancelled;
         // approved/invoiced cards count only their own statuses.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -963,13 +850,11 @@ public class GetDashboardStatsQueryHandlerTests
 
         var draft = BuildDraftSale(new Money(40m, "IRR")); // never submitted → excluded everywhere
 
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { cancelled, approved, invoiced, draft });
+        saleRepo.Seed(new List<Sale> { cancelled, approved, invoiced, draft });
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         result.Value.PeriodOrdersCount.Should().Be(2,
@@ -985,7 +870,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // FromUtc set + ToUtc null → the window is [from, now): a sale
         // submitted an hour ago counts, one before the bound doesn't.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -996,13 +881,11 @@ public class GetDashboardStatsQueryHandlerTests
         var tooOld = BuildPendingSale(new Money(20m, "IRR"));
         SetSubmittedAt(tooOld, from.AddDays(-1));
 
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { recent, tooOld });
+        saleRepo.Seed(new List<Sale> { recent, tooOld });
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from },
-            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeTrue();
@@ -1017,17 +900,15 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Degenerate/inverted windows never throw — same semantics as the
         // sales list's date filter.
-        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
-        saleRepo.GetAllWithLineItemsBySpecificationAsync(
-                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
-            .Returns(new List<Sale> { BuildPendingSale(new Money(100m, "IRR")) });
+        saleRepo.Seed(BuildPendingSale(new Money(100m, "IRR")));
 
         var act = () => GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = now.AddDays(-1), ToUtc = now.AddDays(-7) },
-            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
             CancellationToken.None);
 
         var result = await act();
@@ -1036,5 +917,252 @@ public class GetDashboardStatsQueryHandlerTests
         result.Value.PeriodOrdersCount.Should().Be(0);
         result.Value.PreviousPeriodOrdersCount.Should().Be(0);
         result.Value.PeriodEmployeePurchaseTotal.Should().Be(0m);
+        // The chart series collapse to empty lists (no days in the window).
+        result.Value.ThisWeekRevenue.Should().BeEmpty();
+        result.Value.LastWeekRevenue.Should().BeEmpty();
+    }
+
+    // ── ROUND 6 — period-driven chart series (Tehran-day buckets) ────
+
+    [Fact]
+    public async Task HandleAsync_WithPeriodWindow_ChartSeriesBucketTheWindowByTehranDay()
+    {
+        // A 3-day Tehran-aligned window (the shape every razor preset
+        // sends): the chart series must carry one point per Tehran DAY
+        // of the window, plus the equal-length preceding window.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        var from = TehranMidnightUtc(now);
+        var to = from.AddDays(3);
+
+        // Day 1 (Tehran): one sale at 10:00Z (= 13:30 Tehran).
+        var day1Sale = BuildPendingSale(new Money(100m, "IRR"));
+        SetSubmittedAt(day1Sale, from.AddHours(10));
+
+        // Day 2 (Tehran): a sale at 19:00 Tehran (15:30Z)…
+        var day2Evening = BuildPendingSale(new Money(60m, "IRR"));
+        SetSubmittedAt(day2Evening, from.AddDays(1).AddHours(19));
+        // …and one at 23:00Z on day 2 — that's 02:30 Tehran on DAY 3.
+        var day3EarlyTehran = BuildPendingSale(new Money(40m, "IRR"));
+        SetSubmittedAt(day3EarlyTehran, from.AddDays(2).AddHours(2).AddMinutes(30));
+
+        // Previous window: one sale on the FIRST day of the previous
+        // window (3 days before `from`, Tehran).
+        var previousWindowSale = BuildPendingSale(new Money(500m, "IRR"));
+        SetSubmittedAt(previousWindowSale, from.AddDays(-3).AddHours(5));
+
+        saleRepo.Seed(new List<Sale>
+        {
+            day1Sale, day2Evening, day3EarlyTehran, previousWindowSale
+        });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        // The period series has one point per Tehran day (3), each
+        // labelled with the weekday (≤14 points → "ddd").
+        result.Value.ThisWeekRevenue.Should().HaveCount(3);
+        result.Value.LastWeekRevenue.Should().HaveCount(3,
+            "the preceding equal-length window has the same point count → the chart stays index-aligned");
+
+        // Values: day1 = 100, day2 = 60, day3 = 40 (IRR → ÷10 Toman).
+        result.Value.ThisWeekRevenue[0].TotalAmount.Should().Be(10m);
+        result.Value.ThisWeekRevenue[1].TotalAmount.Should().Be(6m);
+        result.Value.ThisWeekRevenue[2].TotalAmount.Should().Be(4m,
+            "the 23:00Z sale belongs to the NEXT Tehran day (02:30) — Tehran buckets, not UTC");
+
+        // The chart totals agree with the period KPI to the rial.
+        result.Value.ThisWeekRevenue.Sum(d => d.TotalAmount).Should()
+            .Be(result.Value.PeriodEmployeePurchaseTotal);
+
+        // The previous window's series carries its sale on the matching
+        // day (day 0 of the previous window = 4 days before `from`).
+        result.Value.LastWeekRevenue[0].TotalAmount.Should().Be(50m);
+        result.Value.LastWeekRevenue.Skip(1).Should().OnlyContain(d => d.TotalAmount == 0m);
+    }
+
+    // ── ROUND 6 — period-driven top-N cards ──────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_WithPeriodWindow_TopProductsAndEmployeesReAnchorToWindow()
+    {
+        // In period mode the top-products card drops sales outside the
+        // window (the fixed-mode card would use last-30-days), and the
+        // top-employees card re-anchors from "this month" to the window.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        var from = now.AddDays(-5);
+        var to = now.AddMinutes(5);
+
+        // IN window: Alice buys the "Inside" product.
+        var insideSale = Sale.Create(TestValues.CustomerId, "Alice",
+            TestValues.CreatedByUserId, "Creator");
+        insideSale.AddLineItem(Guid.NewGuid(), "Inside", 2, new Money(100m, IRR));
+        insideSale.Submit(SaleNumber.Create(1405, 71));
+        SetSubmittedAt(insideSale, now.AddHours(-2));
+
+        // OUT of window (three weeks old): Bob buys the "Outside" product
+        // with a bigger amount — it must NOT appear in either card.
+        var outsideSale = Sale.Create(
+            Guid.Parse("deadbeef-dead-beef-dead-beefdeadbeef"), "Bob",
+            TestValues.CreatedByUserId, "Creator");
+        outsideSale.AddLineItem(Guid.NewGuid(), "Outside", 5, new Money(500m, IRR));
+        outsideSale.Submit(SaleNumber.Create(1405, 72));
+        SetSubmittedAt(outsideSale, now.AddDays(-21));
+
+        saleRepo.Seed(new List<Sale> { insideSale, outsideSale });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
+            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        var product = result.Value.TopProducts.Should().ContainSingle().Which;
+        product.ProductName.Should().Be("Inside");
+        product.QuantitySold.Should().Be(2);
+        product.TotalAmount.Should().Be(20m, "2 × 100 IRR ÷ 10");
+
+        var employee = result.Value.TopEmployees.Should().ContainSingle().Which;
+        employee.FullName.Should().Be("Alice");
+        employee.Rank.Should().Be(1);
+        employee.TotalAmount.Should().Be(20m);
+    }
+
+    [Fact]
+    public async Task HandleAsync_TopEmployees_AssignsRanksByAmountDescending()
+    {
+        // Fixed mode (no window): the card covers the current month; the
+        // ranks follow the amount ordering.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var carolId = Guid.Parse("feedfeed-feed-feed-feed-feedfeedfeed");
+
+        var aliceSale = Sale.Create(TestValues.CustomerId, "Alice",
+            TestValues.CreatedByUserId, "Creator");
+        aliceSale.AddLineItem(Guid.NewGuid(), "P", 1, new Money(300m, IRR));
+        aliceSale.Submit(SaleNumber.Create(1405, 81));
+        SetSubmittedAt(aliceSale, DateTime.UtcNow.AddHours(-3));
+
+        var bobSale = Sale.Create(
+            Guid.Parse("deadbeef-dead-beef-dead-beefdeadbeef"), "Bob",
+            TestValues.CreatedByUserId, "Creator");
+        bobSale.AddLineItem(Guid.NewGuid(), "P", 1, new Money(700m, IRR));
+        bobSale.Submit(SaleNumber.Create(1405, 82));
+        SetSubmittedAt(bobSale, DateTime.UtcNow.AddHours(-2));
+
+        var carolSale = Sale.Create(carolId, "Carol",
+            TestValues.CreatedByUserId, "Creator");
+        carolSale.AddLineItem(Guid.NewGuid(), "P", 1, new Money(100m, IRR));
+        carolSale.Submit(SaleNumber.Create(1405, 83));
+        SetSubmittedAt(carolSale, DateTime.UtcNow.AddHours(-1));
+
+        saleRepo.Seed(new List<Sale> { aliceSale, bobSale, carolSale });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.TopEmployees.Select(e => (e.FullName, e.Rank)).Should()
+            .ContainInOrder(("Bob", 1), ("Alice", 2), ("Carol", 3));
+        // Amounts are display-converted once (IRR ÷ 10).
+        result.Value.TopEmployees[0].TotalAmount.Should().Be(70m);
+    }
+
+    // ── ROUND 6 — oldest pending age + monthly chart ─────────────────
+
+    [Fact]
+    public async Task HandleAsync_OldestPendingSaleAge_ReflectsTheOldestPendingAnchor()
+    {
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var oldest = BuildPendingSale(new Money(10m, IRR));
+        SetSubmittedAt(oldest, DateTime.UtcNow.AddHours(-3));
+        var newest = BuildPendingSale(new Money(20m, IRR));
+        SetSubmittedAt(newest, DateTime.UtcNow.AddMinutes(-10));
+
+        saleRepo.Seed(new List<Sale> { oldest, newest });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.OldestPendingSaleAgeMinutes.Should().BeGreaterThan(170)
+            .And.BeLessThan(190, "≈3 hours (the older of the two pending anchors)");
+
+        // The monthly chart carries the seeded sales in the current month.
+        var now = DateTime.UtcNow;
+        result.Value.CurrentYearMonthlyData[now.Month - 1].TotalAmount
+            .Should().Be(3m, "(10 + 20) IRR ÷ 10 — both sales anchor this month");
+    }
+
+    // ── userRepository.GetActiveCustomerCountAsync throws → defaults to 0
+
+    [Fact]
+    public async Task HandleAsync_WhenUserRepoThrowsActiveCustomerCount_DefaultsToZero()
+    {
+        // Arrange
+        // userRepo throws — handler catches and defaults ActiveCustomersCount to 0.
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Admin);
+        userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
+        var query = BuildQuery();
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        // Assert
+        // The handler must NOT propagate the exception — it returns Success
+        // with ActiveCustomersCount=0.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ActiveCustomersCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenUserRepoThrows_LogsWarning()
+    {
+        // Arrange
+        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Admin);
+        userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
+        var query = BuildQuery();
+
+        // Act
+        await GetDashboardStatsQueryHandler.HandleAsync(
+            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        // Assert
+        // The handler should log a warning (with the exception attached).
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+    }
+}
+
+/// <summary>
+/// Test-only extension: approve a pending sale in one expression
+/// (mirrors the domain transition used across these tests).
+/// </summary>
+internal static class SaleTestExtensions
+{
+    public static Sale AlsoApprove(this Sale sale)
+    {
+        sale.Approve(TestValues.ApprovedByUserId);
+        return sale;
     }
 }

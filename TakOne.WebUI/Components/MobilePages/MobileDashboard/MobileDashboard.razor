@@ -355,7 +355,8 @@ else if (_stats is not null)
         @* ════════════════════════════════════════
            WEEKLY REVENUE SPARKLINE — mobile replacement for the 4 Chart.js
            charts on the desktop dashboard. Pure HTML/CSS bar row with 7 day
-           columns (one per WeeklyRevenueDto in _stats.ThisWeekRevenue).
+           columns (one per WeeklyRevenueDto in _stats.ThisWeekRevenue — in
+           period mode, one per day of the selected window; Round 6).
            Bar height = (day.TotalAmount / WeeklyMax) * 100, capped to 0
            when WeeklyMax is 0 to avoid div-by-zero.
            The card shell + footer use the existing .tm-dash-card + .tm-dash-
@@ -366,16 +367,22 @@ else if (_stats is not null)
             <div class="tm-dash-card-head">
                 <div>
                     <h3 class="tm-dash-card-title">@Loc["Chart_WeeklyRevenue"]</h3>
-                    <p class="tm-dash-card-subtitle">@Loc["Chart_WeeklyRevenue_Sub"]</p>
+                    <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                        ? Loc["Chart_WeeklyRevenue_PeriodSub"]
+                        : Loc["Chart_WeeklyRevenue_Sub"])</p>
                 </div>
                 <div style="display:flex; align-items:center; gap:0.5rem;">
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <span class="tm-dash-period-badge">@Loc["Chart_PeriodBadge"]</span>
+                    }
                     <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
                         <span style="width:10px; height:10px; border-radius:2px; background:#2A9D7E;"></span>
-                        @Loc["Chart_WeeklyLegend_This"]
+                        @(_stats.IsPeriodScoped ? Loc["Chart_PeriodLegend_This"] : Loc["Chart_WeeklyLegend_This"])
                     </div>
                     <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
                         <span style="width:10px; height:10px; border-radius:2px; background:rgba(212, 175, 55, 0.6);"></span>
-                        @Loc["Chart_WeeklyLegend_Last"]
+                        @(_stats.IsPeriodScoped ? Loc["Chart_PeriodLegend_Last"] : Loc["Chart_WeeklyLegend_Last"])
                     </div>
                 </div>
             </div>
@@ -409,7 +416,9 @@ else if (_stats is not null)
                     <p class="tm-dash-chart-footer-value gold">@FormatMoneyShort(WeeklyMax) @_stats.DisplayCurrency</p>
                 </div>
                 <div>
-                    <p class="tm-dash-chart-footer-label">@Loc["Chart_WeeklyGrowth"]</p>
+                    <p class="tm-dash-chart-footer-label">@(_stats.IsPeriodScoped
+                        ? Loc["Chart_PeriodGrowth"]
+                        : Loc["Chart_WeeklyGrowth"])</p>
                     <p class="tm-dash-chart-footer-value green">@CultureFormat.FormatPercent(WeeklyGrowthPct, 1)</p>
                 </div>
             </div>
@@ -484,13 +493,23 @@ else if (_stats is not null)
         <div class="tm-dash-card">
             <div class="tm-dash-card-head" style="margin-bottom:1rem;">
                 <div>
-                    <h3 class="tm-dash-card-title" style="font-size:0.875rem;">@Loc["TopEmployees_Title"]</h3>
-                    <p class="tm-dash-card-subtitle">@Loc["TopEmployees_Sub"]</p>
+                    <h3 class="tm-dash-card-title" style="font-size:0.875rem;">@(_stats.IsPeriodScoped
+                        ? Loc["TopEmployees_PeriodTitle"]
+                        : Loc["TopEmployees_Title"])</h3>
+                    <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                        ? Loc["TopEmployees_PeriodSub"]
+                        : Loc["TopEmployees_Sub"])</p>
                 </div>
+                @if (_stats.IsPeriodScoped)
+                {
+                    <span class="tm-dash-period-badge">@Loc["Chart_PeriodBadge"]</span>
+                }
             </div>
             @if (_stats.TopEmployees.Count == 0)
             {
-                <p class="m-empty">@Loc["TopEmployees_Empty"]</p>
+                <p class="m-empty">@(_stats.IsPeriodScoped
+                    ? Loc["TopEmployees_PeriodEmpty"]
+                    : Loc["TopEmployees_Empty"])</p>
             }
             else
             {

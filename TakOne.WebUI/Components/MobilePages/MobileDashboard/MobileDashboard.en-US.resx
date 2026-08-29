@@ -91,6 +91,15 @@
   <data name="Chart_WeeklyAvg" xml:space="preserve"><value>Daily average</value></data>
   <data name="Chart_WeeklyMax" xml:space="preserve"><value>Highest day</value></data>
   <data name="Chart_WeeklyGrowth" xml:space="preserve"><value>Weekly growth</value></data>
+  <!-- ROUND 6 — period-selector chart labels (cards re-anchor to the window) -->
+  <data name="Chart_WeeklyRevenue_PeriodSub" xml:space="preserve"><value>Selected period · by day</value></data>
+  <data name="Chart_PeriodLegend_This" xml:space="preserve"><value>Selected period</value></data>
+  <data name="Chart_PeriodLegend_Last" xml:space="preserve"><value>Previous period</value></data>
+  <data name="Chart_PeriodGrowth" xml:space="preserve"><value>Period growth</value></data>
+  <data name="Chart_PeriodBadge" xml:space="preserve"><value>Period</value></data>
+  <data name="TopEmployees_PeriodTitle" xml:space="preserve"><value>Employees with the highest purchase amount in the period</value></data>
+  <data name="TopEmployees_PeriodSub" xml:space="preserve"><value>Selected period</value></data>
+  <data name="TopEmployees_PeriodEmpty" xml:space="preserve"><value>No employee purchases in this period yet.</value></data>
   <data name="Chart_NoData" xml:space="preserve"><value>No data yet</value></data>
   <data name="Chart_ViewAll" xml:space="preserve"><value>View all</value></data>
 

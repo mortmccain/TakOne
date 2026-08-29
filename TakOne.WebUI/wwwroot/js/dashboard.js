@@ -297,7 +297,19 @@
                     })
                 },
                 scales: {
-                    x: { grid: { display: false }, ticks: { color: axisTickColor() } },
+                    // ROUND 6: the revenue chart can carry long series in
+                    // period mode (one point per day of a 30/90-day
+                    // window) — autoSkip + maxTicksLimit keeps the x-axis
+                    // readable instead of rendering every single label.
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            color: axisTickColor(),
+                            autoSkip: true,
+                            maxTicksLimit: 10,
+                            maxRotation: 0
+                        }
+                    },
                     y: {
                         grid: { color: gridLineColor() },
                         ticks: {

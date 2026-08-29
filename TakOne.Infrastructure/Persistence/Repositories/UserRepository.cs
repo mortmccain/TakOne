@@ -273,10 +273,43 @@ public sealed class UserRepository : IUserRepository
         return query.Where(Expression.Lambda<Func<User, bool>>(predicate, user));
     }
 
-    private static IQueryable<User> ApplySort(
+    private IQueryable<User> ApplySort(
         IQueryable<User> query, UsersSortBy? sortBy, bool descending)
     {
-        return (sortBy ?? UsersSortBy.FullName, descending) switch
+        var key = sortBy ?? UsersSortBy.FullName;
+
+        // GroupName (Round 6) — the only sort key that lives on another
+        // aggregate: the name is on CustomerGroup, and User carries just
+        // the GroupId FK (no navigation property, by design). The classic
+        // GroupJoin + SelectMany(DefaultIfEmpty) pair translates to a
+        // single LEFT JOIN on both providers, so groupless users
+        // (GroupId null → NULL name) still appear: NULLs sort FIRST
+        // ascending / LAST descending on SQL Server AND SQLite alike.
+        // The Id tiebreaker then re-selects the users, preserving the
+        // ORDER BY over the joined column.
+        if (key == UsersSortBy.GroupName)
+        {
+            var joined = query
+                .GroupJoin(_db.CustomerGroups.AsNoTracking(),
+                    u => u.GroupId,
+                    g => g.Id,
+                    (u, groups) => new { User = u, Groups = groups })
+                .SelectMany(
+                    x => x.Groups.DefaultIfEmpty(),
+                    (x, group) => new { x.User, GroupName = group.Name });
+
+            return descending
+                ? joined
+                    .OrderByDescending(x => x.GroupName)
+                    .ThenByDescending(x => x.User.Id)
+                    .Select(x => x.User)
+                : joined
+                    .OrderBy(x => x.GroupName)
+                    .ThenBy(x => x.User.Id)
+                    .Select(x => x.User);
+        }
+
+        return (key, descending) switch
         {
             (UsersSortBy.WorkerId, false) => query.OrderBy(u => u.WorkerId).ThenBy(u => u.Id),
             (UsersSortBy.WorkerId, true) => query.OrderByDescending(u => u.WorkerId).ThenByDescending(u => u.Id),
