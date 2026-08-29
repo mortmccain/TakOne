@@ -251,4 +251,7 @@
     <value>All {0} product(s) already have a limit for this group. No changes were made.</value>
   </data>
 
+  <data name="FieldAmountPlaceholder" xml:space="preserve">
+    <value>e.g. 50000000</value>
+  </data>
 </root>

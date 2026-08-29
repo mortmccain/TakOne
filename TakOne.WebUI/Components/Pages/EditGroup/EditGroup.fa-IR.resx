@@ -246,4 +246,7 @@
     <value>همه {0} محصول قبلاً محدودیتی برای این گروه دارند. تغییری اعمال نشد.</value>
   </data>
 
+  <data name="FieldAmountPlaceholder" xml:space="preserve">
+    <value>مثلاً ۵۰,۰۰۰,۰۰۰</value>
+  </data>
 </root>

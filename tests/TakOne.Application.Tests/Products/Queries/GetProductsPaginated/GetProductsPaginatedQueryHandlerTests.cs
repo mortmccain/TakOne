@@ -142,6 +142,7 @@ public class GetProductsPaginatedQueryHandlerTests
         await productRepo.DidNotReceive().GetPaginatedAsync(
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+            Arg.Any<ProductVisibilityFilter?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -183,6 +184,7 @@ public class GetProductsPaginatedQueryHandlerTests
         await productRepo.Received(1).GetPaginatedAsync(
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Is<int>(p => p == 1), Arg.Any<int>(),
+            Arg.Any<ProductVisibilityFilter?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -202,6 +204,7 @@ public class GetProductsPaginatedQueryHandlerTests
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Any<int>(),
             Arg.Is<int>(p => p == ExpectedMaxPageSize),
+            Arg.Any<ProductVisibilityFilter?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -295,6 +298,7 @@ public class GetProductsPaginatedQueryHandlerTests
         await productRepo.Received(1).GetPaginatedAsync(
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+            Arg.Any<ProductVisibilityFilter?>(),
             Arg.Is<CancellationToken>(t => t == ct));
     }
 }

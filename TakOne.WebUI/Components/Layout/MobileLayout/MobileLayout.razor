@@ -52,7 +52,7 @@
                     </svg>
                     @if (_unreadCount > 0)
                     {
-                        <span class="m-bell-badge">@(_unreadCount > 99 ? "99+" : _unreadCount.ToString())</span>
+                        <span class="m-bell-badge">@(_unreadCount > 99 ? CultureFormat.FormatDigits(99) + "+" : CultureFormat.FormatDigits(_unreadCount))</span>
                     }
                 </button>
                 <button class="m-icon-btn" @onclick="SetCultureAsync" title="@Loc["LanguageToggle"]">
@@ -197,6 +197,19 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Subscribe to live-refresh events FIRST — before any await.
+        //
+        // If the user navigates away while the awaits below are still in
+        // flight, Blazor runs Dispose() (unsubscribing — a no-op at that
+        // point), and then the awaited task completes and the handler would
+        // be attached AFTER disposal — keeping the disposed component rooted
+        // by the circuit-scoped NotificationRefreshService for the life of
+        // the circuit (every subsequent push fires StateHasChanged on a
+        // disposed component). Subscribing synchronously before the first
+        // await guarantees the Dispose()-unsubscribe always matches the
+        // subscribe — the same pattern MainLayout uses.
+        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
+
         // Read theme from localStorage IMMEDIATELY so the first render
         // uses the correct theme (avoids flashing tak-light on refresh).
         try
@@ -221,10 +234,6 @@
 
         await LoadCartAsync();
         await LoadUnreadCountAsync();
-
-        // Subscribe to live-refresh events so the bell badge updates when
-        // a new notification arrives via SignalR ReceiveRefresh.
-        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
     }
 
     /// <summary>
@@ -353,7 +362,7 @@
         Navigation.NavigateTo("/m/Cart", forceLoad: false);
     }
 
-    private void SetCultureAsync()
+    private async Task SetCultureAsync()
     {
         var currentCulture = System.Globalization.CultureInfo.CurrentUICulture.Name;
         var newCulture = currentCulture == "fa-IR" ? "en-US" : "fa-IR";
@@ -368,7 +377,12 @@
         // and attributes (path=/, max-age=31536000, samesite=strict) are
         // identical to the previous eval() implementation — verified in
         // wwwroot/js/culture.js's header comment.
-        JS.InvokeVoidAsync("takone.setCultureCookie", newCulture);
+        // AWAIT the cookie write BEFORE the force-reload (MainLayout and
+        // Products already await the same call). The force-load navigation
+        // aborts any in-flight JS interop — a fire-and-forget write races
+        // the reload and the page can come back up with the OLD culture,
+        // making the toggle intermittently do nothing.
+        await JS.InvokeVoidAsync("takone.setCultureCookie", newCulture);
         // Reload the page so the server picks up the new culture
         Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     }

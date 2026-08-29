@@ -236,6 +236,16 @@ else
     // ── Lifecycle ────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
+        // Subscribe to live-refresh events FIRST — before any await. If the
+        // user navigates away while LoadAsync is in flight, Blazor runs
+        // Dispose() (unsubscribing — a no-op at that point), and the awaited
+        // task completing after that would attach the handler to an already
+        // DISPOSED component, rooting it for the life of the circuit.
+        // Subscribing synchronously before the first await guarantees the
+        // Dispose()-unsubscribe always matches the subscribe (same pattern
+        // as MainLayout / MobileLayout).
+        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
+
         try
         {
             await LoadAsync();
@@ -244,10 +254,6 @@ else
         {
             _isLoading = false;
         }
-
-        // Subscribe to live-refresh events so the list re-queries when a
-        // new notification arrives via SignalR ReceiveRefresh.
-        NotificationRefresh.RefreshReceived += OnNotificationRefreshReceived;
     }
 
     /// <summary>

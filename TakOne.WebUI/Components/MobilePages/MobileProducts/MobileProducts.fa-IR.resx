@@ -73,4 +73,7 @@
   <data name="ToastLimitReached" xml:space="preserve"><value>به سقف خرید این محصول رسیده‌اید.</value></data>
   <data name="ToastQtyClamped" xml:space="preserve"><value>تنها {0} عدد دیگر می‌توانید اضافه کنید — به این مقدار تنظیم شد.</value></data>
   <data name="ToastSalaryReached" xml:space="preserve"><value>به سقف بودجهٔ ماهانهٔ حقوق رسیده‌اید.</value></data>
+  <data name="SearchResultsFor" xml:space="preserve">
+    <value>نتایج جستجو برای</value>
+  </data>
 </root>

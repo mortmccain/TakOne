@@ -153,4 +153,7 @@
     <value>ایجاد گروه ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
 
+  <data name="FieldAmountPlaceholder" xml:space="preserve">
+    <value>مثلاً ۵۰,۰۰۰,۰۰۰</value>
+  </data>
 </root>

@@ -112,6 +112,9 @@
   <data name="StockExceeded" xml:space="preserve"><value>موجودی برای تأیید این سفارش کافی نیست. محصول «{0}» {1} عدد موجود دارد، اما سفارش به {2} عدد نیاز دارد.</value></data>
   <!-- CategoryDeactivated — {0} = نام محصول (دسته‌بندی محصول غیرفعال شده است) -->
   <data name="CategoryDeactivated" xml:space="preserve"><value>کالای «{0}» دیگر قابل خرید نیست. آن را از سفارش حذف کنید یا با مدیر سیستم تماس بگیرید.</value></data>
+  <data name="ProductMissing" xml:space="preserve">
+    <value>محصول «{0}» دیگر وجود ندارد (پس از ثبت این سفارش حذف شده است). لطفاً با مدیر سیستم تماس بگیرید.</value>
+  </data>
   <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
   <data name="PurchaseLimitExceeded" xml:space="preserve"><value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value></data>
   <!-- NoCustomerGroup — نشان داده می‌شود وقتی مشتریِ سفارش گروه مشتریان ندارد. -->

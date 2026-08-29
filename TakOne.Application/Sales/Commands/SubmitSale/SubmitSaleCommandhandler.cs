@@ -345,7 +345,15 @@ public sealed class SubmitSaleCommandHandler
 
                         return Result.Failure(
                             SalaryBudgetExceededErrors.Format(
-                                /* productName */ sale.SaleNumber?.ToString() ?? sale.Id.ToString(),
+                                // Empty productName marks this as a WHOLE-CART
+                                // budget failure at submit time (not a single
+                                // line). The Cart page detects the empty name
+                                // and shows the "SalaryBudgetExceededCart"
+                                // message; passing the SaleNumber here would
+                                // render "Adding 'INT-۱۴۰۵-۰۰…' would exceed
+                                // your budget" — confusing, since the sale
+                                // number is not a product the user "added".
+                                /* productName */ string.Empty,
                                 /* lineTotal  */ sale.Total.Amount,
                                 /* remaining  */ budgetInfo.Remaining,
                                 /* currency   */ budgetInfo.Salary.Currency));

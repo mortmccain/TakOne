@@ -34,6 +34,25 @@ public sealed class RemoveUserRoleCommandHandler
         }
 
         // ------------------------------------------------------------------
+        // 0a. Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Admin)] and the
+        // AuthorizationMiddleware enforces it, but this handler REMOVES
+        // roles — the mirror image of a privilege-escalation primitive
+        // (an attacker stripping roles from legitimate admins). Verify
+        // the caller is Admin HERE, mirroring the CreateStaffCommandHandler
+        // pattern.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Admin))
+        {
+            logger.LogWarning
+                ("RemoveUserRole: caller {ActorId} is not Admin. Only administrators may remove roles. Rejected.",
+                currentUser.UserId);
+
+            return Result.Failure("Only administrators may remove roles from users.");
+        }
+
+        // ------------------------------------------------------------------
         // 1. SELF-REMOVAL GUARD.
         //    An admin removing the Admin role from themselves would lock
         //    themselves out if they're the only admin. Reject this case —

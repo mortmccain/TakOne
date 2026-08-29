@@ -245,6 +245,9 @@
   <data name="SalaryBudgetExceeded" xml:space="preserve">
     <value>افزودن «{0}» بودجهٔ ماهانهٔ شما را بیشتر می‌کند. شما این ماه {1} اعتبار باقی‌دارید.</value>
   </data>
+  <data name="SalaryBudgetExceededCart" xml:space="preserve">
+    <value>ثبت سفارش شما بودجهٔ ماهانه را بیشتر می‌کند. شما این ماه {0} اعتبار باقی‌دارید.</value>
+  </data>
 
   <!-- Step 7 — CurrencyMismatch هنگامی تولید می‌شود که ارز محصول با ارز حقوق
        مشتری همخوانی نداشته باشد. پیام محلی‌شده عمداً عمومی است — مشتری واژهٔ

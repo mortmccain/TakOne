@@ -126,10 +126,23 @@ public sealed class GetDashboardStatsQueryHandler
         //    query.UserRoles (which was a public mutable setter that any
         //    authenticated caller could spoof to Roles.Admin). The DTO no
         //    longer carries UserRoles or RequestedByUserId.
+        //
+        //    CUSTOMER-ONLY SEMANTICS: staff may hold the Customer role ON
+        //    TOP of their staff role ("a manager or employee who wants to
+        //    buy on their own behalf gets the Customer role added later via
+        //    AssignUserRoleCommand" — CreateStaffCommandValidator). Such a
+        //    user is staff first and a buyer second; rejecting them here
+        //    would lock an Employee+Customer out of their own dashboard.
+        //    Only callers who hold Customer and NO staff role at all are
+        //    treated as pure customers.
         // ------------------------------------------------------------------
-        var isCustomer = currentUser.IsInRole(Roles.Customer);
+        var isCustomerOnly = currentUser.IsInRole(Roles.Customer) &&
+                             !currentUser.IsInRole(Roles.Admin) &&
+                             !currentUser.IsInRole(Roles.Manager) &&
+                             !currentUser.IsInRole(Roles.Employee) &&
+                             !currentUser.IsInRole(Roles.ReadOnly);
 
-        if (isCustomer)
+        if (isCustomerOnly)
         {
             logger.LogWarning
                 ("GetDashboardStats: Customer role attempted to call dashboard. UserId={UserId}.",

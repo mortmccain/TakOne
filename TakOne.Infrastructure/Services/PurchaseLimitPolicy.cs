@@ -101,6 +101,39 @@ public sealed class PurchaseLimitPolicy : IPurchaseLimitPolicy
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, int?>> GetCountLimitsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid? groupId,
+        CancellationToken cancellationToken = default)
+    {
+        // Same short-circuits as GetCountLimitAsync, applied once for the
+        // whole batch: staff (no group) and SalaryOnly mode both mean
+        // "no count limits for ANY product" — an all-null dictionary.
+        if (groupId is null || productIds.Count == 0)
+        {
+            return new Dictionary<Guid, int?>();
+        }
+
+        var mode = await _systemSettings.GetLimitModeAsync(cancellationToken);
+        if (mode == LimitMode.SalaryOnly)
+        {
+            return new Dictionary<Guid, int?>();
+        }
+
+        // ONE batch load for the whole page (AsNoTracking — read-only).
+        var products = await _productRepository.GetByIdsReadOnlyAsync(productIds, cancellationToken);
+
+        // Delegate to each Product aggregate's lookup — same rule as the
+        // single-product variant, so the two paths can never diverge.
+        var result = new Dictionary<Guid, int?>();
+        foreach (var product in products)
+        {
+            result[product.Id] = product.GetPurchaseLimitForGroup(groupId.Value)?.Limit;
+        }
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<bool> IsCurrencyMatchAsync(Guid productId, Guid? groupId, CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------

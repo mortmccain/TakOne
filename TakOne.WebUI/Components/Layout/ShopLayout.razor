@@ -99,16 +99,27 @@
         _bodyErrorBoundary?.Recover();
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Start the SignalR connection to NotificationHub (same as MainLayout).
-        try
+        // Start the SignalR connection to NotificationHub (same as
+        // MainLayout). MUST run in OnAfterRenderAsync(firstRender) — NOT
+        // OnInitializedAsync: during static SSR prerendering there is no
+        // JS runtime, so JS interop in OnInitializedAsync throws
+        // InvalidOperationException on EVERY prerender of every ShopLayout
+        // page (silently swallowed by the catch below, but each one is a
+        // wasted exception + log entry). After the circuit is established
+        // the interop succeeds. See the identical pattern in MainLayout's
+        // OnAfterRenderAsync for the full rationale.
+        if (firstRender)
         {
-            await JS.InvokeVoidAsync("notificationHub.start");
-        }
-        catch
-        {
-            // Non-fatal — UI still works without real-time, just no push refresh.
+            try
+            {
+                await JS.InvokeVoidAsync("notificationHub.start");
+            }
+            catch
+            {
+                // Non-fatal — UI still works without real-time, just no push refresh.
+            }
         }
     }
 

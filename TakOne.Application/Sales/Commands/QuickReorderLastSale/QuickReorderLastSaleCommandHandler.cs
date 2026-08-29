@@ -20,6 +20,7 @@ public sealed class QuickReorderLastSaleCommandHandler
         ICurrentUserService currentUser,
         ISaleRepository saleRepository,
         IProductRepository productRepository,
+        ICategoryRepository categoryRepository,
         IUserRepository userRepository,
         IPurchaseLimitPolicy purchaseLimitPolicy,
         ISalaryBudgetService salaryBudgetService,
@@ -192,6 +193,34 @@ public sealed class QuickReorderLastSaleCommandHandler
                     ("QuickReorderLastSale: product {ProductId} on last sale {SaleId} " +
                      "no longer exists; skipping line.",
                     line.ProductId, lastSale.Id);
+                continue;
+            }
+
+            // ------------------------------------------------------------------
+            // CATEGORY-DEACTIVATION CHECK.
+            // Products whose category hierarchy (Category → SubCategory →
+            // SubSubCategory) has been deactivated since the last sale are
+            // NOT reorderable — matching the AddItemToSale and
+            // CreateOrAppendSale behavior. Skipping here (rather than
+            // failing) keeps the reorder useful for the remaining lines;
+            // without this check the line would be silently added to the
+            // cart and only blow up at SubmitSale with a confusing
+            // "category deactivated" error.
+            // ------------------------------------------------------------------
+            var hierarchyActive = await categoryRepository.IsProductCategoryHierarchyActiveAsync
+                (
+                product.CategoryId,
+                product.SubCategoryId,
+                product.SubSubCategoryId,
+                cancellationToken
+                );
+
+            if (!hierarchyActive)
+            {
+                logger.LogInformation
+                    ("QuickReorderLastSale: skipping line for product {ProductId} " +
+                     "(category hierarchy deactivated since last sale).",
+                     product.Id);
                 continue;
             }
 

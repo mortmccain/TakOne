@@ -134,6 +134,7 @@ public sealed class ProductRepository : IProductRepository
         string? searchTerm = null,
         int pageNumber = 1,
         int pageSize = 20,
+        ProductVisibilityFilter? visibility = null,
         CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------
@@ -176,6 +177,46 @@ public sealed class ProductRepository : IProductRepository
         if (!string.IsNullOrWhiteSpace(trimmedSearch))
         {
             query = query.Where(p => p.Name.Contains(trimmedSearch));
+        }
+
+        // ------------------------------------------------------------------
+        // CUSTOMER-VISIBILITY FILTER (in-stock + active category hierarchy).
+        //
+        // These predicates MUST run inside the SQL query — NOT in the
+        // handler after pagination — otherwise the DB pages the FULL
+        // catalog and the handler then strips rows from the already-paged
+        // slice: pages come back partially empty (12 of 20 slots), and
+        // TotalCount includes items the customer can never see, breaking
+        // the pager math. EF Core translates Contains over a Guid
+        // collection into an IN (...) clause.
+        //
+        // Null id-sets mean "category state unknown" (e.g. the handler's
+        // category-tree load failed) — that level's predicate is skipped so
+        // the catalog degrades to in-stock-only rather than empty. An
+        // EMPTY (non-null) set means "everything at this level is
+        // deactivated" and filters all products referencing the level.
+        // ------------------------------------------------------------------
+        if (visibility is not null)
+        {
+            // Customer catalog hides zero-stock products.
+            query = query.Where(p => p.StockQuantity > 0);
+
+            if (visibility.ActiveCategoryIds is { } activeCategoryIds)
+            {
+                query = query.Where(p => activeCategoryIds.Contains(p.CategoryId));
+            }
+
+            if (visibility.ActiveSubCategoryIds is { } activeSubCategoryIds)
+            {
+                query = query.Where(p =>
+                    p.SubCategoryId == null || activeSubCategoryIds.Contains(p.SubCategoryId.Value));
+            }
+
+            if (visibility.ActiveSubSubCategoryIds is { } activeSubSubCategoryIds)
+            {
+                query = query.Where(p =>
+                    p.SubSubCategoryId == null || activeSubSubCategoryIds.Contains(p.SubSubCategoryId.Value));
+            }
         }
 
         // ------------------------------------------------------------------

@@ -124,6 +124,24 @@ public sealed class AssignUserToGroupCommandHandler
                         ("Employees may only change the group for Customer accounts. Other employees, managers, administrators, and read-only users require Manager or Administrator access.");
                 }
             }
+            else
+            {
+                // FALL-THROUGH GUARD (defense-in-depth):
+                // The caller holds NONE of Admin/Manager/Employee (e.g. a
+                // ReadOnly user, or a Customer). Without this branch the
+                // two scope checks above would both skip and the caller
+                // would fall through to the mutation — allowing a
+                // non-staff user to reassign ANY user's group. The
+                // [RequireRoles(Employee, Manager, Admin)] attribute and
+                // the AuthorizationMiddleware already reject this caller,
+                // but this handler must also hold the line on its own.
+                logger.LogWarning
+                    ("AssignUserToGroup: caller {ActorId} holds none of Admin/Manager/Employee. Rejected.",
+                    currentUser.UserId);
+
+                return Result.Failure(
+                    "Only administrators, managers, and employees may change a user's group.");
+            }
         }
 
         // ------------------------------------------------------------------

@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Text;
+using System.Text.Json.Serialization;
 using TakOne.SharedKernel.Primitives;
 
 namespace TakOne.Domain.Sales.ValueObjects;
@@ -139,22 +140,35 @@ public class SaleNumber : BaseValueObject
 
 
 
-#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.
     /// <summary>
     /// Parameterless constructor required by EF Core. DO NOT use in application code.
     /// </summary>
+    #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.
     private SaleNumber() { }
-#pragma warning restore CS8618
+    #pragma warning restore CS8618
 
     /// <summary>
     /// Private constructor used by the static factory method.
+    ///
+    /// JSON SERIALIZATION (Wolverine outbox — CRITICAL):
+    ///   This ctor is annotated with <see cref="JsonConstructorAttribute"/> so
+    ///   that System.Text.Json (Wolverine's default message serializer) can
+    ///   RECONSTRUCT a SaleNumber when a domain event carrying one (e.g.
+    ///   <c>SaleSubmittedDomainEvent</c>) is delivered from the durable outbox.
+    ///   Without this attribute, STJ cannot find a usable constructor and
+    ///   throws <c>NotSupportedException</c> on deserialization — the event
+    ///   dead-letters and the notification side effects silently never run.
+    ///   The parameter names (<c>year</c>, <c>sequence</c>) MUST match the
+    ///   property names so STJ binds the camelCase JSON payload correctly
+    ///   (Wolverine's serializer enables case-insensitive matching).
     /// </summary>
-    private SaleNumber(int persianYear, int sequence)
+    [JsonConstructor]
+    private SaleNumber(int year, int sequence)
     {
-        EnsureYearValid(persianYear);
+        EnsureYearValid(year);
         EnsureSequenceValid(sequence);
 
-        Year = persianYear;
+        Year = year;
         Sequence = sequence;
     }
 

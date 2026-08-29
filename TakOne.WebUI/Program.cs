@@ -653,7 +653,17 @@ app.Use(async (context, next) =>
             path.StartsWith("/Account/LogOut", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/Account/Login", StringComparison.OrdinalIgnoreCase);
 
-        if (!isStaticAsset && !isAllowedAccountPath)
+        // The SignalR hub negotiate/websocket requests must NOT be
+        // redirected: a 302 to an HTML page kills the connection attempt,
+        // producing reconnect churn + console noise
+        // ("[notificationHub] connection failed:") for the JS bridge while
+        // the user sits on the ChangePassword page. The hub itself is
+        // [Authorize]-protected; letting the negotiate request through
+        // only affects the transport, not authorization.
+        var isSignalRHubPath =
+            path.StartsWith("/notificationHub", StringComparison.OrdinalIgnoreCase);
+
+        if (!isStaticAsset && !isAllowedAccountPath && !isSignalRHubPath)
         {
             // 302 redirect to the ChangePassword page. We use a query
             // string parameter so the page knows to show a "you must

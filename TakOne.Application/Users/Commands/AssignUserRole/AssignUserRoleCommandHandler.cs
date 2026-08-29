@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -30,6 +31,26 @@ public sealed class AssignUserRoleCommandHandler
             logger.LogWarning("AssignUserRole: unauthenticated call rejected.");
 
             return Result.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // 0a. Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Admin)] and the
+        // AuthorizationMiddleware enforces it, but this handler grants
+        // ARBITRARY ROLES to users — a privilege-escalation primitive if
+        // it is ever reached through a path that bypasses the middleware
+        // (a future HTTP endpoint, a background job, a tampered circuit).
+        // Mirroring the CreateStaffCommandHandler pattern: verify the
+        // caller is Admin HERE, in the handler itself.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Admin))
+        {
+            logger.LogWarning
+                ("AssignUserRole: caller {ActorId} is not Admin. Only administrators may assign roles. Rejected.",
+                currentUser.UserId);
+
+            return Result.Failure("Only administrators may assign roles to users.");
         }
 
         // ------------------------------------------------------------------

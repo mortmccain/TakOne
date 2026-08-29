@@ -63,6 +63,25 @@ public interface IPurchaseLimitPolicy
     Task<int?> GetCountLimitAsync(Guid productId, Guid? groupId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// BATCHED variant of <see cref="GetCountLimitAsync"/> — resolves the
+    /// per-product count limits for a WHOLE PAGE of products in one
+    /// round-trip (single GetByIdsReadOnlyAsync batch load + one cached
+    /// LimitMode read).
+    ///
+    /// WHY THIS EXISTS: the customer-facing Products grid called
+    /// <see cref="GetCountLimitAsync"/> once PER PRODUCT on the page (up
+    /// to 100 sequential DB round-trips per page render — an N+1). This
+    /// variant collapses those into one query.
+    ///
+    /// Returns a dictionary keyed by product Id. Missing keys (product
+    /// not found) and null values both mean "no limit".
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int?>> GetCountLimitsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid? groupId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Validates currency matching. Returns true if the customer's group
     /// salary currency matches the product's price currency.
     ///

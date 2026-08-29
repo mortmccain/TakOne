@@ -245,6 +245,9 @@
   <data name="CategoryDeactivated" xml:space="preserve">
     <value>کالای «{0}» دیگر قابل خرید نیست. آن را از سفارش حذف کنید یا با مدیر سیستم تماس بگیرید.</value>
   </data>
+  <data name="ProductMissing" xml:space="preserve">
+    <value>محصول «{0}» دیگر وجود ندارد (پس از ثبت این سفارش حذف شده است). لطفاً با مدیر سیستم تماس بگیرید.</value>
+  </data>
   <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value>
@@ -253,5 +256,8 @@
        assigned. The internal "group" concept is intentionally hidden. -->
   <data name="NoCustomerGroup" xml:space="preserve">
     <value>این مشتری برای خرید پیکربندی نشده است. پیش از افزودن کالا، او را به یک گروه مشتریان اختصاص دهید.</value>
+  </data>
+  <data name="DraftPseudoIdTooltip" xml:space="preserve">
+    <value>سفارش‌های پیش‌نویس هنوز شمارهٔ دائمی ندارند — شماره در زمان ثبت سفارش اختصاص می‌یابد.</value>
   </data>
 </root>

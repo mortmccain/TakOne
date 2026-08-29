@@ -36,14 +36,24 @@ namespace TakOne.SharedKernel.ValueObjects;
 /// </para>
 /// <para>
 /// <b>EXCEPTION POLICY:</b> The constructor throws
-/// <see cref="ArgumentException"/>/<see cref="ArgumentNullException"/>
-/// for argument-validation failures (null/empty currency, wrong-length
-/// currency code, negative amount). These are PROGRAMMER errors and
-/// must NOT be surfaced to end users as business-rule violations —
-/// <c>DomainExceptionMiddleware</c> does not translate them to 400 Bad
-/// Request. <see cref="EnsureSameCurrency"/> retains
-/// <see cref="DomainException"/> because mixing currencies in
-/// arithmetic IS a business-rule violation that should surface as 400.
+/// <see cref="DomainException"/> for invalid currency arguments
+/// (null/empty currency, wrong-length currency code). These surface to
+/// callers as business-rule violations that handlers translate into
+/// <c>Result.Failure</c> — keeping the user-facing error path
+/// consistent and localizable. <see cref="EnsureSameCurrency"/> also
+/// throws <see cref="DomainException"/> for the same reason: mixing
+/// currencies in arithmetic is a business-rule violation.
+/// </para>
+/// <para>
+/// <b>NEGATIVE AMOUNTS ARE ALLOWED (deliberate):</b> Money is a general
+/// value object. Non-negativity is an invariant of the AGGREGATES that
+/// own the money (Product.Price, CustomerGroup.Salary, SaleLineItem.
+/// UnitPrice each enforce their own non-negative guards such as
+/// <c>EnsurePriceValid</c>), NOT of Money itself. This lets arithmetic
+/// represent intermediate negatives (deficits, deltas, budget
+/// remaining) without throwing, while the aggregate factories and
+/// mutation methods remain the single source of truth for what values
+/// are legal at rest.
 /// </para>
 /// </remarks>
 public sealed class Money : BaseValueObject
@@ -84,17 +94,19 @@ public sealed class Money : BaseValueObject
 
     public Money(decimal amount, string currency)
     {
-        // Argument validation — programmer errors, NOT business rules.
-        // Throwing ArgumentException (not DomainException) so these don't
-        // get translated to 400 Bad Request by DomainExceptionMiddleware.
-        ArgumentNullException.ThrowIfNull(currency);
+        // Currency guards — DomainException (not ArgumentException) so that
+        // a bad currency from any code path (validator bypass, legacy data,
+        // integration feed) surfaces as a translatable business-rule failure
+        // that handlers can map to Result.Failure, rather than an opaque
+        // programmer error. This matches the contract encoded by the test
+        // suite (MoneyTests) and keeps a single user-facing error channel.
         if (string.IsNullOrWhiteSpace(currency))
-            throw new ArgumentException("Currency cannot be empty or whitespace.", nameof(currency));
+            throw new DomainException("Currency cannot be empty.");
         if (currency.Length != 3)
-            throw new ArgumentException("Currency must be a 3-letter ISO 4217 code.", nameof(currency));
-        if (amount < 0)
-            throw new ArgumentOutOfRangeException(nameof(amount), amount, "Money amount cannot be negative.");
+            throw new DomainException("Currency must be a 3-letter ISO code.");
 
+        // NOTE: negative amounts are intentionally allowed here — see the
+        // class-level remarks. Aggregates own their non-negativity guards.
         Amount = amount;
         Currency = currency.ToUpperInvariant();
     }

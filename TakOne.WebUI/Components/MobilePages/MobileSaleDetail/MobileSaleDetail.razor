@@ -742,6 +742,17 @@ else
                 Loc["CategoryDeactivated"],
                 deactivatedName);
         }
+
+        // ProductMissing is returned by ApproveSaleCommandHandler when a
+        // product on the sale was hard-deleted after the sale was created
+        // (distinct from CategoryDeactivated — the product ROW is gone).
+        if (ProductMissingErrors.TryParse(error, out var missingName))
+        {
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                Loc["ProductMissing"],
+                missingName);
+        }
         if (PurchaseLimitErrors.TryParse(error, out var limitName, out var limit))
         {
             return string.Format(

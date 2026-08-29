@@ -1,4 +1,6 @@
-﻿namespace TakOne.Application.Common.Errors;
+﻿using System.Globalization;
+
+namespace TakOne.Application.Common.Errors;
 
 /// <summary>
 /// Produces and parses culture-neutral error strings for the
@@ -60,7 +62,9 @@ public static class StockErrors
     /// {required}". The UI layer localizes this into the user's language.
     /// </summary>
     public static string Format(string productName, int stock, int required)
-        => $"{Prefix}{productName}|{stock}|{required}";
+        // InvariantCulture — see SalaryBudgetExceededErrors.Format for the
+        // rationale (culture-neutral wire format; fa-IR renders Persian digits).
+        => $"{Prefix}{productName}|{stock.ToString(CultureInfo.InvariantCulture)}|{required.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>
     /// Tries to parse a stock-exceeded error string back into its
@@ -87,7 +91,7 @@ public static class StockErrors
         var lastPipe = rest.LastIndexOf('|');
         if (lastPipe < 0) return false;
 
-        if (!int.TryParse(rest[(lastPipe + 1)..], out required))
+        if (!int.TryParse(rest[(lastPipe + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out required))
             return false;
 
         rest = rest[..lastPipe];
@@ -98,7 +102,7 @@ public static class StockErrors
         var secondPipe = rest.LastIndexOf('|');
         if (secondPipe < 0) return false;
 
-        if (!int.TryParse(rest[(secondPipe + 1)..], out stock))
+        if (!int.TryParse(rest[(secondPipe + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out stock))
             return false;
 
         productName = rest[..secondPipe];

@@ -170,6 +170,14 @@ public sealed class Notification : AggregateRoot
         : base(Guid.NewGuid())
     {
         EnsureUserIdValid(userId);
+        // Defense-in-depth: an undefined Kind (e.g. (NotificationKind)42 from a
+        // mis-cast or bad data) would silently persist and later break the
+        // UI's kind-based localization switch and the filtered unread-count
+        // index. Both factories funnel through this ctor, so a single guard
+        // covers all creation paths.
+        if (!Enum.IsDefined(kind))
+            throw new DomainException(
+                $"'{kind}' is not a valid {nameof(NotificationKind)} value.");
 
         UserId = userId;
         Kind = kind;

@@ -73,4 +73,7 @@
   <data name="ToastLimitReached" xml:space="preserve"><value>You have reached the purchase limit for this product.</value></data>
   <data name="ToastQtyClamped" xml:space="preserve"><value>You can only add {0} more — quantity adjusted.</value></data>
   <data name="ToastSalaryReached" xml:space="preserve"><value>Your monthly salary budget has been reached.</value></data>
+  <data name="SearchResultsFor" xml:space="preserve">
+    <value>Results for</value>
+  </data>
 </root>

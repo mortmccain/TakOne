@@ -1,4 +1,6 @@
-﻿namespace TakOne.Application.Common.Errors;
+﻿using System.Globalization;
+
+namespace TakOne.Application.Common.Errors;
 
 /// <summary>
 /// Produces and parses culture-neutral error strings for the
@@ -56,7 +58,13 @@ public static class SalaryBudgetExceededErrors
     /// <param name="remainingBudget">The customer's REMAINING budget (salary − consumed). May be 0 or negative.</param>
     /// <param name="currency">The ISO 4217 currency code (matches both the product's price and the customer's salary — they MUST match for this error to be reachable, because currency matching always applies BEFORE the budget check).</param>
     public static string Format(string productName, decimal lineTotal, decimal remainingBudget, string currency)
-        => $"{Prefix}{productName}|{lineTotal}|{remainingBudget}|{currency}";
+        // InvariantCulture: the wire format MUST be culture-neutral. Under
+        // fa-IR, decimal.ToString() renders Persian digits and a '/' decimal
+        // separator ("۵۰۰۰۰/۵"); if the string is later parsed under another
+        // culture (a culture switch between dispatch and render, background
+        // durable-queue processing), TryParse fails and the user would see
+        // this raw string instead of the localized message.
+        => $"{Prefix}{productName}|{lineTotal.ToString(CultureInfo.InvariantCulture)}|{remainingBudget.ToString(CultureInfo.InvariantCulture)}|{currency}";
 
     /// <summary>
     /// Tries to parse a salary-budget-exceeded error string back into its
@@ -91,8 +99,8 @@ public static class SalaryBudgetExceededErrors
         // currency is the last part, remainingBudget is the third-to-last,
         // lineTotal is the second-to-last, productName is everything before.
         currency = parts[^1];
-        if (!decimal.TryParse(parts[^2], out remainingBudget)) return false;
-        if (!decimal.TryParse(parts[^3], out lineTotal)) return false;
+        if (!decimal.TryParse(parts[^2], NumberStyles.Number, CultureInfo.InvariantCulture, out remainingBudget)) return false;
+        if (!decimal.TryParse(parts[^3], NumberStyles.Number, CultureInfo.InvariantCulture, out lineTotal)) return false;
         productName = string.Join('|', parts, 0, parts.Length - 3);
         return true;
     }

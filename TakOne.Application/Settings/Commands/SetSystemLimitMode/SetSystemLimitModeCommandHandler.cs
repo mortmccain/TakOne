@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Common.Entities;
 using TakOne.SharedKernel.Common;
@@ -19,6 +20,23 @@ public sealed class SetSystemLimitModeCommandHandler
         {
             logger.LogWarning("SetSystemLimitMode: unauthenticated call rejected.");
             return Result.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // 0a. Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Admin)] and the
+        // AuthorizationMiddleware enforces it, but flipping the global
+        // LimitMode disables salary-budget enforcement for the whole
+        // system — a high-impact operation worth a redundant in-handler
+        // check (mirrors the CreateStaffCommandHandler pattern).
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Admin))
+        {
+            logger.LogWarning
+                ("SetSystemLimitMode: caller {ActorId} is not Admin. Only administrators may change the limit mode. Rejected.",
+                currentUser.UserId);
+            return Result.Failure("Only administrators may change the system limit mode.");
         }
 
         // ------------------------------------------------------------------

@@ -292,7 +292,7 @@ public static class ServiceCollectionExtensions
         //        3. AuthorizationMiddleware.Before        (rejects unauth'd
         //                                                   calls before the
         //                                                   handler runs;
-        //                                                   short-circuits)
+        //                                                   THROWS on denial)
         //        4. -- handler runs --
         //           (handlers that call aggregate methods which may throw
         //           DomainException wrap those calls in try/catch and return
@@ -303,12 +303,18 @@ public static class ServiceCollectionExtensions
         //        5. PerformanceMiddleware.AfterAsync      (logs if slow)
         //        6. LoggingMiddleware.AfterAsync          (logs "Completed X")
         //
-        //     NOTE on AuthorizationMiddleware short-circuit: when Before
-        //     returns a non-null Result, Wolverine uses it as the handler's
-        //     return value and SKIPS the handler invocation. The
-        //     PerformanceMiddleware.AfterAsync and LoggingMiddleware.
-        //     AfterAsync methods still run -- which is what we want, so the
-        //     "Completed X" log always pairs with a "Starting X" log.
+        //     NOTE on AuthorizationMiddleware enforcement: a denial THROWS
+        //     MessageAuthorizationException — the same pattern Wolverine's
+        //     own FluentValidation middleware uses for validation failures
+        //     (throw ValidationException). Returning a Result from Before
+        //     does NOT short-circuit Wolverine 6.x handler chains (an
+        //     unregistered object? return value is ignored by the generated
+        //     code), so throwing is the only reliable enforcement mechanism;
+        //     the exception propagates to the InvokeAsync caller, whose
+        //     try/catch already handles ValidationException the same way.
+        //     Domain events (messages ending in "DomainEvent") are exempt —
+        //     they are raised by aggregates inside trusted handlers and
+        //     carry no auth attributes.
         //
         //     MIDDLEWARE CONVENTION:
         //     Wolverine recognizes Before/BeforeAsync/After/AfterAsync/Load/

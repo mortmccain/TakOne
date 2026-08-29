@@ -114,6 +114,9 @@
   <data name="StockExceeded" xml:space="preserve"><value>Not enough stock to approve this order. Product '{0}' has {1} in stock, but the order requires {2}.</value></data>
   <!-- CategoryDeactivated — {0} = product name (product's category was deactivated) -->
   <data name="CategoryDeactivated" xml:space="preserve"><value>'{0}' is no longer available for purchase. Remove it from the order or contact an administrator.</value></data>
+  <data name="ProductMissing" xml:space="preserve">
+    <value>The product &apos;{0}&apos; no longer exists (it was removed after this order was created). Remove the affected context and contact an administrator.</value>
+  </data>
   <!-- PurchaseLimitExceeded — {0} = product name, {1} = per-customer limit -->
   <data name="PurchaseLimitExceeded" xml:space="preserve"><value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value></data>
   <!-- NoCustomerGroup — shown when the customer on the sale has no CustomerGroup assigned. -->

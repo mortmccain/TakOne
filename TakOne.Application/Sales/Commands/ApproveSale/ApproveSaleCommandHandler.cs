@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Errors;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -33,6 +34,23 @@ public sealed class ApproveSaleCommandHandler
         if (currentUser.UserId == Guid.Empty)
         {
             return Result.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Employee, Roles.
+        // Manager, Roles.Admin)] and the AuthorizationMiddleware enforces
+        // it, but approving a sale mutates stock and the sale's audit trail —
+        // a Customer must never perform it (not even on their own sale).
+        // Mirrors the CreateStaffCommandHandler in-handler check pattern.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Employee)
+            && !currentUser.IsInRole(Roles.Manager)
+            && !currentUser.IsInRole(Roles.Admin))
+        {
+            return Result.Failure(
+                "Only staff (employee, manager, or admin) may approve a sale.");
         }
 
         // Need line items because we have to decrement stock for each line.
@@ -103,18 +121,20 @@ public sealed class ApproveSaleCommandHandler
                         distinctProductIds, ct);
 
                     // Build Id → Product map. If a product is missing from
-                    // the batch result (hard-deleted or category-deactivated
-                    // since the sale was created), surface the first affected
-                    // line's snapshot ProductName in the error — same UX as
-                    // before, just sourced from the batch miss instead of a
-                    // per-line null check.
+                    // the batch result, it was HARD-DELETED after the sale
+                    // was created (products are normally soft-deactivated —
+                    // a hard delete is an exceptional admin/recovery action).
+                    // Report it as ProductMissingErrors — NOT
+                    // CategoryDeactivatedErrors (the historical mapping told
+                    // the staff member the category was deactivated, which
+                    // is a misleading diagnosis for a missing product row).
                     var freshProductsById = freshProducts.ToDictionary(p => p.Id);
                     foreach (var line in freshSale.LineItems)
                     {
                         if (!freshProductsById.ContainsKey(line.ProductId))
                         {
                             return Result.Failure(
-                                CategoryDeactivatedErrors.Format(line.ProductName));
+                                ProductMissingErrors.Format(line.ProductName));
                         }
                     }
 

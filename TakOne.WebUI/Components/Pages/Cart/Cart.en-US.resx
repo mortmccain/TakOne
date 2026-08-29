@@ -244,6 +244,9 @@
   <data name="SalaryBudgetExceeded" xml:space="preserve">
     <value>Adding &apos;{0}&apos; would exceed your monthly budget. You have {1} remaining this month.</value>
   </data>
+  <data name="SalaryBudgetExceededCart" xml:space="preserve">
+    <value>Submitting your order would exceed your monthly budget. You have {0} remaining this month.</value>
+  </data>
 
   <!-- Step 7 — CurrencyMismatch is produced when the product's currency
        doesn't match the customer's salary currency. The localized message

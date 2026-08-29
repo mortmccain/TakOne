@@ -51,9 +51,21 @@ public sealed class GetUsersPaginatedQueryHandler
 
         if (!canListUsers)
         {
+            // Log the caller's ACTUAL roles (auditors need to know who
+            // attempted the access) — the historical version logged the
+            // constant role-name list, which is the same for every denial
+            // and useless as an audit trail.
+            var callerRoles = new List<string>();
+            if (currentUser.IsInRole(Roles.Admin)) callerRoles.Add(Roles.Admin);
+            if (currentUser.IsInRole(Roles.Manager)) callerRoles.Add(Roles.Manager);
+            if (currentUser.IsInRole(Roles.Employee)) callerRoles.Add(Roles.Employee);
+            if (currentUser.IsInRole(Roles.Customer)) callerRoles.Add(Roles.Customer);
+            if (currentUser.IsInRole(Roles.ReadOnly)) callerRoles.Add(Roles.ReadOnly);
+            if (callerRoles.Count == 0) callerRoles.Add("<none>");
+
             logger.LogWarning
-                ("GetUsersPaginated: user {UserId} (roles: {Roles}) denied — customers/read-only may not list users.",
-                currentUser.UserId, string.Join(",", new[] { Roles.Admin, Roles.Manager, Roles.Employee, Roles.Customer, Roles.ReadOnly }));
+                ("GetUsersPaginated: user {UserId} (roles: {CallerRoles}) denied — customers/read-only may not list users.",
+                currentUser.UserId, string.Join(",", callerRoles));
 
             return new PaginatedResult<UserListItemDto>(Array.Empty<UserListItemDto>(), 0, 1, 1);
         }

@@ -156,6 +156,18 @@ public sealed class Sale : AggregateRoot
     public SaleStatus Status { get; private set; }
     public Money Total { get; private set; }
 
+    /// <summary>
+    /// The currency an empty draft Sale's <see cref="Total"/> starts as
+    /// (amount 0). Centralized as a named constant so the magic string
+    /// "IRR" (Iranian Rial — the deployment's primary currency) has a
+    /// single, documented source of truth in the Domain. The moment the
+    /// first line item is added, <see cref="RecalculateTotal"/> switches
+    /// <see cref="Total"/> to that line's currency; if the last line is
+    /// later removed, the last-known line currency is PRESERVED rather
+    /// than resetting to this default.
+    /// </summary>
+    public const string DefaultCurrency = "IRR";
+
 
 
     // ==================================================================================================================================
@@ -231,7 +243,7 @@ public sealed class Sale : AggregateRoot
         // Submit(). The property remains null until then.
 
         Status = SaleStatus.Draft;
-        Total = Money.Zero("IRR");
+        Total = Money.Zero(DefaultCurrency);
         CreatedAtUtc = DateTime.UtcNow;
     }
 
@@ -324,6 +336,25 @@ public sealed class Sale : AggregateRoot
         EnsureDraft();
         EnsureQuantityValid(quantity);
         EnsureUnitPriceValid(unitPrice);
+
+        // ------------------------------------------------------------------
+        // CURRENCY-HOMOGENEITY PRE-CHECK (before ANY mutation).
+        //
+        // RecalculateTotal() sums line gross totals via Money's
+        // EnsureSameCurrency guard, which throws MID-recalculation. If the
+        // line were added / the quantity changed first, a currency mismatch
+        // would leave the aggregate HALF-MUTATED (line state changed but
+        // Total stale) — violating the "aggregate is always valid"
+        // discipline. Validating up-front makes the operation atomic:
+        // either the whole mutation applies or none of it does.
+        // ------------------------------------------------------------------
+        if (_lineItems.Count > 0 && unitPrice.Currency != _lineItems[0].UnitPrice.Currency)
+        {
+            throw new DomainException(
+                $"Cannot mix currencies on one sale. Existing lines are priced in " +
+                $"'{_lineItems[0].UnitPrice.Currency}' but '{productName}' is priced in " +
+                $"'{unitPrice.Currency}'.");
+        }
 
         var existingLine = _lineItems.FirstOrDefault(li => li.ProductId == productId);
 
@@ -611,7 +642,12 @@ public sealed class Sale : AggregateRoot
     {
         if (_lineItems.Count == 0)
         {
-            Total = Money.Zero("IRR");
+            // Preserve the last-known line currency when the cart empties
+            // (rather than resetting to DefaultCurrency) — a USD-salary
+            // group's emptied draft should still report Total.Currency == USD.
+            // Total is always non-null here: the ctor initializes it and EF
+            // materialization populates it before any method can run.
+            Total = Money.Zero(Total.Currency);
             return;
         }
 

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -31,6 +32,23 @@ public sealed class MarkAsInvoicedCommandHandler
         if (currentUser.UserId == Guid.Empty)
         {
             return Result.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Employee, Roles.
+        // Manager, Roles.Admin)] and the AuthorizationMiddleware enforces
+        // it, but marking as invoiced a sale mutates stock and the sale's audit trail —
+        // a Customer must never perform it (not even on their own sale).
+        // Mirrors the CreateStaffCommandHandler in-handler check pattern.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Employee)
+            && !currentUser.IsInRole(Roles.Manager)
+            && !currentUser.IsInRole(Roles.Admin))
+        {
+            return Result.Failure(
+                "Only staff (employee, manager, or admin) may mark as invoiced a sale.");
         }
 
         // Initial load (lightweight) — to verify the sale exists + acquire

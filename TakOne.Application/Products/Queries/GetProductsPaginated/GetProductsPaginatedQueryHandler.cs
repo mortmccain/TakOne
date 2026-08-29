@@ -88,21 +88,7 @@ public sealed class GetProductsPaginatedQueryHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Load the page of products.
-        // ------------------------------------------------------------------
-        var paginated = await productRepository.GetPaginatedAsync
-            (
-            categoryId: query.CategoryId,
-            subCategoryId: query.SubCategoryId,
-            subSubCategoryId: query.SubSubCategoryId,
-            searchTerm: query.SearchTerm,
-            pageNumber: pageNumber,
-            pageSize: pageSize,
-            cancellationToken: cancellationToken
-            );
-
-        // ------------------------------------------------------------------
-        // 4. Load the category tree ONCE — active AND inactive, with full
+        // 3. Load the category tree ONCE — active AND inactive, with full
         //    SubCategory → SubSubCategory hierarchy. We need inactive
         //    categories too because a product may reference a deactivated
         //    category (the FK is just a Guid, soft-delete doesn't break
@@ -111,17 +97,26 @@ public sealed class GetProductsPaginatedQueryHandler
         //    to re-categorize.
         //
         //    Single round-trip — GetAllAsync eager-loads the hierarchy.
+        //
+        //    LOADED BEFORE THE PRODUCT PAGE (reordered): the active-id sets
+        //    computed below feed the customer-visibility filter that is
+        //    pushed INTO the SQL query, so pagination is computed over
+        //    exactly the rows the caller can see.
         // ------------------------------------------------------------------
         List<Domain.Categories.Entities.Category>? categories = null;
+        var categoriesLoaded = false;
         try
         {
             categories = await categoryRepository.GetAllAsync(cancellationToken);
+            categoriesLoaded = true;
         }
         catch (Exception ex)
         {
             // Non-fatal — if the category load fails we still return the
             // products with empty category-name fields. The UI renders an
-            // em-dash for empty category names, which is acceptable.
+            // em-dash for empty category names, which is acceptable. The
+            // customer-visibility filter degrades to in-stock-only (null
+            // id-sets) instead of hiding the whole catalog.
             logger.LogWarning(ex,
                 "GetProductsPaginated: failed to load category tree for enrichment. "
                 + "Products will be returned without category names.");
@@ -147,6 +142,53 @@ public sealed class GetProductsPaginatedQueryHandler
                 }
             }
         }
+
+        // ------------------------------------------------------------------
+        // 3a. CUSTOMER-VISIBILITY FILTER — pushed INTO the SQL query.
+        //
+        // For non-staff callers (includeInactive=false) the catalog must
+        // hide zero-stock products and products under deactivated
+        // categories. Historically these predicates ran in the HANDLER
+        // AFTER the repository paginated — producing partially-empty
+        // pages and a TotalCount the pager couldn't trust. The id-sets
+        // below (derived from the category tree above) are passed to the
+        // repository so the predicates compose into the single SQL
+        // statement; see ProductVisibilityFilter for the null-vs-empty
+        // set semantics. When the category tree failed to load, the
+        // id-sets are null and only the in-stock predicate applies
+        // (graceful degradation).
+        // ------------------------------------------------------------------
+        ProductVisibilityFilter? visibility = null;
+        if (!includeInactive)
+        {
+            visibility = new ProductVisibilityFilter(
+                ActiveCategoryIds: categoriesLoaded
+                    ? categories!.Where(c => c.IsActive).Select(c => c.Id).ToList()
+                    : null,
+                ActiveSubCategoryIds: categoriesLoaded
+                    ? subCategoryById.Where(kv => kv.Value.IsActive).Select(kv => kv.Key).ToList()
+                    : null,
+                ActiveSubSubCategoryIds: categoriesLoaded
+                    ? subSubCategoryById.Where(kv => kv.Value.IsActive).Select(kv => kv.Key).ToList()
+                    : null);
+        }
+
+        // ------------------------------------------------------------------
+        // 3b. Load the page of products — with the visibility predicates
+        //     applied at the DATABASE level, so pages are full and
+        //     TotalCount matches what the caller can actually see.
+        // ------------------------------------------------------------------
+        var paginated = await productRepository.GetPaginatedAsync
+            (
+            categoryId: query.CategoryId,
+            subCategoryId: query.SubCategoryId,
+            subSubCategoryId: query.SubSubCategoryId,
+            searchTerm: query.SearchTerm,
+            pageNumber: pageNumber,
+            pageSize: pageSize,
+            visibility: visibility,
+            cancellationToken: cancellationToken
+            );
 
         // ------------------------------------------------------------------
         // 5. Project to DTO.
@@ -200,40 +242,23 @@ public sealed class GetProductsPaginatedQueryHandler
         // correctly: returns null when groupId is null, when LimitMode is
         // SalaryOnly, or when the product has no limit set for this group.
         //
-        // We resolve all limits up-front into a dictionary so the .Select
-        // projection below stays synchronous (and so we make at most one
-        // policy call per distinct product — typically just one cached
-        // LimitMode read for the whole batch).
+        // We resolve all limits up-front into a dictionary (one batched
+        // round-trip — see GetCountLimitsAsync) so the .Select projection
+        // below stays synchronous.
         // ------------------------------------------------------------------
-        var limitByProductId = new Dictionary<Guid, int?>();
-        foreach (var p in paginated.Items)
-        {
-            if (!limitByProductId.ContainsKey(p.Id))
-            {
-                limitByProductId[p.Id] = await purchaseLimitPolicy.GetCountLimitAsync
-                    (p.Id, groupId, cancellationToken);
-            }
-        }
+        // BATCHED limit resolution (one round-trip for the whole page).
+        // The previous per-product loop was an N+1: up to pageSize (≤100)
+        // sequential DB round-trips on every page render.
+        var limitByProductId = await purchaseLimitPolicy.GetCountLimitsAsync
+            (paginated.Items.Select(p => p.Id).ToList(), groupId, cancellationToken);
 
+        // NOTE: the in-stock and category-deactivated filters that used to
+        // run HERE (after DB pagination) now run INSIDE the SQL query via
+        // the ProductVisibilityFilter passed to GetPaginatedAsync above —
+        // pages are full and TotalCount/pager math is exact. The
+        // IsProductCategoryHierarchyActive helper below is still used by
+        // other call sites for point lookups.
         var dtos = paginated.Items
-            .Where(p => includeInactive || p.StockQuantity > 0)
-            // CATEGORY-DEACTIVATION FILTER:
-            //   When the caller is NOT asking for inactive products (i.e.
-            //   the customer-facing Products page, never the admin page),
-            //   hide any product whose Category / SubCategory / SubSubCategory
-            //   has been deactivated. The product's StockQuantity is
-            //   PRESERVED in the database — deactivation only suppresses
-            //   visibility and buyability. The admin (includeInactive=true)
-            //   still sees these products so they can re-categorize or
-            //   reactivate the category.
-            //
-            //   The lookups below already resolved each product's three
-            //   *IsActive flags against the in-memory category tree we
-            //   loaded in step 4. A product fails the filter if ANY of
-            //   its set levels is inactive. (Missing-from-tree is treated
-            //   as inactive too — a product pointing at a hard-deleted
-            //   category should not surface to customers.)
-            .Where(p => includeInactive || IsProductCategoryHierarchyActive(p, categoryById, subCategoryById, subSubCategoryById))
             .Where(p => !hasSearch ||
                         p.Name.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase))
             .Select(p =>

@@ -37,9 +37,26 @@
 
 @using Microsoft.AspNetCore.Components.Authorization
 
-<AuthorizeView Roles="@_rolesCsv">
-    @ChildContent
-</AuthorizeView>
+@* EMPTY-Roles EDGE CASE: <AuthorizeView Roles=""> throws
+   InvalidOperationException("At least one role must be specified") at
+   policy-combine time — the component previously crashed the whole render
+   tree for callers that pass an empty array (e.g. a dynamically-built
+   role list that happened to be empty). When no roles are supplied we
+   fall back to a plain <AuthorizeView>, i.e. "any AUTHENTICATED user"
+   (anonymous users still see nothing) — the behavior the component docs
+   and the RequireRoleTests edge-case tests lock in. *@
+@if (HasRoles)
+{
+    <AuthorizeView Roles="@_rolesCsv">
+        @ChildContent
+    </AuthorizeView>
+}
+else
+{
+    <AuthorizeView>
+        @ChildContent
+    </AuthorizeView>
+}
 
 @code {
     [Parameter]
@@ -55,10 +72,19 @@
 
     private string _rolesCsv = string.Empty;
 
+    /// <summary>
+    /// True when at least one role name was supplied. When false, the
+    /// component falls back to authentication-only authorization (see the
+    /// markup note on the empty-Roles edge case).
+    /// </summary>
+    private bool HasRoles { get; set; }
+
     protected override void OnParametersSet()
     {
         // AuthorizeView.Roles expects a comma-separated string. We join here
         // rather than at the call site so the API reads naturally.
-        _rolesCsv = string.Join(",", Roles ?? Array.Empty<string>());
+        var roles = Roles ?? Array.Empty<string>();
+        HasRoles = roles.Length > 0;
+        _rolesCsv = string.Join(",", roles);
     }
 }

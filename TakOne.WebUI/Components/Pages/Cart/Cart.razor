@@ -1264,6 +1264,19 @@
                 ? $"−{FormatPrice(remainingMoney)}"
                 : FormatPrice(remainingMoney);
 
+            // Empty productName = WHOLE-CART budget failure at submit time
+            // (SubmitSaleCommandHandler passes string.Empty because the
+            // failure is about the cart total, not a single product).
+            // The per-product message would read "Adding '' would exceed…"
+            // — the cart-level message reads correctly instead.
+            if (string.IsNullOrEmpty(sbProductName))
+            {
+                return string.Format(
+                    CultureInfo.CurrentCulture,
+                    Loc["SalaryBudgetExceededCart"],
+                    remainingDisplay);
+            }
+
             return string.Format(
                 CultureInfo.CurrentCulture,
                 Loc["SalaryBudgetExceeded"],

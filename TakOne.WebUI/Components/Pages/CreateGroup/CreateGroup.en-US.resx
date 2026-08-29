@@ -163,4 +163,7 @@
     <value>We couldn't create the group. Please try again.</value>
   </data>
 
+  <data name="FieldAmountPlaceholder" xml:space="preserve">
+    <value>e.g. 50000000</value>
+  </data>
 </root>

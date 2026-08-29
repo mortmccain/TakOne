@@ -61,35 +61,14 @@
   <data name="PageTitle" xml:space="preserve">
     <value>Edit Customer Group — TakOne</value>
   </data>
-  <data name="BackToManageGroups" xml:space="preserve">
-    <value>Back to Customer Groups</value>
-  </data>
 
-  <data name="Loading" xml:space="preserve">
-    <value>Loading…</value>
-  </data>
   <data name="ErrorTitle" xml:space="preserve">
     <value>Something went wrong</value>
   </data>
-  <data name="Error_GenericLoad" xml:space="preserve">
-    <value>We couldn't load the group. Please try again.</value>
-  </data>
-  <data name="Error_Generic" xml:space="preserve">
-    <value>We couldn't save the changes. Please try again.</value>
-  </data>
 
   <!-- Not-found state — shown when the {GroupId} doesn't exist in the DB. -->
-  <data name="NotFoundTitle" xml:space="preserve">
-    <value>Customer group not found</value>
-  </data>
-  <data name="NotFoundBody" xml:space="preserve">
-    <value>The group you're looking for doesn't exist or you don't have permission to view it.</value>
-  </data>
 
   <!-- Summary card -->
-  <data name="SummaryCardTitle" xml:space="preserve">
-    <value>Group summary</value>
-  </data>
   <data name="ColName" xml:space="preserve">
     <value>Name</value>
   </data>
@@ -98,18 +77,6 @@
   </data>
   <data name="ColStatus" xml:space="preserve">
     <value>Status</value>
-  </data>
-  <data name="ColActiveUsers" xml:space="preserve">
-    <value>Active customers</value>
-  </data>
-  <data name="ColCreatedAt" xml:space="preserve">
-    <value>Created</value>
-  </data>
-  <data name="ColUpdatedAt" xml:space="preserve">
-    <value>Last updated</value>
-  </data>
-  <data name="NoActiveUsers" xml:space="preserve">
-    <value>No active customers in this group</value>
   </data>
 
   <!-- Status badges -->
@@ -121,42 +88,9 @@
   </data>
 
   <!-- Form fields -->
-  <data name="FieldName" xml:space="preserve">
-    <value>Group name</value>
-  </data>
-  <data name="FieldNamePlaceholder" xml:space="preserve">
-    <value>e.g. Management, Staff, Contractors</value>
-  </data>
 
-  <data name="FieldSalary" xml:space="preserve">
-    <value>Monthly salary budget</value>
-  </data>
-  <data name="FieldAmount" xml:space="preserve">
-    <value>Amount</value>
-  </data>
-  <data name="FieldCurrency" xml:space="preserve">
-    <value>Currency</value>
-  </data>
-  <data name="CurrencyLockedTitle" xml:space="preserve">
-    <value>Currency is locked. To change currency, deactivate this group and create a new one.</value>
-  </data>
-  <data name="SalaryHint" xml:space="preserve">
-    <value>Changes take effect immediately for new purchases. The current month's consumed amount is not retroactively recalculated.</value>
-  </data>
 
   <!-- Form actions -->
-  <data name="CancelButton" xml:space="preserve">
-    <value>Cancel</value>
-  </data>
-  <data name="SaveButton" xml:space="preserve">
-    <value>Save changes</value>
-  </data>
-  <data name="ActivateButton" xml:space="preserve">
-    <value>Activate</value>
-  </data>
-  <data name="DeactivateButton" xml:space="preserve">
-    <value>Deactivate</value>
-  </data>
 
   <!-- Validation -->
   <data name="ValidationError_NameRequired" xml:space="preserve">
@@ -173,41 +107,8 @@
   </data>
 
   <!-- Help panel -->
-  <data name="HelpCardTitle" xml:space="preserve">
-    <value>What you should know</value>
-  </data>
-  <data name="HelpLine_Rename" xml:space="preserve">
-    <value>Renaming a group does not affect existing customer assignments or per-product purchase limits — they all point at the same group row.</value>
-  </data>
-  <data name="HelpLine_SalaryImmediate" xml:space="preserve">
-    <value>Salary changes take effect immediately for new cart mutations. Draft cart totals and already-submitted sales still count against the new ceiling.</value>
-  </data>
-  <data name="HelpLine_SalaryNegative" xml:space="preserve">
-    <value>If you lower the salary below what a customer has already spent this month, their remaining budget goes negative — they cannot add anything more until next month.</value>
-  </data>
-  <data name="HelpLine_CurrencyLocked" xml:space="preserve">
-    <value>Currency is locked. Changing it would invalidate already-purchased products priced in the old currency. To use a different currency, deactivate this group and create a new one.</value>
-  </data>
-  <data name="HelpLine_Deactivate" xml:space="preserve">
-    <value>Deactivating a group blocks new purchases by its customers. Submitted sales are kept; the group's per-product limits are preserved for reactivation.</value>
-  </data>
 
   <!-- Toasts -->
-  <data name="NoChanges" xml:space="preserve">
-    <value>No changes to save.</value>
-  </data>
-  <data name="NoChangesTitle" xml:space="preserve">
-    <value>Nothing changed</value>
-  </data>
-  <data name="SuccessTitle" xml:space="preserve">
-    <value>Group updated</value>
-  </data>
-  <data name="SuccessSummary" xml:space="preserve">
-    <value>The customer group has been updated.</value>
-  </data>
-  <data name="ConfirmDeactivate" xml:space="preserve">
-    <value>Deactivate the group "{0}"? Customers in this group cannot make new purchases until it is reactivated. Their submitted sales are kept.</value>
-  </data>
   <data name="DeactivateSuccessTitle" xml:space="preserve">
     <value>Group deactivated</value>
   </data>
@@ -229,26 +130,95 @@
        during the inactive period, those products have no limit row for the
        group. This card lets the admin bulk-fill missing limits with the
        default value (1) in one shot. Existing limits are always preserved. -->
-  <data name="BulkDefaultsCardTitle" xml:space="preserve">
-    <value>Bulk apply default limits</value>
-  </data>
-  <data name="BulkDefaultsDescription" xml:space="preserve">
-    <value>Apply the default purchase limit (1) to every product that doesn't already have a limit for this group. Products with existing limits are preserved. Use this after reactivating a group to fill gaps for products created while it was inactive.</value>
-  </data>
-  <data name="BulkApplyDefaultsButton" xml:space="preserve">
-    <value>Apply default limits</value>
-  </data>
-  <data name="ConfirmBulkApplyDefaults" xml:space="preserve">
-    <value>Apply the default purchase limit (1) to every product missing a limit for the group "{0}"? Products that already have a limit will not be changed. This may take a few seconds for large catalogs.</value>
-  </data>
-  <data name="BulkApplyDefaultsTitle" xml:space="preserve">
-    <value>Bulk apply complete</value>
-  </data>
-  <data name="BulkApplyDefaultsSuccess" xml:space="preserve">
-    <value>Applied default limit {3} to {0} of {1} product(s). {2} product(s) already had limits and were skipped.</value>
-  </data>
-  <data name="BulkApplyDefaultsNoUpdates" xml:space="preserve">
-    <value>All {0} product(s) already have a limit for this group. No changes were made.</value>
-  </data>
 
+  <data name="ActionActivate" xml:space="preserve">
+    <value>Activate</value>
+  </data>
+  <data name="ActionDeactivate" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+  <data name="ActionError" xml:space="preserve">
+    <value>This operation failed. Please try again.</value>
+  </data>
+  <data name="ActionViewDetail" xml:space="preserve">
+    <value>View details</value>
+  </data>
+  <data name="ColActions" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="CreateGroupButton" xml:space="preserve">
+    <value>Create group</value>
+  </data>
+  <data name="EmptyBody" xml:space="preserve">
+    <value>Customer groups define each customer&apos;s monthly budget and the currency they may purchase in. Create the first group to get started.</value>
+  </data>
+  <data name="EmptyText" xml:space="preserve">
+    <value>No groups found.</value>
+  </data>
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>No customer groups yet</value>
+  </data>
+  <data name="Error_FailedToLoad" xml:space="preserve">
+    <value>Failed to load groups. Please try again.</value>
+  </data>
+  <data name="LimitModeBoth" xml:space="preserve">
+    <value>Count + salary budget</value>
+  </data>
+  <data name="LimitModeCardSubtitle" xml:space="preserve">
+    <value>Determines which purchase limits apply to all customers system-wide.</value>
+  </data>
+  <data name="LimitModeCardTitle" xml:space="preserve">
+    <value>Purchase limit mode</value>
+  </data>
+  <data name="LimitModeCountOnly" xml:space="preserve">
+    <value>Count limit only</value>
+  </data>
+  <data name="LimitModeErrorTitle" xml:space="preserve">
+    <value>Failed to load settings</value>
+  </data>
+  <data name="LimitModeLastUpdated" xml:space="preserve">
+    <value>Last updated: {0}</value>
+  </data>
+  <data name="LimitModeLoadError" xml:space="preserve">
+    <value>Failed to load system settings. Please try again.</value>
+  </data>
+  <data name="LimitModeLoadingText" xml:space="preserve">
+    <value>Loading settings…</value>
+  </data>
+  <data name="LimitModeRetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="LimitModeSalaryOnly" xml:space="preserve">
+    <value>Salary budget only</value>
+  </data>
+  <data name="LimitModeSaveButton" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="LimitModeSaveError" xml:space="preserve">
+    <value>Failed to update the limit mode. Please try again.</value>
+  </data>
+  <data name="LimitModeSaveSuccess" xml:space="preserve">
+    <value>The system is now in &apos;{0}&apos; mode. New purchases immediately follow this mode.</value>
+  </data>
+  <data name="LimitModeSaveSuccessTitle" xml:space="preserve">
+    <value>Limit mode updated</value>
+  </data>
+  <data name="LoadingText" xml:space="preserve">
+    <value>Loading groups…</value>
+  </data>
+  <data name="PageHeading" xml:space="preserve">
+    <value>Customer groups</value>
+  </data>
+  <data name="RetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="StatusActiveBadge" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusAll" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="StatusInactiveBadge" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
 </root>

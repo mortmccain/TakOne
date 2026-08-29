@@ -55,6 +55,15 @@ public interface IProductRepository
     /// Returns a paginated list of products, optionally filtered by category.
     /// Used by the customer-facing shop view.
     /// </summary>
+    /// <param name="visibility">
+    /// CUSTOMER-VISIBILITY FILTER — when non-null, the repository applies
+    /// the in-stock + active-category-hierarchy predicates INSIDE the SQL
+    /// query so that database-level pagination is exact (full pages,
+    /// TotalCount matching what the caller can actually see). Null (the
+    /// default) returns everything — the admin/staff view. See
+    /// <see cref="ProductVisibilityFilter"/> for the semantics of null vs
+    /// empty id-sets.
+    /// </param>
     Task<PaginatedResult<Product>> GetPaginatedAsync
         (
         Guid? categoryId = null,
@@ -63,6 +72,7 @@ public interface IProductRepository
         string? searchTerm = null,
         int pageNumber = 1,
         int pageSize = 20,
+        ProductVisibilityFilter? visibility = null,
         CancellationToken cancellationToken = default
         );
 

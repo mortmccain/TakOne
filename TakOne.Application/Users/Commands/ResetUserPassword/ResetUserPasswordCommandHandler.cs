@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
 using TakOne.SharedKernel.Common;
 
@@ -30,6 +31,27 @@ public sealed class ResetUserPasswordCommandHandler
             logger.LogWarning("ResetUserPassword: unauthenticated call rejected.");
 
             return Result.Failure("Authentication required.");
+        }
+
+        // ------------------------------------------------------------------
+        // 0a. Role check (defense-in-depth).
+        //
+        // The command is decorated [RequireRoles(Roles.Admin)] and the
+        // AuthorizationMiddleware enforces it, but resetting ANY user's
+        // password is a full ACCOUNT-TAKEOVER primitive — the single most
+        // sensitive operation in the system. If this handler is ever
+        // reached through a path that bypasses the middleware (a future
+        // HTTP endpoint, a background job, a tampered circuit), an
+        // explicit in-handler check is the last line of defense.
+        // Mirrors the CreateStaffCommandHandler pattern.
+        // ------------------------------------------------------------------
+        if (!currentUser.IsInRole(Roles.Admin))
+        {
+            logger.LogWarning
+                ("ResetUserPassword: caller {ActorId} is not Admin. Only administrators may reset passwords. Rejected.",
+                currentUser.UserId);
+
+            return Result.Failure("Only administrators may reset user passwords.");
         }
 
         // ------------------------------------------------------------------

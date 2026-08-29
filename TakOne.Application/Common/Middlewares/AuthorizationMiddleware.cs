@@ -1,14 +1,13 @@
-﻿using System.Reflection;
+using System.Reflection;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Errors;
 using TakOne.Application.Common.Interfaces;
-using TakOne.SharedKernel.Common;
 using Wolverine;
 
 namespace TakOne.Application.Common.Middlewares;
 
 /// <summary>
-/// Wolverine middleware that runs BEFORE each command handler. Enforces
+/// Wolverine middleware that runs BEFORE each message handler. Enforces
 /// the authorization policy declared on the message type via
 /// <see cref="RequireRolesAttribute"/>,
 /// <see cref="RequireAuthenticationAttribute"/>, or
@@ -16,12 +15,9 @@ namespace TakOne.Application.Common.Middlewares;
 ///
 /// FAIL-CLOSED POLICY (Issue #08):
 ///   If a command/query has NONE of the three attributes, the middleware
-///   REJECTS it with a <see cref="Result"/> failure. This is the inverted
-///   policy from the original implementation (which was fail-OPEN —
-///   commands without the attribute skipped the check entirely). The
-///   <see cref="AuthorizationPolicyVerifier"/> runs at startup to catch
-///   missing attributes at app-launch time, but this runtime check is the
-///   defense-in-depth backstop.
+///   REJECTS it. The <see cref="AuthorizationPolicyVerifier"/> runs at
+///   startup to catch missing attributes at app-launch time, but this
+///   runtime check is the defense-in-depth backstop.
 ///
 /// THREE POLICIES:
 ///   <list type="bullet">
@@ -38,35 +34,58 @@ namespace TakOne.Application.Common.Middlewares;
 ///   </list>
 /// </summary>
 /// <remarks>
-/// WOLVERINE MIDDLEWARE PARAMETER CONVENTION (CRITICAL):
-///   The <c>Before</c> method's parameter MUST be <c>Envelope envelope</c>
-///   (or a concrete message type, or <c>CancellationToken</c>, or services
-///   from DI). It MUST NOT be <c>object message</c>.
+/// <para>
+/// <b>ENFORCEMENT MECHANISM — THROW, NOT RETURN (CRITICAL):</b>
+/// </para>
+/// <para>
+/// Denials THROW <see cref="MessageAuthorizationException"/>. This mirrors
+/// Wolverine's own FluentValidation integration (whose failure action throws
+/// <c>ValidationException</c>) and is the only mechanism that reliably stops
+/// the handler: a <c>Before</c> method returning <c>object?</c>/<c>Result</c>
+/// does NOT short-circuit the generated handler chain in Wolverine 6.x
+/// unless the exact return type is registered via <c>UseResultType&lt;T&gt;</c>,
+/// and even a registered result type short-circuit returns <c>null</c> to
+/// <c>InvokeAsync&lt;Result&lt;T&gt;&gt;</c> callers (an NRE in every page).
+/// The thrown exception propagates to the dispatching page's existing
+/// try/catch, exactly like validation failures.
+/// </para>
+/// <para>
+/// <b>DOMAIN EVENTS ARE EXEMPT:</b>
+/// Wolverine applies middleware policies to EVERY handler chain, including
+/// domain-event handlers (NotifyOn*, broadcast fanout, …). Domain events are
+/// raised by aggregates inside trusted handlers — they have no user context
+/// and never carry the three attributes. Running the fail-closed check on
+/// them would break ALL notification fanout, so messages whose type name
+/// ends with "DomainEvent" (the project's naming convention for events) are
+/// skipped up-front. The same convention heuristic is used by
+/// <see cref="AuthorizationPolicyVerifier"/> for Command/Query discovery.
+/// </para>
+/// <para>
+/// <b>WOLVERINE MIDDLEWARE PARAMETER CONVENTION (CRITICAL):</b>
+/// The <c>Before</c> method's parameter MUST be <c>Envelope envelope</c>
+/// (or a concrete message type, or <c>CancellationToken</c>, or services
+/// from DI). It MUST NOT be <c>object message</c>.
 ///
-///   If you use <c>object message</c>, Wolverine 6.x's code generator gets
-///   confused and generates broken code:
+/// If you use <c>object message</c>, Wolverine 6.x's code generator gets
+/// confused and generates broken code:
 ///
-///     <code>
-///       var result_of_Before = authorizationMiddleware.Before(result_of_Before);
-///     </code>
+///   <code>
+///     var result_of_Before = authorizationMiddleware.Before(result_of_Before);
+///   </code>
 ///
-///   It passes the <c>result_of_Before</c> variable (which is being declared
-///   on this very line) as the <c>message</c> argument -- a circular
-///   reference. The generated code fails to compile with:
+/// It passes the <c>result_of_Before</c> variable (which is being declared
+/// on this very line) as the <c>message</c> argument -- a circular
+/// reference. The generated code fails to compile with:
 ///
-///     <c>CS0841: Cannot use local variable 'result_of_Before' before it is
-///     declared</c>
+///   <c>CS0841: Cannot use local variable 'result_of_Before' before it is
+///   declared</c>
 ///
-///   This is because Wolverine treats the return value of <c>Before</c> as
-///   something to "chain" to the next middleware, and when the parameter is
-///   <c>object</c> it can't infer a concrete message variable to pass -- so
-///   it falls back to the result variable.
-///
-///   Using <c>Envelope envelope</c> (the same pattern as
-///   <see cref="LoggingMiddleware"/> and <see cref="PerformanceMiddleware"/>)
-///   gives Wolverine a concrete, well-known parameter to pass
-///   (<c>context.Envelope</c>), and we read the message from
-///   <c>envelope.Message</c> inside the method.
+/// Using <c>Envelope envelope</c> (the same pattern as
+/// <see cref="LoggingMiddleware"/> and <see cref="PerformanceMiddleware"/>)
+/// gives Wolverine a concrete, well-known parameter to pass
+/// (<c>context.Envelope</c>), and we read the message from
+/// <c>envelope.Message</c> inside the method.
+/// </para>
 /// </remarks>
 public class AuthorizationMiddleware
 {
@@ -79,25 +98,29 @@ public class AuthorizationMiddleware
 
     /// <summary>
     /// Wolverine convention: a method named <c>Before</c> (or
-    /// <c>BeforeAsync</c>) runs before the handler. Returning a non-null
-    /// value short-circuits the pipeline and that value becomes the
-    /// handler's return value.
+    /// <c>BeforeAsync</c>) runs before the handler. A denial throws
+    /// <see cref="MessageAuthorizationException"/> (see the class remarks
+    /// for why throwing — rather than returning — is the only reliable
+    /// short-circuit); returning normally continues to the handler.
     /// </summary>
     /// <param name="envelope">
     /// The Wolverine envelope containing the message being handled. We read
     /// <c>envelope.Message</c> to get the command/query object.
     /// </param>
-    /// <returns>
-    /// <c>null</c> to continue to the handler, or a
-    /// <see cref="Result"/> failure to short-circuit.
-    /// </returns>
-    public object? Before(Envelope envelope)
+    public void Before(Envelope envelope)
     {
         var message = envelope.Message;
         if (message is null)
-            return null; // Nothing to authorize -- let the handler deal with it.
+            return; // Nothing to authorize -- let the handler deal with it.
 
         var messageType = message.GetType();
+
+        // Domain events are raised by aggregates inside already-authorized
+        // handlers and never carry user-auth attributes. They are exempt.
+        // See the class remarks (a naive fail-closed check here would break
+        // every notification fanout).
+        if (messageType.Name.EndsWith("DomainEvent", StringComparison.Ordinal))
+            return;
 
         var requireRolesAttr = messageType.GetCustomAttribute<RequireRolesAttribute>();
         var requireAuthAttr = messageType.GetCustomAttribute<RequireAuthenticationAttribute>();
@@ -121,7 +144,7 @@ public class AuthorizationMiddleware
             // code (AuthorizationMiddleware_PolicyMissing) maps to this
             // file:line in the developer reference PDF; the user sees
             // "An unexpected error occurred. Error code: 27JSF84".
-            return Result.Failure(
+            throw new MessageAuthorizationException(
                 $"UE|{UnexpectedErrorCodes.AuthorizationMiddleware_PolicyMissing}");
         }
 
@@ -135,7 +158,7 @@ public class AuthorizationMiddleware
         // --------------------------------------------------------------
         if (requireSystemInternalAttr is not null)
         {
-            return null; // Trusted system caller — continue to the handler.
+            return; // Trusted system caller — continue to the handler.
         }
 
         // --------------------------------------------------------------
@@ -144,12 +167,12 @@ public class AuthorizationMiddleware
         // authenticated current user.
         // --------------------------------------------------------------
         if (!_currentUser.IsAuthenticated)
-            return Result.Failure("Authentication required.");
+            throw new MessageAuthorizationException("Authentication required.");
 
         // [RequireAuthentication] only checks authentication (already done
         // above) — no role check needed.
         if (requireAuthAttr is not null && requireRolesAttr is null)
-            return null; // Authenticated — continue to the handler.
+            return; // Authenticated — continue to the handler.
 
         // [RequireRoles] checks that the user is in AT LEAST ONE of the
         // required roles.
@@ -158,12 +181,12 @@ public class AuthorizationMiddleware
             bool allowed = requireRolesAttr.Roles.Any(r => _currentUser.IsInRole(r));
             if (!allowed)
             {
-                return Result.Failure(
+                throw new MessageAuthorizationException(
                     $"You do not have permission to perform this action. " +
                     $"Required role(s): {string.Join(", ", requireRolesAttr.Roles)}.");
             }
         }
 
-        return null; // Continue to the handler.
+        // Continue to the handler.
     }
 }

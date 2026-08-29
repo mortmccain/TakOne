@@ -115,15 +115,21 @@ public sealed class CreateSaleCommandHandler
                 $"User '{command.CustomerWorkerId}' is not a customer and cannot be the customer of a sale.");
         }
 
-        // If the CALLER is a Customer (non-staff), they may only create
-        // a sale for THEMSELVES. Staff (Employee/Manager/Admin) may create
-        // sales on behalf of any customer. This closes the impersonation
-        // hole: a Customer can no longer pass another customer's WorkerId
-        // to buy on their behalf (which would bypass the caller's own
-        // purchase limits and salary budget).
-        var callerIsCustomer = currentUser.IsInRole(Roles.Customer);
+        // If the CALLER is a pure Customer (no staff role), they may only
+        // create a sale for THEMSELVES. Staff (Employee/Manager/Admin —
+        // including staff who ALSO hold the Customer role to buy on their
+        // own behalf, see CreateStaffCommandValidator) may create sales on
+        // behalf of any customer. This closes the impersonation hole: a
+        // pure Customer can no longer pass another customer's WorkerId to
+        // buy on their behalf (which would bypass the caller's own
+        // purchase limits and salary budget). Customer+staff callers keep
+        // their on-behalf capability — they are staff first, buyers second.
+        var callerIsPureCustomer = currentUser.IsInRole(Roles.Customer) &&
+                                   !currentUser.IsInRole(Roles.Admin) &&
+                                   !currentUser.IsInRole(Roles.Manager) &&
+                                   !currentUser.IsInRole(Roles.Employee);
 
-        if (callerIsCustomer && customer.Id != currentUser.UserId)
+        if (callerIsPureCustomer && customer.Id != currentUser.UserId)
         {
             logger.LogWarning(
                 "CreateSale: Customer {CallerId} attempted to create a sale for a DIFFERENT " +

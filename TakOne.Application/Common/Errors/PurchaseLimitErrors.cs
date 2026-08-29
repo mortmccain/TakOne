@@ -1,4 +1,6 @@
-﻿namespace TakOne.Application.Common.Errors;
+﻿using System.Globalization;
+
+namespace TakOne.Application.Common.Errors;
 
 /// <summary>
 /// Produces and parses culture-neutral error strings for the
@@ -54,7 +56,9 @@ public static class PurchaseLimitErrors
     /// The UI layer localizes this into the user's language.
     /// </summary>
     public static string Format(string productName, int limit)
-        => $"{Prefix}{productName}|{limit}";
+        // InvariantCulture — see SalaryBudgetExceededErrors.Format for the
+        // rationale (culture-neutral wire format; fa-IR renders Persian digits).
+        => $"{Prefix}{productName}|{limit.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>
     /// Tries to parse a purchase-limit-exceeded error string back into
@@ -83,6 +87,6 @@ public static class PurchaseLimitErrors
         if (i < 0) return false;
 
         productName = rest[..i];
-        return int.TryParse(rest[(i + 1)..], out limit);
+        return int.TryParse(rest[(i + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out limit);
     }
 }

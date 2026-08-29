@@ -64,34 +64,63 @@ window.takMobile = (function () {
     ];
 
     function redirect() {
-        if (!isMobile()) return;
-
         var path = window.location.pathname;
 
-        // Exact match (e.g. /Products → /m/Products)
-        var mobilePath = pcToMobile[path];
-        if (mobilePath) {
-            window.location.href = mobilePath;
-            return;
-        }
-
-        // Prefix match (e.g. /Sales/abc-123 → /m/Sales/abc-123)
-        for (var i = 0; i < pcToMobilePrefixes.length; i++) {
-            var entry = pcToMobilePrefixes[i];
-            if (path.indexOf(entry.pc) === 0) {
-                var rest = path.substring(entry.pc.length - 1); // keep leading slash
-                window.location.href = entry.mobile.substring(0, entry.mobile.length - 1) + rest + (window.location.search || '');
+        if (isMobile()) {
+            // Exact match (e.g. /Products → /m/Products)
+            var mobilePath = pcToMobile[path];
+            if (mobilePath) {
+                window.location.href = mobilePath;
                 return;
             }
+
+            // Prefix match (e.g. /Sales/abc-123 → /m/Sales/abc-123)
+            for (var i = 0; i < pcToMobilePrefixes.length; i++) {
+                var entry = pcToMobilePrefixes[i];
+                if (path.indexOf(entry.pc) === 0) {
+                    var rest = path.substring(entry.pc.length - 1); // keep leading slash
+                    window.location.href = entry.mobile.substring(0, entry.mobile.length - 1) + rest + (window.location.search || '');
+                    return;
+                }
+            }
+
+            // Query-string variants of the exact match (rare but possible)
+            var basePath = path.split('?')[0];
+            mobilePath = pcToMobile[basePath];
+            if (mobilePath) {
+                var query = window.location.search || '';
+                window.location.href = mobilePath + query;
+                return;
+            }
+            return;
         }
 
-        // Query-string variants of the exact match (rare but possible)
-        var basePath = path.split('?')[0];
-        mobilePath = pcToMobile[basePath];
-        if (mobilePath) {
-            var query = window.location.search || '';
-            window.location.href = mobilePath + query;
+        // DESKTOP reverse redirect: a desktop user who lands on a mobile
+        // route (bookmark, shared link, window resized wide) is sent back
+        // to the PC equivalent — the behavior documented in the header
+        // comment but previously not implemented (the mobileToPc map was
+        // computed and then discarded). This uses the UA-based mobile
+        // check only for the reverse direction so a desktop user with a
+        // temporarily narrow window isn't ping-ponged between shells.
+        var isMobileUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+        if (isMobileUA) return;
+
+        var pcPath = mobileToPc[path];
+        if (pcPath) {
+            window.location.href = pcPath + (window.location.search || '');
             return;
+        }
+
+        // Prefix match for mobile detail routes (e.g. /m/Sales/abc-123 →
+        // /Sales/abc-123). Built from the same prefix table so the two
+        // directions can never drift apart.
+        for (var j = 0; j < pcToMobilePrefixes.length; j++) {
+            var e = pcToMobilePrefixes[j];
+            if (path.indexOf(e.mobile) === 0) {
+                var tail = path.substring(e.mobile.length - 1); // keep leading slash
+                window.location.href = e.pc.substring(0, e.pc.length - 1) + tail + (window.location.search || '');
+                return;
+            }
         }
     }
 

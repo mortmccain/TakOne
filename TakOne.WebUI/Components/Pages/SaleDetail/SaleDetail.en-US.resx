@@ -247,6 +247,9 @@
   <data name="CategoryDeactivated" xml:space="preserve">
     <value>'{0}' is no longer available for purchase. Remove it from the order or contact an administrator.</value>
   </data>
+  <data name="ProductMissing" xml:space="preserve">
+    <value>The product &apos;{0}&apos; no longer exists (it was removed after this order was created). Remove the affected context and contact an administrator.</value>
+  </data>
   <!-- PurchaseLimitExceeded — {0} = product name, {1} = per-customer limit -->
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value>
@@ -257,5 +260,8 @@
        message. -->
   <data name="NoCustomerGroup" xml:space="preserve">
     <value>This customer is not configured for purchases. Assign them to a customer group before adding items.</value>
+  </data>
+  <data name="DraftPseudoIdTooltip" xml:space="preserve">
+    <value>Draft orders have no permanent number yet — one is assigned when the order is submitted.</value>
   </data>
 </root>

@@ -14,24 +14,33 @@ namespace TakOne.Application.Tests.Common.Middlewares;
 ///
 /// COVERAGE APPROACH:
 ///   The middleware is a Wolverine "Before" handler that takes an
-///   <see cref="Envelope"/> and returns either null (continue) or a
-///   <see cref="TakOne.SharedKernel.Common.Result"/> failure (short-circuit).
+///   <see cref="Envelope"/> and either returns normally (continue to the
+///   handler) or THROWS <see cref="MessageAuthorizationException"/>
+///   (deny — fail-closed). Throwing is the enforcement mechanism used by
+///   Wolverine's own FluentValidation middleware (its failure action throws
+///   ValidationException): a non-null return from Before is silently ignored
+///   by Wolverine 6.x unless the exact result type is registered, so throwing
+///   is the only reliable way to stop the handler. See the middleware class
+///   remarks for the full rationale.
+///
 ///   We mock <see cref="ICurrentUserService"/> with NSubstitute and pass
 ///   synthetic message types decorated (or not) with the three authorization
 ///   attributes. Each test exercises ONE branch of the fail-closed decision
 ///   tree.
 ///
 /// BRANCHES TESTED:
-///   • null message → null (nothing to authorize)
-///   • message with NO auth attributes → fail-closed with UE|PolicyMissing
-///   • [RequireSystemInternal] alone → bypass (null)
+///   • null message → returns normally (nothing to authorize)
+///   • DOMAIN EVENT (name ends with "DomainEvent") → exempt, returns normally
+///     (even with no attributes and an unauthenticated user)
+///   • message with NO auth attributes → throws with UE|PolicyMissing code
+///   • [RequireSystemInternal] alone → bypass (returns normally)
 ///   • [RequireSystemInternal] + [RequireAuthentication] together → bypass wins
-///   • [RequireAuthentication] + !IsAuthenticated → "Authentication required."
-///   • [RequireAuthentication] + IsAuthenticated → null
-///   • [RequireRoles(Admin)] + IsInRole(Admin)=true → null
-///   • [RequireRoles(Admin)] + IsInRole(Admin)=false → permission denied
-///   • [RequireRoles(Admin,Manager)] + IsInRole(Manager)=true → null
-///   • [RequireRoles(Admin,Manager)] + none match → "Required role(s): Admin, Manager."
+///   • [RequireAuthentication] + !IsAuthenticated → throws "Authentication required."
+///   • [RequireAuthentication] + IsAuthenticated → returns normally
+///   • [RequireRoles(Admin)] + IsInRole(Admin)=true → returns normally
+///   • [RequireRoles(Admin)] + IsInRole(Admin)=false → throws permission denied
+///   • [RequireRoles(Admin,Manager)] + IsInRole(Manager)=true → returns normally
+///   • [RequireRoles(Admin,Manager)] + none match → throws "Required role(s): Admin, Manager."
 ///   • [RequireRoles]+[RequireAuthentication] combo → role check runs
 ///   • unauthenticated user with [RequireRoles] → "Authentication required." (auth check runs BEFORE role check)
 /// </summary>
@@ -41,6 +50,12 @@ public class AuthorizationMiddlewareTests
 
     // No attributes at all — should trip the fail-closed branch.
     private sealed class NoAttributeCommand;
+
+    // A domain event — raised by aggregates, never user-dispatched, and by
+    // convention never carries the auth attributes. Must be EXEMPT even when
+    // the current user is anonymous (the fail-closed check must not break
+    // notification fanout).
+    private sealed record SaleSubmittedDomainEvent(Guid SaleId, string? SaleNumber);
 
     // System-internal: bypasses auth entirely.
     [RequireSystemInternal]
@@ -92,7 +107,7 @@ public class AuthorizationMiddlewareTests
     // ── Null message ─────────────────────────────────────────────────
 
     [Fact]
-    public void Before_WithNullMessage_ReturnsNull()
+    public void Before_WithNullMessage_DoesNotThrow()
     {
         // Arrange
         // An envelope with no message is a degenerate case — the middleware
@@ -102,10 +117,32 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(null);
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
+    }
+
+    // ── Domain events are exempt ─────────────────────────────────────
+
+    // Domain events are raised INSIDE already-authorized handlers by
+    // aggregates. They carry no auth attributes and have no user context.
+    // The fail-closed branch must NOT fire for them — otherwise every
+    // notification fanout handler would be rejected and the notification
+    // system would silently die.
+    [Fact]
+    public void Before_WithDomainEvent_IsExemptEvenForAnonymousCaller()
+    {
+        // Arrange
+        var currentUser = BuildCurrentUser(isAuthenticated: false);
+        var sut = new AuthorizationMiddleware(currentUser);
+        var envelope = BuildEnvelope(new SaleSubmittedDomainEvent(Guid.NewGuid(), "INT-1404-00000001"));
+
+        // Act
+        var act = () => sut.Before(envelope);
+
+        // Assert
+        act.Should().NotThrow();
     }
 
     // ── Fail-closed ──────────────────────────────────────────────────
@@ -114,7 +151,7 @@ public class AuthorizationMiddlewareTests
     // the fail-closed defense — a new command that forgets the attribute
     // never silently bypasses auth.
     [Fact]
-    public void Before_WithMessageMissingAllAttributes_ReturnsFailureWithPolicyMissingCode()
+    public void Before_WithMessageMissingAllAttributes_ThrowsWithPolicyMissingCode()
     {
         // Arrange
         var currentUser = BuildCurrentUser(isAuthenticated: true, Roles.Admin);
@@ -122,36 +159,18 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new NoAttributeCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().NotBeNull();
-        result.Should().BeOfType<TakOne.SharedKernel.Common.Result>()
-            .Which.Error.Should().Be($"UE|{UnexpectedErrorCodes.AuthorizationMiddleware_PolicyMissing}");
-    }
-
-    [Fact]
-    public void Before_WithMessageMissingAllAttributes_ReturnsFailureResult()
-    {
-        // Arrange
-        var currentUser = BuildCurrentUser(isAuthenticated: true, Roles.Admin);
-        var sut = new AuthorizationMiddleware(currentUser);
-        var envelope = BuildEnvelope(new NoAttributeCommand());
-
-        // Act
-        var result = sut.Before(envelope);
-
-        // Assert
-        // Result is a failure with the wire-format UE| prefix.
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
+        // Wire-format UE| prefix — recognized by ErrorDisplayService.Localize.
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage($"UE|{UnexpectedErrorCodes.AuthorizationMiddleware_PolicyMissing}");
     }
 
     // ── System-internal bypass ───────────────────────────────────────
 
     [Fact]
-    public void Before_WithRequireSystemInternal_ReturnsNull()
+    public void Before_WithRequireSystemInternal_DoesNotThrow()
     {
         // Arrange
         // System-internal messages (e.g. EmitAppUpdateBroadcastCommand) are
@@ -162,10 +181,10 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new SystemInternalCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     // When BOTH [RequireSystemInternal] AND [RequireAuthentication] are
@@ -183,16 +202,16 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new SystemInternalAndAuthCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     // ── RequireAuthentication ─────────────────────────────────────────
 
     [Fact]
-    public void Before_WithRequireAuthenticationAndUnauthenticated_ReturnsAuthenticationRequired()
+    public void Before_WithRequireAuthenticationAndUnauthenticated_ThrowsAuthenticationRequired()
     {
         // Arrange
         var currentUser = BuildCurrentUser(isAuthenticated: false);
@@ -200,17 +219,15 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AuthenticatedCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
-        typed.Error.Should().Be("Authentication required.");
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage("Authentication required.");
     }
 
     [Fact]
-    public void Before_WithRequireAuthenticationAndAuthenticated_ReturnsNull()
+    public void Before_WithRequireAuthenticationAndAuthenticated_DoesNotThrow()
     {
         // Arrange
         // Authenticated user with NO role restriction — passes through to
@@ -220,16 +237,16 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AuthenticatedCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     // ── RequireRoles ──────────────────────────────────────────────────
 
     [Fact]
-    public void Before_WithRequireRolesAndUserInRole_ReturnsNull()
+    public void Before_WithRequireRolesAndUserInRole_DoesNotThrow()
     {
         // Arrange
         // The user has the required Admin role — should pass.
@@ -238,14 +255,14 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AdminCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Before_WithRequireRolesAndUserNotInRole_ReturnsPermissionDenied()
+    public void Before_WithRequireRolesAndUserNotInRole_ThrowsPermissionDenied()
     {
         // Arrange
         // The user is authenticated but does not have Admin — should be
@@ -255,18 +272,16 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AdminCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
-        typed.Error.Should().Be(
-            "You do not have permission to perform this action. Required role(s): Admin.");
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage(
+                "You do not have permission to perform this action. Required role(s): Admin.");
     }
 
     [Fact]
-    public void Before_WithRequireRolesAndUserInSecondRole_ReturnsNull()
+    public void Before_WithRequireRolesAndUserInSecondRole_DoesNotThrow()
     {
         // Arrange
         // The user has Manager (not Admin) — for [RequireRoles(Admin, Manager)],
@@ -276,14 +291,14 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AdminOrManagerCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     [Fact]
-    public void Before_WithRequireRolesAndUserInNoRoles_ReturnsPermissionDeniedWithCommaList()
+    public void Before_WithRequireRolesAndUserInNoRoles_ThrowsPermissionDeniedWithCommaList()
     {
         // Arrange
         // The user has neither Admin nor Manager — should be rejected with
@@ -293,20 +308,18 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AdminOrManagerCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
-        typed.Error.Should().Be(
-            "You do not have permission to perform this action. Required role(s): Admin, Manager.");
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage(
+                "You do not have permission to perform this action. Required role(s): Admin, Manager.");
     }
 
     // ── Combo: [RequireAuthentication] + [RequireRoles] ─────────────
 
     [Fact]
-    public void Before_WithAuthAndRolesAndUserInRole_ReturnsNull()
+    public void Before_WithAuthAndRolesAndUserInRole_DoesNotThrow()
     {
         // Arrange
         // Both attributes present. The user is authenticated AND in the
@@ -316,19 +329,19 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AuthAndRolesCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        result.Should().BeNull();
+        act.Should().NotThrow();
     }
 
     // When [RequireAuthentication] + [RequireRoles] is present and the user
     // is UNAUTHENTICATED, the auth check fires FIRST (before the role check).
-    // The error returned is "Authentication required." — NOT the
+    // The error thrown is "Authentication required." — NOT the
     // permission-denied message. This ordering is defense-in-depth: don't
     // leak which roles exist to anonymous callers.
     [Fact]
-    public void Before_WithAuthAndRolesAndUnauthenticated_ReturnsAuthenticationRequired()
+    public void Before_WithAuthAndRolesAndUnauthenticated_ThrowsAuthenticationRequired()
     {
         // Arrange
         var currentUser = BuildCurrentUser(isAuthenticated: false);
@@ -336,17 +349,15 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AuthAndRolesCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
-        typed.Error.Should().Be("Authentication required.");
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage("Authentication required.");
     }
 
     [Fact]
-    public void Before_WithAuthAndRolesAndAuthenticatedButNotInRole_ReturnsPermissionDenied()
+    public void Before_WithAuthAndRolesAndAuthenticatedButNotInRole_ThrowsPermissionDenied()
     {
         // Arrange
         // Authenticated but missing the Admin role — the role check fires
@@ -356,13 +367,11 @@ public class AuthorizationMiddlewareTests
         var envelope = BuildEnvelope(new AuthAndRolesCommand());
 
         // Act
-        var result = sut.Before(envelope);
+        var act = () => sut.Before(envelope);
 
         // Assert
-        var typed = result as TakOne.SharedKernel.Common.Result;
-        typed.Should().NotBeNull();
-        typed!.IsSuccess.Should().BeFalse();
-        typed.Error.Should().Be(
-            "You do not have permission to perform this action. Required role(s): Admin.");
+        act.Should().Throw<MessageAuthorizationException>()
+            .WithMessage(
+                "You do not have permission to perform this action. Required role(s): Admin.");
     }
 }
