@@ -4,7 +4,6 @@ using NSubstitute;
 using TakOne.Application.Categories.Commands.SubSubCategoryCommands.DeactivateSubSubCategory;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Categories.Entities;
-using TakOne.SharedKernel.Common;
 using TakOne.Testing;
 using Xunit;
 

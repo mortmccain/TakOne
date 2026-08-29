@@ -191,7 +191,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.HasKey("Id");
 
@@ -265,7 +266,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -310,7 +312,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -361,7 +364,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<int>("Scope")
                         .HasColumnType("int");
@@ -431,7 +435,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<string>("SaleDisplayNumber")
                         .HasMaxLength(64)
@@ -500,7 +505,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<int>("StockQuantity")
                         .HasColumnType("int");
@@ -591,7 +597,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -722,7 +729,8 @@ namespace TakOne.Infrastructure.Migrations
                         .IsConcurrencyToken()
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<string>("WorkerId")
                         .IsRequired()

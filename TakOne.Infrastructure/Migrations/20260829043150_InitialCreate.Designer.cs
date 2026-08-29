@@ -13,8 +13,8 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260826121015_AddNotifications")]
-    partial class AddNotifications
+    [Migration("20260829043150_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -190,6 +190,13 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
+
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
@@ -251,8 +258,19 @@ namespace TakOne.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("LastKnownAppVersion")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<int>("LimitMode")
                         .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -293,6 +311,13 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -322,6 +347,64 @@ namespace TakOne.Infrastructure.Migrations
                     b.ToTable("CustomerGroups", (string)null);
                 });
 
+            modelBuilder.Entity("TakOne.Domain.Notifications.Entities.BroadcastNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("FanoutKind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("RecipientCount")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SentAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("SentByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("TargetGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TargetRoleName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("TargetUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FanoutKind")
+                        .HasDatabaseName("IX_BroadcastNotifications_FanoutKind");
+
+                    b.HasIndex("SentAtUtc")
+                        .HasDatabaseName("IX_BroadcastNotifications_SentAtUtc");
+
+                    b.ToTable("BroadcastNotifications", (string)null);
+                });
+
             modelBuilder.Entity("TakOne.Domain.Notifications.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -331,11 +414,18 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid?>("BroadcastId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("Kind")
                         .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<DateTime?>("ReadAtUtc")
                         .HasColumnType("datetime2");
@@ -344,6 +434,13 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
+
                     b.Property<string>("SaleDisplayNumber")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -351,10 +448,18 @@ namespace TakOne.Infrastructure.Migrations
                     b.Property<Guid?>("SaleId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Title")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BroadcastId")
+                        .HasDatabaseName("IX_Notifications_BroadcastId")
+                        .HasFilter("[BroadcastId] IS NOT NULL");
 
                     b.HasIndex("UserId", "CreatedAtUtc")
                         .HasDatabaseName("IX_Notifications_UserId_CreatedAtUtc");
@@ -385,6 +490,11 @@ namespace TakOne.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -393,6 +503,13 @@ namespace TakOne.Infrastructure.Migrations
                     b.Property<string>("PictureUrl")
                         .HasMaxLength(2147483647)
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<int>("StockQuantity")
                         .HasColumnType("int");
@@ -423,7 +540,8 @@ namespace TakOne.Infrastructure.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.HasIndex("Name");
+                    b.HasIndex("Name")
+                        .IsUnique();
 
                     b.HasIndex("SubCategoryId");
 
@@ -477,6 +595,13 @@ namespace TakOne.Infrastructure.Migrations
 
                     b.Property<Guid>("InvoicedByUserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -532,7 +657,7 @@ namespace TakOne.Infrastructure.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("SaleId")
+                    b.Property<Guid>("SaleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "UnitPrice", "TakOne.Domain.Sales.Entities.SaleLineItem.UnitPrice#Money", b1 =>
@@ -556,8 +681,7 @@ namespace TakOne.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.HasIndex("SaleId", "LineNumber")
-                        .IsUnique()
-                        .HasFilter("[SaleId] IS NOT NULL");
+                        .IsUnique();
 
                     b.ToTable("SaleLineItems", (string)null);
                 });
@@ -603,6 +727,13 @@ namespace TakOne.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasDefaultValue(new byte[0]);
 
                     b.Property<string>("WorkerId")
                         .IsRequired()
@@ -842,7 +973,8 @@ namespace TakOne.Infrastructure.Migrations
                     b.HasOne("TakOne.Domain.Sales.Entities.Sale", null)
                         .WithMany("LineItems")
                         .HasForeignKey("SaleId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TakOne.Domain.Users.User", b =>

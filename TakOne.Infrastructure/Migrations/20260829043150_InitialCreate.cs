@@ -8,25 +8,6 @@ namespace TakOne.Infrastructure.Migrations
     /// <inheritdoc />
     public partial class InitialCreate : Migration
     {
-        // CA1861: extract constant column-name arrays to private static readonly
-        // fields so they are allocated once per type load (not once per migration
-        // apply call). Migrations run at most once per deployment, so the allocation
-        // saving is negligible — but the analyzer still fires because the migration
-        // apply methods are syntactically called repeatedly, so we centralize the
-        // arrays here to satisfy it cleanly rather than suppress the rule.
-        private static readonly string[] s_insertSystemSettingsColumns =
-            { "Id", "LimitMode", "UpdatedAt" };
-        private static readonly string[] s_ixProductPurchaseLimitsProductIdGroupId =
-            { "ProductId", "GroupId" };
-        private static readonly string[] s_ixSaleLineItemsSaleIdLineNumber =
-            { "SaleId", "LineNumber" };
-        private static readonly string[] s_ixSalesSaleNumberYearSequence =
-            { "SaleNumber_Year", "SaleNumber_Sequence" };
-        private static readonly string[] s_ixSubCategoriesCategoryIdName =
-            { "CategoryId", "Name" };
-        private static readonly string[] s_ixSubSubCategoriesSubCategoryIdName =
-            { "SubCategoryId", "Name" };
-
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -73,12 +54,35 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "BroadcastNotifications",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SentByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    SentAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Scope = table.Column<int>(type: "int", nullable: false),
+                    TargetRoleName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    TargetGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TargetUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Message = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
+                    FanoutKind = table.Column<int>(type: "int", nullable: false),
+                    RecipientCount = table.Column<int>(type: "int", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_BroadcastNotifications", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Categories",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false)
+                    IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -95,7 +99,8 @@ namespace TakOne.Infrastructure.Migrations
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Salary_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    Salary_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
+                    Salary_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -117,6 +122,29 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Notifications",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Kind = table.Column<int>(type: "int", nullable: false),
+                    SaleId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    SaleDisplayNumber = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    ActorName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    Reason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    Message = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    BroadcastId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    CreatedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    ReadAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Notifications", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Products",
                 columns: table => new
                 {
@@ -125,11 +153,13 @@ namespace TakOne.Infrastructure.Migrations
                     Description = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
                     PictureUrl = table.Column<string>(type: "nvarchar(max)", maxLength: 2147483647, nullable: true),
                     StockQuantity = table.Column<int>(type: "int", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     CategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SubCategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     SubSubCategoryId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Price_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    Price_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
+                    Price_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -158,7 +188,8 @@ namespace TakOne.Infrastructure.Migrations
                     CancelledAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CancellationReason = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Total_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    Total_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
+                    Total_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -184,7 +215,9 @@ namespace TakOne.Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     LimitMode = table.Column<int>(type: "int", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    LastKnownAppVersion = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -327,7 +360,8 @@ namespace TakOne.Infrastructure.Migrations
                     FullName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     GroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    Gender = table.Column<int>(type: "int", nullable: false, defaultValue: 0)
+                    Gender = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
                 },
                 constraints: table =>
                 {
@@ -376,7 +410,7 @@ namespace TakOne.Infrastructure.Migrations
                     ProductName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Quantity = table.Column<int>(type: "int", nullable: false),
                     LineNumber = table.Column<int>(type: "int", nullable: false),
-                    SaleId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    SaleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     UnitPrice_Amount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     UnitPrice_Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false)
                 },
@@ -413,8 +447,8 @@ namespace TakOne.Infrastructure.Migrations
 
             migrationBuilder.InsertData(
                 table: "SystemSettings",
-                columns: s_insertSystemSettingsColumns,
-                values: new object[] { new Guid("00000000-0000-0000-0000-000000000000"), 1, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc) });
+                columns: new[] { "Id", "LastKnownAppVersion", "LimitMode", "UpdatedAt" },
+                values: new object[] { new Guid("00000000-0000-0000-0000-000000000000"), null, 1, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc) });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AspNetRoleClaims_RoleId",
@@ -456,6 +490,16 @@ namespace TakOne.Infrastructure.Migrations
                 filter: "[NormalizedUserName] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
+                name: "IX_BroadcastNotifications_FanoutKind",
+                table: "BroadcastNotifications",
+                column: "FanoutKind");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_BroadcastNotifications_SentAtUtc",
+                table: "BroadcastNotifications",
+                column: "SentAtUtc");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Categories_Name",
                 table: "Categories",
                 column: "Name",
@@ -473,6 +517,30 @@ namespace TakOne.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_Notifications_BroadcastId",
+                table: "Notifications",
+                column: "BroadcastId",
+                filter: "[BroadcastId] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notifications_UserId_CreatedAtUtc",
+                table: "Notifications",
+                columns: new[] { "UserId", "CreatedAtUtc" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Notifications_UserId_ReadAtUtc_Unread",
+                table: "Notifications",
+                columns: new[] { "UserId", "ReadAtUtc" },
+                filter: "[ReadAtUtc] IS NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_Notifications_UserId_SaleId_Kind",
+                table: "Notifications",
+                columns: new[] { "UserId", "SaleId", "Kind" },
+                unique: true,
+                filter: "[SaleId] IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ProductPurchaseLimits_GroupId",
                 table: "ProductPurchaseLimits",
                 column: "GroupId");
@@ -480,7 +548,7 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_ProductPurchaseLimits_ProductId_GroupId",
                 table: "ProductPurchaseLimits",
-                columns: s_ixProductPurchaseLimitsProductIdGroupId,
+                columns: new[] { "ProductId", "GroupId" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -491,7 +559,8 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Products_Name",
                 table: "Products",
-                column: "Name");
+                column: "Name",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_SubCategoryId",
@@ -511,9 +580,8 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_SaleLineItems_SaleId_LineNumber",
                 table: "SaleLineItems",
-                columns: s_ixSaleLineItemsSaleIdLineNumber,
-                unique: true,
-                filter: "[SaleId] IS NOT NULL");
+                columns: new[] { "SaleId", "LineNumber" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Sales_CreatedAtUtc",
@@ -533,7 +601,7 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Sales_SaleNumber_Year_SaleNumber_Sequence",
                 table: "Sales",
-                columns: s_ixSalesSaleNumberYearSequence,
+                columns: new[] { "SaleNumber_Year", "SaleNumber_Sequence" },
                 unique: true,
                 filter: "[SaleNumber_Year] IS NOT NULL AND [SaleNumber_Sequence] IS NOT NULL");
 
@@ -551,13 +619,13 @@ namespace TakOne.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_SubCategories_CategoryId_Name",
                 table: "SubCategories",
-                columns: s_ixSubCategoriesCategoryIdName,
+                columns: new[] { "CategoryId", "Name" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_SubSubCategories_SubCategoryId_Name",
                 table: "SubSubCategories",
-                columns: s_ixSubSubCategoriesSubCategoryIdName,
+                columns: new[] { "SubCategoryId", "Name" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -602,7 +670,13 @@ namespace TakOne.Infrastructure.Migrations
                 name: "AspNetUserTokens");
 
             migrationBuilder.DropTable(
+                name: "BroadcastNotifications");
+
+            migrationBuilder.DropTable(
                 name: "DataProtectionKeys");
+
+            migrationBuilder.DropTable(
+                name: "Notifications");
 
             migrationBuilder.DropTable(
                 name: "ProductPurchaseLimits");
