@@ -24,6 +24,7 @@
 @using TakOne.Application.Notifications.Queries.GetUnreadNotificationCount
 @using TakOne.Application.Notifications.Commands.MarkNotificationAsRead
 @using TakOne.Application.Notifications.Commands.MarkAllNotificationsAsRead
+@using TakOne.Application.Notifications.Commands.DeleteNotification
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
@@ -81,6 +82,28 @@
         .notif-pagination-info { color: var(--rz-text-secondary-color); font-size: 0.85rem; }
         .notif-skeleton { display: flex; gap: 1rem; padding: 1rem 1.25rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-border-color); border-radius: 10px; }
         .notif-error { padding: 1.25rem; background: rgba(220,53,69,0.08); border: 1px solid rgba(220,53,69,0.3); border-radius: 10px; color: var(--rz-text-color); display: flex; flex-direction: column; gap: 0.75rem; }
+
+        /* ── Round 4: per-kind filter dropdown ── */
+        .notif-kind-filter { display: inline-flex; align-items: center; gap: 0.4rem; }
+        .notif-kind-label { font-size: 0.8rem; font-weight: 500; color: var(--rz-text-secondary-color); white-space: nowrap; }
+        .notif-kind-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--rz-border-color); border-radius: 8px; background: var(--rz-base-background-color); color: var(--rz-text-color); font: inherit; font-size: 0.8rem; font-weight: 500; padding: 0.45rem 1.6rem 0.45rem 0.7rem; cursor: pointer; outline: none; background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 6px center; }
+        [dir="rtl"] .notif-kind-select { padding: 0.45rem 0.7rem 0.45rem 1.6rem; background-position: left 6px center; }
+        .notif-kind-select:focus-visible { border-color: var(--rz-primary); box-shadow: 0 0 0 3px rgba(0,100,250,0.12); }
+        .notif-kind-select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        /* Round 4: per-notification dismiss — the row itself is a BUTTON
+           element, so the dismiss control is a span with role=button
+           (nested buttons are invalid HTML). Subtle by default; reveals
+           its hover state when the ROW is hovered or the control itself
+           is focused — and stays fully visible on touch-ish coarse
+           pointers, where there is no hover to reveal it. */
+        .notif-dismiss { flex-shrink: 0; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; color: var(--rz-text-secondary-color); cursor: pointer; opacity: 0.45; transition: all 0.15s ease; }
+        .notif-card:hover .notif-dismiss, .notif-dismiss:hover, .notif-dismiss:focus-visible { opacity: 1; }
+        .notif-dismiss:hover { background: rgba(220,53,69,0.1); color: var(--rz-danger, #dc3545); }
+        .notif-dismiss:focus-visible { outline: 2px solid var(--rz-primary); outline-offset: 1px; }
+        .notif-dismiss--busy { opacity: 0.2; pointer-events: none; }
+        @@media (pointer: coarse) { .notif-dismiss { opacity: 0.85; } }
+        @@media (prefers-reduced-motion: reduce) { .notif-dismiss { transition: none; } }
     </style>
 </HeadContent>
 
@@ -154,6 +177,26 @@
                     }
                 </button>
             </div>
+            @* Round 4 — per-kind filter: a themed native <select> listing
+               every NotificationKind (localized with the same Title_*
+               labels the feed rows use, so a kind means the same thing
+               in the filter and in the list). "All kinds" (null) is the
+               default. Changing it restarts at page 1 and re-queries —
+               the kind filter rides in SQL, so TotalPages stays honest. *@
+            <label class="notif-kind-filter">
+                <span class="notif-kind-label">@Loc["FilterKindLabel"]</span>
+                <select class="notif-kind-select"
+                        value="@(_filterKind?.ToString() ?? "")"
+                        @onchange="OnKindFilterChanged"
+                        disabled="@_isLoadingPage">
+                    <option value="">@Loc["FilterAllKinds"]</option>
+                    @foreach (var kind in Enum.GetValues<NotificationKind>())
+                    {
+                        <option value="@kind.ToString()">@GetKindLabel(kind)</option>
+                    }
+                </select>
+            </label>
+
             @if (_unreadCount > 0)
             {
                 <RadzenButton Text="@Loc["MarkAllRead"]"
@@ -193,6 +236,23 @@
                     {
                         <div class="notif-unread-dot" aria-label="@Loc["UnreadAriaLabel"]"></div>
                     }
+
+                    @* Round 4 — per-notification dismiss. The row itself is
+                       a <button> (the tap-to-open primary action), so the
+                       dismiss control is a span[role=button] — nested
+                       buttons are invalid HTML. stopPropagation keeps the
+                       row's tap handler out of the dismiss click; the
+                       keydown handler gives keyboard users Enter/Space. *@
+                    <span class="notif-dismiss @(n.Id == _dismissingId ? "notif-dismiss--busy" : "")"
+                          role="button"
+                          tabindex="0"
+                          title="@Loc["DismissTooltip"]"
+                          aria-label="@Loc["DismissTooltip"]"
+                          @onclick="() => DismissAsync(n)"
+                          @onclick:stopPropagation="true"
+                          @onkeydown="@(e => OnDismissKeyDown(e, n))">
+                        <RadzenIcon Icon="close" />
+                    </span>
                 </button>
             }
         </div>
@@ -230,6 +290,18 @@
     private bool _isMarkingAllRead;
     private string? _loadError;
 
+    /// <summary>
+    /// The active per-kind filter (Round 4). Null = all kinds.
+    /// </summary>
+    private NotificationKind? _filterKind;
+
+    /// <summary>
+    /// The id of the notification whose dismiss round trip is in flight
+    /// (drives the row's busy style; single-flight like the other
+    /// mutations on this page).
+    /// </summary>
+    private Guid? _dismissingId;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -265,7 +337,8 @@
             {
                 PageNumber = _pageNumber,
                 PageSize = 20,
-                UnreadOnly = _filterUnreadOnly
+                UnreadOnly = _filterUnreadOnly,
+                Kind = _filterKind
             };
 
             var page = await MessageBus.InvokeAsync<PaginatedResult<NotificationDto>>(query);
@@ -372,6 +445,103 @@
         // message are already displayed in the notification card. The
         // tap just dismisses (marks as read). Future enhancement could
         // link to a "broadcast detail" page via n.BroadcastId.
+    }
+
+    /// <summary>
+    /// The kind filter's change handler: parse the picked kind ("" = all),
+    /// restart at page 1, and reload.
+    /// </summary>
+    private async Task OnKindFilterChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        NotificationKind? kind = null;
+        if (!string.IsNullOrEmpty(raw) &&
+            Enum.TryParse<NotificationKind>(raw, ignoreCase: false, out var parsed))
+        {
+            kind = parsed;
+        }
+
+        if (_filterKind == kind) return;
+        _filterKind = kind;
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    /// <summary>
+    /// Localized label for one kind in the filter dropdown — reuses the
+    /// feed's Title_* wording so the filter and the rows agree on what
+    /// each kind is called.
+    /// </summary>
+    private string GetKindLabel(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["Title_Submitted"],
+        NotificationKind.SaleApproved => Loc["Title_Approved"],
+        NotificationKind.SaleInvoiced => Loc["Title_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["Title_Cancelled"],
+        NotificationKind.Broadcast => Loc["Title_Broadcast"],
+        NotificationKind.AppUpdate => Loc["Title_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["Title_GroupChanged"],
+        _ => Loc["Title_Unknown"]
+    };
+
+    /// <summary>
+    /// Keyboard support for the dismiss span (role=button): Enter or
+    /// Space dismisses; anything else is left to the browser (so Tab
+    /// still moves focus through the list normally).
+    /// </summary>
+    private async Task OnDismissKeyDown(KeyboardEventArgs e, NotificationDto n)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            await DismissAsync(n);
+        }
+    }
+
+    /// <summary>
+    /// Dismisses (hard-deletes) one notification: OPTIMISTIC removal from
+    /// the rendered list + the DeleteNotificationCommand round trip; on
+    /// failure the list is reloaded from the server (the persisted truth)
+    /// and a toast explains. Also refreshes the unread count — deleting
+    /// an UNREAD row must decrement the badge immediately.
+    /// </summary>
+    private async Task DismissAsync(NotificationDto n)
+    {
+        if (_dismissingId is not null) return;
+
+        _dismissingId = n.Id;
+        _notifications.RemoveAll(x => x.Id == n.Id);
+        if (n.IsUnread && _unreadCount > 0)
+        {
+            _unreadCount--;
+        }
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeleteNotificationCommand(n.Id));
+
+            if (!result.IsSuccess)
+            {
+                await Toast.Warning(Loc["Err_Dismiss"], summary: Loc["PageTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Warning(Loc["Err_Dismiss"], summary: Loc["PageTitle"]);
+        }
+        finally
+        {
+            _dismissingId = null;
+        }
+
+        // Reload from the server: restores truth after a failure, fixes
+        // TotalPages after the removal, and re-syncs the badge. When the
+        // last row of a non-first page was dismissed, step back a page
+        // first so the reload doesn't land on an empty page.
+        if (_notifications.Count == 0 && _pageNumber > 1)
+        {
+            _pageNumber--;
+        }
+        await LoadAsync();
     }
 
     private string GetTitle(NotificationDto n) => n.Kind switch

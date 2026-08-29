@@ -775,3 +775,55 @@
     padding: 2rem;
     font-size: 0.875rem;
 }
+
+/* ── KPI trend-delta chip (Round 4) ────────────────────────────────
+   A small ▲/▼/− pill rendered inline next to a KPI card's value.
+   Up = success (a sales dashboard: higher counts/revenue read as
+   "good"), Down = danger, Flat = secondary. Shared by the desktop
+   Dashboard + MobileDashboard (both use the tm-dash-kpi-* family).
+   RTL-safe: no directional properties; the chip lays out inline. */
+.tm-kpi-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    vertical-align: middle;
+    margin-inline-start: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: default; /* the tooltip carries the raw previous value */
+}
+
+.tm-kpi-delta svg {
+    width: 11px;
+    height: 11px;
+    flex: none;
+}
+
+.tm-kpi-delta--up {
+    color: var(--tm-success, #15803d);
+    background: color-mix(in srgb, var(--tm-success, #15803d) 12%, transparent);
+}
+
+.tm-kpi-delta--down {
+    color: var(--tm-danger, #b91c1c);
+    background: color-mix(in srgb, var(--tm-danger, #b91c1c) 12%, transparent);
+}
+
+.tm-kpi-delta--flat {
+    color: var(--tm-text-secondary, #6b7280);
+    background: color-mix(in srgb, var(--tm-text-secondary, #6b7280) 12%, transparent);
+}
+
+/* The chip shares the value line — on very narrow screens let it wrap
+   under the number instead of squeezing it. */
+@media (max-width: 380px) {
+    .tm-kpi-delta {
+        margin-inline-start: 0;
+        margin-top: 4px;
+    }
+}

@@ -40,4 +40,12 @@ public sealed class GetProductsPaginatedQuery
     /// callers regardless of what the client requested.
     /// </summary>
     public bool IncludeInactive { get; init; }
+
+    /// <summary>
+    /// Optional catalog sort (Round 4 — shop sorting). Null = the
+    /// default alphabetical-by-name order (the pre-Round-4 behavior);
+    /// see <see cref="ProductSortBy"/> for the available orders and why
+    /// "newest" is not among them.
+    /// </summary>
+    public ProductSortBy? SortBy { get; init; }
 }

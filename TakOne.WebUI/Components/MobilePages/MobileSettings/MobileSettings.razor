@@ -46,6 +46,10 @@
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Application.Notifications.DTOs
+@using TakOne.Application.Notifications.Queries.GetNotificationPreferences
+@using TakOne.Application.Notifications.Commands.SetNotificationMuted
+@using TakOne.Domain.Notifications.Enums
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
@@ -164,6 +168,77 @@ else if (_user is not null)
         </button>
     </div>
 
+    @* ── 2b. Notifications card (Round 4 — mobile notification
+           preferences; the backend query/command shipped in Round 3,
+           desktop-only). One row per notification kind: icon, localized
+           name + description, and a themed m-switch. The switch is ON
+           when the kind is MUTED (same polarity as the desktop Settings
+           card). Toggling is optimistic with revert + toast on failure —
+           the identical pattern to the desktop, adapted to the m-*
+           component family. Muting is enforced at notification CREATION
+           time, so it applies to future notifications only (the hint
+           text says so). *@
+    <div class="m-summary-card">
+        <div class="m-card-section-title">@Loc["NotifPrefsCardTitle"]</div>
+
+        @if (_prefsLoadError is not null)
+        {
+            <div class="m-error-box" role="alert">
+                <p>@_prefsLoadError</p>
+            </div>
+        }
+        else if (_notificationPreferences is null)
+        {
+            @* Skeleton — same rhythm as the loaded rows (icon circle +
+               two lines + a pill where the switch sits), built from the
+               shared m-skeleton utilities in mobile.css. *@
+            <div aria-busy="true" aria-live="polite"
+                 style="display:flex; flex-direction:column; gap:14px; padding-top:12px;">
+                @for (var i = 0; i < 4; i++)
+                {
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div class="m-skeleton m-skeleton-circle" style="width:38px; height:38px; flex:none;"></div>
+                        <div style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:0;">
+                            <div class="m-skeleton-line medium"></div>
+                            <div class="m-skeleton-line short"></div>
+                        </div>
+                        <div class="m-skeleton" style="width:44px; height:26px; border-radius:999px; flex:none;"></div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="m-notif-prefs-list">
+                @foreach (var pref in _notificationPreferences)
+                {
+                    var kind = pref.Kind; // capture for the closure
+                    <div class="m-notif-pref-row">
+                        <span class="m-notif-pref-icon" aria-hidden="true">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width: 1.25rem; height: 1.25rem;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="@GetNotifPrefIconPath(kind)" />
+                            </svg>
+                        </span>
+                        <span class="m-notif-pref-text">
+                            <span class="m-notif-pref-name">@GetNotifPrefName(kind)</span>
+                            <span class="m-notif-pref-desc">@GetNotifPrefDesc(kind)</span>
+                        </span>
+                        <button type="button"
+                                class="m-switch @(_isSavingPref ? "m-switch--disabled" : "") @(pref.IsMuted ? "on" : "")"
+                                role="switch"
+                                aria-checked="@pref.IsMuted"
+                                aria-label="@GetNotifPrefName(kind)"
+                                disabled="@_isSavingPref"
+                                @onclick="(() => HandleNotifPrefToggleAsync(kind, !pref.IsMuted))">
+                            <span class="m-switch-knob" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                }
+            </div>
+            <p class="m-card-subtitle m-notif-pref-hint">@Loc["NotifPrefsHint"]</p>
+        }
+    </div>
+
     @* ── 3. Appearance card — theme selector
            Renders one .m-theme-card per available theme in a 2-column
            grid. The active theme's card gets the .active modifier so the
@@ -225,6 +300,29 @@ else if (_user is not null)
     private UserDto? _user;
     private bool _isLoading = true;
     private string? _loadError;
+
+    // ── Notification preferences state (Round 4 — mobile parity with
+    //    the desktop Settings page's Round 3 feature) ──────────────────
+
+    /// <summary>
+    /// The complete per-kind preference list (one row per
+    /// <see cref="NotificationKind"/>). Null while loading, non-null
+    /// after; a load failure sets <see cref="_prefsLoadError"/> and
+    /// leaves this null (the card shows the inline error instead).
+    /// </summary>
+    private List<NotificationPreferenceDto>? _notificationPreferences;
+
+    /// <summary>
+    /// Inline error for the preferences card only — never takes the page
+    /// down (independent failure domain from the user card).
+    /// </summary>
+    private string? _prefsLoadError;
+
+    /// <summary>
+    /// True while a mute/unmute round trip is in flight — disables every
+    /// switch (single-flight; the same guard the desktop uses).
+    /// </summary>
+    private bool _isSavingPref;
 
     /// <summary>
     /// The currently-applied theme name. Initialized to "tak-light" (the
@@ -296,6 +394,13 @@ else if (_user is not null)
 
     protected override async Task OnInitializedAsync()
     {
+        // Notification preferences load INDEPENDENTLY of the user card:
+        // a prefs failure must never take the account/theme cards down
+        // (the prefs card shows its own inline error instead). Not
+        // awaited alongside LoadAsync's failure domain — see
+        // LoadNotificationPreferencesAsync's try/catch.
+        var prefsTask = LoadNotificationPreferencesAsync();
+
         try
         {
             await LoadAsync();
@@ -461,4 +566,175 @@ else if (_user is not null)
         var theme = _availableThemes.FirstOrDefault(t => t.Id == themeId);
         return theme is null ? themeId : Loc[theme.NameKey];
     }
+
+    // ── Notification preferences (Round 4) ───────────────────────────────
+
+    /// <summary>
+    /// Loads the complete per-kind preference list. Owns its own failure
+    /// domain: any failure sets the card-local error and leaves the list
+    /// null — the account/theme cards are unaffected (the desktop
+    /// Settings page loads its prefs card the same independent way).
+    /// </summary>
+    private async Task LoadNotificationPreferencesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<
+                Result<IReadOnlyList<NotificationPreferenceDto>>>(
+                new GetNotificationPreferencesQuery());
+
+            if (result.IsSuccess)
+            {
+                _notificationPreferences = result.Value.ToList();
+            }
+            else
+            {
+                _prefsLoadError = Loc["NotifPrefsErrorLoad"];
+            }
+        }
+        catch
+        {
+            _prefsLoadError = Loc["NotifPrefsErrorLoad"];
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Handles one switch tap. OPTIMISTIC update (the row's state flips
+    /// immediately; the command round-trips behind it) + revert + toast
+    /// on failure — the identical pattern to the desktop Settings page,
+    /// adapted to the m-switch. Muting takes effect on the NEXT
+    /// notification created for the user; it is not retroactive.
+    /// </summary>
+    private async Task HandleNotifPrefToggleAsync(NotificationKind kind, bool isMuted)
+    {
+        if (_notificationPreferences is null || _isSavingPref)
+        {
+            return;
+        }
+
+        _isSavingPref = true;
+
+        // Optimistic local update — the tapped row flips immediately.
+        var entry = _notificationPreferences.FirstOrDefault(p => p.Kind == kind);
+        if (entry is not null)
+        {
+            var index = _notificationPreferences.IndexOf(entry);
+            _notificationPreferences[index] = new NotificationPreferenceDto
+            {
+                Kind = kind,
+                IsMuted = isMuted
+            };
+        }
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SetNotificationMutedCommand(kind, isMuted));
+
+            if (!result.IsSuccess)
+            {
+                RevertNotifPref(kind);
+                await Toast.Warning(
+                    Loc["NotifPrefsErrorSave"],
+                    summary: Loc["NotifPrefsCardTitle"]);
+            }
+        }
+        catch
+        {
+            RevertNotifPref(kind);
+            await Toast.Warning(
+                Loc["NotifPrefsErrorSave"],
+                summary: Loc["NotifPrefsCardTitle"]);
+        }
+        finally
+        {
+            _isSavingPref = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Reverts the optimistic local state for one kind after a failed
+    /// save, so the switch reflects the persisted truth, not the wish.
+    /// </summary>
+    private void RevertNotifPref(NotificationKind kind)
+    {
+        if (_notificationPreferences is null)
+        {
+            return;
+        }
+
+        var entry = _notificationPreferences.FirstOrDefault(p => p.Kind == kind);
+        if (entry is not null)
+        {
+            var index = _notificationPreferences.IndexOf(entry);
+            _notificationPreferences[index] = new NotificationPreferenceDto
+            {
+                Kind = kind,
+                IsMuted = !entry.IsMuted
+            };
+        }
+    }
+
+    /// <summary>
+    /// Inline SVG path per kind — the mobile family renders its own
+    /// inline SVGs (no Radzen icons in the m-* pages), so the desktop's
+    /// Material Symbols names are translated to stroke paths here. Same
+    /// visual intent per kind as the Notifications feed's icons.
+    /// </summary>
+    private static string GetNotifPrefIconPath(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted =>
+            "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z",
+        NotificationKind.SaleApproved =>
+            "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+        NotificationKind.SaleInvoiced =>
+            "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+        NotificationKind.SaleCancelled =>
+            "M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z",
+        NotificationKind.Broadcast =>
+            "M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 010 7",
+        NotificationKind.AppUpdate =>
+            "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+        NotificationKind.GroupChanged =>
+            "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4",
+        _ => "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1h6z"
+    };
+
+    /// <summary>
+    /// Localized kind label — same titles as the Notifications feed and
+    /// the desktop Settings card, so a kind means the same thing
+    /// everywhere it appears.
+    /// </summary>
+    private string GetNotifPrefName(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["NotifPrefName_Submitted"],
+        NotificationKind.SaleApproved => Loc["NotifPrefName_Approved"],
+        NotificationKind.SaleInvoiced => Loc["NotifPrefName_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["NotifPrefName_Cancelled"],
+        NotificationKind.Broadcast => Loc["NotifPrefName_Broadcast"],
+        NotificationKind.AppUpdate => Loc["NotifPrefName_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["NotifPrefName_GroupChanged"],
+        _ => kind.ToString()
+    };
+
+    /// <summary>
+    /// Localized one-line description of what muting the kind means —
+    /// the row's secondary text under the kind label.
+    /// </summary>
+    private string GetNotifPrefDesc(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["NotifPrefDesc_Submitted"],
+        NotificationKind.SaleApproved => Loc["NotifPrefDesc_Approved"],
+        NotificationKind.SaleInvoiced => Loc["NotifPrefDesc_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["NotifPrefDesc_Cancelled"],
+        NotificationKind.Broadcast => Loc["NotifPrefDesc_Broadcast"],
+        NotificationKind.AppUpdate => Loc["NotifPrefDesc_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["NotifPrefDesc_GroupChanged"],
+        _ => string.Empty
+    };
 }

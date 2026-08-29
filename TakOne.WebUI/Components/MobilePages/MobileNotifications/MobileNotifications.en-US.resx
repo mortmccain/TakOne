@@ -69,4 +69,20 @@
   <data name="NextPage" xml:space="preserve"><value>Next</value></data>
   <data name="PageFormat" xml:space="preserve"><value>Page {0} of {1}</value></data>
   <data name="FooterHint" xml:space="preserve"><value>Notifications are scoped to you: customers see their own orders; staff see orders they created, approved, invoiced or cancelled.</value></data>
+  <data name="FilterKindLabel" xml:space="preserve">
+    <value>Type</value>
+    <comment>Round 4 — the notifications per-kind filter label.</comment>
+  </data>
+  <data name="FilterAllKinds" xml:space="preserve">
+    <value>All types</value>
+    <comment>Round 4 — the 'no kind filter' option.</comment>
+  </data>
+  <data name="DismissTooltip" xml:space="preserve">
+    <value>Dismiss</value>
+    <comment>Round 4 — the per-notification dismiss control's tooltip/aria-label.</comment>
+  </data>
+  <data name="Err_Dismiss" xml:space="preserve">
+    <value>Could not dismiss the notification. Please try again.</value>
+    <comment>Round 4 — toast when the dismiss command fails.</comment>
+  </data>
 </root>

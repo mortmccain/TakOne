@@ -67,4 +67,76 @@
   <data name="ThemeApplied" xml:space="preserve"><value>پوسته به {0} تغییر کرد.</value></data>
   <data name="Error_ThemeSwitch" xml:space="preserve"><value>تغییر پوسته ناموفق بود.</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="NotifPrefDesc_AppUpdate" xml:space="preserve">
+    <value>اطلاع‌رسانی سیستم هنگام به‌روزرسانی برنامه.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_Approved" xml:space="preserve">
+    <value>وقتی سفارشی که در آن نقش دارید تأیید می‌شود.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_Broadcast" xml:space="preserve">
+    <value>پیام‌هایی که مدیران برای گروهی از کاربران می‌فرستند.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_Cancelled" xml:space="preserve">
+    <value>وقتی سفارشی به همراه دلیل آن لغو می‌شود.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_GroupChanged" xml:space="preserve">
+    <value>وقتی گروه خرید شما (بودجه و سقف‌ها) تغییر می‌کند.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_Invoiced" xml:space="preserve">
+    <value>وقتی سفارشی فاکتور و آماده تحویل می‌شود.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefDesc_Submitted" xml:space="preserve">
+    <value>تأیید ارسال سبد خرید برای بررسی.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_AppUpdate" xml:space="preserve">
+    <value>به‌روزرسانی برنامه</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_Approved" xml:space="preserve">
+    <value>تأیید سفارش</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_Broadcast" xml:space="preserve">
+    <value>اطلاعیه‌ها</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_Cancelled" xml:space="preserve">
+    <value>لغو سفارش</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_GroupChanged" xml:space="preserve">
+    <value>تغییر گروه</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_Invoiced" xml:space="preserve">
+    <value>فاکتور شدن سفارش</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefName_Submitted" xml:space="preserve">
+    <value>ثبت سفارش</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefsCardTitle" xml:space="preserve">
+    <value>تنظیمات اعلان‌ها</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefsErrorLoad" xml:space="preserve">
+    <value>بارگذاری تنظیمات اعلان‌ها ممکن نشد. لطفاً صفحه را دوباره بارگذاری کنید.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefsErrorSave" xml:space="preserve">
+    <value>ذخیرهٔ تغییر ممکن نشد. کلید به حالت قبل برگشت — لطفاً دوباره تلاش کنید.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
+  <data name="NotifPrefsHint" xml:space="preserve">
+    <value>هر نوع اعلان را خاموش کنید تا دیگر دریافت نشود. خاموش کردن فقط روی اعلان‌های جدید اثر دارد — موارد موجود در فهرست شما باقی می‌مانند. این انتخاب هرگز روی سوابق فروش تأثیری ندارد؛ فقط زنگ اعلان را ساکت می‌کند.</value>
+    <comment>دور ۴ — تنظیمات اعلان‌های موبایل (همان متن صفحهٔ تنظیمات دسکتاپ).</comment>
+  </data>
 </root>

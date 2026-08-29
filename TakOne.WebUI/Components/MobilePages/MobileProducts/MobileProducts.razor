@@ -156,6 +156,25 @@ else
         </div>
     </div>
 
+    @* ── 2b. Sort control (Round 4 — shop sorting) ──
+       Same server-side orders as the desktop shop (name / price asc /
+       price desc); a compact native select styled to the m-* family.
+       Sorting is SERVER-side, so the whole 50-row page re-orders (not
+       just the rendered cards) and the order survives category + search
+       filters. *@
+    <div class="m-sort-row">
+        <label class="m-sort-label" for="m-products-sort">@Loc["SortLabel"]</label>
+        <select id="m-products-sort"
+                class="m-sort-select"
+                value="@_sortBy.ToString()"
+                @onchange="OnSortChanged"
+                disabled="@_isLoading">
+            <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
+            <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
+            <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
+        </select>
+    </div>
+
     @* ── 3. Hero banner ── *@
     <div class="m-hero">
         <div class="m-hero-content">
@@ -327,6 +346,13 @@ else
     private List<CategoryDto> _categories = new();
     private Guid? _selectedCategoryId;
     private string _searchTerm = string.Empty;
+
+    /// <summary>
+    /// The active catalog sort (Round 4) — same orders as the desktop
+    /// shop; server-side, so the whole loaded page re-orders.
+    /// </summary>
+    private ProductSortBy _sortBy = ProductSortBy.Name;
+
     private bool _isLoading = true;
     private bool _isReadOnly;
 
@@ -404,6 +430,19 @@ else
 
     // ── Data loading ──
 
+    /// <summary>
+    /// The sort control's change handler: parse the picked key and
+    /// reload (the sort rides in SQL with the category/search filters).
+    /// </summary>
+    private async Task OnSortChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ProductSortBy>(e.Value?.ToString(), ignoreCase: false, out var sortBy))
+        {
+            _sortBy = sortBy;
+            await LoadProductsAsync();
+        }
+    }
+
     private async Task LoadProductsAsync()
     {
         try
@@ -412,6 +451,7 @@ else
             {
                 PageNumber = 1,
                 PageSize = 50,
+                SortBy = _sortBy,
                 SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
                 CategoryId = _selectedCategoryId
             };

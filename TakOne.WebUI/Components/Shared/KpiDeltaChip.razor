@@ -1,0 +1,69 @@
+@* KpiDeltaChip.razor — Round 4 KPI trend-delta chip.
+
+   A small ▲/▼/− pill rendered next to (or under) a KPI card's value:
+   "+12% vs last month", "−3 vs yesterday", "no change". Shared by the
+   desktop Dashboard and the MobileDashboard (they render the same four
+   KPI cards from the same DashboardStatsDto, so the delta chips must
+   look identical on both surfaces).
+
+   DIRECTION SEMANTICS: Up/Down/Flat choose the arrow + the semantic
+   color class (up = success, down = danger, flat = secondary). This is
+   a SALES dashboard — higher counts/revenue read as "good", so Up is
+   always green regardless of which KPI it decorates. Stock-type KPIs
+   (pending approvals) simply never use the chip.
+
+   The chip renders NOTHING when Text is empty — callers compute the
+   comparison and pass empty to hide (e.g. no previous-period data and
+   nothing to report). *@
+
+@if (!string.IsNullOrWhiteSpace(Text))
+{
+    <span class="tm-kpi-delta @CssClass" title="@Title">
+        @switch (Direction)
+        {
+            case KpiDeltaDirection.Up:
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+                </svg>
+                break;
+            case KpiDeltaDirection.Down:
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+                break;
+            default:
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14" />
+                </svg>
+                break;
+        }
+        <span>@Text</span>
+    </span>
+}
+
+@code {
+    /// <summary>
+    /// The trend direction — picks the arrow glyph and the semantic
+    /// color class.
+    /// </summary>
+    [Parameter] public KpiDeltaDirection Direction { get; set; }
+
+    /// <summary>
+    /// The chip's text, fully formatted by the caller (e.g. "+12% · vs
+    /// last month" or "−3 · vs yesterday"). Empty = render nothing.
+    /// </summary>
+    [Parameter] public string Text { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional tooltip (e.g. the raw previous-period value behind the
+    /// percentage).
+    /// </summary>
+    [Parameter] public string? Title { get; set; }
+
+    private string CssClass => Direction switch
+    {
+        KpiDeltaDirection.Up => "tm-kpi-delta--up",
+        KpiDeltaDirection.Down => "tm-kpi-delta--down",
+        _ => "tm-kpi-delta--flat"
+    };
+}

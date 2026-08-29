@@ -47,14 +47,24 @@ public sealed class AllSalesSpecification : Specification<Sale>
     public AllSalesSpecification(SaleStatus? status)
         : this(status, fromUtc: null, toUtcExclusive: null) { }
 
-    /// <param name="status">
-    /// Optional status filter. When non-null, restricts the spec to sales in
-    /// the given status. When null, matches all statuses.
-    /// </param>
     public AllSalesSpecification(
         SaleStatus? status,
         DateTime? fromUtc,
         DateTime? toUtcExclusive)
+        : this(status, fromUtc, toUtcExclusive, searchTerm: null, filters: null) { }
+
+    /// <summary>
+    /// Round 4 (server-driven paging) constructor: the full filter +
+    /// sort surface. <paramref name="searchTerm"/> is the legacy
+    /// cross-column OR search (MobileSearch); <paramref name="filters"/>
+    /// carries the per-column filters and the sort key/direction.
+    /// </summary>
+    public AllSalesSpecification(
+        SaleStatus? status,
+        DateTime? fromUtc,
+        DateTime? toUtcExclusive,
+        string? searchTerm,
+        SalesListFilters? filters)
     {
         if (status.HasValue)
         {
@@ -76,11 +86,11 @@ public sealed class AllSalesSpecification : Specification<Sale>
             Query.Where(sale => sale.CreatedAtUtc < toUtcExclusive.Value);
         }
 
-        // No further Where clause = match everything (modulo the optional
-        // status filter above). We DO add a default ordering so that
-        // pagination is deterministic (without ORDER BY, SQL Server does
-        // not guarantee row order across pages — rows could appear on
-        // multiple pages or be skipped entirely).
-        Query.OrderByDescending(sale => sale.CreatedAtUtc);
+        // Round 4: cross-column search + per-column filters + sort all
+        // live in the shared helper so this spec and
+        // SaleByCustomerSpecification can never drift apart.
+        Query.ApplySearchTerm(searchTerm);
+        Query.ApplyColumnFilters(filters);
+        Query.ApplySort(filters?.SortBy, filters?.SortDescending ?? true);
     }
 }

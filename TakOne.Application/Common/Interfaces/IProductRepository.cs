@@ -1,4 +1,5 @@
-﻿using TakOne.Domain.Products.Entities;
+﻿using TakOne.Application.Products.Queries.GetProductsPaginated;
+using TakOne.Domain.Products.Entities;
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Common.Interfaces;
@@ -73,6 +74,7 @@ public interface IProductRepository
         int pageNumber = 1,
         int pageSize = 20,
         ProductVisibilityFilter? visibility = null,
+        ProductSortBy sortBy = ProductSortBy.Name,
         CancellationToken cancellationToken = default
         );
 

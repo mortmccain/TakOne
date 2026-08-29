@@ -1003,6 +1003,22 @@
         transform: translateY(-1px);
     }
 
+    /* Round 4 styling detail — keyboard + press feedback the hover-only
+       original lacked. The ring is light-on-dark hero-safe. */
+    .tm-hero-btn-gold:focus-visible,
+    .tm-hero-btn-green:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+    }
+
+    .tm-hero-btn-gold:active {
+        transform: translateY(0) scale(0.98);
+    }
+
+    .tm-hero-btn-green:active {
+        transform: scale(0.98);
+    }
+
 .tm-hero-btn-green {
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
@@ -1223,6 +1239,35 @@
     .tm-product-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 18px 30px -8px rgba(14, 77, 60, 0.18);
+    }
+
+    /* Round 4 styling detail — when ANY control inside the card has
+       keyboard focus (qty stepper, add button), the card shows the same
+       accent the hover lift communicates for pointer users. */
+    .tm-product-card:focus-within {
+        border-color: var(--tm-primary, var(--rz-primary));
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--tm-primary, var(--rz-primary)) 15%, transparent);
+    }
+
+    /* Round 4 a11y detail — the hover lift/zoom is decorative motion;
+       reduced-motion users get the shadow change only (still clear
+       feedback, zero movement). */
+    @media (prefers-reduced-motion: reduce) {
+        .tm-product-card,
+        .tm-product-card:hover {
+            transform: none;
+            transition: box-shadow 0.15s ease;
+        }
+
+        .tm-product-card:hover .tm-product-image img {
+            transform: none;
+        }
+
+        .tm-hero-btn-gold,
+        .tm-hero-btn-green,
+        .tm-add-btn {
+            transition: none;
+        }
     }
 
 .tm-product-image {
@@ -1904,4 +1949,74 @@
    ========================================================================== */
 .tm-shop-page .tm-persian-num {
     font-feature-settings: "ss01";
+}
+
+/* ── Sort control (Round 4 — shop sorting) ─────────────────────────
+   A compact, themed native <select> paired with a label + icon. The
+   native control gets free keyboard/screen-reader/mobile-picker
+   support; the chrome (border, radius, focus ring, colors) matches
+   the page's tm-* variables so it reads as a member of the family.
+   RTL-safe: logical properties only. */
+.tm-sort-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--tm-border, var(--rz-border-color));
+    border-radius: 999px;
+    background: var(--tm-surface, var(--rz-base-background-color));
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tm-sort-control:hover {
+    border-color: var(--tm-primary, var(--rz-primary));
+}
+
+.tm-sort-control:focus-within {
+    border-color: var(--tm-primary, var(--rz-primary));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tm-primary, var(--rz-primary)) 18%, transparent);
+}
+
+.tm-sort-icon {
+    color: var(--tm-primary, var(--rz-primary));
+    flex: none;
+}
+
+.tm-sort-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--tm-text-secondary, var(--rz-text-secondary-color));
+    user-select: none;
+    white-space: nowrap;
+}
+
+.tm-sort-select {
+    /* Native reset — inherit the family typography and let the OS draw
+       the picker chrome. */
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 22px 4px 4px;
+    cursor: pointer;
+    outline: none;
+    /* RTL-aware caret: an inline SVG chevron as the background on the
+       END side of the reading direction. */
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+}
+
+[dir="rtl"] .tm-sort-select {
+    padding: 4px 4px 4px 22px;
+    background-position: left 6px center;
+}
+
+.tm-sort-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }

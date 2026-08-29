@@ -198,7 +198,12 @@ else if (_stats is not null)
                     </span>
                 </div>
                 <p class="tm-dash-kpi-label">@Loc["Kpi_TodayOrders"]</p>
-                <p class="tm-dash-kpi-value">@CultureFormat.FormatDigits(_stats.TodayOrdersCount)</p>
+                <p class="tm-dash-kpi-value">
+                    @CultureFormat.FormatDigits(_stats.TodayOrdersCount)
+                    <KpiDeltaChip Direction="@TodayOrdersDelta.direction"
+                                  Text="@TodayOrdersDelta.text"
+                                  Title="@TodayOrdersDelta.title" />
+                </p>
                 <p class="tm-dash-kpi-footer">@Loc["Kpi_TodayOrdersFooter"]</p>
             </div>
 
@@ -215,6 +220,9 @@ else if (_stats is not null)
                 <p class="tm-dash-kpi-value">
                     @FormatMoneyShort(_stats.ThisMonthEmployeePurchaseTotal)
                     <span class="tm-dash-kpi-value-suffix">@_stats.DisplayCurrency</span>
+                    <KpiDeltaChip Direction="@MonthlyPurchaseDelta.direction"
+                                  Text="@MonthlyPurchaseDelta.text"
+                                  Title="@MonthlyPurchaseDelta.title" />
                 </p>
                 <p class="tm-dash-kpi-footer">
                     @Loc["Kpi_MonthlyEmployeePurchaseFooter"]
@@ -260,7 +268,12 @@ else if (_stats is not null)
                     </div>
                 </div>
                 <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyApprovedSales"]</p>
-                <p class="tm-dash-kpi-value">@CultureFormat.FormatDigits(_stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount)</p>
+                <p class="tm-dash-kpi-value">
+                    @CultureFormat.FormatDigits(_stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount)
+                    <KpiDeltaChip Direction="@MonthlySalesDelta.direction"
+                                  Text="@MonthlySalesDelta.text"
+                                  Title="@MonthlySalesDelta.title" />
+                </p>
                 <p class="tm-dash-kpi-footer">@Loc["Kpi_MonthlyApprovedSalesFooter"]</p>
             </div>
         </div>
@@ -659,6 +672,34 @@ else if (_stats is not null)
     /// "2.4M" in en-US) for KPI cards + sparkline + chart footer where
     /// large numbers need to fit in a small space.
     /// </summary>
+    // ── KPI trend deltas (Round 4) ───────────────────────────────────
+    // Same chips as the desktop Dashboard — the DTO carries the
+    // server-computed previous-period values; the shared
+    // KpiDeltaFormatter builds the text with THIS page's culture-aware
+    // formatters (CultureFormat — Persian digits in fa-IR).
+    //
+    // KPI 3 (pending approvals) deliberately has NO delta — a queue
+    // depth compared against yesterday's depth is noise, not a trend.
+
+    private (KpiDeltaDirection direction, string text, string? title) TodayOrdersDelta =>
+        KpiDeltaFormatter.CountDelta(
+            _stats.TodayOrdersCount, _stats.YesterdayOrdersCount,
+            Loc["KpiDeltaVsYesterday"], CultureFormat.FormatDigits);
+
+    private (KpiDeltaDirection direction, string text, string? title) MonthlyPurchaseDelta =>
+        KpiDeltaFormatter.AmountDelta(
+            _stats.ThisMonthEmployeePurchaseTotal, _stats.LastMonthEmployeePurchaseTotal,
+            Loc["KpiDeltaVsLastMonth"],
+            FormatMoneyShort(_stats.LastMonthEmployeePurchaseTotal),
+            pct => CultureFormat.FormatPercent(pct), Loc["KpiDeltaNew"]);
+
+
+    private (KpiDeltaDirection direction, string text, string? title) MonthlySalesDelta =>
+        KpiDeltaFormatter.CountDelta(
+            _stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount,
+            _stats.LastMonthApprovedSalesCount + _stats.LastMonthInvoicedSalesCount,
+            Loc["KpiDeltaVsLastMonth"], CultureFormat.FormatDigits);
+
     private string FormatMoneyShort(decimal amount)
     {
         if (amount >= 1_000_000m)

@@ -393,4 +393,20 @@
   <data name="NoCustomerGroup" xml:space="preserve">
     <value>Your account is not configured for purchases. Please contact an administrator.</value>
   </data>
+  <data name="SortLabel" xml:space="preserve">
+    <value>Sort</value>
+    <comment>Round 4 — the shop's sort control label.</comment>
+  </data>
+  <data name="SortByName" xml:space="preserve">
+    <value>Name (A–Z)</value>
+    <comment>Round 4 — alphabetical sort option (the default order).</comment>
+  </data>
+  <data name="SortPriceLowToHigh" xml:space="preserve">
+    <value>Price: low to high</value>
+    <comment>Round 4 — cheapest-first sort option.</comment>
+  </data>
+  <data name="SortPriceHighToLow" xml:space="preserve">
+    <value>Price: high to low</value>
+    <comment>Round 4 — most-expensive-first sort option.</comment>
+  </data>
 </root>

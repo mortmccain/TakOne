@@ -325,4 +325,316 @@ public class GetSalesPaginatedQueryHandlerTests
         var ___ = new SaleByCustomerSpecification(TestValues.CustomerId);
         var ____ = new SaleByCustomerSpecification(TestValues.CustomerId, status: null);
     }
+
+    // ── Round 4: server-driven paging wiring ───────────────────────────
+
+    /// <summary>
+    /// Builds a sale with a KNOWN sale number + total + names, via the
+    /// same test-only reflection the CreatedAtUtc helper uses (the domain
+    /// API stays immutable in production code).
+    /// </summary>
+    private static Sale SaleWith(
+        int? saleYear = null,
+        int? saleSequence = null,
+        decimal totalAmount = 0m,
+        string customerName = "Alice Customer",
+        string createdByName = "Alice Creator",
+        DateTime? createdAt = null,
+        Guid? customerId = null)
+    {
+        var sale = Sale.Create(
+            customerId: customerId ?? TestValues.CustomerId,
+            customerName: customerName,
+            createdByUserId: TestValues.CreatedByUserId,
+            createdByName: createdByName);
+
+        if (saleYear.HasValue && saleSequence.HasValue)
+        {
+            typeof(Sale).GetProperty(nameof(Sale.SaleNumber))!
+                .SetValue(sale, Domain.Sales.ValueObjects.SaleNumber.Create(saleYear.Value, saleSequence.Value));
+        }
+
+        typeof(Sale).GetProperty(nameof(Sale.Total))!
+            .SetValue(sale, new TakOne.SharedKernel.ValueObjects.Money(totalAmount, "IRR"));
+
+        if (createdAt.HasValue)
+        {
+            typeof(Sale).GetField("<CreatedAtUtc>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(sale, createdAt.Value);
+        }
+
+        return sale;
+    }
+
+    /// <summary>
+    /// Human-readable "path" of an order expression's key selector
+    /// (e.g. "Total.Amount" / "SaleNumber.Year") after unwrapping the
+    /// object-conversion node Ardalis wraps around it.
+    /// </summary>
+    private static string KeyPath<T>(System.Linq.Expressions.Expression<Func<T, object?>> expr)
+    {
+        var body = expr.Body;
+        while (body is System.Linq.Expressions.UnaryExpression { NodeType: System.Linq.Expressions.ExpressionType.Convert } convert)
+        {
+            body = convert.Operand;
+        }
+
+        var parts = new List<string>();
+        while (body is System.Linq.Expressions.MemberExpression member)
+        {
+            parts.Add(member.Member.Name);
+            body = member.Expression!;
+        }
+
+        parts.Reverse();
+        return string.Join(".", parts);
+    }
+
+    [Fact]
+    public async Task HandleAsync_DefaultSort_IsNewestFirstWithIdTiebreaker()
+    {
+        // No user sort active → the spec must default to CreatedAtUtc
+        // DESC with an Id tiebreaker (deterministic OFFSET/FETCH paging).
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery(),
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+        var orderPaths = spec.OrderExpressions
+            .Select(o => (o.OrderType, Path: KeyPath(o.KeySelector)))
+            .ToList();
+
+        orderPaths.Should().Contain(
+            (OrderTypeEnum.OrderByDescending, "CreatedAtUtc"),
+            "the default sort is newest-first");
+        orderPaths.Should().Contain(
+            (OrderTypeEnum.ThenByDescending, "Id"),
+            "the Id tiebreaker keeps paging deterministic");
+        // No ascending clause anywhere — the default is fully descending.
+        orderPaths.Should().NotContain(o => o.OrderType == OrderTypeEnum.OrderBy);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithSort_PassesSortIntoSpec()
+    {
+        // A user sort on the Total column (ascending) must arrive in the
+        // spec as OrderBy(Total.Amount) + ThenBy(Id).
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery
+            {
+                SortBy = SalesSortBy.Total,
+                SortDescending = false
+            },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+        var orderPaths = spec.OrderExpressions
+            .Select(o => (o.OrderType, Path: KeyPath(o.KeySelector)))
+            .ToList();
+
+        orderPaths.Should().Contain((OrderTypeEnum.OrderBy, "Total.Amount"));
+        orderPaths.Should().Contain((OrderTypeEnum.ThenBy, "Id"));
+    }
+
+    [Fact]
+    public async Task HandleAsync_CustomerWithColumnFilters_GetsSameFiltersInScopedSpec()
+    {
+        // Column filters must NOT widen customer scoping: a non-staff
+        // caller gets the SaleByCustomerSpecification WITH the same
+        // filter clauses folded in.
+        var (currentUser, saleRepo, logger) = BuildMocks(staff: false);
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery
+            {
+                CustomerNameFilter = new SalesTextFilter("bob", SalesTextOperator.Contains)
+            },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+        spec.Should().BeOfType<SaleByCustomerSpecification>();
+
+        var ownBobSale = SaleWith(customerName: "Bob Builder");
+        var otherCustomerSale = SaleWith(customerName: "Bob Stranger", customerId: Guid.NewGuid());
+        var ownNonBobSale = SaleWith(customerName: "Alice Customer");
+
+        var matched = ApplySpec(new[] { ownBobSale, otherCustomerSale, ownNonBobSale }, spec);
+
+        matched.Should().Contain(ownBobSale, "the customer-name filter applies inside the customer scope");
+        matched.Should().NotContain(otherCustomerSale, "the customer scope is not bypassed by column filters");
+        matched.Should().NotContain(ownNonBobSale, "the customer-name filter prunes non-matching names");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithSearchTerm_ServerSideNameOrNumberMatch()
+    {
+        // The legacy SearchTerm (MobileSearch) is now a server-side OR:
+        // customer-name contains OR number-shape match. It must match
+        // rows ACROSS the whole result set (the pre-Round-4 in-memory
+        // version only filtered the loaded page).
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery { SearchTerm = "bob" },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var bob = SaleWith(customerName: "Bob Builder");
+        var named = SaleWith(saleYear: 1405, saleSequence: 42, customerName: "Alice");
+        var draft = SaleWith(customerName: "Drafty McDraftface");
+        var other = SaleWith(customerName: "Alice Customer");
+
+        var matched = ApplySpec(new[] { bob, named, draft, other }, spec);
+
+        matched.Should().Contain(bob, "search matches the customer name (case-insensitive)");
+        matched.Should().NotContain(named, "a name search does not match unrelated numbered sales");
+        matched.Should().NotContain(draft);
+        matched.Should().NotContain(other);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithSearchTerm_FullNumber_MatchesExactSale()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery { SearchTerm = "INT-1405-42" },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var target = SaleWith(saleYear: 1405, saleSequence: 42);
+        var sameYearOtherSeq = SaleWith(saleYear: 1405, saleSequence: 43);
+        var otherYear = SaleWith(saleYear: 1406, saleSequence: 42);
+        var nameOnly = SaleWith(customerName: "int-1405-42 fan");
+
+        var matched = ApplySpec(new[] { target, sameYearOtherSeq, otherYear, nameOnly }, spec);
+
+        matched.Should().Contain(target, "the full number matches its exact (year, sequence)");
+        matched.Should().NotContain(sameYearOtherSeq);
+        matched.Should().NotContain(otherYear);
+        matched.Should().Contain(nameOnly, "the customer-name OR arm still matches");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithSaleNumberTerm_DraftsOnly()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery { SaleNumberTerm = "draft" },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var draft = SaleWith();
+        var numbered = SaleWith(saleYear: 1405, saleSequence: 1);
+
+        var matched = ApplySpec(new[] { draft, numbered }, spec);
+
+        matched.Should().Contain(draft, "'draft' matches drafts (NULL SaleNumber)");
+        matched.Should().NotContain(numbered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithSaleNumberTerm_Garbage_MatchesNothing()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery { SaleNumberTerm = "zzz-not-a-number" },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var anySale = SaleWith(saleYear: 1405, saleSequence: 1);
+        ApplySpec(new[] { anySale }, spec).Should().BeEmpty(
+            "an unparseable term must not silently widen to all rows");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithTotalFilter_AppliesComparison()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery
+            {
+                TotalFilter = new SalesAmountFilter(SalesAmountOperator.GreaterThan, 100m)
+            },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var cheap = SaleWith(totalAmount: 50m);
+        var atBoundary = SaleWith(totalAmount: 100m);
+        var expensive = SaleWith(totalAmount: 150m);
+
+        var matched = ApplySpec(new[] { cheap, atBoundary, expensive }, spec);
+
+        matched.Should().Contain(expensive);
+        matched.Should().NotContain(atBoundary, "GreaterThan is strict");
+        matched.Should().NotContain(cheap);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithTextFilterOperators_NotContains()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery
+            {
+                CustomerNameFilter = new SalesTextFilter("bob", SalesTextOperator.NotContains)
+            },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var bob = SaleWith(customerName: "Bob Builder");
+        var alice = SaleWith(customerName: "Alice Customer");
+
+        var matched = ApplySpec(new[] { bob, alice }, spec);
+
+        matched.Should().NotContain(bob);
+        matched.Should().Contain(alice);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithCreatedByNameFilter_AppliesTextFilter()
+    {
+        var (currentUser, saleRepo, logger) = BuildMocks();
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery
+            {
+                CreatedByNameFilter = new SalesTextFilter("creator", SalesTextOperator.Contains)
+            },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var spec = CaptureSpec(saleRepo);
+
+        var byCreator = SaleWith(createdByName: "Alice Creator");
+        var byOther = SaleWith(createdByName: "Bob Staff");
+
+        var matched = ApplySpec(new[] { byCreator, byOther }, spec);
+
+        matched.Should().Contain(byCreator);
+        matched.Should().NotContain(byOther);
+    }
+
+    private static ISpecification<Sale> CaptureSpec(ISaleRepository saleRepo)
+    {
+        var spec = saleRepo.ReceivedCalls()
+            .Select(c => c.GetArguments().FirstOrDefault(a => a is ISpecification<Sale>))
+            .Cast<ISpecification<Sale>>()
+            .FirstOrDefault();
+        spec.Should().NotBeNull("the handler must hand a specification to the repository");
+        return spec!;
+    }
 }

@@ -48,12 +48,14 @@ public class GetProductsPaginatedQueryHandlerTests
     private static GetProductsPaginatedQuery BuildValidQuery(
         int? pageNumber = null,
         int? pageSize = null,
-        bool? includeInactive = null)
+        bool? includeInactive = null,
+        ProductSortBy? sortBy = null)
         => new()
         {
             PageNumber = pageNumber ?? 1,
             PageSize = pageSize ?? 20,
-            IncludeInactive = includeInactive ?? false
+            IncludeInactive = includeInactive ?? false,
+            SortBy = sortBy
         };
 
     // Builds a fully-wired NSubstitute environment with the current
@@ -81,7 +83,7 @@ public class GetProductsPaginatedQueryHandlerTests
 
         var productRepo = Substitute.For<IProductRepository>();
         productRepo.GetPaginatedAsync(
-            default, default, default, default, default, default, default)
+            default, default, default, default, default, default, default, default)
             .ReturnsForAnyArgs(actualPage);
 
         var actualCategories = categories ?? new List<Domain.Categories.Entities.Category>();
@@ -143,6 +145,7 @@ public class GetProductsPaginatedQueryHandlerTests
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
             Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Any<ProductSortBy>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -185,6 +188,7 @@ public class GetProductsPaginatedQueryHandlerTests
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Is<int>(p => p == 1), Arg.Any<int>(),
             Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Any<ProductSortBy>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -205,6 +209,7 @@ public class GetProductsPaginatedQueryHandlerTests
             Arg.Any<string>(), Arg.Any<int>(),
             Arg.Is<int>(p => p == ExpectedMaxPageSize),
             Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Any<ProductSortBy>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -299,6 +304,52 @@ public class GetProductsPaginatedQueryHandlerTests
             Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
             Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
             Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Any<ProductSortBy>(),
             Arg.Is<CancellationToken>(t => t == ct));
+    }
+
+    // ── Round 4: sort pass-through ─────────────────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_WithSort_PassesSortIntoRepositoryCall()
+    {
+        // Arrange
+        var (currentUser, productRepo, categoryRepo, userRepo, purchaseLimitPolicy, logger) = BuildMocks();
+
+        // Act
+        await GetProductsPaginatedQueryHandler.HandleAsync(
+            BuildValidQuery(sortBy: ProductSortBy.PriceHighToLow),
+            currentUser, productRepo, categoryRepo, userRepo, purchaseLimitPolicy, logger,
+            CancellationToken.None);
+
+        // Assert
+        await productRepo.Received(1).GetPaginatedAsync(
+            Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
+            Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+            Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Is(ProductSortBy.PriceHighToLow),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithoutSort_DefaultsToNameOrder()
+    {
+        // Arrange
+        var (currentUser, productRepo, categoryRepo, userRepo, purchaseLimitPolicy, logger) = BuildMocks();
+
+        // Act
+        await GetProductsPaginatedQueryHandler.HandleAsync(
+            BuildValidQuery(),
+            currentUser, productRepo, categoryRepo, userRepo, purchaseLimitPolicy, logger,
+            CancellationToken.None);
+
+        // Assert — null SortBy (the pre-Round-4 call shape) must arrive at
+        // the repository as the explicit Name default.
+        await productRepo.Received(1).GetPaginatedAsync(
+            Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
+            Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+            Arg.Any<ProductVisibilityFilter?>(),
+            Arg.Is(ProductSortBy.Name),
+            Arg.Any<CancellationToken>());
     }
 }

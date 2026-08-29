@@ -1,4 +1,4 @@
-﻿@* Sales.razor — Phase 4.2 (refactored to AdminUsers pattern)
+@* Sales.razor — Round 4 (server-driven paging via Radzen LoadData)
 
    Customer-facing order history page at route `/Sales`. ALL authenticated
    users land here (the sidebar link in MainLayout.razor is wrapped in a
@@ -7,38 +7,83 @@
        (the "staff audit view").
      - Customer: see only their own sales (the "my orders" view).
 
-   BACKEND CONTRACT:
-     - Load: GetSalesPaginatedQuery(PageNumber, PageSize, SearchTerm?, Status?)
-       → PaginatedResult<SaleListItemDto>
+   BACKEND CONTRACT (Round 4 — SERVER-DRIVEN EVERYTHING):
+     - Load: GetSalesPaginatedQuery(PageNumber, PageSize, SearchTerm?,
+       Status?, FromDateUtc?, ToDateUtc?, SaleNumberTerm?,
+       CustomerNameFilter?, CreatedByNameFilter?, TotalFilter?,
+       SortBy?, SortDescending?) → PaginatedResult<SaleListItemDto>
        - The handler resolves the current user from ICurrentUserService
          server-side, so callers CANNOT snoop on other users' sales by
          passing a foreign id.
-       - We request PageSize=100 (the backend's MaxPageSize cap) so the
-         grid has enough rows for client-side filtering + paging to be
-         meaningful. Same approach as AdminUsers.razor.
+       - EVERY filter and the sort ride inside the SQL query (via the
+         specification) — TotalCount is accurate for any filter
+         combination, and rows beyond the first page are reachable.
+         (Pre-Round-4, the page loaded PageSize=100 once and filtered/
+         sorted/paged client-side: everything past row 100 was invisible,
+         and search filtered only the loaded page.)
 
-   LAYOUT (mirrors AdminUsers.razor — "the tables should follow the shape
-   and rules of the admin users page"):
+   GRID WIRING (RadzenDataGrid LoadData mode — contract pinned by
+   DataGridLoadDataContractTests):
+     - The grid raises LoadData on mount, on every pager page click
+       (args.Skip = (page-1)*PageSize), on every sort-header click
+       (args.Sorts carries the column + direction), and on every column
+       filter change (args.Filters carries the descriptors).
+     - LoadGridDataAsync translates args → the typed query fields,
+       dispatches, then hands the page back via Data + Count. The pager
+       total comes from Count (the server total), and ShowPagingSummary
+       renders "Page X of Y (Z items)" via the localized
+       PagingSummaryFormat resx key.
+     - GotoFirstPageOnSort: a sort click jumps back to page 1 (a sorted
+       list's page 5 means something different than it did a second ago).
+     - The date-range toolbar calls grid.FirstPage(true) on Apply/Clear
+       — FirstPage(true) re-raises LoadData with Skip=0, so a narrowed
+       range never leaves the user stranded on a now-empty page N.
+     - OUT-OF-RANGE AUTO-HEAL: if the last load landed past the end of
+       the (newly filtered) result set, LoadGridDataAsync re-fires the
+       grid's first page — e.g. column filters typed into the filter row
+       re-load with the CURRENT page offset, which can exceed the new
+       total.
+
+   LAYOUT:
      1. Page header: title + "Continue shopping" button → /Products.
         Uses the same .admin-header flex layout as AdminUsers.
-     2. Sales table: RadzenDataGrid with built-in filter row per column
-        (AllowFiltering=true, FilterMode=SimpleWithMenu) + built-in pager
-        (AllowPaging=true, PageSize=20). No external search box, no
-        external status dropdown — those were removed per the user's
-        explicit request. Filtering happens per-column inside the grid,
-        exactly like AdminUsers.
-        Columns:
-          - Sale number (text filter, clickable link to /Sales/{Id})
-          - Status (dropdown filter with colored badges — Draft=gray,
-            Pending=amber, Approved=blue, Invoiced=green, Cancelled=red)
-          - Total (text filter on amount, right-aligned tabular-nums)
-          - Customer name (staff-only, text filter)
-          - Created by (staff-only audit column, text filter)
-          - Created at (date filter; rendered in TEHRAN time, not UTC)
-          - Actions (View icon button → /Sales/{Id})
-     3. Empty state: shown only when the backend returns zero sales total
-        (fresh customer). When the grid has data but the user's column
-        filters match zero rows, Radzen's built-in EmptyText takes over.
+     2. Date-range filter toolbar (Round 3): Tehran-local pickers →
+        UTC half-open interval [from, to+1d) pushed into the query.
+        The Created At COLUMN is deliberately NOT filterable anymore —
+        the toolbar is the single date-filtering surface (a chip shows
+        the active range; the column's date filter menu was a second,
+        inferior entry point to the same predicate). The column stays
+        SORTABLE.
+     3. Sales table: RadzenDataGrid with a filter row per column
+        (AllowFiltering, FilterMode.SimpleWithMenu) + the built-in pager
+        in server-driven mode. Columns:
+          - Sale number (text filter → server-side smart number parse:
+            "INT-1405-42" / "INT-1405" / "INT" / "DRAFT" / bare integer;
+            see SaleNumberSearchParser)
+          - Status (dropdown with colored badges → query.Status)
+          - Total (numeric filter with operator menu → query.TotalFilter)
+          - Customer (text filter → query.CustomerNameFilter; staff-only)
+          - Created By (text filter → query.CreatedByNameFilter; staff-only)
+          - Created At (sortable only — see the toolbar note above)
+          - Actions (no filter)
+     4. CSV export: exports EVERY row matching the active filters (all
+        pages), capped at 2,000 rows — not just the visible page. The
+        pre-Round-4 export could only ever ship the ≤100 loaded rows.
+
+   LOADING UX:
+     - First load: a skeleton with the grid's column rhythm renders as
+       an overlay veil on top of the (empty, already mounted) grid — the
+       grid MUST be mounted for its LoadData-on-init to fire.
+     - Subsequent loads (page/sort/filter round trips): a lighter veil
+       with a spinner; prefers-reduced-motion-safe (no animation).
+
+   EMPTY STATES:
+     - No sales at all (fresh customer): the "start shopping" card.
+     - Filters matched zero rows: a targeted card + one-click Clear that
+       resets the date range AND the column filters. When the grid has
+       data but the user's column filters match zero rows on the server,
+       the same filtered-empty state covers it (the server TotalCount is
+       0, not just the current page).
 
    TIMEZONE (Tehran, not UTC):
      CreatedAtUtc is a DateTimeOffset in UTC. The previous implementation
@@ -54,21 +99,18 @@
    ROLE-GATED COLUMNS:
      - Customer / non-staff users see only: Sale number, Status, Total,
        Created At, Actions. The "Customer" and "Created By" columns are
-     noise for them (Customer = themselves on every row; Created By is
+       noise for them (Customer = themselves on every row; Created By is
        an audit detail).
      - Staff (Admin/Manager/Employee/ReadOnly) see all columns including
        Customer (who the sale is for) and Created By (who keyed it in).
-       Hiding these for staff would hide useful audit info; showing them
-       to customers leaks nothing they don't already know but is noise.
-     - Implemented via <AuthorizeView Roles="..."> around the column
-       declaration — when the user isn't in those roles, the column
-       (including its filter row) doesn't render at all.
+     - Implemented via Visible="@_isStaff" on the column itself (NOT
+       <AuthorizeView> wrappers — AuthorizeView re-orders the grid's
+       column collection; see the Customer column's comment below).
 
    ANTIFORGERY:
      Not needed — no EditForm. All button clicks are sync navigations or
      async event handlers that dispatch queries via Wolverine. The Blazor
      circuit's anti-forgery token is established at circuit start. *@
-
 @page "/Sales"
 @attribute [Authorize]
 @attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
@@ -77,6 +119,8 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Sales.DTOs
 @using TakOne.Application.Sales.Queries.GetSalesPaginated
+@using TakOne.Application.Sales.Specifications
+@using TakOne.Domain.Sales.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
 @using TakOne.WebUI.Services
@@ -190,9 +234,57 @@
                 min-width: 44px;
             }
 
-            .sales-datefilter-chip-x:hover {
-                color: var(--rz-danger, #e74c3c);
-                background: var(--rz-secondary-background-color, transparent);
+                .sales-datefilter-chip-x:hover {
+                    color: var(--rz-danger, #e74c3c);
+                    background: var(--rz-secondary-background-color, transparent);
+                }
+
+            /* ── Loading veil (Round 4 — server-driven loads) ──────────
+               The grid card is wrapped in a relative container; while a
+               server round trip is in flight, an absolute veil covers it
+               (skeleton on the first load, spinner afterwards). No
+               animation — prefers-reduced-motion-safe by construction. */
+            .sales-grid-wrap {
+                position: relative;
+            }
+
+            .sales-loading-veil {
+                position: absolute;
+                inset: 0;
+                z-index: 5;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding-top: 3rem;
+                background: var(--rz-base-background-color);
+                opacity: 0.72;
+            }
+
+            .sales-loading-veil--skeleton {
+                /* The first load shows the full skeleton rhythm, not just
+                   a spinner — the page "already exists" under the veil. */
+                align-items: stretch;
+                padding: 0.5rem;
+                background: var(--rz-base-background-color);
+            }
+
+            .sales-loading-spin {
+                font-size: 2.2rem;
+                color: var(--rz-primary);
+                animation: sales-spin 1.1s linear infinite;
+            }
+
+            @@keyframes sales-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            /* Reduced motion: the spinner becomes a static glyph. */
+            @@media (prefers-reduced-motion: reduce) {
+                .sales-loading-spin {
+                    animation: none;
+                }
             }
     </style>
 </HeadContent>
@@ -217,32 +309,11 @@
                       Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
     </div>
 
-    @* ── Loading skeleton (Round 3 styling) ──
-       Same 7-column rhythm as the real grid so the layout doesn't jump
-       when data replaces the skeleton. Uses the shared .tm-skel utilities
-       from app.css (theme-adaptive, prefers-reduced-motion aware). *@
-    @if (_isLoading)
-    {
-        <RadzenCard Variant="Variant.Filled" Class="sales-grid" Style="padding: 0.5rem;">
-            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
-                @for (var i = 0; i < 8; i++)
-                {
-                    <div class="tm-skel-grid" style="--tm-skel-cols: 1.3fr 0.9fr 0.8fr 1fr 1fr 1.1fr 0.7fr;">
-                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                        <div class="tm-skel tm-skel--line"></div>
-                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
-                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
-                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                    </div>
-                }
-            </div>
-        </RadzenCard>
-    }
-
-    @* ── Error banner ── *@
-    else if (!string.IsNullOrEmpty(_loadError))
+    @* ── Error banner ──
+       On load failure the grid is replaced entirely: there is nothing
+       meaningful to page through, and the Retry button re-mounts the
+       grid (which re-fires LoadData from scratch). *@
+    @if (!string.IsNullOrEmpty(_loadError))
     {
         <RadzenAlert Title="@Loc["ErrorTitle"]"
                      Text="@_loadError"
@@ -253,37 +324,39 @@
                           Icon="refresh"
                           ButtonStyle="ButtonStyle.Primary"
                           Variant="Variant.Outlined"
-                          Click="@LoadSalesAsync"
+                          Click="@RetryLoadAsync"
                           Style="margin-top: 0.5rem;" />
         </RadzenAlert>
     }
 
-    @* ── Empty state (no orders at all, or none in the applied range) ──
-       When NO date filter is applied and the backend returns zero sales
-       total, this is a fresh customer with no orders yet — the original
-       "start shopping" empty state. When a date range IS applied and
-       matches zero rows, the user just filtered themselves into an empty
-       corner — a targeted message (plus the Clear button in the toolbar
-       above) beats telling them to go shopping. When the grid has data
-       but the user's column filters match zero rows, Radzen's built-in
-       EmptyText takes over inside the grid. *@
-    else if (_sales.Count == 0)
+    @* ── Empty state (no orders at all, or none matching the filters) ──
+       _totalCount is the SERVER-side count of every row matching the
+       active filters — zero here means "no orders exist for this
+       filter combination", not "this page happens to be empty" (the
+       auto-heal in LoadGridDataAsync already corrects past-the-end
+       pages). When NO filter is active and the count is zero, this is
+       a fresh customer with no orders yet — the original "start
+       shopping" empty state. When a filter IS active and matches zero
+       rows, the user just filtered themselves into an empty corner —
+       a targeted message (plus the Clear button) beats telling them to
+       go shopping. *@
+    else if (_totalCount == 0 && !_isLoading)
     {
-        @if (HasAppliedDateFilter)
+        @if (HasActiveFilters)
         {
             <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
                 <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="event_busy"
+                    <RadzenIcon Icon="filter_alt_off"
                                 Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
                     <RadzenText Text="@Loc["EmptyTitleFiltered"]"
                                 TextStyle="TextStyle.H6" />
                     <RadzenText Text="@Loc["EmptyMessageFiltered"]"
                                 Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenButton Text="@Loc["ClearDateFilterButton"]"
-                                  Icon="filter_alt_off"
+                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                  Icon="restart_alt"
                                   ButtonStyle="ButtonStyle.Secondary"
                                   Variant="Variant.Outlined"
-                                  Click="@ClearDateFilterAsync" />
+                                  Click="@ClearAllFiltersAsync" />
                 </RadzenStack>
             </RadzenCard>
         }
@@ -313,31 +386,17 @@
         }
     }
 
-    @* ── Date-range filter toolbar (Round 3) ──
+    @* ── Date-range filter toolbar + Sales table ──
        Server-side creation-date filter: the picked Tehran-local dates are
        converted to UTC half-open interval instants [from, to) and pushed
        into GetSalesPaginatedQuery, so the SQL WHERE clause + TotalCount
-       are accurate (the grid's per-column filters stay client-side on
-       the loaded page — same split as before). Rendered above the grid
-       whenever there is data to filter; the filtered-empty state carries
-       its own one-click Clear instead. The active range renders as a
-       chip so the user can always see WHY the list is what it is. *@
-
-    @* ── Sales table ──
-       RadzenDataGrid with built-in filter row per column (AllowFiltering +
-       FilterMode.SimpleWithMenu) + built-in pager (AllowPaging, PageSize=20).
-       Mirrors the AdminUsers.razor grid — no external search box, no
-       external status dropdown. Each column has its own filter input in a
-       dedicated filter row beneath the header:
-         - Sale Number → text filter (Radzen default)
-         - Status      → dropdown with colored badges
-         - Total       → text filter (Radzen default, on Total.Amount)
-         - Customer    → text filter (Radzen default, staff-only column)
-         - Created By  → text filter (Radzen default, staff-only column)
-         - Created At  → date filter (Radzen default)
-         - Actions     → no filter (Filterable=false)
-       Data is loaded once (PageSize=100, the backend cap) and filtered +
-       paged client-side — same approach as AdminUsers.razor. *@
+       are accurate. The active range renders as a chip so the user can
+       always see WHY the list is what it is. The grid itself runs in
+       Radzen LoadData mode (server-driven paging/sorting/filtering — see
+       the page header docs). The toolbar + grid only render once at
+       least one load has completed without error (or is in flight — the
+       veil covers the grid during the initial round trip so the grid is
+       MOUNTED and its LoadData-on-init can fire). *@
     else
     {
         <RadzenCard Variant="Variant.Filled" Style="padding: 0.75rem 1rem; margin-bottom: 0;">
@@ -385,225 +444,287 @@
                     </span>
                 }
 
-                @* Export CSV (Round 3) — exports exactly what the list shows
-                   (the loaded page, including the applied date range and the
-                   server-side scoping: a customer exports their own sales,
-                   staff export the audit view). "What you see is what you
-                   get" beats a surprise full-table dump. Spacer pushes it to
-                   the trailing edge on wide screens. *@
+                @* Export CSV (Round 4) — exports every row matching the
+                   active filters (date range + column filters + scoping:
+                   a customer exports their own sales, staff export the
+                   audit view) across ALL pages, capped at 2,000 rows so
+                   a pathological filter can't hang the circuit. Spacer
+                   pushes it to the trailing edge on wide screens. *@
                 <span style="flex: 1;"></span>
                 <RadzenButton Text="@Loc["ExportCsvButton"]"
                               Icon="download"
                               ButtonStyle="ButtonStyle.Secondary"
                               Variant="Variant.Outlined"
                               Size="ButtonSize.Small"
-                              Disabled="@(_isLoading || _sales.Count == 0)"
-                              Click="@ExportSalesCsvAsync" />
+                              Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                              Click="@ExportSalesCsvAsync">
+                    @if (_isExporting)
+                    {
+                        <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
+                    }
+                </RadzenButton>
             </div>
         </RadzenCard>
 
-        <RadzenCard Variant="Variant.Filled" Class="sales-grid" Style="padding: 0.5rem;">
-            <RadzenDataGrid @ref="grid"
-                            Data="@_sales"
-                            TItem="SaleListItemDto"
-                            AllowSorting="true"
-                            AllowFiltering="true"
-                            FilterMode="FilterMode.SimpleWithMenu"
-                            FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
-                            AllowPaging="true"
-                            PageSize="20"
-                            PagerHorizontalAlign="HorizontalAlign.Center"
-                            EmptyText="@Loc["EmptyText"]"
-                            AllowColumnReorder="false"
-                            Style="width: 100%;">
-                <Columns>
+        <div class="sales-grid-wrap">
+            <RadzenCard Variant="Variant.Filled" Class="sales-grid" Style="padding: 0.5rem;">
+                <RadzenDataGrid @ref="grid"
+                                Data="@_sales"
+                                Count="@_totalCount"
+                                LoadData="@LoadGridDataAsync"
+                                TItem="SaleListItemDto"
+                                AllowSorting="true"
+                                GotoFirstPageOnSort="true"
+                                AllowFiltering="true"
+                                FilterMode="FilterMode.SimpleWithMenu"
+                                FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                AllowPaging="true"
+                                PageSize="20"
+                                PagerAlwaysVisible="true"
+                                PagerHorizontalAlign="HorizontalAlign.Center"
+                                ShowPagingSummary="true"
+                                PagingSummaryFormat="@Loc["PagerSummaryFormat"]"
+                                EmptyText="@Loc["EmptyText"]"
+                                IsLoading="@(_isLoading && _sales is { Count: > 0 })"
+                                AllowColumnReorder="false"
+                                Style="width: 100%;">
+                    <Columns>
 
-                    @* ── Sale number — text filter (Radzen default) ──
-                       Clickable link to /Sales/{Id}. Monospace + primary
-                       color so it reads as an identifier.
+                        @* ── Sale number — text filter (server-side smart parse) ──
+                           Clickable link to /Sales/{Id}. Monospace + primary
+                           color so it reads as an identifier.
 
-                       B2 deferred-allocation: drafts have no permanent
-                       SaleNumber, so the column binds to DisplayNumber
-                       (real SaleNumber for submitted sales, or
-                       DRAFT-{Guid[0..8]} for drafts). This makes drafts
-                       searchable — typing "DRAFT" or the Guid prefix in
-                       the filter row matches draft rows. *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="DisplayNumber"
-                                          Title="@Loc["ColSaleNumber"]"
-                                          Width="240px">
-                        <Template Context="sale">
-                            <RadzenLink Text="@(CultureFormat.FormatDigits(sale.DisplayNumber))"
-                                        Path="@($"/Sales/{sale.Id}")"
-                                        class="sale-number-link"
-                                        title="@(GetSaleNumberTooltip(sale))" />
-                        </Template>
-                    </RadzenDataGridColumn>
+                           B2 deferred-allocation: drafts have no permanent
+                           SaleNumber, so the column binds to DisplayNumber
+                           (real SaleNumber for submitted sales, or
+                           DRAFT-{Guid[0..8]} for drafts). The filter term is
+                           translated server-side by SaleNumberSearchParser:
+                           "INT-1405-42" (exact), "INT-1405" (year), "INT"
+                           (all numbered), "DRAFT" (all drafts), or a bare
+                           integer (sequence-or-year). *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="DisplayNumber"
+                                              Title="@Loc["ColSaleNumber"]"
+                                              Width="240px">
+                            <Template Context="sale">
+                                <RadzenLink Text="@(CultureFormat.FormatDigits(sale.DisplayNumber))"
+                                            Path="@($"/Sales/{sale.Id}")"
+                                            class="sale-number-link"
+                                            title="@(GetSaleNumberTooltip(sale))" />
+                            </Template>
+                        </RadzenDataGridColumn>
 
-                    @* ── Status — dropdown filter with colored tags ──
-                       Mirrors AdminUsers.razor's Status column. The dropdown
-                       uses string keys ("Draft"/"Pending"/"Approved"/
-                       "Invoiced"/"Cancelled") which match the SaleListItemDto.Status
-                       property exactly. AllowClear resets to null (All statuses).
-                       The dropdown's ValueTemplate shows the selected value as a
-                       colored badge; Template shows each option as a colored badge.
-                       Badge colors: Draft=gray(Base), Pending=amber(Warning),
-                       Approved=blue(Info), Invoiced=green(Success),
-                       Cancelled=red(Danger). Filter is client-side via
-                       column.FilterValue + grid.Reload(). *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="Status"
-                                          Title="@Loc["ColStatus"]"
-                                          Width="140px"
-                                          TextAlign="TextAlign.Center"
-                                          FilterOperator="FilterOperator.Equals">
-                        <Template Context="sale">
-                            <RadzenBadge Text="@GetStatusLabel(sale.Status)"
-                                         BadgeStyle="@GetStatusBadgeStyle(sale.Status)"
-                                         IsPill="true"
-                                         class="sale-status-badge" />
-                        </Template>
-                        <FilterTemplate Context="column">
-                            <RadzenDropDown @bind-Value="_selectedStatusFilter"
-                                            Data="@_statusFilterOptions"
-                                            TValue="string"
-                                            AllowClear="true"
-                                            Placeholder="@Loc["StatusAll"]"
-                                            Change="@(args => OnStatusFilterChanged(_selectedStatusFilter, column))"
-                                            Style="width: 100%; min-width: 130px;">
-                                <ValueTemplate Context="selected">
-                                    @{
-                                        var selectedStr = selected?.ToString();
-                                    }
-                                    @if (!string.IsNullOrEmpty(selectedStr))
-                                    {
-                                        <RadzenBadge Text="@GetStatusLabel(selectedStr)"
-                                                     BadgeStyle="@GetStatusBadgeStyle(selectedStr)"
+                        @* ── Status — dropdown filter with colored tags ──
+                           Mirrors AdminUsers.razor's Status column. The dropdown
+                           uses string keys ("Draft"/"Pending"/"Approved"/
+                           "Invoiced"/"Cancelled") which match the SaleListItemDto.Status
+                           property exactly. AllowClear resets to null (All statuses).
+                           The dropdown's ValueTemplate shows the selected value as a
+                           colored badge; Template shows each option as a colored badge.
+                           Badge colors: Draft=gray(Base), Pending=amber(Warning),
+                           Approved=blue(Info), Invoiced=green(Success),
+                           Cancelled=red(Danger). Filter round-trips the server via
+                           column.FilterValue + grid.FirstPage(true) (a narrowed result
+                           set should restart at page 1). *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="Status"
+                                              Title="@Loc["ColStatus"]"
+                                              Width="140px"
+                                              TextAlign="TextAlign.Center"
+                                              FilterOperator="FilterOperator.Equals">
+                            <Template Context="sale">
+                                <RadzenBadge Text="@GetStatusLabel(sale.Status)"
+                                             BadgeStyle="@GetStatusBadgeStyle(sale.Status)"
+                                             IsPill="true"
+                                             class="sale-status-badge" />
+                            </Template>
+                            <FilterTemplate Context="column">
+                                <RadzenDropDown @bind-Value="_selectedStatusFilter"
+                                                Data="@_statusFilterOptions"
+                                                TValue="string"
+                                                AllowClear="true"
+                                                Placeholder="@Loc["StatusAll"]"
+                                                Change="@(args => OnStatusFilterChanged(_selectedStatusFilter, column))"
+                                                Style="width: 100%; min-width: 130px;">
+                                    <ValueTemplate Context="selected">
+                                        @{
+                                            var selectedStr = selected?.ToString();
+                                        }
+                                        @if (!string.IsNullOrEmpty(selectedStr))
+                                        {
+                                            <RadzenBadge Text="@GetStatusLabel(selectedStr)"
+                                                         BadgeStyle="@GetStatusBadgeStyle(selectedStr)"
+                                                         IsPill="true" />
+                                        }
+                                        else
+                                        {
+                                            <span>@Loc["StatusAll"]</span>
+                                        }
+                                    </ValueTemplate>
+                                    <Template Context="statusOption">
+                                        @{
+                                            var statusStr = statusOption?.ToString();
+                                        }
+                                        <RadzenBadge Text="@GetStatusLabel(statusStr)"
+                                                     BadgeStyle="@GetStatusBadgeStyle(statusStr)"
                                                      IsPill="true" />
-                                    }
-                                    else
-                                    {
-                                        <span>@Loc["StatusAll"]</span>
-                                    }
-                                </ValueTemplate>
-                                <Template Context="statusOption">
-                                    @{
-                                        var statusStr = statusOption?.ToString();
-                                    }
-                                    <RadzenBadge Text="@GetStatusLabel(statusStr)"
-                                                 BadgeStyle="@GetStatusBadgeStyle(statusStr)"
-                                                 IsPill="true" />
-                                </Template>
-                            </RadzenDropDown>
-                        </FilterTemplate>
-                    </RadzenDataGridColumn>
+                                    </Template>
+                                </RadzenDropDown>
+                            </FilterTemplate>
+                        </RadzenDataGridColumn>
 
-                    @* ── Total — text filter on Total.Amount ──
-                       Right-aligned tabular-numeric. The filter operates on
-                       the underlying decimal amount (not the formatted
-                       string), so typing "15000" matches sales whose total
-                       amount is 15000 regardless of currency. *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="Total.Amount"
-                                          Title="@Loc["ColTotal"]"
-                                          Width="140px"
-                                          TextAlign="TextAlign.Right">
-                        <Template Context="sale">
-                            <span class="sale-total">@FormatMoney(sale.Total)</span>
-                        </Template>
-                    </RadzenDataGridColumn>
+                        @* ── Total — numeric filter with operator menu ──
+                           Right-aligned tabular-numeric. The filter operates on
+                           the underlying decimal amount (not the formatted
+                           string), so typing "15000" matches sales whose total
+                           amount is 15000 regardless of currency. The picked
+                           operator + value are translated to the typed
+                           SalesAmountFilter and compared in SQL. *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="Total.Amount"
+                                              Title="@Loc["ColTotal"]"
+                                              Width="140px"
+                                              TextAlign="TextAlign.Right">
+                            <Template Context="sale">
+                                <span class="sale-total">@FormatMoney(sale.Total)</span>
+                            </Template>
+                        </RadzenDataGridColumn>
 
-                    @* ── Customer name — staff-only, text filter ──
-                       For a customer browsing their own orders this column
-                       would be themselves on every row, which is noise.
-                       Hiding it for non-staff keeps the table compact on
-                       mobile.
+                        @* ── Customer name — staff-only, text filter ──
+                           For a customer browsing their own orders this column
+                           would be themselves on every row, which is noise.
+                           Hiding it for non-staff keeps the table compact on
+                           mobile.
 
-                       IMPORTANT — WHY Visible= (not <AuthorizeView>):
-                       Earlier these two columns were wrapped in
-                       <AuthorizeView Roles="...">. That worked for
-                       visibility, but it broke column ORDER: Blazor's
-                       AuthorizeView is a component (not a directive), so
-                       when RadzenDataGrid walks its <Columns> RenderFragment
-                       to collect columns, the ones nested inside an
-                       AuthorizeView's child content get appended to the
-                       grid's column list AFTER all the unwrapped columns.
-                       The runtime order then became
-                       SaleNumber, Status, Total, CreatedAt, Actions,
-                       Customer, CreatedBy — i.e. Created By appeared AFTER
-                       Actions, which was wrong. Switching to Visible="@_isStaff"
-                       keeps the columns in source order (Actions last) AND
-                       preserves role-gating, because Visible is a parameter
-                       on the column itself rather than a wrapper component
-                       that re-orders the RenderFragment. *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="CustomerName"
-                                          Title="@Loc["ColCustomer"]"
-                                          Width="*"
-                                          Visible="@_isStaff">
-                        <Template Context="sale">
-                            <RadzenText Text="@sale.CustomerName" Style="font-weight: 500;" />
-                        </Template>
-                    </RadzenDataGridColumn>
+                           IMPORTANT — WHY Visible= (not <AuthorizeView>):
+                           Earlier these two columns were wrapped in
+                           <AuthorizeView Roles="...">. That worked for
+                           visibility, but it broke column ORDER: Blazor's
+                           AuthorizeView is a component (not a directive), so
+                           when RadzenDataGrid walks its <Columns> RenderFragment
+                           to collect columns, the ones nested inside an
+                           AuthorizeView's child content get appended to the
+                           grid's column list AFTER all the unwrapped columns.
+                           The runtime order then became
+                           SaleNumber, Status, Total, CreatedAt, Actions,
+                           Customer, CreatedBy — i.e. Created By appeared AFTER
+                           Actions, which was wrong. Switching to Visible="@_isStaff"
+                           keeps the columns in source order (Actions last) AND
+                           preserves role-gating, because Visible is a parameter
+                           on the column itself rather than a wrapper component
+                           that re-orders the RenderFragment. *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="CustomerName"
+                                              Title="@Loc["ColCustomer"]"
+                                              Width="*"
+                                              Visible="@_isStaff">
+                            <Template Context="sale">
+                                <RadzenText Text="@sale.CustomerName" Style="font-weight: 500;" />
+                            </Template>
+                        </RadzenDataGridColumn>
 
-                    @* ── Created by — staff-only audit column, text filter ──
-                       Shows which staff member keyed the sale in (often the
-                       customer themselves for self-service sales, but could
-                       be an employee acting on behalf of a customer).
-                       See the Customer column's comment for why we use
-                       Visible=@_isStaff instead of <AuthorizeView>. *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="CreatedByName"
-                                          Title="@Loc["ColCreatedBy"]"
-                                          Width="*"
-                                          Visible="@_isStaff">
-                        <Template Context="sale">
-                            <RadzenText Text="@sale.CreatedByName"
-                                        Style="color: var(--rz-text-secondary-color);" />
-                        </Template>
-                    </RadzenDataGridColumn>
+                        @* ── Created by — staff-only audit column, text filter ──
+                           Shows which staff member keyed the sale in (often the
+                           customer themselves for self-service sales, but could
+                           be an employee acting on behalf of a customer).
+                           See the Customer column's comment for why we use
+                           Visible=@_isStaff instead of <AuthorizeView>. *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="CreatedByName"
+                                              Title="@Loc["ColCreatedBy"]"
+                                              Width="*"
+                                              Visible="@_isStaff">
+                            <Template Context="sale">
+                                <RadzenText Text="@sale.CreatedByName"
+                                            Style="color: var(--rz-text-secondary-color);" />
+                            </Template>
+                        </RadzenDataGridColumn>
 
-                    @* ── Created at — Tehran time, date filter ──
-                       The underlying Property is CreatedAtUtc (DateTimeOffset).
-                       The filter operates on the UTC value (so it's timezone-
-                       stable across deployments), but the cell Template
-                       renders the value converted to Tehran time via
-                       FormatTehranDateTime() — see the helper's doc comment
-                       for why .LocalDateTime is wrong here. *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Property="CreatedAtUtc"
-                                          Title="@Loc["ColCreated"]"
-                                          Width="180px">
-                        <Template Context="sale">
-                            <span class="sale-timestamp">@FormatTehranDateTime(sale.CreatedAtUtc)</span>
-                        </Template>
-                    </RadzenDataGridColumn>
+                        @* ── Created at — Tehran time, SORTABLE ONLY ──
+                           Date filtering has a single, better home: the toolbar
+                           above (visible active-range chip, one-click clear,
+                           Tehran-midnight semantics). The column's old filter
+                           menu was a second, inferior entry point to the same
+                           predicate, so it's deliberately disabled — the column
+                           stays sortable (server-side, via SalesSortBy). The
+                           cell Template renders the value converted to Tehran
+                           time via FormatTehranDateTime(). *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Property="CreatedAtUtc"
+                                              Title="@Loc["ColCreated"]"
+                                              Width="180px"
+                                              Filterable="false">
+                            <Template Context="sale">
+                                <span class="sale-timestamp">@FormatTehranDateTime(sale.CreatedAtUtc)</span>
+                            </Template>
+                        </RadzenDataGridColumn>
 
-                    @* ── Actions — View icon button, no filter ──
-                       Same target as the sale number link, but provides a
-                       clearer touch target on mobile. Matches AdminUsers'
-                       action button styling (icon-only text button with
-                       title attribute). *@
-                    <RadzenDataGridColumn TItem="SaleListItemDto"
-                                          Title="@Loc["ColActions"]"
-                                          Width="80px"
-                                          TextAlign="TextAlign.Center"
-                                          Sortable="false"
-                                          Filterable="false">
-                        <Template Context="sale">
-                            <div class="row-actions">
-                                <RadzenButton Icon="visibility"
-                                              Variant="Variant.Text"
-                                              ButtonStyle="ButtonStyle.Info"
-                                              title="@Loc["ActionViewDetail"]"
-                                              aria-label="@Loc["ActionViewDetail"]"
-                                              Click="@(() => GoToSaleDetail(sale.Id))" />
-                            </div>
-                        </Template>
-                    </RadzenDataGridColumn>
-                </Columns>
-            </RadzenDataGrid>
-        </RadzenCard>
+                        @* ── Actions — View icon button, no filter ──
+                           Same target as the sale number link, but provides a
+                           clearer touch target on mobile. Matches AdminUsers'
+                           action button styling (icon-only text button with
+                           title attribute). *@
+                        <RadzenDataGridColumn TItem="SaleListItemDto"
+                                              Title="@Loc["ColActions"]"
+                                              Width="80px"
+                                              TextAlign="TextAlign.Center"
+                                              Sortable="false"
+                                              Filterable="false">
+                            <Template Context="sale">
+                                <div class="row-actions">
+                                    <RadzenButton Icon="visibility"
+                                                  Variant="Variant.Text"
+                                                  ButtonStyle="ButtonStyle.Info"
+                                                  title="@Loc["ActionViewDetail"]"
+                                                  aria-label="@Loc["ActionViewDetail"]"
+                                                  Click="@(() => GoToSaleDetail(sale.Id))" />
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
+
+            @* ── Loading veil (Round 4) ──
+               Covers the mounted grid while a server round trip is in
+               flight. First load (no data yet): the full skeleton rhythm
+               (tm-skel utilities from app.css — theme-adaptive,
+               reduced-motion aware). Subsequent loads: a spinner glyph.
+               The grid MUST stay mounted underneath — unmounting it
+               would discard its LoadData state and re-fire the initial
+               load in a loop. *@
+            @if (_isLoading)
+            {
+                @if (_sales is not { Count: > 0 })
+                {
+                    <div class="sales-loading-veil sales-loading-veil--skeleton"
+                         role="status"
+                         aria-live="polite"
+                         aria-label="@Loc["LoadingAriaLabel"]">
+                        <div class="tm-skel-stack" style="padding: 0.5rem; width: 100%;">
+                            @for (var i = 0; i < 8; i++)
+                            {
+                                <div class="tm-skel-grid" style="--tm-skel-cols: 1.3fr 0.9fr 0.8fr 1fr 1fr 1.1fr 0.7fr;">
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                    <div class="tm-skel tm-skel--line"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="sales-loading-veil" role="status" aria-live="polite" aria-label="@Loc["LoadingAriaLabel"]">
+                        <RadzenIcon Icon="progress_activity" Class="sales-loading-spin" />
+                    </div>
+                }
+            }
+        </div>
     }
 </RadzenStack>
 
@@ -611,15 +732,29 @@
     // ── State ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The full list of sales returned by the backend. We request
-    /// PageSize=100 (the backend cap) so the grid has enough rows for
-    /// client-side filtering + paging. Same approach as AdminUsers.razor.
+    /// The CURRENT PAGE of sales returned by the backend (Round 4:
+    /// server-driven paging — this is exactly one page, not the
+    /// pre-Round-4 "up to 100 rows" client-side working set).
+    ///
+    /// NULL until the first load completes: Radzen only fires LoadData
+    /// on mount when <c>Data</c> is null (binding an empty list at
+    /// mount suppresses the initial load — pinned by the contract
+    /// probes). Paths that REMOUNT the grid (retry after error, the
+    /// empty state's Clear-all) reset this to null so the fresh mount
+    /// fires its initial load.
     /// </summary>
-    private List<SaleListItemDto> _sales = new();
+    private List<SaleListItemDto>? _sales;
 
     /// <summary>
-    /// Grid reference — needed so the status filter's Change handler can
-    /// call grid.Reload() after setting column.FilterValue.
+    /// The SERVER-SIDE total count of rows matching the active filters
+    /// (drives the grid's Count parameter → pager page count + summary).
+    /// </summary>
+    private int _totalCount;
+
+    /// <summary>
+    /// Grid reference — needed so the toolbar can call
+    /// <c>grid.FirstPage(true)</c> (re-fires LoadData at Skip=0) and the
+    /// status filter's Change handler can drive the column filter.
     /// </summary>
     private RadzenDataGrid<SaleListItemDto> grid = default!;
 
@@ -643,10 +778,43 @@
     };
 
     /// <summary>
-    /// Loading/error state.
+    /// Loading/error state. _isLoading starts TRUE: the grid mounts under
+    /// the skeleton veil and fires its initial LoadData, which flips it to
+    /// false on completion (see the loading-veil comment in the markup).
     /// </summary>
     private bool _isLoading = true;
     private string _loadError = string.Empty;
+
+    /// <summary>
+    /// True while the CSV export's multi-page fetch loop is running —
+    /// disables the export button so double-clicks can't race two loops.
+    /// </summary>
+    private bool _isExporting;
+
+    // ── Round 4 server-side filter/sort state (translated from the
+    //    grid's LoadDataArgs on every load; also reused by the CSV
+    //    export so it ships exactly what the filters select) ──────────
+
+    private string? _activeSaleNumberTerm;
+    private SalesTextFilter? _activeCustomerNameFilter;
+    private SalesTextFilter? _activeCreatedByNameFilter;
+    private SalesAmountFilter? _activeTotalFilter;
+    private SaleStatus? _activeStatus;
+    private SalesSortBy? _activeSortBy;
+    private bool _activeSortDescending = true;
+
+    /// <summary>
+    /// True when ANY server-side filter is active (the date toolbar or
+    /// any column filter) — drives the filtered-empty state's copy and
+    /// the one-click Clear-all button.
+    /// </summary>
+    private bool HasActiveFilters =>
+        HasAppliedDateFilter ||
+        _activeSaleNumberTerm is not null ||
+        _activeCustomerNameFilter is not null ||
+        _activeCreatedByNameFilter is not null ||
+        _activeTotalFilter is not null ||
+        _activeStatus is not null;
 
     // ── Date-range filter (Round 3) ──────────────────────────────────
 
@@ -667,7 +835,7 @@
 
     /// <summary>
     /// The APPLIED range as UTC half-open interval instants — what
-    /// LoadSalesAsync actually dispatches. Kept separate from the picker
+    /// LoadGridDataAsync actually dispatches. Kept separate from the picker
     /// fields so the list always reflects the last APPLIED filter (the
     /// pickers can hold an unapplied edit while the grid shows the old
     /// range — standard ERP apply-on-click semantics).
@@ -704,31 +872,26 @@
     /// audit columns). Customers (and any non-staff role) see only their own
     /// sales and a narrower column set.
     ///
-    /// WHY THIS EXISTS (and why we don't use &lt;AuthorizeView&gt; for the
-    /// staff-only columns anymore):
-    ///   The Customer and Created By columns used to be wrapped in
-    ///   &lt;AuthorizeView Roles="..."&gt;. That worked for visibility, but
-    ///   it broke column ORDER. AuthorizeView is a Blazor COMPONENT (not a
-    ///   directive like @if), so when RadzenDataGrid walks its &lt;Columns&gt;
-    ///   RenderFragment to collect column instances, the columns nested
-    ///   inside an AuthorizeView's child content are added to the grid's
-    ///   column list AFTER all the unwrapped columns. The runtime order
-    ///   became SaleNumber, Status, Total, CreatedAt, Actions, Customer,
-    ///   CreatedBy — i.e. Created By appeared AFTER Actions, which was
-    ///   wrong.
-    ///   Switching to Visible="@_isStaff" on the column itself fixes this
-    ///   because Visible is a parameter on the column (which is already in
-    ///   the grid's column collection at the right position), not a wrapper
-    ///   component that re-orders the RenderFragment.
-    ///
     /// WHY AuthStateProvider (not ICurrentUserService):
     ///   Same reason as SaleDetail.razor — ICurrentUserService resolves
     ///   from IHttpContextAccessor.HttpContext, which is only populated
     ///   during the initial prerender request and is null over the SignalR
     ///   circuit. AuthStateProvider is the canonical source of role info
     ///   for interactive Blazor Server components.
+    ///
+    /// WHY Visible= instead of &lt;AuthorizeView&gt; for the staff-only
+    ///   columns: see the Customer column's markup comment — AuthorizeView
+    ///   re-orders the grid's column collection.
     /// </summary>
     private bool _isStaff;
+
+    /// <summary>
+    /// Re-entrancy guard for the out-of-range auto-heal (see
+    /// LoadGridDataAsync): a heal fires grid.FirstPage(true), which re-enters
+    /// LoadGridDataAsync — the guard keeps a pathological sequence of loads
+    /// from healing recursively.
+    /// </summary>
+    private bool _healingPage;
 
     // ── Tehran timezone ─────────────────────────────────────────────────
     //
@@ -756,58 +919,117 @@
                    || user.IsInRole(Roles.Employee)
                    || user.IsInRole(Roles.ReadOnly);
 
-        try
-        {
-            await LoadSalesAsync();
-        }
-        finally
-        {
-            _isLoading = false;
-        }
+        // NOTE: the data load is NOT kicked off here — the grid mounts in
+        // the same render and fires its LoadData-on-init, which drives
+        // LoadGridDataAsync. Kicking a manual load here too would double
+        // the initial query.
     }
 
-    // ── Data loading ────────────────────────────────────────────────────
+    // ── Data loading (Radzen LoadData) ──────────────────────────────────
 
-    private async Task LoadSalesAsync()
+    /// <summary>
+    /// The grid's LoadData callback: translates Radzen's descriptors into
+    /// the typed query fields, dispatches, and hands the page back via
+    /// Data + Count. Fired on mount, on pager clicks, on sort-header
+    /// clicks, and on column-filter changes (see the page header docs).
+    /// </summary>
+    private async Task LoadGridDataAsync(LoadDataArgs args)
     {
         _isLoading = true;
         _loadError = string.Empty;
 
         try
         {
-            // Load up to 100 sales (the backend cap) so the grid has
-            // enough rows for client-side filtering + paging. Same
-            // approach as AdminUsers.razor — backend caps PageSize at
-            // MaxPageSize=100, so anything larger is silently clamped.
-            //
-            // SearchTerm + Status are null: filtering happens client-side
-            // via Radzen's per-column filter row (no external filter bar).
-            // The DATE RANGE is the one SERVER-side filter — it must prune
-            // rows BEFORE the PageSize=100 slice, otherwise "show me last
-            // week" on a 10,000-sale DB returns the newest 100 regardless
-            // of the range (the pre-Round-3 behavior — everything past row
-            // 100 was invisible).
-            var query = new GetSalesPaginatedQuery
-            {
-                PageNumber = 1,
-                PageSize = 100,
-                SearchTerm = null,
-                Status = null,
-                FromDateUtc = _appliedFromUtc,
-                ToDateUtc = _appliedToUtc
-            };
+            (_activeSortBy, _activeSortDescending) = SalesGridStateTranslator.TranslateSort(args.Sorts);
+            var columnFilters = SalesGridStateTranslator.TranslateFilters(args.Filters);
+            _activeSaleNumberTerm = columnFilters.SaleNumberTerm;
+            _activeCustomerNameFilter = columnFilters.CustomerName;
+            _activeCreatedByNameFilter = columnFilters.CreatedByName;
+            _activeTotalFilter = columnFilters.Total;
+            _activeStatus = columnFilters.Status;
 
-            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
+            var pageSize = args.Top is > 0 ? args.Top.Value : 20;
+            var pageNumber = (args.Skip ?? 0) / pageSize + 1;
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
+                BuildQuery(pageNumber, pageSize));
+
             _sales = result.Items.ToList();
+            _totalCount = result.TotalCount;
+
+            // OUT-OF-RANGE AUTO-HEAL: if the filters shrank the result set
+            // while the grid sat on a high page (the built-in filter-row
+            // inputs reload with the CURRENT page offset), the loaded page
+            // is empty but the total is not — jump back to page 1 instead
+            // of showing a mystifying blank page. FirstPage(true) re-fires
+            // LoadData with Skip=0; the heal guard prevents recursion.
+            if (!_healingPage &&
+                _sales.Count == 0 &&
+                _totalCount > 0 &&
+                (args.Skip ?? 0) >= _totalCount)
+            {
+                _healingPage = true;
+                try
+                {
+                    if (grid is not null)
+                    {
+                        await grid.FirstPage(true);
+                        return; // the re-fired load owns the state now
+                    }
+                }
+                finally
+                {
+                    _healingPage = false;
+                }
+            }
         }
         catch (Exception)
         {
             _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Sales_LoadFailure);
+            _sales = null; // the retry remount must fire LoadData again
+            _totalCount = 0;
         }
         finally
         {
             _isLoading = false;
+            StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// Builds the typed query from the page-level filter/sort state (kept
+    /// current by <see cref="SalesGridStateTranslator"/> on every load).
+    /// Shared by the grid load and the CSV export so the export ships
+    /// exactly what the filters select.
+    /// </summary>
+    private GetSalesPaginatedQuery BuildQuery(int pageNumber, int pageSize) => new()
+    {
+        PageNumber = pageNumber,
+        PageSize = pageSize,
+        SearchTerm = null,
+        Status = _activeStatus,
+        FromDateUtc = _appliedFromUtc,
+        ToDateUtc = _appliedToUtc,
+        SaleNumberTerm = _activeSaleNumberTerm,
+        CustomerNameFilter = _activeCustomerNameFilter,
+        CreatedByNameFilter = _activeCreatedByNameFilter,
+        TotalFilter = _activeTotalFilter,
+        SortBy = _activeSortBy,
+        SortDescending = _activeSortDescending
+    };
+
+    /// <summary>
+    /// Retry after a load error: clears the error so the grid branch
+    /// re-renders — the grid re-mounts and its LoadData-on-init performs
+    /// the fresh load.
+    /// </summary>
+    private async Task RetryLoadAsync()
+    {
+        _loadError = string.Empty;
+        _isLoading = true;
+        _sales = null; // Data=null at remount → the grid fires LoadData
+        await Task.CompletedTask;
+        StateHasChanged();
     }
 
     // ── Date-range filter handlers ─────────────────────────────────────
@@ -815,10 +1037,12 @@
     /// <summary>
     /// Applies the picked range: converts the local dates to the UTC
     /// half-open interval [from-local-midnight, to+1day-local-midnight),
-    /// stores them as the APPLIED bounds, and reloads. A degenerate range
-    /// (From AFTER To) is rejected with a toast BEFORE reloading — clearer
-    /// than silently showing an empty list the user would misread as "no
-    /// orders in that period".
+    /// stores them as the APPLIED bounds, and reloads from PAGE 1
+    /// (grid.FirstPage(true) re-fires LoadData at Skip=0 — a narrowed
+    /// range never strands the user on a now-empty page N). A degenerate
+    /// range (From AFTER To) is rejected with a toast BEFORE reloading —
+    /// clearer than silently showing an empty list the user would
+    /// misread as "no orders in that period".
     /// </summary>
     private async Task ApplyDateFilterAsync()
     {
@@ -831,13 +1055,12 @@
         _appliedFromUtc = _dateFrom.HasValue ? ToUtcInstant(_dateFrom.Value) : null;
         _appliedToUtc = _dateTo.HasValue ? ToUtcInstant(_dateTo.Value.AddDays(1)) : null;
 
-        await LoadSalesAsync();
+        await ReloadFromFirstPageAsync();
     }
 
     /// <summary>
-    /// Clears BOTH the pickers and the applied range, then reloads the
-    /// unfiltered list. Called from the chip's ×, the filtered-empty
-    /// state's Clear button, and the toolbar.
+    /// Clears BOTH the pickers and the applied range, then reloads from
+    /// page 1. Called from the chip's × button.
     /// </summary>
     private async Task ClearDateFilterAsync()
     {
@@ -846,7 +1069,58 @@
         _appliedFromUtc = null;
         _appliedToUtc = null;
 
-        await LoadSalesAsync();
+        await ReloadFromFirstPageAsync();
+    }
+
+    /// <summary>
+    /// Clears EVERYTHING — the date toolbar AND every column filter —
+    /// then reloads. The filtered-empty state's one-click escape hatch.
+    /// This button only renders when the grid is UNMOUNTED (the empty
+    /// state replaced it), so the reload happens via REMOUNT: the grid
+    /// mounts with Data=null and fires its LoadData-on-init with every
+    /// filter naturally reset (fresh column instances carry no filter
+    /// values).
+    /// </summary>
+    private async Task ClearAllFiltersAsync()
+    {
+        _dateFrom = null;
+        _dateTo = null;
+        _appliedFromUtc = null;
+        _appliedToUtc = null;
+        _selectedStatusFilter = null;
+
+        // Clear the grid's OWN filter descriptors while the (soon to be
+        // re-mounted) column instances are still addressable — actually
+        // this button only renders in the EMPTY STATE, where the grid is
+        // already UNMOUNTED: the old column instances (and their filter
+        // values) are gone with it, and the fresh grid mounts with every
+        // column filter reset. So there is nothing to clear here — the
+        // reset comes from the remount itself.
+        //
+        // REMOUNT TRIGGER: _sales=null makes the grid mount with
+        // Data=null (which fires LoadData — the pinned Radzen contract),
+        // and _isLoading=true keeps the grid branch rendered (instead of
+        // flashing the empty state) until the fresh load completes. Do
+        // NOT call grid.FirstPage(true) here — the disposed grid's
+        // methods must not be touched.
+        _sales = null;
+        _isLoading = true;
+
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Re-fires the grid's load from page 1. When the grid is mounted
+    /// this is grid.FirstPage(true); it only isn't mounted mid-transition
+    /// (e.g. right after the empty state swaps in), in which case the
+    /// grid's own LoadData-on-init covers the reload once it mounts.
+    /// </summary>
+    private async Task ReloadFromFirstPageAsync()
+    {
+        if (grid is not null)
+        {
+            await grid.FirstPage(true);
+        }
     }
 
     /// <summary>
@@ -869,14 +1143,23 @@
         return $"{CultureFormat.ToCultureDigits(fromLocal)} – {CultureFormat.ToCultureDigits(toLocal)}";
     }
 
-    // ── CSV export (Round 3) ────────────────────────────────────────
+    // ── CSV export (Round 4 — all filtered rows, capped) ─────────────
 
     /// <summary>
-    /// Builds a CSV of the CURRENTLY LOADED sales (the same rows the grid
-    /// shows — server-side date range + role scoping included; the grid's
-    /// per-column client-side filters are NOT applied, matching the
-    /// "export what the server returned" contract documented on the
-    /// button) and downloads it via the takDownload.js helper.
+    /// Hard cap on exported rows: generous enough for any real export,
+    /// small enough that a pathological filter (e.g. status-only on a
+    /// million-row DB) can't hang the Blazor circuit building a giant
+    /// string.
+    /// </summary>
+    private const int ExportRowCap = 2000;
+
+    /// <summary>
+    /// Builds a CSV of EVERY sale matching the active filters (all
+    /// pages — a genuine improvement over the pre-Round-4 export, which
+    /// could only ship the ≤100 loaded rows), capped at
+    /// <see cref="ExportRowCap"/>, and downloads it via the takDownload
+    /// helper. Server-side scoping applies as always: a customer exports
+    /// their own sales, staff export the audit view.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -893,53 +1176,54 @@
     /// </remarks>
     private async Task ExportSalesCsvAsync()
     {
-        if (_sales.Count == 0)
+        if (_totalCount == 0 || _isExporting)
         {
             return; // the button is disabled for empty lists — belt + braces
         }
 
+        _isExporting = true;
         try
         {
-            // Column shape mirrors the grid: number, status, total (+currency
-            // as its own column for data processing), staff-only customer +
-            // creator audit columns, and the creation timestamp.
-            var header = new List<string>
-            {
-                Loc["ColSaleNumber"], Loc["ColStatus"], Loc["ColTotal"], Loc["ColCurrency"]
-            };
-            if (_isStaff)
-            {
-                header.Add(Loc["ColCustomer"]);
-                header.Add(Loc["ColCreatedBy"]);
-            }
-            header.Add(Loc["ColCreatedAt"]);
-
             var builder = new CsvBuilder();
-            builder.AddHeader(header.ToArray());
+            builder.AddHeader(BuildCsvHeader().ToArray());
 
-            foreach (var sale in _sales)
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
             {
-                var row = new List<object?>
-                {
-                    sale.SaleNumber ?? $"DRAFT-{sale.Id.ToString()[..8].ToUpperInvariant()}",
-                    GetStatusLabel(sale.Status),
-                    sale.Total?.Amount,
-                    sale.Total?.Currency,
-                };
-                if (_isStaff)
-                {
-                    row.Add(sale.CustomerName);
-                    row.Add(sale.CreatedByName);
-                }
-                row.Add(sale.CreatedAtUtc);
+                var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
+                    BuildQuery(pageNumber, exportPageSize));
 
-                builder.AddRow(row.ToArray());
+                foreach (var sale in result.Items)
+                {
+                    if (exported >= ExportRowCap)
+                    {
+                        break;
+                    }
+
+                    builder.AddRow(BuildCsvRow(sale).ToArray());
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize)
+                {
+                    break;
+                }
+
+                pageNumber++;
             }
 
             var csv = builder.ToString();
-
             var fileName = $"takone-sales-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
             await JS.InvokeVoidAsync("takDownload.csv", fileName, csv);
+
+            await Toast.Success(
+                Loc["ExportCsvDone", exported],
+                summary: Loc["PageHeading"]);
         }
         catch (Exception)
         {
@@ -947,15 +1231,56 @@
             // toast beats a silently dead button.
             await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
         }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    private List<string> BuildCsvHeader()
+    {
+        // Column shape mirrors the grid: number, status, total (+currency
+        // as its own column for data processing), staff-only customer +
+        // creator audit columns, and the creation timestamp.
+        var header = new List<string>
+        {
+            Loc["ColSaleNumber"], Loc["ColStatus"], Loc["ColTotal"], Loc["ColCurrency"]
+        };
+        if (_isStaff)
+        {
+            header.Add(Loc["ColCustomer"]);
+            header.Add(Loc["ColCreatedBy"]);
+        }
+        header.Add(Loc["ColCreatedAt"]);
+        return header;
+    }
+
+    private List<object?> BuildCsvRow(SaleListItemDto sale)
+    {
+        var row = new List<object?>
+        {
+            sale.SaleNumber ?? $"DRAFT-{sale.Id.ToString()[..8].ToUpperInvariant()}",
+            GetStatusLabel(sale.Status),
+            sale.Total?.Amount,
+            sale.Total?.Currency,
+        };
+        if (_isStaff)
+        {
+            row.Add(sale.CustomerName);
+            row.Add(sale.CreatedByName);
+        }
+        row.Add(sale.CreatedAtUtc);
+        return row;
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────
-    //
-    // Each handler sets column.FilterValue and calls grid.Reload() to
-    // trigger Radzen's client-side filtering. The bound field is updated
-    // by @bind-Value before the Change event fires, so we read the field
-    // (not the args parameter) inside the handler.
 
+    /// <summary>
+    /// The status dropdown's Change handler: sets the column's programmatic
+    /// filter value (Radzen's documented API), then restarts from PAGE 1 —
+    /// a status filter narrows the result set, and page N of the wider set
+    /// is usually past the end of the narrower one.
+    /// </summary>
     private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<SaleListItemDto> column)
     {
         _selectedStatusFilter = value;
@@ -972,7 +1297,7 @@
             column.FilterOperator = FilterOperator.Equals;
         }
 
-        await grid.Reload();
+        await grid.FirstPage(true);
     }
 
     // ── Navigation ──────────────────────────────────────────────────────
@@ -1008,12 +1333,7 @@
     /// Delegates to <see cref="CultureFormat.FormatTehranDateTime(DateTimeOffset)"/>,
     /// which handles the Tehran offset (+3:30, no DST since 2022), the
     /// Jalali calendar conversion in fa-IR mode, and the Persian digit
-    /// swap. The previous implementation called
-    /// <c>tehran.DateTime.ToString("g", CultureInfo.CurrentCulture)</c>
-    /// directly, which produced ASCII digits in fa-IR mode (because .NET's
-    /// NumberFormatInfo.NativeDigits is informational-only) and a
-    /// Gregorian year (because .NET's fa-IR culture's default calendar is
-    /// Gregorian, not Jalali). The centralized helper fixes both issues.
+    /// swap.
     /// </summary>
     private static string FormatTehranDateTime(DateTimeOffset utc)
         => CultureFormat.FormatTehranDateTime(utc);
@@ -1026,10 +1346,6 @@
     ///   - Approved  → Info      (blue, "approved, ready to invoice")
     ///   - Invoiced  → Success   (green, "complete")
     ///   - Cancelled → Danger    (red, "cancelled")
-    ///
-    /// Used by both the cell Template (string overload — sale.Status) and
-    /// the filter dropdown's ValueTemplate/Template (string overload —
-    /// "Draft"/"Pending"/etc. keys).
     ///
     /// Unknown status strings (defensive: shouldn't happen unless the enum
     /// gains a new value without updating this mapping) fall back to Base.

@@ -28,13 +28,29 @@ public interface INotificationRepository
     /// <summary>
     /// Returns a paginated slice of a user's notifications, newest-first.
     /// Pass <c>unreadOnly: true</c> to filter out read notifications (for
-    /// the unread-only segmented view in the UI).
+    /// the unread-only segmented view in the UI). Pass a non-null
+    /// <paramref name="kind"/> to further restrict the page to that
+    /// notification kind (Round 4 — the per-kind filter tabs; null = all
+    /// kinds).
     /// </summary>
     Task<PaginatedResult<Notification>> GetPaginatedForUserAsync(
         Guid userId,
         int pageNumber,
         int pageSize,
         bool unreadOnly,
+        NotificationKind? kind = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HARD-DELETES one of the user's notifications (Round 4 — the
+    /// per-notification dismiss). Returns true when a row was deleted;
+    /// false when the notification doesn't exist OR belongs to a
+    /// different user (the caller treats both identically — see the
+    /// anti-enumeration note on <see cref="GetByIdForUserAsync"/>).
+    /// </summary>
+    Task<bool> DeleteForUserAsync(
+        Guid notificationId,
+        Guid userId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

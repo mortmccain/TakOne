@@ -59,26 +59,27 @@ public sealed class SaleByCustomerSpecification : Specification<Sale>
     public SaleByCustomerSpecification(Guid customerId, SaleStatus? status)
         : this(customerId, status, fromUtc: null, toUtcExclusive: null) { }
 
-    /// <param name="customerId">
-    /// The user whose purchases we want (sales where they are the
-    /// <c>CustomerId</c>). Must be non-empty.
-    /// </param>
-    /// <param name="status">
-    /// Optional status filter. When non-null, restricts the spec to sales in
-    /// the given status. When null, matches all statuses for the customer.
-    /// </param>
-    /// <param name="fromUtc">
-    /// Optional INCLUSIVE lower bound on CreatedAtUtc (UTC). Half-open
-    /// interval semantics — see AllSalesSpecification's identical block.
-    /// </param>
-    /// <param name="toUtcExclusive">
-    /// Optional EXCLUSIVE upper bound on CreatedAtUtc (UTC).
-    /// </param>
     public SaleByCustomerSpecification(
         Guid customerId,
         SaleStatus? status,
         DateTime? fromUtc,
         DateTime? toUtcExclusive)
+        : this(customerId, status, fromUtc, toUtcExclusive, searchTerm: null, filters: null) { }
+
+    /// <summary>
+    /// Round 4 (server-driven paging) constructor: the full filter +
+    /// sort surface. Mirrors <see cref="AllSalesSpecification"/>'s
+    /// Round 4 constructor — the WHERE/ORDER BY clauses come from the
+    /// shared <c>SalesSpecificationFilters</c> helper so the two specs
+    /// can never drift apart.
+    /// </summary>
+    public SaleByCustomerSpecification(
+        Guid customerId,
+        SaleStatus? status,
+        DateTime? fromUtc,
+        DateTime? toUtcExclusive,
+        string? searchTerm,
+        SalesListFilters? filters)
     {
         // Defensive: a Guid.Empty customer id would silently match every
         // sale whose CustomerId hasn't been set yet (which shouldn't happen,
@@ -112,9 +113,11 @@ public sealed class SaleByCustomerSpecification : Specification<Sale>
             Query.Where(sale => sale.CreatedAtUtc < toUtcExclusive.Value);
         }
 
-        // PERFORMANCE: list views (where this spec is used) don't need line
-        // items. Order by most-recent first so the default pagination shows
-        // the latest purchases on page 1.
-        Query.OrderByDescending(sale => sale.CreatedAtUtc);
+        // Round 4: cross-column search + per-column filters + sort all
+        // live in the shared helper (same call sites as
+        // AllSalesSpecification — deliberately identical).
+        Query.ApplySearchTerm(searchTerm);
+        Query.ApplyColumnFilters(filters);
+        Query.ApplySort(filters?.SortBy, filters?.SortDescending ?? true);
     }
 }

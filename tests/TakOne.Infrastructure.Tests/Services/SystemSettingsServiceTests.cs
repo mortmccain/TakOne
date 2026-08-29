@@ -252,9 +252,16 @@ public class SystemSettingsServiceTests
             .Select(_ => Task.Run(() => sut.GetAsync(CancellationToken.None))));
 
         // Assert
-        // At least one call hit the repo. (May be more — IMemoryCache
-        // doesn't lock per-key.)
-        await repo.Received(1).GetOrCreateAsync(Arg.Any<CancellationToken>());
+        // At least one call hit the repo. May be MORE — IMemoryCache
+        // doesn't lock per-key, so concurrent cold-cache callers can all
+        // miss and all hit the repo before the first one populates the
+        // entry (benign cache stampede; every caller gets the same
+        // settings). Pinning the count to exactly 1 made this test flaky
+        // under thread-pool contention — the assertion now matches the
+        // documented contract.
+        var repoCallCount = repo.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(ISystemSettingsRepository.GetOrCreateAsync));
+        repoCallCount.Should().BeGreaterThanOrEqualTo(1);
     }
 
     // ── GetAsync never returns null ───────────────────────────────────

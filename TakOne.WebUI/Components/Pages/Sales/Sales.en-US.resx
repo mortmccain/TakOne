@@ -225,4 +225,16 @@
     <value>The CSV export failed. Please try again.</value>
   </data>
 
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>Page {0} of {1} ({2} sales)</value>
+    <comment>Radzen pager summary format: {0}=current page, {1}=page count, {2}=server-side total sales count (Round 4 server-driven paging).</comment>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>Loading sales</value>
+    <comment>Screen-reader label for the grid loading veil (Round 4).</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} sales exported to CSV</value>
+    <comment>Success toast after the CSV export completes; {0}=exported row count (Round 4: exports all filtered rows, capped at 2000).</comment>
+  </data>
 </root>

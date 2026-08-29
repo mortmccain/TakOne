@@ -69,4 +69,20 @@
   <data name="PrevPage" xml:space="preserve"><value>قبلی</value></data>
   <data name="NextPage" xml:space="preserve"><value>بعدی</value></data>
   <data name="PageFormat" xml:space="preserve"><value>صفحه {0} از {1}</value></data>
+  <data name="FilterKindLabel" xml:space="preserve">
+    <value>نوع</value>
+    <comment>دور ۴ — برچسب فیلتر نوع اعلان‌ها.</comment>
+  </data>
+  <data name="FilterAllKinds" xml:space="preserve">
+    <value>همهٔ نوع‌ها</value>
+    <comment>دور ۴ — گزینهٔ «بدون فیلتر نوع».</comment>
+  </data>
+  <data name="DismissTooltip" xml:space="preserve">
+    <value>حذف</value>
+    <comment>دور ۴ — راهنمای دکمهٔ حذف هر اعلان.</comment>
+  </data>
+  <data name="Err_Dismiss" xml:space="preserve">
+    <value>حذف اعلان ممکن نشد. لطفاً دوباره تلاش کنید.</value>
+    <comment>دور ۴ — پیام خطای حذف اعلان.</comment>
+  </data>
 </root>

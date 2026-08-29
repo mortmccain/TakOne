@@ -225,4 +225,16 @@
     <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
   </data>
 
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>صفحه {0} از {1} ({2} فروش)</value>
+    <comment>قالب خلاصهٔ صفحه‌بندی ردزن: {0}=شماره صفحه، {1}=تعداد صفحات، {2}=تعداد کل فروش‌ها در سمت سرور (صفحه‌بندی سمت سرور، دور ۴).</comment>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>در حال بارگذاری فروش‌ها</value>
+    <comment>برچسب صفحه‌خوان برای پردهٔ بارگذاری جدول (دور ۴).</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} فروش به CSV صادر شد</value>
+    <comment>پیام موفقیت پس از تکمیل خروجی CSV؛ {0}=تعداد ردیف‌های صادرشده (دور ۴: خروجی همهٔ ردیف‌های فیلترشده تا سقف ۲۰۰۰ ردیف).</comment>
+  </data>
 </root>
