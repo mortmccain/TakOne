@@ -2257,6 +2257,66 @@
     margin: 0 1rem 0.75rem;
 }
 
+/* ── Period selector chips (Round 5) ──────────────────────────────────
+   Horizontally scrollable chip row under the greeting (same pattern as
+   the notifications kind filter). Re-anchors the three flow-type KPI
+   cards to a rolling window. Touch-friendly 36px targets, RTL-safe,
+   reduced-motion aware. */
+.m-dash-period-row {
+    display: flex;
+    gap: 0.375rem;
+    margin: 0 1rem 0.75rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.125rem;
+}
+
+.m-dash-period-row::-webkit-scrollbar {
+    display: none;
+}
+
+.m-dash-period-chip {
+    appearance: none;
+    border: 1px solid var(--tm-dash-border, rgba(255, 255, 255, 0.14));
+    background: var(--tm-dash-surface, rgba(255, 255, 255, 0.05));
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.5rem 0.875rem;
+    border-radius: 9999px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1;
+    min-height: 36px;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.m-dash-period-chip.active {
+    background: var(--tm-gold, #D4AF37);
+    border-color: var(--tm-gold, #D4AF37);
+    color: #1A1812;
+    cursor: default;
+}
+
+.m-dash-period-chip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.m-dash-kpi-grid--reloading {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .m-dash-period-chip,
+    .m-dash-kpi-grid--reloading {
+        transition: none;
+    }
+}
+
 /* Weekly revenue sparkline bars (pure HTML/CSS, no Chart.js) */
 .m-dash-spark-row {
     display: flex;
@@ -4529,6 +4589,22 @@ button.m-notif-card.m-notif-unread {
     cursor: pointer;
     min-height: 36px; /* touch target */
     transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+
+/* Round 5 — the trailing "manage preferences" chip in the kind row: an
+   ANCHOR styled like a kind chip but visually quieter (dashed border +
+   secondary tint) so it reads as an action, not a filter. */
+.m-notif-manage-prefs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-style: dashed;
+    text-decoration: none;
+}
+
+.m-notif-manage-prefs:active {
+    transform: none;
 }
 
 .m-notif-kind-chip.active {

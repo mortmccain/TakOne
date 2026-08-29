@@ -89,16 +89,28 @@ public sealed class GetUsersPaginatedQueryHandler
                 : query.PageSize;
 
         // ------------------------------------------------------------------
-        // 3. Load the page. The repository applies all filters server-side.
+        // 3. Load the page. The repository applies all filters + the sort
+        //    server-side (Round 5 — the AdminUsers grid runs Radzen LoadData
+        //    mode; previously the page requested PageSize=500 and this
+        //    handler's MaxPageSize=100 clamp silently truncated the list to
+        //    the first 100 users, hiding everyone past "F").
         // ------------------------------------------------------------------
+        var filters = new UsersListFilters(
+            SearchTerm: query.SearchTerm,
+            GroupId: query.GroupId,
+            IsActive: query.IsActive,
+            Gender: query.Gender,
+            WorkerId: query.WorkerIdFilter,
+            FullName: query.FullNameFilter,
+            SortBy: query.SortBy,
+            SortDescending: query.SortDescending);
+
         var paginated = await userRepository.GetPaginatedAsync
             (
-            searchTerm: query.SearchTerm,
-            isActive: query.IsActive,
-            groupId: query.GroupId,
-            pageNumber: pageNumber,
-            pageSize: pageSize,
-            cancellationToken: cancellationToken
+            filters,
+            pageNumber,
+            pageSize,
+            cancellationToken
             );
 
         // ------------------------------------------------------------------

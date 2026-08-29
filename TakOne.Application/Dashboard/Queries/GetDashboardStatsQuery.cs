@@ -44,11 +44,59 @@ public sealed class GetDashboardStatsQuery
     // which reads server-verified claims. This is the fix for Brutal
     // Code Review v3 finding #03.
     //
-    // The DTO is intentionally empty: the dashboard is a fixed-scope
-    // query (the caller's identity determines the slice, but no caller-
-    // supplied parameters filter the result set). If future requirements
-    // add date-range or category filters, add them here as
-    // { get; init; } properties — never { get; set; } (mutable setters on
-    // a DTO are an anti-pattern: they let callers mutate the query after
-    // dispatch).
+    // The DTO intentionally stayed parameter-free through Round 4: the
+    // dashboard was a fixed-scope query (the caller's identity determines
+    // the slice, but no caller-supplied parameters filter the result
+    // set). Round 5 adds the PERIOD SELECTOR — the two date members
+    // below — as { get; init; } properties per this comment's own
+    // long-standing invitation ("If future requirements add date-range
+    // or category filters, add them here as { get; init; } properties —
+    // never { get; set; }").
+
+    /// <summary>
+    /// ROUND 5 — PERIOD SELECTOR. Optional inclusive lower bound of a
+    /// half-open UTC interval [FromUtc, ToUtc) that re-anchors the
+    /// dashboard's three flow-type KPI cards (orders, employee purchase,
+    /// approved+invoiced sales) and their trend deltas to the window
+    /// instead of the fixed today/this-month anchors.
+    ///
+    /// <para>
+    /// <b>WHEN NULL (the default)</b>: the handler keeps the legacy
+    /// fixed-anchor behavior — TodayOrdersCount is "today",
+    /// ThisMonthEmployeePurchaseTotal is "this calendar month", and the
+    /// deltas compare against yesterday / the previous calendar month.
+    /// All existing callers and tests are unaffected.
+    /// </para>
+    /// <para>
+    /// <b>WHEN SET</b>: the window is [FromUtc, ToUtc) and the DELTAS
+    /// compare against the immediately-preceding equal-length window
+    /// [FromUtc − (ToUtc − FromUtc), FromUtc). ToUtc is optional — when
+    /// null it defaults to the handler's current UtcNow. An inverted or
+    /// degenerate window (FromUtc &gt;= ToUtc) yields zero-valued period
+    /// KPIs (never throws — same degenerate-range semantics as the sales
+    /// list's date filter).
+    /// </para>
+    /// <para>
+    /// <b>SCOPE NOTE</b>: the period re-anchors the FLOW-TYPE KPI CARDS
+    /// only. The weekly revenue chart, status donut, top products /
+    /// categories / employees, recent orders, and the all-time counts
+    /// keep their own (clearly labeled) scopes — parameterizing them
+    /// needs the date-bucket repository aggregations noted as deferred
+    /// in the handler.
+    /// </para>
+    /// <para>
+    /// <b>TIMEZONE CONTRACT</b> (same as GetSalesPaginatedQuery): these
+    /// are raw UTC instants. The UI converts picked LOCAL dates to UTC
+    /// before dispatching (Tehran local midnight → UTC = localDate −
+    /// 03:30; see Sales.razor's ToUtcInstant helper).
+    /// </para>
+    /// </summary>
+    public DateTime? FromUtc { get; init; }
+
+    /// <summary>
+    /// ROUND 5 — PERIOD SELECTOR. Optional EXCLUSIVE upper bound of the
+    /// half-open UTC interval [FromUtc, ToUtc). Null (with FromUtc set)
+    /// means "up to now". Ignored when FromUtc is null.
+    /// </summary>
+    public DateTime? ToUtc { get; init; }
 }

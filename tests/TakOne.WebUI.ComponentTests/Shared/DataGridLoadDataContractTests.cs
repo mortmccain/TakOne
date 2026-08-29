@@ -244,6 +244,59 @@ public class DataGridLoadDataContractTests
         descriptor.FilterOperator.Should().Be(FilterOperator.Contains);
     }
 
+    [Fact]
+    public async Task PageSizeOptions_SelectingAnOption_ReFiresLoadDataWithNewTopAndResetsToPageOne()
+    {
+        // Round 5 — the Sales grid's page-size selector (20/50/100).
+        // With PageSizeOptions set, the pager renders a dropdown; picking
+        // an option must re-raise LoadData with the NEW Top and Skip=0 (a
+        // wider page must never strand the user on a now-past-the-end
+        // page). Pinned so a Radzen upgrade that changes either behavior
+        // fails here, not in production pagination math.
+        using var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
+        var calls = new List<LoadDataArgs>();
+        var allRows = MakeRows(200);
+
+        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+            .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
+            {
+                calls.Add(args);
+                return Task.CompletedTask;
+            }))
+            .Add(g => g.AllowPaging, true)
+            .Add(g => g.PageSize, 20)
+            .Add(g => g.PageSizeOptions, new[] { 20, 50, 100 })
+            .Add(g => g.AllowSorting, true));
+
+        // Hand the grid its first page (20 rows) + the server total (200)
+        // — the same Data/Count flow every real LoadData page performs.
+        cut.SetParametersAndRender(p => p
+            .Add(g => g.Data, allRows.Take(20).ToList())
+            .Add(g => g.Count, allRows.Count));
+
+        // The pager renders the page-size dropdown with the configured
+        // options (role=option list inside the pager's combobox).
+        cut.FindAll("nav.rz-pager li[role=\"option\"]")
+            .Select(li => li.TextContent.Trim())
+            .Should().BeEquivalentTo("20", "50", "100");
+
+        // Act — first walk to page 2 (Skip=20), THEN pick "50" from the
+        // page-size dropdown: the wider page must reset to page 1.
+        var pageTwo = cut.FindAll("button.rz-pager-page")
+            .First(e => e.TextContent.Trim() == "2");
+        await cut.InvokeAsync(() => pageTwo.Click());
+        calls[^1].Skip.Should().Be(20, "page 2 at 20 rows/page");
+
+        var option50 = cut.FindAll("nav.rz-pager li[role=\"option\"]")
+            .First(li => li.TextContent.Trim() == "50");
+        await cut.InvokeAsync(() => option50.Click());
+
+        // Assert — LoadData re-fired with Top=50 AND Skip=0.
+        var last = calls[^1];
+        last.Top.Should().Be(50, "picking a page size must re-query at the new size");
+        last.Skip.Should().Be(0, "a wider page resets to page 1 — never a past-the-end offset");
+    }
+
     private static RenderFragment BuildNameColumn() => builder =>
     {
         builder.OpenComponent<RadzenDataGridColumn<Row>>(0);

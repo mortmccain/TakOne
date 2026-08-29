@@ -88,20 +88,32 @@
   <data name="GroupAll" xml:space="preserve">
     <value>همه گروه‌ها</value>
   </data>
-  <!-- EmptyText — shown by RadzenDataGrid's EmptyText when the grid has
-       no rows (either no users at all, or filters yielded nothing). -->
+  <!-- EmptyText — متن داخلی گرید وقتی هیچ ردیفی ندارد (صفحۀ خارج از محدوده
+       در لحظۀ اصلاح خودکار، یا مسابقه پیش از جایگزینی حالت خالی). متن واقعی
+       حالت‌های خالی در سطح صفحه در ادامه آمده است. -->
   <data name="EmptyText" xml:space="preserve">
     <value>کاربری یافت نشد.</value>
   </data>
 
-  <data name="LoadingText" xml:space="preserve">
-    <value>در حال بارگذاری کاربران…</value>
+  <!-- ── حالت‌های خالی (دورۀ ۵ — صفحه‌بندی سمت سرور) ── -->
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>هنوز کاربری وجود ندارد</value>
   </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>هیچ حساب کاربری وجود ندارد. برای شروع، اولین کاربر را ایجاد کنید.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>هیچ کاربری با فیلترهای شما مطابقت ندارد</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>برای دیدن کاربران بیشتر، فیلترها را تنظیم یا پاک کنید.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>پاک کردن فیلترها</value>
+  </data>
+
   <data name="ErrorTitle" xml:space="preserve">
     <value>خطایی رخ داد</value>
-  </data>
-  <data name="Error_FailedToLoad" xml:space="preserve">
-    <value>بارگذاری کاربران ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>تلاش مجدد</value>
@@ -164,13 +176,6 @@
     <value>به عنوان مدیر، تنها می‌توانید حساب‌های کارمند و مشتری را فعال یا غیرفعال کنید. عمل روی سایر مدیران، مدیران سیستم و کاربران فقط‌خواندنی نیازمند دسترسی مدیر سیستم است.</value>
   </data>
 
-  <data name="ConfirmDeactivate" xml:space="preserve">
-    <value>«{0}» ({1}) غیرفعال شود؟ این کاربر دیگر نمی‌تواند وارد سیستم شود. فروش‌ها و تاریخچه او نگه‌داری می‌شود.</value>
-  </data>
-  <!-- DeactivateDialogTitle — عنوان نمایش‌داده‌شده در بالای مودال DeactivateUserDialog
-       (تأیید دومرحله‌ای با شمارش معکوس ۳ ثانیه‌ای). این کلید در این فایل قرار دارد
-       (نه در DeactivateUserDialog.fa-IR.resx) تا صفحه‌ای که مودال را باز می‌کند،
-       عنوان آن را در اختیار داشته باشد — مطابق الگوی SaleDetail. -->
   <data name="DeactivateDialogTitle" xml:space="preserve">
     <value>تأیید غیرفعال‌سازی</value>
   </data>
@@ -187,12 +192,6 @@
     <value>«{0}» فعال شد و اکنون می‌تواند وارد سیستم شود.</value>
   </data>
 
-  <data name="ResetPrompt" xml:space="preserve">
-    <value>گذرواژه جدید برای «{0}» ({1}) را وارد کنید. این کاربر برای ورود به آن نیاز خواهد داشت:</value>
-  </data>
-  <data name="ResetInvalidPassword" xml:space="preserve">
-    <value>گذرواژه باید حداقل ۸ نویسه باشد. لطفاً دوباره تلاش کنید.</value>
-  </data>
   <data name="ResetSuccessTitle" xml:space="preserve">
     <value>گذرواژه بازنشانی شد</value>
   </data>
@@ -247,11 +246,26 @@
   <data name="ColRoles" xml:space="preserve">
     <value>نقش‌ها</value>
   </data>
+
+  <!-- ── دورۀ ۵ (صفحه‌بندی سمت سرور) ── -->
   <data name="ExportCsvButton" xml:space="preserve">
     <value>خروجی CSV</value>
   </data>
   <data name="ExportCsvError" xml:space="preserve">
     <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} کاربر به CSV صادر شد</value>
+  </data>
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>صفحه {0} از {1} ({2} کاربر)</value>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>در حال بارگذاری کاربران</value>
+  </data>
+
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>ردیف در صفحه</value>
   </data>
 
 </root>

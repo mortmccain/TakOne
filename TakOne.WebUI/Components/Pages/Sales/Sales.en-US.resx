@@ -237,4 +237,8 @@
     <value>{0} sales exported to CSV</value>
     <comment>Success toast after the CSV export completes; {0}=exported row count (Round 4: exports all filtered rows, capped at 2000).</comment>
   </data>
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>rows per page</value>
+  </data>
+
 </root>

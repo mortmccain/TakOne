@@ -113,20 +113,48 @@ else if (_stats is not null)
                     }
                 </p>
             </div>
-            @* Date moved to the OPPOSITE side of the greeting row
-               (away from the Active Panel badge) so it has room to be
-               bigger and more prominent. The .tm-dash-greeting container
-               is already display:flex + justify-content:space-between,
-               so as a sibling of the left div it sits at the row's end. *@
-            <span class="tm-dash-greeting-date">@FormatDate(DateTime.Now)</span>
+            @* Date + period selector share the OPPOSITE side of the greeting
+               row (away from the Active Panel badge). The
+               .tm-dash-greeting container is already display:flex +
+               justify-content:space-between, so as a sibling of the left
+               div they sit at the row's end. The period selector (Round 5)
+               re-anchors the three flow-type KPI cards to a rolling
+               window; "Current" keeps the fixed today/this-month view. *@
+            <div class="tm-dash-greeting-tools">
+                <div class="tm-dash-period" role="group" aria-label="@Loc["Period_Label"]">
+                    <button type="button"
+                            class="tm-dash-period-btn @(_selectedPeriodDays is null ? "active" : "")"
+                            aria-pressed="@(_selectedPeriodDays is null)"
+                            disabled="@_isReloading"
+                            @onclick="() => OnPeriodSelectedAsync(null)">
+                        @Loc["Period_Current"]
+                    </button>
+                    @foreach (var days in PeriodPresets)
+                    {
+                        <button type="button"
+                                class="tm-dash-period-btn @(_selectedPeriodDays == days ? "active" : "")"
+                                aria-pressed="@(_selectedPeriodDays == days)"
+                                disabled="@_isReloading"
+                                @onclick="() => OnPeriodSelectedAsync(days)">
+                            @PeriodPresetLabel(days)
+                        </button>
+                    }
+                </div>
+                <span class="tm-dash-greeting-date">@FormatDate(DateTime.Now)</span>
+            </div>
         </div>
 
         @* ════════════════════════════════════════
            KPI ROW — 4 cards (right-to-left in RTL)
+           ROUND 5: when a period window is active (IsPeriodScoped), the
+           three FLOW-TYPE cards (1, 2, 4) render the Period* DTO fields
+           with period labels + "vs previous period" deltas; card 3
+           (pending queue depth) is period-independent by design.
            ════════════════════════════════════════ *@
-        <div class="tm-dash-kpi-grid">
+        <div class="tm-dash-kpi-grid @(_isReloading ? "tm-dash-kpi-grid--reloading" : "")"
+             aria-busy="@_isReloading">
 
-            @* KPI 1: Today's Orders (green glow, shopping bag icon) *@
+            @* KPI 1: Today's Orders / Orders in period (green glow, shopping bag icon) *@
             <div class="tm-dash-kpi-card tm-dash-kpi-glow-green">
                 <div class="tm-dash-kpi-card-head">
                     <div class="tm-dash-icon-tile tm-dash-icon-green">
@@ -138,20 +166,33 @@ else if (_stats is not null)
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width:12px;height:12px;">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 13l4-4 4 4 8-8" />
                         </svg>
-                        @FormatDigits(_stats.TodayOrdersCount)
+                        @FormatDigits(_stats.IsPeriodScoped ? _stats.PeriodOrdersCount : _stats.TodayOrdersCount)
                     </span>
                 </div>
-                <p class="tm-dash-kpi-label">@Loc["Kpi_TodayOrders"]</p>
-                <p class="tm-dash-kpi-value">
-                    @FormatDigits(_stats.TodayOrdersCount)
-                    <KpiDeltaChip Direction="@TodayOrdersDelta.direction"
-                                  Text="@TodayOrdersDelta.text"
-                                  Title="@TodayOrdersDelta.title" />
+                <p class="tm-dash-kpi-label">
+                    @(_stats.IsPeriodScoped ? Loc["Kpi_PeriodOrders"] : Loc["Kpi_TodayOrders"])
                 </p>
-                <p class="tm-dash-kpi-footer">@Loc["Kpi_TodayOrdersFooter"]</p>
+                <p class="tm-dash-kpi-value">
+                    @FormatDigits(_stats.IsPeriodScoped ? _stats.PeriodOrdersCount : _stats.TodayOrdersCount)
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <KpiDeltaChip Direction="@PeriodOrdersDelta.direction"
+                                      Text="@PeriodOrdersDelta.text"
+                                      Title="@PeriodOrdersDelta.title" />
+                    }
+                    else
+                    {
+                        <KpiDeltaChip Direction="@TodayOrdersDelta.direction"
+                                      Text="@TodayOrdersDelta.text"
+                                      Title="@TodayOrdersDelta.title" />
+                    }
+                </p>
+                <p class="tm-dash-kpi-footer">
+                    @(_stats.IsPeriodScoped ? PeriodRangeLabel() : Loc["Kpi_TodayOrdersFooter"])
+                </p>
             </div>
 
-            @* KPI 2: Monthly Employee Purchase Total (gold glow, money icon) *@
+            @* KPI 2: Monthly Employee Purchase Total / period total (gold glow, money icon) *@
             <div class="tm-dash-kpi-card tm-dash-kpi-glow-gold">
                 <div class="tm-dash-kpi-card-head">
                     <div class="tm-dash-icon-tile tm-dash-icon-gold">
@@ -160,17 +201,35 @@ else if (_stats is not null)
                         </svg>
                     </div>
                 </div>
-                <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyEmployeePurchase"]</p>
+                <p class="tm-dash-kpi-label">
+                    @(_stats.IsPeriodScoped ? Loc["Kpi_PeriodEmployeePurchase"] : Loc["Kpi_MonthlyEmployeePurchase"])
+                </p>
                 <p class="tm-dash-kpi-value">
-                    @FormatMoneyShort(_stats.ThisMonthEmployeePurchaseTotal)
+                    @FormatMoneyShort(_stats.IsPeriodScoped ? _stats.PeriodEmployeePurchaseTotal : _stats.ThisMonthEmployeePurchaseTotal)
                     <span class="tm-dash-kpi-value-suffix">@_stats.DisplayCurrency</span>
-                    <KpiDeltaChip Direction="@MonthlyPurchaseDelta.direction"
-                                  Text="@MonthlyPurchaseDelta.text"
-                                  Title="@MonthlyPurchaseDelta.title" />
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <KpiDeltaChip Direction="@PeriodPurchaseDelta.direction"
+                                      Text="@PeriodPurchaseDelta.text"
+                                      Title="@PeriodPurchaseDelta.title" />
+                    }
+                    else
+                    {
+                        <KpiDeltaChip Direction="@MonthlyPurchaseDelta.direction"
+                                      Text="@MonthlyPurchaseDelta.text"
+                                      Title="@MonthlyPurchaseDelta.title" />
+                    }
                 </p>
                 <p class="tm-dash-kpi-footer">
-                    @Loc["Kpi_MonthlyEmployeePurchaseFooter"]
-                    <strong>@FormatDigits(_stats.ThisMonthActiveEmployeeCount)</strong>
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        @PeriodRangeLabel()
+                    }
+                    else
+                    {
+                        @Loc["Kpi_MonthlyEmployeePurchaseFooter"]
+                        <strong>@FormatDigits(_stats.ThisMonthActiveEmployeeCount)</strong>
+                    }
                 </p>
             </div>
 
@@ -198,7 +257,7 @@ else if (_stats is not null)
                 }
             </div>
 
-            @* KPI 4: Approved Sales This Month (info glow, users icon) *@
+            @* KPI 4: Approved Sales This Month / in period (info glow, users icon) *@
             <div class="tm-dash-kpi-card tm-dash-kpi-glow-info">
                 <div class="tm-dash-kpi-card-head">
                     <div class="tm-dash-icon-tile tm-dash-icon-info">
@@ -207,14 +266,29 @@ else if (_stats is not null)
                         </svg>
                     </div>
                 </div>
-                <p class="tm-dash-kpi-label">@Loc["Kpi_MonthlyApprovedSales"]</p>
-                <p class="tm-dash-kpi-value">
-                    @FormatDigits(_stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount)
-                    <KpiDeltaChip Direction="@MonthlySalesDelta.direction"
-                                  Text="@MonthlySalesDelta.text"
-                                  Title="@MonthlySalesDelta.title" />
+                <p class="tm-dash-kpi-label">
+                    @(_stats.IsPeriodScoped ? Loc["Kpi_PeriodApprovedSales"] : Loc["Kpi_MonthlyApprovedSales"])
                 </p>
-                <p class="tm-dash-kpi-footer">@Loc["Kpi_MonthlyApprovedSalesFooter"]</p>
+                <p class="tm-dash-kpi-value">
+                    @FormatDigits(_stats.IsPeriodScoped
+                        ? _stats.PeriodApprovedSalesCount + _stats.PeriodInvoicedSalesCount
+                        : _stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount)
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <KpiDeltaChip Direction="@PeriodSalesDelta.direction"
+                                      Text="@PeriodSalesDelta.text"
+                                      Title="@PeriodSalesDelta.title" />
+                    }
+                    else
+                    {
+                        <KpiDeltaChip Direction="@MonthlySalesDelta.direction"
+                                      Text="@MonthlySalesDelta.text"
+                                      Title="@MonthlySalesDelta.title" />
+                    }
+                </p>
+                <p class="tm-dash-kpi-footer">
+                    @(_stats.IsPeriodScoped ? PeriodRangeLabel() : Loc["Kpi_MonthlyApprovedSalesFooter"])
+                </p>
             </div>
         </div>
 
@@ -506,6 +580,33 @@ else if (_stats is not null)
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
+    // ── Round 5 — period selector state ────────────────────────────
+    //
+    // null = the fixed-anchor view (Today's Orders / This Month cards,
+    // deltas vs yesterday / last month). 7/30/90 = a rolling window of
+    // that many days ENDING TODAY (Tehran-local), re-anchoring the three
+    // flow-type KPI cards + their deltas to the window and the
+    // immediately-preceding equal-length window.
+    private int? _selectedPeriodDays;
+
+    /// <summary>True while a period-switch re-query is in flight — dims
+    /// the KPI grid and disables the selector buttons (the rest of the
+    /// dashboard stays interactive; the charts/data are unaffected by
+    /// the period, which scopes the KPI cards only).</summary>
+    private bool _isReloading;
+
+    /// <summary>The selectable presets (Round 5). The “Current” option is
+    /// rendered separately (it maps to _selectedPeriodDays == null).</summary>
+    private static readonly int[] PeriodPresets = { 7, 30, 90 };
+
+    private string PeriodPresetLabel(int days) => days switch
+    {
+        7 => Loc["Period_7Days"],
+        30 => Loc["Period_30Days"],
+        90 => Loc["Period_90Days"],
+        _ => days.ToString(CultureInfo.InvariantCulture)
+    };
+
     // ── Tehran timezone ─────────────────────────────────────────────────
     //
     // Tehran abolished DST in 2022, so a fixed UTC+03:30 offset is
@@ -544,22 +645,7 @@ else if (_stats is not null)
             // the handler resolves roles from ICurrentUserService
             // (server-verified claims) to close the role-spoofing hole.
             // See Brutal Code Review v3 finding #03.
-            var query = new GetDashboardStatsQuery();
-
-            var result = await MessageBus.InvokeAsync<Result<DashboardStatsDto>>(query);
-
-            if (result.IsSuccess)
-            {
-                _stats = result.Value;
-            }
-            else
-            {
-                _loadError = ErrorDisplay.Localize(result.Error) ?? string.Empty;
-                if (string.IsNullOrEmpty(_loadError))
-                {
-                    _loadError = Loc["Error_FailedToLoad"];
-                }
-            }
+            await LoadStatsCoreAsync();
         }
         catch (Exception)
         {
@@ -570,6 +656,124 @@ else if (_stats is not null)
             _isLoading = false;
         }
     }
+
+    /// <summary>
+    /// Dispatches the dashboard query (Round 5: with the period window
+    /// when a preset is active) and stores the result. Shared by the
+    /// initial load and every period switch. Owns its own error handling
+    /// so a failed period switch surfaces the error banner instead of
+    /// silently keeping stale numbers.
+    /// </summary>
+    private async Task LoadStatsCoreAsync()
+    {
+        try
+        {
+            var query = new GetDashboardStatsQuery();
+            if (_selectedPeriodDays is int days)
+            {
+                // Rolling window of `days` days ENDING TODAY in Tehran
+                // local time — the same Tehran↔UTC conversion contract as
+                // the Sales date filter (fixed +03:30; Iran abolished DST
+                // in 2022). [today − (days−1) local midnights, tomorrow's
+                // local midnight) — always includes ALL of today.
+                var todayLocal = (DateTime.UtcNow + TehranUtcOffset).Date;
+                query = new GetDashboardStatsQuery
+                {
+                    FromUtc = ToUtcInstant(todayLocal.AddDays(-(days - 1))),
+                    ToUtc = ToUtcInstant(todayLocal.AddDays(1))
+                };
+            }
+
+            var result = await MessageBus.InvokeAsync<Result<DashboardStatsDto>>(query);
+
+            if (result.IsSuccess)
+            {
+                _stats = result.Value;
+                // Re-hand the (fresh) DTO to dashboard.js on the next
+                // render. takDashboard.render is idempotent — it destroys
+                // the existing charts first — and the chart data is
+                // period-independent, so this keeps the charts in lockstep
+                // with the DTO without any period awareness in the JS.
+                _chartsInitialized = false;
+            }
+            else
+            {
+                _loadError = ErrorDisplay.Localize(result.Error) ?? string.Empty;
+                if (string.IsNullOrEmpty(_loadError))
+                {
+                    _loadError = Loc["Error_FailedToLoad"];
+                }
+                _stats = null;
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.Dashboard_LoadFailure);
+            _stats = null;
+        }
+    }
+
+    /// <summary>
+    /// Period-selector click handler: switches the preset and re-dispatches.
+    /// No-op on a redundant selection or while a reload is already in
+    /// flight (double-click guard).
+    /// </summary>
+    private async Task OnPeriodSelectedAsync(int? days)
+    {
+        if (_isReloading || _isLoading || days == _selectedPeriodDays) return;
+
+        _selectedPeriodDays = days;
+        _isReloading = true;
+        try
+        {
+            _loadError = string.Empty;
+            await LoadStatsCoreAsync();
+        }
+        finally
+        {
+            _isReloading = false;
+        }
+    }
+
+    /// <summary>
+    /// Human-readable restatement of the active period window for the KPI
+    /// card footers — Tehran-local dates (what the user thinks in),
+    /// culture-digit-formatted, with the upper bound inclusive (the
+    /// window's exclusive end minus one day = “through yesterday/today”).
+    /// </summary>
+    private string PeriodRangeLabel()
+    {
+        if (_stats?.PeriodFromUtc is not { } from)
+        {
+            return string.Empty;
+        }
+
+        var to = _stats.PeriodToUtc ?? DateTime.UtcNow;
+        var fromLocal = (from + TehranUtcOffset).ToString("yyyy/MM/dd", CultureInfo.InvariantCulture);
+        var toLocal = (to + TehranUtcOffset).AddDays(-1).ToString("yyyy/MM/dd", CultureInfo.InvariantCulture);
+
+        return string.Format(
+            CultureInfo.CurrentCulture,
+            Loc["Kpi_PeriodFooter"],
+            ToCultureDigits(fromLocal),
+            ToCultureDigits(toLocal));
+    }
+
+    // ── Tehran timezone helpers (Round 5) ──────────────────────
+    //
+    // Tehran abolished DST in 2022, so a fixed UTC+03:30 offset is exact
+    // for every date the ERP will render. Same contract as Sales.razor's
+    // helpers (kept page-local by convention — see the timezone note in
+    // that file's @code for the TimeZoneInfo-avoidance rationale).
+
+    private static readonly TimeSpan TehranUtcOffset = TimeSpan.FromHours(3.5);
+
+    /// <summary>
+    /// Converts a Tehran-local DATE to the UTC instant of its local
+    /// midnight: <c>localDate − 03:30</c>.
+    /// </summary>
+    private static DateTime ToUtcInstant(DateTime localDate)
+        => DateTime.SpecifyKind(localDate.Date, DateTimeKind.Utc) - TehranUtcOffset;
 
     // Tracks whether we've already handed the dashboard data to dashboard.js
     // for chart rendering. We can't use `firstRender` from OnAfterRenderAsync
@@ -855,6 +1059,31 @@ else if (_stats is not null)
             _stats.ThisMonthApprovedSalesCount + _stats.ThisMonthInvoicedSalesCount,
             _stats.LastMonthApprovedSalesCount + _stats.LastMonthInvoicedSalesCount,
             Loc["KpiDeltaVsLastMonth"], FormatDigits);
+
+    // ── Period deltas (Round 5) ───────────────────────────────────
+    //
+    // Same formatter trio, comparing the Period* fields against their
+    // PreviousPeriod* counterparts — the immediately-preceding
+    // equal-length window (e.g. selected “last 7 days” vs the 7 days
+    // before that). Only read when _stats.IsPeriodScoped.
+
+    private (KpiDeltaDirection direction, string text, string? title) PeriodOrdersDelta =>
+        KpiDeltaFormatter.CountDelta(
+            _stats.PeriodOrdersCount, _stats.PreviousPeriodOrdersCount,
+            Loc["KpiDeltaVsPreviousPeriod"], FormatDigits);
+
+    private (KpiDeltaDirection direction, string text, string? title) PeriodPurchaseDelta =>
+        KpiDeltaFormatter.AmountDelta(
+            _stats.PeriodEmployeePurchaseTotal, _stats.PreviousPeriodEmployeePurchaseTotal,
+            Loc["KpiDeltaVsPreviousPeriod"],
+            FormatMoneyShort(_stats.PreviousPeriodEmployeePurchaseTotal),
+            pct => FormatPercent(pct), Loc["KpiDeltaNew"]);
+
+    private (KpiDeltaDirection direction, string text, string? title) PeriodSalesDelta =>
+        KpiDeltaFormatter.CountDelta(
+            _stats.PeriodApprovedSalesCount + _stats.PeriodInvoicedSalesCount,
+            _stats.PreviousPeriodApprovedSalesCount + _stats.PreviousPeriodInvoicedSalesCount,
+            Loc["KpiDeltaVsPreviousPeriod"], FormatDigits);
 
     private string FormatMoneyShort(decimal amount)
     {

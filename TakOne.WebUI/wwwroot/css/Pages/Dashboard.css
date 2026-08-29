@@ -140,6 +140,81 @@
     margin: 0;
 }
 
+/* ── Period selector (Round 5) ─────────────────────────────────────────
+   Segmented control in the greeting header's trailing slot. Re-anchors
+   the three flow-type KPI cards to a rolling window (7/30/90 days) or
+   keeps the fixed today/this-month view. Theme-variable-driven, RTL-safe
+   (logical margin-inline-end on the gap), keyboard-accessible (native
+   buttons + aria-pressed), reduced-motion aware. */
+.tm-dash-greeting-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.tm-dash-period {
+    display: inline-flex;
+    align-items: stretch;
+    background: var(--tm-dash-surface, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--tm-dash-border, rgba(255, 255, 255, 0.10));
+    border-radius: 9999px;
+    padding: 0.1875rem;
+    gap: 0.125rem;
+}
+
+.tm-dash-period-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3125rem 0.75rem;
+    border-radius: 9999px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.2;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tm-dash-period-btn:hover:not(:disabled):not(.active) {
+    color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.tm-dash-period-btn:focus-visible {
+    outline: 2px solid var(--tm-gold, #D4AF37);
+    outline-offset: 1px;
+}
+
+.tm-dash-period-btn.active {
+    background: var(--tm-gold, #D4AF37);
+    color: #1A1812;
+    cursor: default;
+}
+
+.tm-dash-period-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* KPI grid dim while a period re-query is in flight — the cards keep
+   rendering (no layout jump), just visibly "settling". */
+.tm-dash-kpi-grid--reloading {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tm-dash-period-btn,
+    .tm-dash-kpi-grid--reloading {
+        transition: none;
+    }
+}
+
 /* =============================================================================
    2. KPI CARDS — 4 cards in a row (responsive: 1 / 2 / 4 cols)
    ========================================================================== */

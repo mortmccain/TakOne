@@ -24,18 +24,27 @@
      is read-only with respect to groups: it shows the current group
      badge and lets the viewer navigate to the detail page to change it.
 
-   FILTERING (ERP pattern):
-     All filtering is client-side via Radzen's built-in filter row
-     (AllowFiltering=true, FilterMode=SimpleWithMenu). Each column has
-     its own filter input in a dedicated filter row beneath the header:
-       - Worker ID  → text filter (Radzen default)
-       - Full Name  → text filter (Radzen default)
+   FILTERING (Round 5 — SERVER-SIDE, Radzen LoadData mode):
+     The grid runs in server-driven paging mode (same architecture as
+     the Round-4 Sales grid): Data + Count + LoadData. Radzen re-fires
+     LoadData on mount, on pager clicks, on sort-header clicks, and on
+     column-filter changes, and the page translates the descriptors into
+     GetUsersPaginatedQuery fields (UsersGridStateTranslator):
+       - Worker ID  → server-side text filter (LOWER()/LIKE in SQL)
+       - Full Name  → server-side text filter
        - Gender     → dropdown with colored tags (Male=blue, Female=pink)
-       - Group      → dropdown of available groups (no colored tags)
+       - Group      → dropdown of ALL groups (Guid-keyed; loaded once via
+                      GetAllCustomerGroupsQuery — previously the options
+                      were derived from the loaded rows, which capped at
+                      100 and missed empty groups)
        - Status     → dropdown with colored tags (Active=green, Inactive=red)
-     The grid loads ALL users once (PageSize=500 in the backend query)
-     and Radzen handles filtering + paging client-side. Same approach
-     as the ERP project's SalesList page.
+     Sorting is server-side too (WorkerId / FullName / Gender / Status
+     with an Id tiebreaker; the Group column is filterable but not
+     sortable — the group name lives on another aggregate). This removes
+     the pre-Round-5 100-row ceiling: the page asked for PageSize=500,
+     but the handler's MaxPageSize=100 clamp silently truncated the list
+     to the first 100 users — everyone past "F" was invisible, and the
+     TotalCount/pager math described only those 100 rows.
 
    ACTIVATE / DEACTIVATE FLOW:
      - A single toggle button per row. When the user is Active, the button
@@ -77,6 +86,8 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
+@using TakOne.Application.Customers.DTOs
+@using TakOne.Application.Customers.Queries.GetAllCustomerGroups
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Commands.ActivateUser
 @using TakOne.Application.Users.Commands.DeactivateUser
@@ -142,6 +153,53 @@
                 height: 32px;
                 color: var(--rz-text-tertiary-color, #9ca3af);
                 cursor: help;
+            }
+
+            /* ── Loading veil (Round 5, mirrors the Sales grid's veil) ──
+               Covers the MOUNTED grid while a server round trip is in
+               flight. The grid must stay mounted underneath — unmounting
+               it would discard its LoadData state and re-fire the initial
+               load in a loop. First load (no data yet): the full skeleton
+               rhythm; subsequent loads: a spinner glyph. */
+            .admin-users-grid-wrap {
+                position: relative;
+            }
+
+            .admin-users-loading-veil {
+                position: absolute;
+                inset: 0;
+                z-index: 5;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding-top: 3rem;
+                background: var(--rz-base-background-color);
+                opacity: 0.72;
+            }
+
+            .admin-users-loading-veil--skeleton {
+                align-items: stretch;
+                padding: 0.5rem;
+                background: var(--rz-base-background-color);
+            }
+
+            .admin-users-loading-spin {
+                font-size: 2.2rem;
+                color: var(--rz-primary);
+                animation: admin-users-spin 1.1s linear infinite;
+            }
+
+            @@keyframes admin-users-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            /* Reduced motion: the spinner becomes a static glyph. */
+            @@media (prefers-reduced-motion: reduce) {
+                .admin-users-loading-spin {
+                    animation: none;
+                }
             }
 
             /* ── Reset Password modal (mirrors UserDetail.razor's modal) ──
@@ -313,15 +371,22 @@
         </RadzenStack>
 
         <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-            @* Export CSV (Round 3) — exports the currently loaded users
-               (the same rows the grid shows). Admin/Manager-only page ⇒ no
-               extra authorization needed beyond the page's [Authorize]. *@
+            @* Export CSV (Round 5) — exports EVERY user matching the active
+               filters (all pages, capped at 2,000) with the same filters +
+               sort the grid shows. Previously it could only ship the ≤100
+               loaded rows. Admin/Manager-only page ⇒ no extra authorization
+               needed beyond the page's [Authorize]. *@
             <RadzenButton Text="@Loc["ExportCsvButton"]"
                           Icon="download"
                           ButtonStyle="ButtonStyle.Secondary"
                           Variant="Variant.Outlined"
-                          Disabled="@(_isLoading || _users.Count == 0)"
-                          Click="@ExportUsersCsvAsync" />
+                          Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                          Click="@ExportUsersCsvAsync">
+                @if (_isExporting)
+                {
+                    <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
+                }
+            </RadzenButton>
             <RadzenButton Text="@Loc["CreateUserButton"]"
                           Icon="person_add"
                           ButtonStyle="ButtonStyle.Primary"
@@ -331,31 +396,11 @@
         </RadzenStack>
     </div>
 
-    @* ── Loading skeleton (Round 3 styling) ──
-       Mirrors the user grid's column rhythm (worker id, name, gender,
-       group, status, actions). Same shared .tm-skel utilities as the
-       Sales + AdminProducts pages. *@
-    @if (_isLoading)
-    {
-        <RadzenCard Variant="Variant.Filled" Class="admin-users-grid" Style="padding: 0.5rem;">
-            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
-                @for (var i = 0; i < 8; i++)
-                {
-                    <div class="tm-skel-grid" style="--tm-skel-cols: 1fr 1.4fr 0.8fr 1fr 0.8fr 0.7fr;">
-                        <div class="tm-skel tm-skel--line"></div>
-                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                        <div class="tm-skel tm-skel--chip"></div>
-                    </div>
-                }
-            </div>
-        </RadzenCard>
-    }
-
-    @* ── Error banner ── *@
-    else if (!string.IsNullOrEmpty(_loadError))
+    @* ── Error banner ──
+       On load failure the grid is replaced entirely: there is nothing
+       meaningful to page through, and the Retry button re-mounts the
+       grid (which re-fires LoadData from scratch). *@
+    @if (!string.IsNullOrEmpty(_loadError))
     {
         <RadzenAlert Title="@Loc["ErrorTitle"]"
                      Text="@_loadError"
@@ -366,32 +411,96 @@
                           Icon="refresh"
                           ButtonStyle="ButtonStyle.Primary"
                           Variant="Variant.Outlined"
-                          Click="@LoadUsersAsync"
+                          Click="@RetryLoadAsync"
                           Style="margin-top: 0.5rem;" />
         </RadzenAlert>
     }
 
-    @* ── User table ──
-       Radzen built-in filter row (AllowFiltering + FilterMode.SimpleWithMenu).
-       Worker ID and Full Name use Radzen's default text filter. Gender,
-       Group, and Status use custom FilterTemplate dropdowns with colored
-       badge tags. Paging is built-in (AllowPaging, PageSize=20). Data is
-       loaded all at once (PageSize=500 in the backend query) and filtered
-       client-side — same approach as the ERP SalesList page. *@
+    @* ── Empty state (no users at all, or none matching the filters) ──
+       _totalCount is the SERVER-side count of every row matching the
+       active filters — zero here means "no users exist for this filter
+       combination". When NO filter is active and the count is zero, this
+       is a fresh install with no users yet (or an Employee viewer with a
+       stripped view) — the "create the first user" state. When a filter
+       IS active and matches zero rows, a targeted message (plus the
+       Clear button) beats a bare "no users found". *@
+    else if (_totalCount == 0 && !_isLoading)
+    {
+        @if (HasActiveFilters)
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="filter_alt_off"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                  Icon="restart_alt"
+                                  ButtonStyle="ButtonStyle.Secondary"
+                                  Variant="Variant.Outlined"
+                                  Click="@ClearAllFiltersAsync" />
+                </RadzenStack>
+            </RadzenCard>
+        }
+        else
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="group_off"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitle"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessage"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    @if (_isAdmin || _isManagerOnly)
+                    {
+                        <RadzenButton Text="@Loc["CreateUserButton"]"
+                                      Icon="person_add"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
+                    }
+                </RadzenStack>
+            </RadzenCard>
+        }
+    }
+
+    @* ── User table (Round 5 — Radzen LoadData, server-driven) ──
+       Data + Count + LoadData: the grid fires LoadData on mount, on pager
+       clicks, on sort-header clicks, and on filter changes; the page
+       translates the descriptors into the typed query. The grid stays
+       MOUNTED under the loading veil (unmounting would discard its
+       LoadData state and re-fire the initial load in a loop). Group and
+       Status use custom FilterTemplate dropdowns with colored badges;
+       Worker ID and Full Name use Radzen's default text filter, now
+       translated server-side. The Group column is deliberately NOT
+       sortable (the group name lives on another aggregate — see the
+       UsersSortBy doc). *@
     else
     {
-        <RadzenCard Variant="Variant.Filled" Class="admin-users-grid" Style="padding: 0.5rem;">
+        <div class="admin-users-grid-wrap">
+            <RadzenCard Variant="Variant.Filled" Class="admin-users-grid" Style="padding: 0.5rem;">
             <RadzenDataGrid @ref="grid"
                             Data="@_users"
+                            Count="@_totalCount"
+                            LoadData="@LoadGridDataAsync"
                             TItem="UserListItemDto"
                             AllowSorting="true"
+                            GotoFirstPageOnSort="true"
                             AllowFiltering="true"
                             FilterMode="FilterMode.SimpleWithMenu"
                             FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
                             AllowPaging="true"
                             PageSize="20"
+                            PagerAlwaysVisible="true"
+                            PageSizeOptions="@(new[] { 20, 50, 100 })"
+                            PageSizeText="@Loc["PagerPageSizeText"]"
                             PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            PagingSummaryFormat="@Loc["PagerSummaryFormat"]"
                             EmptyText="@Loc["EmptyText"]"
+                            IsLoading="@(_isLoading && _users is { Count: > 0 })"
                             Style="width: 100%;"
                             RowRender="@OnRowRender">
                 <Columns>
@@ -474,14 +583,23 @@
                     </RadzenDataGridColumn>
 
                     @* ── Group — dropdown filter, no colored tags ──
-                       Plain dropdown listing all available groups (derived
-                       from the loaded users). AllowClear resets to null
-                       (All groups). Filter is client-side via
-                       column.FilterValue. *@
+                       Round 5: the dropdown lists ALL groups (loaded ONCE
+                       via GetAllCustomerGroupsQuery — including inactive
+                       ones, since a deactivated group can still have
+                       members worth filtering to; the pre-Round-5 list was
+                       derived from the loaded rows, which capped at 100 and
+                       missed empty groups). The selected value is the
+                       group's Guid (stable across renames) and is
+                       translated server-side into a GroupId exact-match.
+                       AllowClear resets to null (All groups). The column
+                       is deliberately NOT sortable — the group name lives
+                       on the CustomerGroup aggregate, so a name sort
+                       would need a cross-table join in the ORDER BY. *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="GroupName"
                                           Title="@Loc["ColGroup"]"
                                           Width="180px"
+                                          Sortable="false"
                                           FilterOperator="FilterOperator.Equals">
                         <Template Context="user">
                             @if (string.IsNullOrWhiteSpace(user.GroupName))
@@ -498,7 +616,9 @@
                         <FilterTemplate Context="column">
                             <RadzenDropDown @bind-Value="@_selectedGroupFilter"
                                             Data="@_availableGroups"
-                                            TValue="string"
+                                            TValue="Guid?"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
                                             AllowClear="true"
                                             Placeholder="@Loc["GroupAll"]"
                                             Change="@(args => OnGroupFilterChanged(_selectedGroupFilter, column))"
@@ -656,7 +776,47 @@
                     </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>
-        </RadzenCard>
+            </RadzenCard>
+
+            @* ── Loading veil (Round 5) ──
+               Covers the mounted grid while a server round trip is in
+               flight. First load (no data yet): the full skeleton rhythm
+               (tm-skel utilities from app.css — theme-adaptive,
+               reduced-motion aware). Subsequent loads: a spinner glyph.
+               The grid MUST stay mounted underneath — unmounting it
+               would discard its LoadData state and re-fire the initial
+               load in a loop. *@
+            @if (_isLoading)
+            {
+                @if (_users is not { Count: > 0 })
+                {
+                    <div class="admin-users-loading-veil admin-users-loading-veil--skeleton"
+                         role="status"
+                         aria-live="polite"
+                         aria-label="@Loc["LoadingAriaLabel"]">
+                        <div class="tm-skel-stack" style="padding: 0.5rem; width: 100%;">
+                            @for (var i = 0; i < 8; i++)
+                            {
+                                <div class="tm-skel-grid" style="--tm-skel-cols: 1fr 1.4fr 0.8fr 1fr 0.8fr 0.7fr;">
+                                    <div class="tm-skel tm-skel--line"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                    <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="admin-users-loading-veil" role="status" aria-live="polite" aria-label="@Loc["LoadingAriaLabel"]">
+                        <RadzenIcon Icon="progress_activity" Class="admin-users-loading-spin" />
+                    </div>
+                }
+            }
+        </div>
     }
 
     @* ── Reset Password modal ──
@@ -754,19 +914,46 @@
 @code {
     // ── State ────────────────────────────────────────────────────────────
 
-    private List<UserListItemDto> _users = new();
-    private List<string> _availableGroups = new();
+    /// <summary>
+    /// The CURRENT PAGE of users returned by the backend (Round 5:
+    /// server-driven paging — exactly one page, not the pre-Round-5
+    /// "first 100 users" client-side working set).
+    ///
+    /// NULL until the first load completes: Radzen only fires LoadData
+    /// on mount when <c>Data</c> is null (binding an empty list at mount
+    /// suppresses the initial load — pinned by the contract probes).
+    /// Paths that REMOUNT the grid (retry after error, the empty state's
+    /// Clear-all) reset this to null so the fresh mount fires its
+    /// initial load.
+    /// </summary>
+    private List<UserListItemDto>? _users;
+
+    /// <summary>
+    /// The SERVER-SIDE total count of rows matching the active filters
+    /// (drives the grid's Count parameter → pager page count + summary).
+    /// </summary>
+    private int _totalCount;
+
+    /// <summary>
+    /// All customer groups (incl. inactive) for the Group filter dropdown —
+    /// loaded ONCE in OnInitializedAsync via GetAllCustomerGroupsQuery
+    /// (Round 5; previously derived from the loaded rows, which capped at
+    /// 100 and missed empty groups). Guid-keyed: the dropdown's value is
+    /// the stable group Id, translated server-side into a GroupId filter.
+    /// </summary>
+    private List<CustomerGroupListItemDto> _availableGroups = new();
 
     private RadzenDataGrid<UserListItemDto> grid = default!;
 
     // Filter state — each nullable; null = "no filter" (AllowClear=true
     // on the RadzenDropDown passes null when the user clears).
     // Status and Gender use string keys that are mapped to the actual
-    // property type in the filter handler. Group uses the group name
-    // string directly.
+    // property type in the filter handler. Group binds the group's Guid
+    // (stable across renames; translated server-side into a GroupId
+    // exact-match).
     private string? _selectedStatusFilter;
     private string? _selectedGenderFilter;
-    private string? _selectedGroupFilter;
+    private Guid? _selectedGroupFilter;
 
     // Status filter options — string keys "Active"/"Inactive" (culture-
     // neutral). The display text comes from GetStatusLabel(string) which
@@ -786,8 +973,50 @@
         public string Label { get; init; } = string.Empty;
     }
 
+    /// <summary>
+    /// Loading/error state. _isLoading starts TRUE: the grid mounts under
+    /// the skeleton veil and fires its initial LoadData, which flips it to
+    /// false on completion.
+    /// </summary>
     private bool _isLoading = true;
     private string _loadError = string.Empty;
+
+    /// <summary>
+    /// True while the CSV export's multi-page fetch loop is running —
+    /// disables the export button so double-clicks can't race two loops.
+    /// </summary>
+    private bool _isExporting;
+
+    // ── Round 5 server-side filter/sort state (translated from the
+    //    grid's LoadDataArgs on every load; also reused by the CSV
+    //    export so it ships exactly what the filters select) ──────
+
+    private UsersTextFilter? _activeWorkerIdFilter;
+    private UsersTextFilter? _activeFullNameFilter;
+    private Domain.Users.Gender? _activeGender;
+    private Guid? _activeGroupId;
+    private bool? _activeIsActive;
+    private UsersSortBy? _activeSortBy;
+    private bool _activeSortDescending;
+
+    /// <summary>
+    /// True when ANY server-side column filter is active — drives the
+    /// filtered-empty state's copy and the one-click Clear-all button.
+    /// </summary>
+    private bool HasActiveFilters =>
+        _activeWorkerIdFilter is not null ||
+        _activeFullNameFilter is not null ||
+        _activeGender is not null ||
+        _activeGroupId is not null ||
+        _activeIsActive is not null;
+
+    /// <summary>
+    /// Re-entrancy guard for the out-of-range auto-heal (see
+    /// LoadGridDataAsync): a heal fires grid.FirstPage(true), which
+    /// re-enters LoadGridDataAsync — the guard keeps a pathological
+    /// sequence of loads from healing recursively.
+    /// </summary>
+    private bool _healingPage;
 
     /// <summary>
     /// The Id of the user whose action button is currently in flight.
@@ -909,57 +1138,173 @@
             // pass through, which is the safer fallback).
         }
 
-        await LoadUsersAsync();
+        // Group filter dropdown source (Round 5): ALL groups including
+        // inactive ones (a deactivated group can still have members worth
+        // filtering to). Loaded ONCE — this is a stable 5-15-row list, not
+        // derived from the paged rows (the pre-Round-5 derivation capped at
+        // 100 rows and missed empty groups). Failure is non-fatal: the
+        // dropdown renders empty and the rest of the page works normally.
+        try
+        {
+            var groupsResult = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = true });
+
+            if (groupsResult.IsSuccess && groupsResult.Value is not null)
+            {
+                _availableGroups = groupsResult.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal (see above). Warning severity — the user still gets
+            // a fully usable page; "Exception" passes the
+            // ForbiddenLoggingAnalyzer's banned-token check.
+            Logger.LogWarning("AdminUsers: failed to load groups for the filter dropdown: {Exception}", ex);
+        }
+
+        // NOTE: the data load is NOT kicked off here — the grid mounts in
+        // the same render and fires its LoadData-on-init, which drives
+        // LoadGridDataAsync. Kicking a manual load here too would double
+        // the initial query.
     }
 
-    // ── Data loading ────────────────────────────────────────────────────
+    // ── Data loading (Radzen LoadData — Round 5) ────────────────────────
 
-    private async Task LoadUsersAsync()
+    /// <summary>
+    /// The grid's LoadData callback: translates Radzen's descriptors into
+    /// the typed query fields (UsersGridStateTranslator), dispatches, and
+    /// hands the page back via Data + Count. Fired on mount, on pager
+    /// clicks, on sort-header clicks, and on column-filter changes.
+    /// </summary>
+    private async Task LoadGridDataAsync(LoadDataArgs args)
     {
         _isLoading = true;
         _loadError = string.Empty;
 
         try
         {
-            // Load all users — filtering and paging are client-side via
-            // Radzen's built-in filter row + pager (same approach as the
-            // ERP SalesList page). PageSize=500 ensures we get everything
-            // in one round-trip.
-            var query = new GetUsersPaginatedQuery
-            {
-                PageNumber = 1,
-                PageSize = 500
-            };
+            (_activeSortBy, _activeSortDescending) = UsersGridStateTranslator.TranslateSort(args.Sorts);
+            var columnFilters = UsersGridStateTranslator.TranslateFilters(args.Filters);
+            _activeWorkerIdFilter = columnFilters.WorkerId;
+            _activeFullNameFilter = columnFilters.FullName;
+            _activeGender = columnFilters.Gender;
+            _activeGroupId = columnFilters.GroupId;
+            _activeIsActive = columnFilters.IsActive;
 
-            var result = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(query);
+            var pageSize = args.Top is > 0 ? args.Top.Value : 20;
+            var pageNumber = (args.Skip ?? 0) / pageSize + 1;
+
+            var result = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
+                BuildQuery(pageNumber, pageSize));
 
             _users = result.Items.ToList();
+            _totalCount = result.TotalCount;
 
-            // Derive the available groups from the loaded users for the
-            // group filter dropdown. Only non-empty, distinct group names.
-            _availableGroups = _users
-                .Select(u => u.GroupName)
-                .Where(g => !string.IsNullOrWhiteSpace(g))
-                .Select(g => g!)
-                .Distinct()
-                .OrderBy(g => g)
-                .ToList();
+            // OUT-OF-RANGE AUTO-HEAL: if the filters shrank the result set
+            // while the grid sat on a high page (the built-in filter-row
+            // inputs reload with the CURRENT page offset), the loaded page
+            // is empty but the total is not — jump back to page 1 instead
+            // of showing a mystifying blank page. FirstPage(true) re-fires
+            // LoadData with Skip=0; the heal guard prevents recursion.
+            if (!_healingPage &&
+                _users.Count == 0 &&
+                _totalCount > 0 &&
+                (args.Skip ?? 0) >= _totalCount)
+            {
+                _healingPage = true;
+                try
+                {
+                    if (grid is not null)
+                    {
+                        await grid.FirstPage(true);
+                        return; // the re-fired load owns the state now
+                    }
+                }
+                finally
+                {
+                    _healingPage = false;
+                }
+            }
         }
         catch (Exception)
         {
             _loadError = ErrorDisplay.Unexpected(UnexpectedErrorCodes.AdminUsers_LoadFailure);
+            _users = null; // the retry remount must fire LoadData again
+            _totalCount = 0;
         }
         finally
         {
             _isLoading = false;
+            StateHasChanged();
         }
     }
 
+    /// <summary>
+    /// Builds the typed query from the page-level filter/sort state (kept
+    /// current by <see cref="UsersGridStateTranslator"/> on every load).
+    /// Shared by the grid load and the CSV export so the export ships
+    /// exactly what the filters select.
+    /// </summary>
+    private GetUsersPaginatedQuery BuildQuery(int pageNumber, int pageSize) => new()
+    {
+        PageNumber = pageNumber,
+        PageSize = pageSize,
+        SearchTerm = null,
+        GroupId = _activeGroupId,
+        IsActive = _activeIsActive,
+        Gender = _activeGender,
+        WorkerIdFilter = _activeWorkerIdFilter,
+        FullNameFilter = _activeFullNameFilter,
+        SortBy = _activeSortBy,
+        SortDescending = _activeSortDescending
+    };
+
+    /// <summary>
+    /// Retry after a load error: clears the error so the grid branch
+    /// re-renders — the grid re-mounts and its LoadData-on-init performs
+    /// the fresh load.
+    /// </summary>
+    private async Task RetryLoadAsync()
+    {
+        _loadError = string.Empty;
+        _isLoading = true;
+        _users = null; // Data=null at remount → the grid fires LoadData
+        await Task.CompletedTask;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Clears EVERY column filter, then reloads. The filtered-empty
+    /// state's one-click escape hatch. This button only renders when the
+    /// grid is UNMOUNTED (the empty state replaced it), so the reload
+    /// happens via REMOUNT: the grid mounts with Data=null and fires its
+    /// LoadData-on-init with every filter naturally reset (fresh column
+    /// instances carry no filter values). Do NOT call grid.FirstPage(true)
+    /// here — the disposed grid's methods must not be touched.
+    /// </summary>
+    private async Task ClearAllFiltersAsync()
+    {
+        _selectedStatusFilter = null;
+        _selectedGenderFilter = null;
+        _selectedGroupFilter = null;
+
+        // REMOUNT TRIGGER: _users=null makes the grid mount with Data=null
+        // (which fires LoadData — the pinned Radzen contract), and
+        // _isLoading=true keeps the grid branch rendered (instead of
+        // flashing the empty state) until the fresh load completes.
+        _users = null;
+        _isLoading = true;
+
+        await Task.CompletedTask;
+    }
+
     // ── Filter handlers ─────────────────────────────────────────────────
-    // Each handler sets column.FilterValue and calls grid.Reload() to
-    // trigger Radzen's client-side filtering. The bound field is updated
-    // by @bind-Value before the Change event fires, so we pass the field
-    // (not the args parameter) to the handler.
+    // Each handler sets column.FilterValue (the programmatic-filter API —
+    // same BL0005-suppressed contract as Sales.razor) and re-fires the
+    // grid's load from PAGE 1 via grid.FirstPage(true): a narrowed result
+    // set never strands the user on a now-empty page N. The bound field is
+    // updated by @bind-Value before the Change event fires, so we pass the
+    // field (not the args parameter) to the handler.
 
     private async Task OnStatusFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
     {
@@ -976,7 +1321,7 @@
             column.FilterOperator = FilterOperator.Equals;
         }
 
-        await grid.Reload();
+        await grid.FirstPage(true);
     }
 
     private async Task OnGenderFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
@@ -996,24 +1341,26 @@
             column.FilterOperator = FilterOperator.Equals;
         }
 
-        await grid.Reload();
+        await grid.FirstPage(true);
     }
 
-    private async Task OnGroupFilterChanged(string? value, RadzenDataGridColumn<UserListItemDto> column)
+    private async Task OnGroupFilterChanged(Guid? value, RadzenDataGridColumn<UserListItemDto> column)
     {
         _selectedGroupFilter = value;
 
-        if (string.IsNullOrEmpty(value))
+        if (value is null)
         {
             column.FilterValue = null;
         }
         else
         {
+            // The dropdown's value is the group's Guid — the translator
+            // maps the GroupName column's descriptor to a GroupId filter.
             column.FilterValue = value;
             column.FilterOperator = FilterOperator.Equals;
         }
 
-        await grid.Reload();
+        await grid.FirstPage(true);
     }
 
     // ── Activate / Deactivate ───────────────────────────────────────────
@@ -1134,7 +1481,11 @@
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["DeactivateSuccess"], user.FullName),
                     summary: Loc["DeactivateSuccessTitle"]);
-                await LoadUsersAsync();
+                // Refresh the CURRENT page (Round 5): grid.Reload() re-fires
+                // LoadData with the current page/filters — the row's badge
+                // updates in place without losing the user's place. (The old
+                // full-list reload also reset every client-side filter.)
+                await grid.Reload();
             }
             else
             {
@@ -1171,7 +1522,8 @@
                 await Toast.Success(
                     string.Format(CultureInfo.CurrentCulture, Loc["ActivateSuccess"], user.FullName),
                     summary: Loc["ActivateSuccessTitle"]);
-                await LoadUsersAsync();
+                // Refresh the CURRENT page (Round 5 — see HandleDeactivateAsync).
+                await grid.Reload();
             }
             else
             {
@@ -1423,23 +1775,33 @@
     private string GetStatusLabel(bool isActive)
         => isActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"];
 
-    // ── CSV export (Round 3) ────────────────────────────────────────
+    // ── CSV export (Round 5 — all filtered rows, capped) ─────────────
 
     /// <summary>
-    /// Builds a CSV of the currently loaded users (the same rows the grid
-    /// shows) and downloads it via takDownload.js. Column shape mirrors the
-    /// grid: worker id, full name, gender, group, roles (semicolon-joined —
-    /// commas would break the CSV field), and active/inactive status.
-    /// See Sales.razor's ExportSalesCsvAsync for the format rationale
-    /// (RFC 4180 + invariant numbers + BOM-at-save).
+    /// Hard cap on exported rows: generous enough for any real export,
+    /// small enough that a pathological filter can't hang the Blazor
+    /// circuit building a giant string (same value as the Sales export).
+    /// </summary>
+    private const int ExportRowCap = 2000;
+
+    /// <summary>
+    /// Builds a CSV of EVERY user matching the active filters (all pages —
+    /// a genuine improvement over the pre-Round-5 export, which could only
+    /// ship the ≤100 loaded rows), capped at <see cref="ExportRowCap"/>,
+    /// and downloads it via the takDownload helper. Column shape mirrors
+    /// the grid: worker id, full name, gender, group, roles (semicolon-
+    /// joined — commas would break the CSV field), and active/inactive
+    /// status. See Sales.razor's ExportSalesCsvAsync for the format
+    /// rationale (RFC 4180 + invariant numbers + BOM-at-save).
     /// </summary>
     private async Task ExportUsersCsvAsync()
     {
-        if (_users.Count == 0)
+        if (_totalCount == 0 || _isExporting)
         {
             return; // the button is disabled for empty lists — belt + braces
         }
 
+        _isExporting = true;
         try
         {
             var builder = new CsvBuilder();
@@ -1451,27 +1813,53 @@
                 Loc["ColRoles"],
                 Loc["ColStatus"]);
 
-            foreach (var user in _users)
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
             {
-                builder.AddRow(
-                    user.WorkerId,
-                    user.FullName,
-                    GetGenderLabel(user.Gender),
-                    user.GroupName,
-                    // Semicolon-joined INSIDE one CSV field: role lists are
-                    // multi-valued and commas are the record separator.
-                    string.Join("; ", user.Roles),
-                    GetStatusLabel(user.IsActive));
+                var result = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
+                    BuildQuery(pageNumber, exportPageSize)); // SAME active filters + sort as the grid
+
+                foreach (var user in result.Items)
+                {
+                    if (exported >= ExportRowCap) break;
+
+                    builder.AddRow(
+                        user.WorkerId,
+                        user.FullName,
+                        GetGenderLabel(user.Gender),
+                        user.GroupName,
+                        // Semicolon-joined INSIDE one CSV field: role lists
+                        // are multi-valued and commas are the record
+                        // separator.
+                        string.Join("; ", user.Roles),
+                        GetStatusLabel(user.IsActive));
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize) break;
+                pageNumber++;
             }
 
+            var csv = builder.ToString();
             var fileName = $"takone-users-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
-            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, csv);
+
+            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageHeading"]);
         }
         catch (Exception)
         {
             // JS interop can fail after a circuit reconnect — a visible
             // toast beats a silently dead button.
             await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
         }
     }
 

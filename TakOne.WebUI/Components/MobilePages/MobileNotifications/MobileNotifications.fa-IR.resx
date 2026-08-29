@@ -85,4 +85,8 @@
     <value>حذف اعلان ممکن نشد. لطفاً دوباره تلاش کنید.</value>
     <comment>دور ۴ — پیام خطای حذف اعلان.</comment>
   </data>
+  <data name="ManagePrefsLink" xml:space="preserve">
+    <value>تنظیمات اعلان‌ها</value>
+  </data>
+
 </root>

@@ -859,4 +859,182 @@ public class GetDashboardStatsQueryHandlerTests
         result.Value.LastMonthApprovedSalesCount.Should().Be(0);
         result.Value.LastMonthInvoicedSalesCount.Should().Be(0);
     }
+
+    // ── ROUND 5 — period selector (the FromUtc/ToUtc window) ──────────
+
+    [Fact]
+    public async Task HandleAsync_WithoutPeriodWindow_PeriodFieldsAreZeroAndNotScoped()
+    {
+        // The default query (no window) keeps the legacy fixed-anchor
+        // behavior — every Period* field stays zero and IsPeriodScoped is
+        // false. This is the back-compat contract for every existing
+        // caller.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { BuildPendingSale(new Money(100m, "IRR")) });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.IsPeriodScoped.Should().BeFalse();
+        result.Value.PeriodFromUtc.Should().BeNull();
+        result.Value.PeriodToUtc.Should().BeNull();
+        result.Value.PeriodOrdersCount.Should().Be(0);
+        result.Value.PreviousPeriodOrdersCount.Should().Be(0);
+        result.Value.PeriodEmployeePurchaseTotal.Should().Be(0m);
+        result.Value.PreviousPeriodEmployeePurchaseTotal.Should().Be(0m);
+        result.Value.PeriodApprovedSalesCount.Should().Be(0);
+        result.Value.PeriodInvoicedSalesCount.Should().Be(0);
+        // The fixed-anchor fields still work.
+        result.Value.TodayOrdersCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithPeriodWindow_ComputesPeriodKpisVsPreviousWindow()
+    {
+        // Window [now-10d, now); previous window [now-20d, now-10d). Seeded
+        // sales: two in the window, one in the previous window, one far
+        // outside both. Also verifies the window echo fields.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        var from = now.AddDays(-10);
+        var to = now.AddMinutes(5);
+
+        var inWindowSale1 = BuildPendingSale(new Money(100m, "IRR"));
+        SetSubmittedAt(inWindowSale1, now.AddHours(-2));
+        var inWindowSale2 = BuildPendingSale(new Money(50m, "IRR"));
+        SetSubmittedAt(inWindowSale2, from.AddHours(1)); // just inside the inclusive lower bound
+        var previousWindowSale = BuildPendingSale(new Money(200m, "IRR"));
+        SetSubmittedAt(previousWindowSale, from.AddHours(-1)); // just before the window → previous window
+        var outsideSale = BuildPendingSale(new Money(999m, "IRR"));
+        SetSubmittedAt(outsideSale, now.AddDays(-90));
+
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { inWindowSale1, inWindowSale2, previousWindowSale, outsideSale });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
+            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.IsPeriodScoped.Should().BeTrue();
+        result.Value.PeriodFromUtc.Should().Be(from);
+        result.Value.PeriodToUtc.Should().Be(to);
+
+        result.Value.PeriodOrdersCount.Should().Be(2,
+            "the two in-window sales; the previous-window and far-outside sales don't count");
+        result.Value.PreviousPeriodOrdersCount.Should().Be(1);
+
+        result.Value.PeriodEmployeePurchaseTotal.Should().Be(150m / 10m,
+            "100 + 50 IRR displayed as Toman (÷10); the previous-window and outside sales don't count");
+        result.Value.PreviousPeriodEmployeePurchaseTotal.Should().Be(200m / 10m);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithPeriodWindow_StatusFiltersMirrorFixedAnchors()
+    {
+        // The period KPIs apply the SAME status filters as their
+        // fixed-anchor counterparts: orders/purchase exclude Cancelled;
+        // approved/invoiced cards count only their own statuses.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        var from = now.AddDays(-7);
+        var to = now.AddMinutes(5);
+
+        var cancelled = BuildCancelledSale(new Money(100m, "IRR"));
+        SetSubmittedAt(cancelled, now.AddHours(-1));
+
+        var approved = BuildPendingSale(new Money(80m, "IRR"));
+        approved.Approve(TestValues.ApprovedByUserId);
+        SetSubmittedAt(approved, now.AddHours(-2));
+
+        var invoiced = BuildPendingSale(new Money(60m, "IRR"));
+        invoiced.Approve(TestValues.ApprovedByUserId);
+        invoiced.MarkAsInvoiced(TestValues.ApprovedByUserId);
+        SetSubmittedAt(invoiced, now.AddHours(-3));
+
+        var draft = BuildDraftSale(new Money(40m, "IRR")); // never submitted → excluded everywhere
+
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { cancelled, approved, invoiced, draft });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
+            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.PeriodOrdersCount.Should().Be(2,
+            "approved + invoiced count; cancelled and draft are excluded");
+        result.Value.PeriodEmployeePurchaseTotal.Should().Be(140m / 10m,
+            "approved (80) + invoiced (60); cancelled and draft excluded");
+        result.Value.PeriodApprovedSalesCount.Should().Be(1);
+        result.Value.PeriodInvoicedSalesCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithPeriodWindowOpenEnded_TreatsNullToUtcAsNow()
+    {
+        // FromUtc set + ToUtc null → the window is [from, now): a sale
+        // submitted an hour ago counts, one before the bound doesn't.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        var from = now.AddDays(-7);
+
+        var recent = BuildPendingSale(new Money(10m, "IRR"));
+        SetSubmittedAt(recent, now.AddHours(-1));
+        var tooOld = BuildPendingSale(new Money(20m, "IRR"));
+        SetSubmittedAt(tooOld, from.AddDays(-1));
+
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { recent, tooOld });
+
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = from },
+            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        result.Value.IsPeriodScoped.Should().BeTrue();
+        result.Value.PeriodToUtc.Should().BeNull("an open-ended window echoes back as null");
+        result.Value.PeriodOrdersCount.Should().Be(1);
+        result.Value.PreviousPeriodOrdersCount.Should().Be(1,
+            "the previous equal-length window [from-7d, from) holds the too-old sale");
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithInvertedPeriodWindow_YieldsZerosWithoutThrowing()
+    {
+        // Degenerate/inverted windows never throw — same semantics as the
+        // sales list's date filter.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var now = DateTime.UtcNow;
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { BuildPendingSale(new Money(100m, "IRR")) });
+
+        var act = () => GetDashboardStatsQueryHandler.HandleAsync(
+            new GetDashboardStatsQuery { FromUtc = now.AddDays(-1), ToUtc = now.AddDays(-7) },
+            currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        var result = await act();
+        result.IsSuccess.Should().BeTrue("an inverted window is degenerate, not an error");
+        result.Value.IsPeriodScoped.Should().BeTrue();
+        result.Value.PeriodOrdersCount.Should().Be(0);
+        result.Value.PreviousPeriodOrdersCount.Should().Be(0);
+        result.Value.PeriodEmployeePurchaseTotal.Should().Be(0m);
+    }
 }

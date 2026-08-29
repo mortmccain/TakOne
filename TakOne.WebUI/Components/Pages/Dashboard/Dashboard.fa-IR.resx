@@ -404,6 +404,38 @@
   <data name="Action_ManageUsers_Desc" xml:space="preserve">
     <value>ایجاد و مدیریت کاربران</value>
   </data>
+  <!-- ── دورۀ ۵ — انتخاب بازۀ KPI ── -->
+  <data name="Period_Label" xml:space="preserve">
+    <value>بازۀ شاخص‌ها</value>
+  </data>
+  <data name="Period_Current" xml:space="preserve">
+    <value>فعلی</value>
+  </data>
+  <data name="Period_7Days" xml:space="preserve">
+    <value>۷ روز اخیر</value>
+  </data>
+  <data name="Period_30Days" xml:space="preserve">
+    <value>۳۰ روز اخیر</value>
+  </data>
+  <data name="Period_90Days" xml:space="preserve">
+    <value>۹۰ روز اخیر</value>
+  </data>
+  <data name="KpiDeltaVsPreviousPeriod" xml:space="preserve">
+    <value>نسبت به دورۀ قبلی</value>
+  </data>
+  <data name="Kpi_PeriodOrders" xml:space="preserve">
+    <value>سفارشات در دوره</value>
+  </data>
+  <data name="Kpi_PeriodEmployeePurchase" xml:space="preserve">
+    <value>خرید کارکنان در دوره</value>
+  </data>
+  <data name="Kpi_PeriodApprovedSales" xml:space="preserve">
+    <value>فروش‌های تأییدشده در دوره</value>
+  </data>
+  <data name="Kpi_PeriodFooter" xml:space="preserve">
+    <value>{0} تا {1}</value>
+  </data>
+
   <data name="KpiDeltaVsYesterday" xml:space="preserve">
     <value>نسبت به دیروز</value>
     <comment>دور ۴ — پسوند چیپ روند KPI برای کارت سفارش‌های امروز.</comment>

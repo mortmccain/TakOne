@@ -1,5 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Linq.Expressions;
+using System.Reflection;
+using Microsoft.EntityFrameworkCore;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Users.Queries.GetUsersPaginated;
 using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
 
@@ -105,11 +108,21 @@ public sealed class UserRepository : IUserRepository
             .ToListAsync(cancellationToken);
     }
 
+    // ── Round 5: server-side text filters + sort ──────────────────────
+    //
+    // The string predicates below (both in GetPaginatedAsync's search-term
+    // lambda and in the ApplyTextFilter expression trees) use the
+    // parameterless string.ToLower()/Contains(string) deliberately: those
+    // are the overloads EF Core translates to LOWER()/LIKE. The
+    // culture-taking overloads the analyzers prefer are NOT translatable
+    // (same rationale as SalesSpecificationFilters).
+#pragma warning disable CA1304 // ToLower culture — SQL LOWER() has no culture
+#pragma warning disable CA1311 // Contains culture — same
+#pragma warning disable CA1862 // OrdinalIgnoreCase overload — not EF-translatable
+
     /// <inheritdoc />
     public async Task<PaginatedResult<User>> GetPaginatedAsync(
-        string? searchTerm = null,
-        bool? isActive = null,
-        Guid? groupId = null,
+        UsersListFilters? filters,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -120,20 +133,43 @@ public sealed class UserRepository : IUserRepository
         pageNumber = pageNumber < 1 ? 1 : pageNumber;
         pageSize = pageSize < 1 ? 20 : pageSize;
 
+        filters ??= new UsersListFilters(
+            SearchTerm: null,
+            GroupId: null,
+            IsActive: null,
+            Gender: null,
+            WorkerId: null,
+            FullName: null,
+            SortBy: null,
+            SortDescending: false);
+
         // ------------------------------------------------------------------
         // Build the filter query. Each conditional Where is a no-op when the
-        // filter value is null.
+        // filter value is null. Every predicate below must translate to SQL
+        // on both SQL Server (production) and SQLite (integration tests) —
+        // same EF-translatability contract as the sales list (see
+        // SalesSpecificationFilters): plain parameterless ToLower()/
+        // Contains(string) so string matching is case-insensitive on BOTH
+        // providers (SQLite's default collation is case-SENSITIVE, so the
+        // pre-Round-5 bare Contains was not actually case-insensitive there).
         // ------------------------------------------------------------------
         var query = _db.DomainUsers.AsQueryable();
 
-        if (isActive is not null)
+        if (filters.IsActive is not null)
         {
-            query = query.Where(u => u.IsActive == isActive.Value);
+            query = query.Where(u => u.IsActive == filters.IsActive.Value);
         }
 
-        if (groupId is not null)
+        if (filters.GroupId is not null)
         {
-            query = query.Where(u => u.GroupId == groupId.Value);
+            query = query.Where(u => u.GroupId == filters.GroupId.Value);
+        }
+
+        if (filters.Gender is not null)
+        {
+            // Gender is stored as its int ordinal; comparing the enum
+            // directly translates to an int comparison in SQL.
+            query = query.Where(u => u.Gender == filters.Gender.Value);
         }
 
         // searchTerm matches WorkerId OR FullName. We OR them so a search for
@@ -141,32 +177,137 @@ public sealed class UserRepository : IUserRepository
         //
         // We trim and skip empty so an empty search box returns all users
         // (rather than filtering out users with null fields).
-        var trimmedSearch = searchTerm?.Trim();
+        var trimmedSearch = filters.SearchTerm?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmedSearch))
         {
+            var searchLower = trimmedSearch.ToLowerInvariant();
             query = query.Where(u =>
-                u.WorkerId.Contains(trimmedSearch) ||
-                u.FullName.Contains(trimmedSearch));
+                u.WorkerId.ToLower().Contains(searchLower) ||
+                u.FullName.ToLower().Contains(searchLower));
         }
 
+        // Typed per-column text filters (Round 5). Hand-built expression
+        // trees — same technique as SalesSpecificationFilters.ApplyTextFilter
+        // — so the final tree stays a plain MemberAccess → method-call chain
+        // that EF translates to LOWER()/LIKE. Unknown operators are skipped
+        // (lenient no-filter).
+        query = ApplyTextFilter(query, u => u.WorkerId, filters.WorkerId);
+        query = ApplyTextFilter(query, u => u.FullName, filters.FullName);
+
         // ------------------------------------------------------------------
-        // Total count — must be on the spec'd query, before pagination.
+        // Total count — must be on the filtered query, before pagination.
         // ------------------------------------------------------------------
         var totalCount = await query.CountAsync(cancellationToken);
 
         // ------------------------------------------------------------------
-        // Apply ordering + pagination. Order by FullName (not WorkerId) so
-        // the user-management UI shows humans in alphabetical order, not
-        // grouped by workerId prefix.
+        // Apply ordering + pagination. Default = FullName ascending (the
+        // pre-Round-5 order the mobile list + typeahead rely on); every arm
+        // carries the Id tiebreaker so OFFSET/FETCH paging can never skip
+        // or duplicate rows (equal WorkerIds / FullNames / Genders are
+        // stable across page boundaries).
         // ------------------------------------------------------------------
+        query = ApplySort(query, filters.SortBy, filters.SortDescending);
+
         var items = await query
-            .OrderBy(u => u.FullName)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<User>(items, totalCount, pageNumber, pageSize);
     }
+
+    private static IQueryable<User> ApplyTextFilter(
+        IQueryable<User> query,
+        Expression<Func<User, string>> selector,
+        UsersTextFilter? filter)
+    {
+        var term = filter?.Value?.Trim();
+        if (filter is null || string.IsNullOrEmpty(term))
+        {
+            return query;
+        }
+
+        var value = term.ToLowerInvariant();
+
+        // The selector is a simple member expression (WorkerId / FullName),
+        // so rebuilding the body per operator is a matter of wrapping the
+        // lowered member in the operator's string method call. Built by
+        // hand (not via a captured sub-lambda) so the final tree stays a
+        // plain MemberAccess → method-call chain that EF translates to
+        // LOWER()/LIKE.
+        var body = selector.Body;
+        var user = selector.Parameters[0];
+        var lowered = Expression.Call(body, ToLowerMethod);
+
+        Expression? predicate = filter.Operator switch
+        {
+            UsersTextOperator.Contains =>
+                Expression.Call(lowered, ContainsMethod, Expression.Constant(value)),
+
+            UsersTextOperator.NotContains =>
+                Expression.Not(Expression.Call(
+                    lowered, ContainsMethod, Expression.Constant(value))),
+
+            UsersTextOperator.Equals =>
+                Expression.Equal(lowered, Expression.Constant(value)),
+
+            UsersTextOperator.NotEquals =>
+                Expression.NotEqual(lowered, Expression.Constant(value)),
+
+            UsersTextOperator.StartsWith =>
+                Expression.Call(lowered, StartsWithMethod, Expression.Constant(value)),
+
+            UsersTextOperator.EndsWith =>
+                Expression.Call(lowered, EndsWithMethod, Expression.Constant(value)),
+
+            // Unknown operator values (a malformed message could carry an
+            // out-of-range enum) are ignored — lenient no-filter.
+            _ => null
+        };
+
+        if (predicate is null)
+        {
+            return query;
+        }
+
+        return query.Where(Expression.Lambda<Func<User, bool>>(predicate, user));
+    }
+
+    private static IQueryable<User> ApplySort(
+        IQueryable<User> query, UsersSortBy? sortBy, bool descending)
+    {
+        return (sortBy ?? UsersSortBy.FullName, descending) switch
+        {
+            (UsersSortBy.WorkerId, false) => query.OrderBy(u => u.WorkerId).ThenBy(u => u.Id),
+            (UsersSortBy.WorkerId, true) => query.OrderByDescending(u => u.WorkerId).ThenByDescending(u => u.Id),
+            (UsersSortBy.FullName, false) => query.OrderBy(u => u.FullName).ThenBy(u => u.Id),
+            (UsersSortBy.FullName, true) => query.OrderByDescending(u => u.FullName).ThenByDescending(u => u.Id),
+            // Gender/IsActive are enum/bool columns — SQL orders by their
+            // int representation; the Id tiebreaker keeps equal groups
+            // deterministic.
+            (UsersSortBy.Gender, false) => query.OrderBy(u => u.Gender).ThenBy(u => u.Id),
+            (UsersSortBy.Gender, true) => query.OrderByDescending(u => u.Gender).ThenByDescending(u => u.Id),
+            (UsersSortBy.IsActive, false) => query.OrderBy(u => u.IsActive).ThenBy(u => u.Id),
+            (UsersSortBy.IsActive, true) => query.OrderByDescending(u => u.IsActive).ThenByDescending(u => u.Id),
+            _ => query.OrderBy(u => u.FullName).ThenBy(u => u.Id)
+        };
+    }
+
+#pragma warning restore CA1304
+#pragma warning restore CA1311
+#pragma warning restore CA1862
+
+    private static readonly MethodInfo ToLowerMethod =
+        typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!;
+
+    private static readonly MethodInfo ContainsMethod =
+        typeof(string).GetMethod(nameof(string.Contains), new[] { typeof(string) })!;
+
+    private static readonly MethodInfo StartsWithMethod =
+        typeof(string).GetMethod(nameof(string.StartsWith), new[] { typeof(string) })!;
+
+    private static readonly MethodInfo EndsWithMethod =
+        typeof(string).GetMethod(nameof(string.EndsWith), new[] { typeof(string) })!;
 
     /// <inheritdoc />
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
