@@ -139,7 +139,8 @@ public class GetNotificationsForUserQueryHandlerTests
         // Repo is NOT called on the auth-fail path.
         await notificationRepo.DidNotReceive().GetPaginatedForUserAsync(
             Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<int>(),
-            Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            Arg.Any<bool>(), Arg.Any<NotificationKind?>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -202,6 +203,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Is<int>(p => p == 1),
             Arg.Any<int>(),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -222,6 +224,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Is<int>(p => p == 1),
             Arg.Any<int>(),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -243,6 +246,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Is<int>(p => p == 20),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -264,6 +268,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Is<int>(p => p == ExpectedMaxPageSize),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -285,6 +290,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Is<int>(p => p == ExpectedMaxPageSize),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -307,6 +313,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Any<int>(),
             Arg.Is<bool>(u => u),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -327,6 +334,7 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Any<int>(),
             Arg.Is<bool>(u => !u),
+            Arg.Any<NotificationKind?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -464,6 +472,51 @@ public class GetNotificationsForUserQueryHandlerTests
             Arg.Any<int>(),
             Arg.Any<int>(),
             Arg.Any<bool>(),
+            Arg.Any<NotificationKind?>(),
             Arg.Is<CancellationToken>(t => t == ct));
+    }
+
+    // ── Round 4: per-kind filter pass-through ──────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_WithKind_ForwardsItToRepository()
+    {
+        // Arrange
+        var (currentUser, notificationRepo, logger, _) = BuildMocks();
+
+        // Act
+        await GetNotificationsForUserQueryHandler.HandleAsync(
+            new GetNotificationsForUserQuery { Kind = NotificationKind.Broadcast },
+            currentUser, notificationRepo, logger, CancellationToken.None);
+
+        // Assert
+        await notificationRepo.Received(1).GetPaginatedForUserAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<bool>(),
+            Arg.Is<NotificationKind?>(k => k == NotificationKind.Broadcast),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithoutKind_ForwardsNull()
+    {
+        // Arrange
+        var (currentUser, notificationRepo, logger, _) = BuildMocks();
+
+        // Act
+        await GetNotificationsForUserQueryHandler.HandleAsync(
+            new GetNotificationsForUserQuery(),
+            currentUser, notificationRepo, logger, CancellationToken.None);
+
+        // Assert — null Kind means "all kinds" (the repo adds no clause).
+        await notificationRepo.Received(1).GetPaginatedForUserAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<bool>(),
+            Arg.Is<NotificationKind?>(k => k == null),
+            Arg.Any<CancellationToken>());
     }
 }

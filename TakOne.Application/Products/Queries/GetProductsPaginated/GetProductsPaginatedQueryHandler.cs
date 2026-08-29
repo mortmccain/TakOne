@@ -187,6 +187,7 @@ public sealed class GetProductsPaginatedQueryHandler
             pageNumber: pageNumber,
             pageSize: pageSize,
             visibility: visibility,
+            sortBy: query.SortBy ?? ProductSortBy.Name,
             cancellationToken: cancellationToken
             );
 

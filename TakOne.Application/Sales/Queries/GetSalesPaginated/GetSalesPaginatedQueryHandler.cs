@@ -13,12 +13,12 @@ namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 /// <summary>
 /// Handler for <see cref="GetSalesPaginatedQuery"/>.
 ///
-/// NOTE on the repository contract: <see cref="ISaleRepository"/> currently
-/// exposes <c>GetPaginatedBySpecificationAsync</c> but does NOT accept a
-/// search term. Search-term filtering is therefore applied here on the
-/// materialized page (after the DB returns). For small page sizes (≤100),
-/// this is fine. If we ever need true server-side search, we'll add a
-/// <c>GetPaginatedWithSearchAsync</c> method to the repository.
+/// Round 4 (server-driven paging): EVERY filter and the sort now ride
+/// inside the SQL query via the specification — the handler is a thin
+/// auth + clamp + pass-through + DTO-projection shell. The pre-Round-4
+/// in-memory search (which filtered the materialized page, breaking
+/// TotalCount and missing rows beyond page 1) is gone; MobileSearch's
+/// legacy <c>SearchTerm</c> is now a server-side OR predicate.
 /// </summary>
 public sealed class GetSalesPaginatedQueryHandler
 {
@@ -68,24 +68,28 @@ public sealed class GetSalesPaginatedQueryHandler
         // SpecificationEvaluator translates whichever spec we hand it into
         // the appropriate LINQ query against the Sales DbSet.
         //
-        // The optional Status filter (Phase 7 item E) and the optional
-        // creation-time range (Round 3) are pushed down into the spec so
-        // they become part of the SQL WHERE clause — accurate TotalCount,
-        // no in-memory filtering, scales beyond one page.
-        //
-        // DATE-RANGE CONTRACT: the bounds are RAW UTC instants (inclusive
-        // lower, exclusive upper — the half-open interval [from, to)). The
-        // handler passes them through untouched: no implicit offset, no
-        // date flooring — the same query means the same rows regardless of
-        // the server's locale. The UI converts Tehran-local picked dates
-        // to UTC midnights before dispatching (Sales.razor's ToUtcInstant).
-        // A From later than or equal to the To is degenerate (matches
-        // nothing) — treated as an empty result, not an error, mirroring
-        // the lenient search-term contract above.
+        // Round 4: the column filters + sort are packed into ONE
+        // SalesListFilters aggregate; the WHERE/ORDER BY clauses live in
+        // the shared SalesSpecificationFilters helper so the staff and
+        // customer specs can never drift apart. TotalCount is now
+        // accurate for EVERY active filter (the pre-Round-4 note about
+        // search breaking the count no longer applies — the search is in
+        // SQL too).
+        var filters = new SalesListFilters(
+            SaleNumberTerm: query.SaleNumberTerm,
+            CustomerName: query.CustomerNameFilter,
+            CreatedByName: query.CreatedByNameFilter,
+            Total: query.TotalFilter,
+            SortBy: query.SortBy,
+            SortDescending: query.SortDescending);
+
         ISpecification<Sale> spec = canSeeAllSales
-            ? new AllSalesSpecification(query.Status, query.FromDateUtc, query.ToDateUtc)
+            ? new AllSalesSpecification(
+                query.Status, query.FromDateUtc, query.ToDateUtc,
+                query.SearchTerm, filters)
             : new SaleByCustomerSpecification(
-                currentUser.UserId, query.Status, query.FromDateUtc, query.ToDateUtc);
+                currentUser.UserId, query.Status, query.FromDateUtc, query.ToDateUtc,
+                query.SearchTerm, filters);
 
         // ------------------------------------------------------------------
         // 2. Clamp page parameters to safe values. Negative or zero page
@@ -100,31 +104,16 @@ public sealed class GetSalesPaginatedQueryHandler
                 : query.PageSize;
 
         // ------------------------------------------------------------------
-        // 3. Load the page from the repository.
+        // 3. Load the page from the repository (filters + ORDER BY are
+        //    already inside the spec → SQL).
         // ------------------------------------------------------------------
         var paginated = await saleRepository.GetPaginatedBySpecificationAsync(
             spec, pageNumber, pageSize, cancellationToken);
 
         // ------------------------------------------------------------------
-        // 4. Project to DTO. If a search term was supplied, apply it here
-        //    (see class-level comment about why we filter in-memory).
-        //    The search matches SaleNumber OR CustomerName OR the draft
-        //    pseudo-id, case-insensitive.
-        //
-        //    DRAFT PSEUDO-ID SEARCH (B2 deferred-allocation design):
-        //    Drafts have no SaleNumber, so we also match against the pseudo-id
-        //    (DRAFT-{first 8 hex chars of Id}) so users can find drafts by
-        //    typing "DRAFT" or the Guid prefix. This keeps drafts searchable
-        //    just like submitted sales.
+        // 4. Project to DTO.
         // ------------------------------------------------------------------
-        var searchTerm = query.SearchTerm?.Trim();
-        var hasSearch = !string.IsNullOrWhiteSpace(searchTerm);
-
         var dtos = paginated.Items
-            .Where(s => !hasSearch ||
-                        (s.SaleNumber?.Value.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase) == true ||
-                         s.CustomerName.Contains(searchTerm!, StringComparison.OrdinalIgnoreCase) ||
-                         $"DRAFT-{s.Id.ToString()[..8].ToUpperInvariant()}".Contains(searchTerm!, StringComparison.OrdinalIgnoreCase)))
             .Select(s => new SaleListItemDto
             {
                 Id = s.Id,
@@ -141,11 +130,6 @@ public sealed class GetSalesPaginatedQueryHandler
                 CreatedByName = s.CreatedByName
             })
             .ToList();
-
-        // NOTE: when search term filters rows out in-memory, TotalCount is
-        // no longer accurate (it's the pre-search count). For the v1 UI this
-        // is acceptable — the search box reloads the page anyway. If we ever
-        // add infinite scroll, we'll need server-side search first.
 
         return new PaginatedResult<SaleListItemDto>(
             dtos, paginated.TotalCount, pageNumber, pageSize);

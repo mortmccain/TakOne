@@ -48,6 +48,7 @@ public sealed class NotificationRepository : INotificationRepository
         int pageNumber,
         int pageSize,
         bool unreadOnly,
+        NotificationKind? kind = null,
         CancellationToken cancellationToken = default)
     {
         // Build the base query — always scoped to userId.
@@ -58,6 +59,14 @@ public sealed class NotificationRepository : INotificationRepository
         if (unreadOnly)
         {
             query = query.Where(n => n.ReadAtUtc == null);
+        }
+
+        // Round 4 — the per-kind filter tab. A simple equality predicate
+        // on the indexed Kind column (part of the UX_Notifications unique
+        // index); translates on every provider.
+        if (kind.HasValue)
+        {
+            query = query.Where(n => n.Kind == kind.Value);
         }
 
         // TotalCount via COUNT(*) — the (UserId, CreatedAtUtc) index makes
@@ -73,6 +82,23 @@ public sealed class NotificationRepository : INotificationRepository
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<Notification>(items, totalCount, pageNumber, pageSize);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteForUserAsync(
+        Guid notificationId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        // A single DELETE ... WHERE Id = @id AND UserId = @userId — the
+        // user scoping rides IN the predicate, so a foreign notification
+        // deletes zero rows and reports false (anti-enumeration: the
+        // caller can't distinguish "not found" from "someone else's").
+        var affected = await _db.Notifications
+            .Where(n => n.Id == notificationId && n.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        return affected > 0;
     }
 
     /// <inheritdoc />

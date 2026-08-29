@@ -44,6 +44,7 @@
 @using TakOne.Application.Notifications.Queries.GetUnreadNotificationCount
 @using TakOne.Application.Notifications.Commands.MarkNotificationAsRead
 @using TakOne.Application.Notifications.Commands.MarkAllNotificationsAsRead
+@using TakOne.Application.Notifications.Commands.DeleteNotification
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
@@ -157,6 +158,29 @@ else
         }
     </div>
 
+    @* ── 2b. Per-kind filter chips (Round 4). Horizontally scrollable —
+           all 8 chips never wrap-crowd the toolbar. Same labels as the
+           feed rows (Title_*), so a kind means the same thing in the
+           filter and in the list. Server-side: the kind rides in SQL,
+           so TotalPages stays honest. Tap = toggle (the active chip
+           deactivates back to "all kinds"). *@
+    <div class="m-notif-kind-row" role="tablist" aria-label="@Loc["FilterKindLabel"]">
+        <button type="button"
+                class="m-notif-kind-chip @(_filterKind is null ? "active" : "")"
+                @onclick="() => SetKindFilterAsync(null)">
+            @Loc["FilterAllKinds"]
+        </button>
+        @foreach (var kind in Enum.GetValues<NotificationKind>())
+        {
+            var k = kind; // capture for the closure
+            <button type="button"
+                    class="m-notif-kind-chip @(_filterKind == k ? "active" : "")"
+                    @onclick="() => SetKindFilterAsync(k)">
+                @GetTitle(new NotificationDto { Kind = k })
+            </button>
+        }
+    </div>
+
     @* ── 3. Notification list. ── *@
     <div class="m-notif-list">
         @foreach (var n in _notifications)
@@ -189,6 +213,23 @@ else
                 {
                     <div class="m-notif-unread-dot" aria-label="@Loc["UnreadAriaLabel"]"></div>
                 }
+
+                @* Round 4 — per-notification dismiss. The row is a
+                   <button>, so the dismiss is a span[role=button]
+                   (nested buttons are invalid HTML) with stopPropagation
+                   + Enter/Space keydown support. *@
+                <span class="m-notif-dismiss @(n.Id == _dismissingId ? "m-notif-dismiss--busy" : "")"
+                      role="button"
+                      tabindex="0"
+                      title="@Loc["DismissTooltip"]"
+                      aria-label="@Loc["DismissTooltip"]"
+                      @onclick="() => DismissAsync(n)"
+                      @onclick:stopPropagation="true"
+                      @onkeydown="@(e => OnDismissKeyDown(e, n))">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2" style="width: 14px; height: 14px;" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </span>
             </button>
         }
     </div>
@@ -228,6 +269,17 @@ else
     private int _totalPages;
     private int _unreadCount;
     private bool _filterUnreadOnly;
+
+    /// <summary>
+    /// The active per-kind filter (Round 4). Null = all kinds.
+    /// </summary>
+    private NotificationKind? _filterKind;
+
+    /// <summary>
+    /// The id of the notification whose dismiss round trip is in flight
+    /// (drives the row's busy style; single-flight).
+    /// </summary>
+    private Guid? _dismissingId;
     private bool _isLoading = true;
     private bool _isLoadingPage;
     private bool _isMarkingAllRead;
@@ -287,7 +339,8 @@ else
             {
                 PageNumber = _pageNumber,
                 PageSize = 20,
-                UnreadOnly = _filterUnreadOnly
+                UnreadOnly = _filterUnreadOnly,
+                Kind = _filterKind
             };
 
             var page = await MessageBus.InvokeAsync<PaginatedResult<NotificationDto>>(query);
@@ -331,6 +384,76 @@ else
     /// <summary>
     /// Switches the All/Unread filter and reloads page 1.
     /// </summary>
+    /// <summary>
+    /// The per-kind filter chips' handler: toggle the kind (null again =
+    /// all kinds), restart at page 1, reload.
+    /// </summary>
+    private async Task SetKindFilterAsync(NotificationKind? kind)
+    {
+        if (_filterKind == kind) return;
+        _filterKind = kind;
+        _pageNumber = 1;
+        await LoadAsync();
+    }
+
+    /// <summary>
+    /// Keyboard support for the dismiss span (role=button): Enter or
+    /// Space dismisses; anything else moves on.
+    /// </summary>
+    private async Task OnDismissKeyDown(KeyboardEventArgs e, NotificationDto n)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            await DismissAsync(n);
+        }
+    }
+
+    /// <summary>
+    /// Dismisses (hard-deletes) one notification: OPTIMISTIC removal from
+    /// the rendered list + the DeleteNotificationCommand round trip; on
+    /// failure the list reloads from the server (persisted truth) and a
+    /// toast explains. Refreshes the unread count too — deleting an
+    /// UNREAD row must decrement the badge immediately.
+    /// </summary>
+    private async Task DismissAsync(NotificationDto n)
+    {
+        if (_dismissingId is not null) return;
+
+        _dismissingId = n.Id;
+        _notifications.RemoveAll(x => x.Id == n.Id);
+        if (n.IsUnread && _unreadCount > 0)
+        {
+            _unreadCount--;
+        }
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new DeleteNotificationCommand(n.Id));
+
+            if (!result.IsSuccess)
+            {
+                await Toast.Warning(Loc["Err_Dismiss"], summary: Loc["PageTitle"]);
+            }
+        }
+        catch
+        {
+            await Toast.Warning(Loc["Err_Dismiss"], summary: Loc["PageTitle"]);
+        }
+        finally
+        {
+            _dismissingId = null;
+        }
+
+        // Reload: restores truth after a failure and fixes TotalPages.
+        // Stepping back a page first when the last row of a non-first
+        // page was dismissed keeps the reload off an empty page.
+        if (_notifications.Count == 0 && _pageNumber > 1)
+        {
+            _pageNumber--;
+        }
+        await LoadAsync();
+    }
+
     private async Task SetFilterAsync(bool unreadOnly)
     {
         if (_filterUnreadOnly == unreadOnly) return;

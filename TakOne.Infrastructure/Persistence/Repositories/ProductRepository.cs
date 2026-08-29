@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using TakOne.Application.Products.Queries.GetProductsPaginated;
+using Microsoft.EntityFrameworkCore;
 using TakOne.Application.Common.Interfaces;
 using TakOne.Domain.Products.Entities;
 using TakOne.SharedKernel.Common;
@@ -135,6 +136,7 @@ public sealed class ProductRepository : IProductRepository
         int pageNumber = 1,
         int pageSize = 20,
         ProductVisibilityFilter? visibility = null,
+        ProductSortBy sortBy = ProductSortBy.Name,
         CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------
@@ -229,11 +231,25 @@ public sealed class ProductRepository : IProductRepository
         // Apply ordering + pagination.
         //
         // ORDER BY is REQUIRED before OFFSET/FETCH (SQL Server enforces this).
-        // Without it, EF Core throws at runtime. Name is a sensible default
-        // (alphabetical browse); could be parameterized later.
+        // Without it, EF Core throws at runtime.
+        //
+        // Round 4 — the shop's sort control parameterizes the ORDER BY:
+        //   Name (default — the pre-Round-4 hard-coded order, so nothing
+        //        shifts for users who never touch the control)
+        //   PriceLowToHigh / PriceHighToLow — with the product NAME as a
+        //        tiebreaker so equal-priced products page deterministically
+        //        (OFFSET/FETCH must never skip or duplicate rows).
         // ------------------------------------------------------------------
-        var items = await query
-            .OrderBy(p => p.Name)
+        var ordered = sortBy switch
+        {
+            ProductSortBy.PriceLowToHigh =>
+                query.OrderBy(p => p.Price.Amount).ThenBy(p => p.Name),
+            ProductSortBy.PriceHighToLow =>
+                query.OrderByDescending(p => p.Price.Amount).ThenBy(p => p.Name),
+            _ => query.OrderBy(p => p.Name)
+        };
+
+        var items = await ordered
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

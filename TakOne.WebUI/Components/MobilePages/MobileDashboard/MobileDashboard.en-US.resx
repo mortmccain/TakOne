@@ -126,4 +126,16 @@
 
   <!-- Footer -->
   <data name="Version" xml:space="preserve"><value>TakOne version 1.0</value></data>
+  <data name="KpiDeltaVsYesterday" xml:space="preserve">
+    <value>vs yesterday</value>
+    <comment>Round 4 — KPI trend-delta chip suffix for the Today's Orders card.</comment>
+  </data>
+  <data name="KpiDeltaVsLastMonth" xml:space="preserve">
+    <value>vs last month</value>
+    <comment>Round 4 — KPI trend-delta chip suffix for the monthly cards.</comment>
+  </data>
+  <data name="KpiDeltaNew" xml:space="preserve">
+    <value>new this month</value>
+    <comment>Round 4 — chip label when the previous period had no activity.</comment>
+  </data>
 </root>

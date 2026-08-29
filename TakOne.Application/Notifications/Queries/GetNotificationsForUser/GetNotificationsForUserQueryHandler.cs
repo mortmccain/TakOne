@@ -55,6 +55,7 @@ public sealed class GetNotificationsForUserQueryHandler
             pageNumber,
             pageSize,
             query.UnreadOnly,
+            query.Kind,
             cancellationToken);
 
         // Project aggregates → DTOs. Same shape as the SaleListItemDto

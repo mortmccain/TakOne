@@ -59,6 +59,7 @@
 
 @page "/Products"
 @attribute [Authorize]
+@using TakOne.Application.Products.Queries.GetProductsPaginated
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
@@ -66,7 +67,6 @@
 @using TakOne.Application.Common.Errors
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.DTOs
-@using TakOne.Application.Products.Queries.GetProductsPaginated
 @using TakOne.Application.Categories.DTOs
 @using TakOne.Application.Categories.Queries.GetActiveCategories
 @using TakOne.Application.Sales.DTOs
@@ -522,6 +522,30 @@
                         </div>
                     }
                 </div>
+
+                @* SORT CONTROL (Round 4 — shop sorting)
+                   A compact themed <select>: alphabetical (the default,
+                   matching the pre-Round-4 order) + price ascending/
+                   descending. Native select = free keyboard + screen-
+                   reader + mobile-picker support; the styling matches
+                   the page's chip aesthetic. Changing the sort restarts
+                   at page 1 (page 5 of a differently-sorted list means
+                   something else entirely). *@
+                <div class="tm-sort-control">
+                    <svg class="tm-sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h10M3 10h7M3 15h4M17 4v16m0 0l-4-4m4 4l4-4" />
+                    </svg>
+                    <label class="tm-sort-label" for="tm-products-sort">@Loc["SortLabel"]</label>
+                    <select id="tm-products-sort"
+                            class="tm-sort-select"
+                            value="@_sortBy.ToString()"
+                            @onchange="OnSortChanged"
+                            disabled="@_isLoading">
+                        <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
+                        <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
+                        <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
+                    </select>
+                </div>
             </div>
 
             @* LOADING / ERROR / EMPTY / GRID *@
@@ -871,9 +895,17 @@
     [CascadingParameter] public TakOne.WebUI.Components.Layout.ShopLayout? ShopLayoutRef { get; set; }
 
     private List<ProductListItemDto> _products = new();
-    private List<ProductListItemDto> _filteredProducts => _products; // stock filter is server-side now
+    private List<ProductListItemDto> _filteredProducts => _products;
 
     private List<CategoryDto> _categories = new();
+
+    /// <summary>
+    /// The active catalog sort (Round 4). Server-side — the repository's
+    /// ORDER BY follows it, so paging stays deterministic across pages
+    /// (price ties are broken by name in SQL). Default = alphabetical,
+    /// the pre-Round-4 order.
+    /// </summary>
+    private ProductSortBy _sortBy = ProductSortBy.Name;
 
     private string _searchTerm = string.Empty;
     private Guid? _selectedCategoryId;
@@ -1042,6 +1074,21 @@
         }
     }
 
+    /// <summary>
+    /// The sort control's change handler: parse the picked key, restart
+    /// at page 1, and reload — the sort lives in SQL, so the whole
+    /// catalog re-orders, not just the visible page.
+    /// </summary>
+    private async Task OnSortChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ProductSortBy>(e.Value?.ToString(), ignoreCase: false, out var sortBy))
+        {
+            _sortBy = sortBy;
+            _pageNumber = 1;
+            await LoadProductsAsync();
+        }
+    }
+
     private async Task LoadProductsAsync()
     {
         _isLoading = true;
@@ -1054,7 +1101,8 @@
                 PageNumber = _pageNumber,
                 PageSize = _pageSize,
                 SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
-                CategoryId = _selectedCategoryId
+                CategoryId = _selectedCategoryId,
+                SortBy = _sortBy
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);

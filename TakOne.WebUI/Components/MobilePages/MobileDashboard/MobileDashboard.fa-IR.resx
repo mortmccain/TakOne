@@ -129,4 +129,16 @@
 
   <!-- Footer — Persian digits to match the convention in other mobile pages -->
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="KpiDeltaVsYesterday" xml:space="preserve">
+    <value>نسبت به دیروز</value>
+    <comment>دور ۴ — پسوند چیپ روند KPI برای کارت سفارش‌های امروز.</comment>
+  </data>
+  <data name="KpiDeltaVsLastMonth" xml:space="preserve">
+    <value>نسبت به ماه گذشته</value>
+    <comment>دور ۴ — پسوند چیپ روند KPI برای کارت‌های ماهانه.</comment>
+  </data>
+  <data name="KpiDeltaNew" xml:space="preserve">
+    <value>جدید در این ماه</value>
+    <comment>دور ۴ — برچسب چیپ وقتی دورهٔ قبل فعالیتی نداشته است.</comment>
+  </data>
 </root>

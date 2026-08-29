@@ -107,6 +107,45 @@ public sealed class DashboardStatsDto
 
 
     // ───────────────────────────────────────────────────────────────
+    // ROUND 4 — KPI TREND DELTAS: the previous-period values each
+    // flow-type KPI card compares itself against. The UI renders a small
+    // ▲/▼ chip ("+12% vs last month"); these fields keep the comparison
+    // SERVER-computed so desktop + mobile render identically. Stock-type
+    // KPIs (pending approvals) deliberately have NO delta — a queue depth
+    // compared against yesterday's depth is noise, not a trend.
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sales submitted YESTERDAY (UTC), same status filter as
+    /// <see cref="TodayOrdersCount"/>. Drives the "vs yesterday" chip on
+    /// the Today's Orders KPI card.
+    /// </summary>
+    public int YesterdayOrdersCount { get; set; }
+
+    /// <summary>
+    /// The LAST calendar month's counterpart of
+    /// <see cref="ThisMonthEmployeePurchaseTotal"/> (same status filter,
+    /// display currency). Drives the "vs last month" chip on the Monthly
+    /// Employee Purchase card.
+    /// </summary>
+    public decimal LastMonthEmployeePurchaseTotal { get; set; }
+
+    /// <summary>
+    /// The LAST calendar month's counterpart of
+    /// <see cref="ThisMonthApprovedSalesCount"/>. Combined with
+    /// <see cref="LastMonthInvoicedSalesCount"/> for the "vs last month"
+    /// chip on the Monthly Sales card (the card shows approved+invoiced).
+    /// </summary>
+    public int LastMonthApprovedSalesCount { get; set; }
+
+    /// <summary>
+    /// The LAST calendar month's counterpart of
+    /// <see cref="ThisMonthInvoicedSalesCount"/>.
+    /// </summary>
+    public int LastMonthInvoicedSalesCount { get; set; }
+
+
+    // ───────────────────────────────────────────────────────────────
     // NEW KPI FOOTER DATA — computed values for the footer line on each
     // KPI card. Previously these were hard-coded placeholders ("هدف ماهانه:
     // ۳۰M تومان", "قدیمی‌ترین: ۲ ساعت پیش"). Per user spec, the footers

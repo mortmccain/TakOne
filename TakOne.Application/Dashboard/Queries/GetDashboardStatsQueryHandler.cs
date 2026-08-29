@@ -272,6 +272,14 @@ public sealed class GetDashboardStatsQueryHandler
         var todayUtc = DateTime.UtcNow.Date;
         var thisMonthStartUtc = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        // ROUND 4 — previous-period anchors for the KPI trend deltas:
+        // yesterday (for Today's Orders) and the previous calendar month
+        // (for the two monthly cards). Same UTC-day/month conventions as
+        // their current-period counterparts, so the comparisons are
+        // apples-to-apples.
+        var yesterdayUtc = todayUtc.AddDays(-1);
+        var lastMonthStartUtc = thisMonthStartUtc.AddMonths(-1); // exclusive end = thisMonthStartUtc
+
         var rawCurrency = sales
             .Where(s => !string.IsNullOrEmpty(s.Total.Currency))
             .Select(s => s.Total.Currency)
@@ -605,6 +613,29 @@ public sealed class GetDashboardStatsQueryHandler
             TodayOrdersCount = submittedSales
                 .Count(s => s.Status != SaleStatus.Cancelled &&
                             (s.SubmittedAtUtc ?? s.CreatedAtUtc).Date == todayUtc),
+
+            // ── ROUND 4 — previous-period KPI values (trend deltas) ──
+            // Same filters as their current-period counterparts, shifted
+            // one period back. In-memory on the already-loaded list (the
+            // identical cost profile as the current-period computations
+            // directly above).
+            YesterdayOrdersCount = submittedSales
+                .Count(s => s.Status != SaleStatus.Cancelled &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc).Date == yesterdayUtc),
+            LastMonthEmployeePurchaseTotal = submittedSales
+                .Where(s => s.Status != SaleStatus.Cancelled &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= lastMonthStartUtc &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) < thisMonthStartUtc)
+                .Sum(s => ToDisplay(s.Total.Amount)),
+            LastMonthApprovedSalesCount = submittedSales
+                .Count(s => s.Status == SaleStatus.Approved &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= lastMonthStartUtc &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) < thisMonthStartUtc),
+            LastMonthInvoicedSalesCount = submittedSales
+                .Count(s => s.Status == SaleStatus.Invoiced &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= lastMonthStartUtc &&
+                            (s.SubmittedAtUtc ?? s.CreatedAtUtc) < thisMonthStartUtc),
+
             ThisMonthEmployeePurchaseTotal = thisMonthSales
                 .Sum(s => ToDisplay(s.Total.Amount)),
             ThisMonthApprovedSalesCount = submittedSales

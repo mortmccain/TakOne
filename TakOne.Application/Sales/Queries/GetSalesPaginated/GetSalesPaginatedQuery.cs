@@ -1,6 +1,7 @@
 ﻿using TakOne.Domain.Sales.Enums;
 using TakOne.SharedKernel.Common;
 using TakOne.Application.Common.Authorization;
+using TakOne.Application.Sales.Specifications;
 
 namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 
@@ -23,14 +24,29 @@ namespace TakOne.Application.Sales.Queries.GetSalesPaginated;
 ///   on the materialized page, which doesn't scale beyond one page).
 ///
 /// SEARCH TERM:
-///   Matched case-insensitively against SaleNumber and CustomerName.
-///   Null/whitespace means "no filter".
+///   Matched case-insensitively against SaleNumber (via the smart
+///   number-term parser — see <see cref="SaleNumberSearchParser"/>) OR
+///   CustomerName, as one server-side OR predicate. Null/whitespace
+///   means "no filter". Round 4 moved this from an in-memory
+///   post-pagination filter to SQL, so it now matches across ALL pages
+///   (previously it only filtered within the loaded page — MobileSearch
+///   silently only searched the newest rows).
 ///
 /// STATUS:
 ///   Optional <see cref="SaleStatus"/> filter. When null, all statuses are
 ///   returned. When set, only sales in the given status are returned. The
 ///   filter is applied in SQL (via the specification), not in-memory, so
 ///   pagination TotalCount is accurate.
+///
+/// COLUMN FILTERS + SORT (Round 4 — server-driven paging):
+///   The desktop Sales grid runs in Radzen LoadData mode: every sort
+///   click, column-filter change, and pager page change re-dispatches
+///   this query. The WebUI layer translates the grid's filter/sort
+///   descriptors into the typed filter records below
+///   (<see cref="SalesTextFilter"/>, <see cref="SalesAmountFilter"/>,
+///   <see cref="SalesSortBy"/>); the handler packs them into a
+///   <see cref="SalesListFilters"/> for the specifications, which push
+///   them into SQL so TotalCount is accurate for EVERY active filter.
 /// </summary>
 [RequireAuthentication]
 public sealed class GetSalesPaginatedQuery
@@ -92,6 +108,52 @@ public sealed class GetSalesPaginatedQuery
     /// </para>
     /// </remarks>
     public DateTime? ToDateUtc { get; init; }
+
+    /// <summary>
+    /// Optional filter term for the sale-number column (Round 4).
+    /// Parsed server-side into Year/Sequence/draft predicates — see
+    /// <see cref="SaleNumberSearchParser"/> for the supported term
+    /// shapes. Null/whitespace = no filter.
+    /// </summary>
+    public string? SaleNumberTerm { get; init; }
+
+    /// <summary>
+    /// Optional customer-name column filter (Round 4). The WebUI layer
+    /// translates the grid's filter descriptor (term + operator) into
+    /// this typed record.
+    /// </summary>
+    public SalesTextFilter? CustomerNameFilter { get; init; }
+
+    /// <summary>
+    /// Optional creator-name column filter (Round 4), staff-only
+    /// column — the handler does NOT enforce role-gating on the filter
+    /// itself (a customer filtering by creator name can only ever
+    /// match their own sales anyway, thanks to the customer-scoped
+    /// specification).
+    /// </summary>
+    public SalesTextFilter? CreatedByNameFilter { get; init; }
+
+    /// <summary>
+    /// Optional total-amount column filter (Round 4): a comparison
+    /// operator + operand applied to the sale total's raw decimal
+    /// amount (currency-blind by design — the grid column filters on
+    /// the underlying amount).
+    /// </summary>
+    public SalesAmountFilter? TotalFilter { get; init; }
+
+    /// <summary>
+    /// Optional sort key (Round 4). Null = no user sort active → the
+    /// specification defaults to newest-first (CreatedAtUtc DESC).
+    /// </summary>
+    public SalesSortBy? SortBy { get; init; }
+
+    /// <summary>
+    /// Sort direction for <see cref="SortBy"/> (Round 4). Also applies
+    /// to the default sort when <see cref="SortBy"/> is null (the
+    /// desktop grid never dispatches a null sort with descending=false,
+    /// but the query contract keeps the two orthogonal).
+    /// </summary>
+    public bool SortDescending { get; init; } = true;
 
     // NOTE: no FilterByCreatorId on the query object — the handler resolves
     // the current user's id from ICurrentUserService so callers can't snoop

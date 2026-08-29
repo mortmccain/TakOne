@@ -790,4 +790,73 @@ public class GetDashboardStatsQueryHandlerTests
             Arg.Any<Exception>(),
             Arg.Any<Func<Arg.AnyType, Exception?, string>>());
     }
+
+    // ── Round 4: KPI trend-delta (previous-period) computations ──────
+
+    /// <summary>
+    /// Writes a Sale's SubmittedAtUtc via reflection — the dashboard's
+    /// KPI date filters key on (SubmittedAtUtc ?? CreatedAtUtc), and the
+    /// aggregate API sets it to UtcNow inside Submit(). Test-only; the
+    /// domain API stays immutable in production code.
+    /// </summary>
+    private static void SetSubmittedAt(Sale sale, DateTime utc)
+    {
+        typeof(Sale).GetProperty(nameof(Sale.SubmittedAtUtc))!
+            .SetValue(sale, utc);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ComputesPreviousPeriodKpiValues()
+    {
+        // Arrange — sales at three well-separated instants: today,
+        // yesterday, and five days into last month.
+        var (currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger) =
+            BuildMocks(authenticated: true, Roles.Admin);
+
+        var today = DateTime.UtcNow.Date;
+        var thisMonthStart = new DateTime(today.Year, today.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var lastMonthStart = thisMonthStart.AddMonths(-1);
+
+        var todaySale = BuildPendingSale(new Money(100m, "IRR"));
+        SetSubmittedAt(todaySale, today.AddHours(1));
+
+        var yesterdaySale = BuildPendingSale(new Money(60m, "IRR"));
+        SetSubmittedAt(yesterdaySale, today.AddDays(-1).AddHours(1));
+
+        var lastMonthSale = BuildPendingSale(new Money(200m, "IRR"));
+        // Five days into last month — provably inside [lastMonthStart,
+        // thisMonthStart) for every calendar month, and provably never
+        // equal to yesterday (yesterday is either in this month or is a
+        // different last-month day than the 6th).
+        SetSubmittedAt(lastMonthSale, lastMonthStart.AddDays(5).AddHours(1));
+
+        saleRepo.GetAllWithLineItemsBySpecificationAsync(
+                Arg.Any<ISpecification<Sale>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Sale> { todaySale, yesterdaySale, lastMonthSale });
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, productRepo, categoryRepo, userRepo, logger,
+            CancellationToken.None);
+
+        // Assert — today vs yesterday (counts, status-filtered).
+        result.Value.TodayOrdersCount.Should().Be(1);
+        result.Value.YesterdayOrdersCount.Should().Be(1,
+            "only the yesterday-submitted sale counts — the today and last-month sales don't");
+
+        // This month vs last month (amounts, display currency = IRR/10).
+        // MONTH-BOUNDARY NOTE: when today is the 1st, yesterday falls in
+        // LAST month and joins its total — the expected value folds that
+        // in so the test is deterministic on every day of the year.
+        var yesterdayFallsInLastMonth = today.AddDays(-1) < thisMonthStart;
+        var expectedLastMonthRaw = 200m + (yesterdayFallsInLastMonth ? 60m : 0m);
+
+        result.Value.LastMonthEmployeePurchaseTotal.Should().Be(expectedLastMonthRaw / 10m,
+            "IRR amounts display as Toman (÷10); yesterday joins the last-month total only when today is the 1st");
+
+        // Approved/invoiced counts: every seeded sale is Pending → the
+        // approved/invoiced deltas are zero on both sides.
+        result.Value.LastMonthApprovedSalesCount.Should().Be(0);
+        result.Value.LastMonthInvoicedSalesCount.Should().Be(0);
+    }
 }

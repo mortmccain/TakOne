@@ -76,4 +76,20 @@
   <data name="SearchResultsFor" xml:space="preserve">
     <value>نتایج جستجو برای</value>
   </data>
+  <data name="SortLabel" xml:space="preserve">
+    <value>مرتب‌سازی</value>
+    <comment>دور ۴ — برچسب کنترل مرتب‌سازی فروشگاه موبایل.</comment>
+  </data>
+  <data name="SortByName" xml:space="preserve">
+    <value>نام (الف–ی)</value>
+    <comment>دور ۴ — گزینهٔ مرتب‌سازی الفبایی (ترتیب پیش‌فرض).</comment>
+  </data>
+  <data name="SortPriceLowToHigh" xml:space="preserve">
+    <value>قیمت: کم به زیاد</value>
+    <comment>دور ۴ — گزینهٔ مرتب‌سازی ارزان‌ترین اول.</comment>
+  </data>
+  <data name="SortPriceHighToLow" xml:space="preserve">
+    <value>قیمت: زیاد به کم</value>
+    <comment>دور ۴ — گزینهٔ مرتب‌سازی گران‌ترین اول.</comment>
+  </data>
 </root>

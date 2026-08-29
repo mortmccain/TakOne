@@ -1,3 +1,4 @@
+using TakOne.Domain.Notifications.Enums;
 using TakOne.Application.Common.Authorization;
 using TakOne.SharedKernel.Common;
 
@@ -35,4 +36,11 @@ public sealed class GetNotificationsForUserQuery
     public int PageNumber { get; init; } = 1;
     public int PageSize { get; init; } = 20;
     public bool UnreadOnly { get; init; }
+
+    /// <summary>
+    /// Optional per-kind filter (Round 4 — the filter tabs). Null = all
+    /// kinds; a value restricts the page to that
+    /// <see cref="Domain.Notifications.Enums.NotificationKind"/>.
+    /// </summary>
+    public NotificationKind? Kind { get; init; }
 }
