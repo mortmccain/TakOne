@@ -5,7 +5,7 @@ namespace TakOne.Application.Customers.Commands.CreateCustomerGroup;
 public sealed class CreateCustomerGroupCommandValidator : AbstractValidator<CreateCustomerGroupCommand>
 {
     public const int MaxNameLength = 100;
-    public const decimal MaxSalaryAmount = 1_000_000_000m; // 1 billion — covers IRR + USD ranges
+    public const decimal MaxSalaryAmount = 1_000_000_000_000m; // 1 billion — covers IRR + USD ranges
     public const int CurrencyLength = 3; // ISO 4217
 
     public CreateCustomerGroupCommandValidator()

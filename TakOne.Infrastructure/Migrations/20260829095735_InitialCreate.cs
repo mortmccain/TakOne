@@ -122,6 +122,22 @@ namespace TakOne.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "NotificationPreferences",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Kind = table.Column<int>(type: "int", nullable: false),
+                    IsMuted = table.Column<bool>(type: "bit", nullable: false),
+                    UpdatedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false, defaultValue: new byte[0])
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_NotificationPreferences", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Notifications",
                 columns: table => new
                 {
@@ -517,6 +533,12 @@ namespace TakOne.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "UX_NotificationPreferences_UserId_Kind",
+                table: "NotificationPreferences",
+                columns: new[] { "UserId", "Kind" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Notifications_BroadcastId",
                 table: "Notifications",
                 column: "BroadcastId",
@@ -674,6 +696,9 @@ namespace TakOne.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "DataProtectionKeys");
+
+            migrationBuilder.DropTable(
+                name: "NotificationPreferences");
 
             migrationBuilder.DropTable(
                 name: "Notifications");

@@ -13,8 +13,8 @@ using TakOne.Infrastructure.Persistence;
 namespace TakOne.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260829083537_AddNotificationPreferences")]
-    partial class AddNotificationPreferences
+    [Migration("20260829095735_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
