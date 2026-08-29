@@ -36,6 +36,11 @@ public class LoggingMiddlewareTests
     // template fills with this type's name.
     private sealed class SampleCommand;
 
+    // A representative DOMAIN EVENT — internal fanout messages whose type
+    // name ends with "DomainEvent" (same convention AuthorizationMiddleware
+    // uses). The Round 2 event-noise polish routes these to Debug level.
+    private sealed class SampleDomainEvent;
+
     // Builds a Wolverine envelope with the supplied message. Use null to
     // exercise the "Unknown" request-name branch.
     private static Envelope BuildEnvelope(object? message)
@@ -48,6 +53,11 @@ public class LoggingMiddlewareTests
     {
         // Arrange
         var logger = Substitute.For<ILogger<LoggingMiddleware>>();
+        // The LoggerMessage source-generated delegate (CA1848 refactor)
+        // gates the underlying ILogger.Log call on IsEnabled — and
+        // NSubstitute's auto-value for bool is false, which would suppress
+        // the call this test verifies. Enable logging explicitly.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new LoggingMiddleware(logger);
         var envelope = BuildEnvelope(new SampleCommand());
 
@@ -111,6 +121,9 @@ public class LoggingMiddlewareTests
     {
         // Arrange
         var logger = Substitute.For<ILogger<LoggingMiddleware>>();
+        // See BeforeAsync_WithNonNullMessage_LogsInformationOnce: the
+        // source-generated delegate checks IsEnabled before logging.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new LoggingMiddleware(logger);
         var envelope = BuildEnvelope(new SampleCommand());
 
@@ -158,6 +171,102 @@ public class LoggingMiddlewareTests
         // Assert
         spy.LastMessage.Should().Contain("Completed");
         spy.LastMessage.Should().Contain("Unknown");
+    }
+
+    // ── Domain events route to Debug (Round 2 event-noise polish) ────
+
+    // The middleware policy applies to domain-event handler chains too.
+    // Without the routing, every internal fanout message (SaleLineItemAdded,
+    // NotificationCreated, …) logged "Starting X / Completed X" at
+    // Information level — tripling log volume per user action. Domain
+    // events now log at Debug; commands/queries stay at Information.
+
+    [Fact]
+    public async Task BeforeAsync_WithDomainEvent_LogsAtDebugNotInformation()
+    {
+        // Arrange
+        var logger = Substitute.For<ILogger<LoggingMiddleware>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var sut = new LoggingMiddleware(logger);
+        var envelope = BuildEnvelope(new SampleDomainEvent());
+
+        // Act
+        await sut.BeforeAsync(envelope, CancellationToken.None);
+
+        // Assert
+        logger.Received(1).Log(
+            LogLevel.Debug,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+        logger.DidNotReceive().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+    }
+
+    [Fact]
+    public async Task AfterAsync_WithDomainEvent_LogsAtDebugNotInformation()
+    {
+        // Arrange
+        var logger = Substitute.For<ILogger<LoggingMiddleware>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var sut = new LoggingMiddleware(logger);
+        var envelope = BuildEnvelope(new SampleDomainEvent());
+
+        // Act
+        await sut.AfterAsync(envelope, CancellationToken.None);
+
+        // Assert
+        logger.Received(1).Log(
+            LogLevel.Debug,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+        logger.DidNotReceive().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+    }
+
+    [Fact]
+    public async Task BeforeAsync_WithDomainEvent_SpyLoggerRecordsDebugLevel()
+    {
+        // Arrange — SpyLogger.IsEnabled returns true, so the Debug call
+        // goes through and the spy records the level.
+        var spy = new SpyLogger<LoggingMiddleware>();
+        var sut = new LoggingMiddleware(spy);
+        var envelope = BuildEnvelope(new SampleDomainEvent());
+
+        // Act
+        await sut.BeforeAsync(envelope, CancellationToken.None);
+
+        // Assert
+        spy.LastLogLevel.Should().Be(LogLevel.Debug);
+        spy.LastMessage.Should().Contain("Starting");
+        spy.LastMessage.Should().Contain(nameof(SampleDomainEvent));
+    }
+
+    [Fact]
+    public async Task BeforeAsync_WithCommand_SpyLoggerRecordsInformationLevel()
+    {
+        // Arrange — commands/queries keep their Information level (guards
+        // against the routing accidentally degrading ALL messages).
+        var spy = new SpyLogger<LoggingMiddleware>();
+        var sut = new LoggingMiddleware(spy);
+        var envelope = BuildEnvelope(new SampleCommand());
+
+        // Act
+        await sut.BeforeAsync(envelope, CancellationToken.None);
+
+        // Assert
+        spy.LastLogLevel.Should().Be(LogLevel.Information);
     }
 
     // ── CancellationToken accepted ─────────────────────────────────────

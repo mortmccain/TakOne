@@ -20,7 +20,19 @@ namespace TakOne.Application.Common.Middlewares;
 ///   want the threshold to apply uniformly across all invocations without
 ///   injecting an IOptions<T> on every construction.
 /// </summary>
-public sealed class PerformanceMiddleware
+/// <remarks>
+/// <b>LoggerMessage source generators (CA1848).</b> The slow-request warning
+/// goes through a <c>[LoggerMessage]</c>-decorated partial method so the
+/// hot path (fast requests — the overwhelming majority) pays nothing for
+/// logging infrastructure: the generated code checks
+/// <c>IsEnabled(LogLevel.Warning)</c> before building any log state, and the
+/// warning path itself avoids the <c>params object?[]</c> boxing of the
+/// <c>LoggerExtensions.LogWarning</c> overload. The rendered message is
+/// byte-identical to the previous extension-method implementation — the
+/// <c>PerformanceMiddlewareTests</c> suite asserts on the
+/// "Slow request: ... took ...ms (threshold: ...ms)" template.
+/// </remarks>
+public sealed partial class PerformanceMiddleware
 {
     private readonly ILogger<PerformanceMiddleware> _logger;
     private Stopwatch? _stopwatch;
@@ -59,14 +71,15 @@ public sealed class PerformanceMiddleware
 
         if (_stopwatch != null && _stopwatch.ElapsedMilliseconds > SlowRequestThresholdMs)
         {
-            var requestName = envelope.Message?.GetType().Name ?? "Unknown";
-            _logger.LogWarning(
-                "Slow request: {RequestName} took {ElapsedMs}ms (threshold: {ThresholdMs}ms)",
-                requestName,
+            LogSlowRequest(
+                envelope.Message?.GetType().Name ?? "Unknown",
                 _stopwatch.ElapsedMilliseconds,
                 SlowRequestThresholdMs);
         }
 
         return Task.CompletedTask;
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Slow request: {RequestName} took {ElapsedMs}ms (threshold: {ThresholdMs}ms)")]
+    private partial void LogSlowRequest(string requestName, long elapsedMs, int thresholdMs);
 }

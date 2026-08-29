@@ -51,11 +51,13 @@
   <data name="Title_Cancelled" xml:space="preserve"><value>Order cancelled</value></data>
   <data name="Title_Broadcast" xml:space="preserve"><value>Announcement</value></data>
   <data name="Title_AppUpdate" xml:space="preserve"><value>App updated</value></data>
+  <data name="Title_GroupChanged" xml:space="preserve"><value>Purchase group changed</value></data>
   <data name="Title_Unknown" xml:space="preserve"><value>Notification</value></data>
   <data name="Message_Submitted_Customer" xml:space="preserve"><value>Your order {0} was submitted and is awaiting approval.</value></data>
   <data name="Message_Approved_Customer" xml:space="preserve"><value>Your order {0} was approved by {1}.</value></data>
   <data name="Message_Invoiced_Customer" xml:space="preserve"><value>Your order {0} was invoiced by {1} and is ready for pickup.</value></data>
   <data name="Message_Cancelled_Customer" xml:space="preserve"><value>Your order {0} was cancelled by {1}.</value></data>
+  <data name="Message_GroupChanged" xml:space="preserve"><value>Your purchase group has been changed. Your monthly budget and purchase limits may have been updated.</value></data>
   <data name="Message_Unknown" xml:space="preserve"><value>You have a new notification.</value></data>
   <data name="UnknownSale" xml:space="preserve"><value>this order</value></data>
   <data name="UnknownActor" xml:space="preserve"><value>staff</value></data>

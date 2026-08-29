@@ -17,6 +17,7 @@ public sealed class AssignUserToGroupCommandHandler
         AssignUserToGroupCommand command,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        ICustomerGroupRepository customerGroupRepository,
         IUnitOfWork unitOfWork,
         ILogger<AssignUserToGroupCommandHandler> logger,
         CancellationToken cancellationToken
@@ -159,7 +160,52 @@ public sealed class AssignUserToGroupCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // 3. Delegate to the aggregate. AssignToGroup validates the group
+        // 3. Phantom-group guard (Round 2 deep-dive fix).
+        //
+        // The command's GroupId comes from a dropdown that lists ACTIVE
+        // groups, but the page can be STALE: the group may have been
+        // deleted-then-recreated, hard-removed, or deactivated in another
+        // tab/session between page load and Save. Previously the handler
+        // trusted the Id and relied on the DB FK constraint — which
+        // surfaced as a raw DbUpdateException inside Wolverine's
+        // DbTransactionMiddleware: an "unexpected error" toast, plus
+        // pointless Wolverine retries of a doomed command.
+        //
+        // We now validate UP FRONT with a single indexed read:
+        //   - Group missing  → friendly "not found" failure (mirrors the
+        //                      user-not-found message style above).
+        //   - Group inactive → friendly failure telling the admin to
+        //                      reactivate first. All assignment dropdowns
+        //                      (UserDetail, MobileUserDetail, CreateUser)
+        //                      already exclude inactive groups, so this
+        //                      branch is only reachable via a stale page
+        //                      or a hand-crafted command — exactly the
+        //                      cases where a clear message matters most.
+        // ------------------------------------------------------------------
+        var targetGroup = await customerGroupRepository.GetByIdReadOnlyAsync(
+            command.GroupId, cancellationToken);
+
+        if (targetGroup is null)
+        {
+            logger.LogWarning
+                ("AssignUserToGroup: group {GroupId} was not found. Requested by user {ActorId}.",
+                command.GroupId, currentUser.UserId);
+
+            return Result.Failure($"Customer group '{command.GroupId}' was not found.");
+        }
+
+        if (!targetGroup.IsActive)
+        {
+            logger.LogWarning
+                ("AssignUserToGroup: group {GroupId} ('{GroupName}') is deactivated. Requested by user {ActorId}.",
+                command.GroupId, targetGroup.Name, currentUser.UserId);
+
+            return Result.Failure(
+                $"Customer group '{targetGroup.Name}' is deactivated. Reactivate the group before assigning users to it.");
+        }
+
+        // ------------------------------------------------------------------
+        // 4. Delegate to the aggregate. AssignToGroup validates the group
         //    Id (must not be Guid.Empty — domain invariant). DomainException
         //    is caught by middleware.
         // ------------------------------------------------------------------

@@ -52,11 +52,13 @@
   <data name="Title_Cancelled" xml:space="preserve"><value>سفارش لغو شد</value></data>
   <data name="Title_Broadcast" xml:space="preserve"><value>اعلان گروهی</value></data>
   <data name="Title_AppUpdate" xml:space="preserve"><value>به‌روزرسانی برنامه</value></data>
+  <data name="Title_GroupChanged" xml:space="preserve"><value>گروه خرید تغییر کرد</value></data>
   <data name="Title_Unknown" xml:space="preserve"><value>اعلان</value></data>
   <data name="Message_Submitted_Customer" xml:space="preserve"><value>سفارش {0} شما ارسال شد و در انتظار تأیید است.</value></data>
   <data name="Message_Approved_Customer" xml:space="preserve"><value>سفارش {0} شما توسط {1} تأیید شد.</value></data>
   <data name="Message_Invoiced_Customer" xml:space="preserve"><value>فاکتور سفارش {0} توسط {1} صادر شد و آماده تحویل است.</value></data>
   <data name="Message_Cancelled_Customer" xml:space="preserve"><value>سفارش {0} شما توسط {1} لغو شد.</value></data>
+  <data name="Message_GroupChanged" xml:space="preserve"><value>گروه خرید شما تغییر کرده است. ممکن است سقف خرید ماهانه و محدودیت‌های خرید شما به‌روزرسانی شده باشد.</value></data>
   <data name="Message_Unknown" xml:space="preserve"><value>اعلان جدیدی دارید.</value></data>
   <data name="UnknownSale" xml:space="preserve"><value>این سفارش</value></data>
   <data name="UnknownActor" xml:space="preserve"><value>کارمند</value></data>

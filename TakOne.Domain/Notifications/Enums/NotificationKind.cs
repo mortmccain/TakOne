@@ -99,5 +99,38 @@ public enum NotificationKind
     /// It also lets admins filter the audit list to see only auto-emitted
     /// app-update broadcasts.
     /// </remarks>
-    AppUpdate = 6
+    AppUpdate = 6,
+
+    /// <summary>
+    /// A user was (re)assigned to a customer group via
+    /// <c>User.AssignToGroup</c> — raised as
+    /// <c>UserAssignedToGroupDomainEvent</c> and consumed by
+    /// <c>NotifyOnUserAssignedToGroupEventHandler</c>, which creates one
+    /// per-user notification for the affected user. The notification's
+    /// <see cref="Entities.Notification.Reason"/> field carries the NEW
+    /// group's display name (rendered as the card's context sub-line).
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY THIS NOTIFICATION EXISTS (Round 2 feature)</b>: a customer's
+    /// group determines their monthly salary budget, per-product purchase
+    /// limits, and salary currency. When an admin reassigns a user's group
+    /// mid-session, every one of those constraints changes SILENTLY — the
+    /// customer's next add-to-cart suddenly clamps to different limits
+    /// (or fails a currency check) with no explanation. This notification
+    /// closes that gap: the user learns their group changed and that their
+    /// budget/limits may have been updated.
+    /// <para>
+    /// <b>NO-OP SUPPRESSION</b>: the event handler skips the notification
+    /// when <c>PreviousGroupId == NewGroupId</c> (a same-group reassignment
+    /// changes nothing and would be pure noise).
+    /// </para>
+    /// <para>
+    /// <b>NOT SUBJECT TO THE DEDUP UNIQUE INDEX</b>: like Broadcast, this
+    /// kind has <c>SaleId IS NULL</c>, so the filtered
+    /// <c>UX_Notifications_UserId_SaleId_Kind</c> index does not apply.
+    /// Each genuine reassignment is a distinct row (reassignments are rare,
+    /// admin-initiated events — no dedup semantics wanted).
+    /// </para>
+    /// </remarks>
+    GroupChanged = 7
 }

@@ -131,3 +131,159 @@
     color: var(--rz-danger);
     font-weight: 600;
 }
+
+/* =============================================================================
+   Round 2 styling polish — keyboard, scrollbars, tables, badges
+   -----------------------------------------------------------------------------
+   All rules below are ADDITIVE detail polish, driven by Radzen theme CSS
+   variables so they adapt to every theme (Standard, Material, Dark, Tak
+   Light, Tak Dark) without hard-coded colors. Logical CSS properties
+   (margin-inline-end) keep them RTL-correct for fa-IR.
+   ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+   Keyboard focus rings (accessibility detail)
+   -----------------------------------------------------------------------------
+   Radzen themes style mouse/touch interactions but leave keyboard focus
+   nearly invisible on several interactive elements. :focus-visible only
+   paints the ring for KEYBOARD navigation (tab/arrow keys) — mouse clicks
+   are unaffected. The 2px ring uses the active theme's primary color with
+   a 2px offset so it never overlaps the element's own border art.
+   -------------------------------------------------------------------------- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="option"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="switch"]:focus-visible,
+[role="checkbox"]:focus-visible,
+[role="radio"]:focus-visible,
+.rz-button:focus-visible,
+.rz-link:focus-visible,
+.rz-dropdown-item:focus-visible,
+.rz-pager-button:focus-visible,
+.rz-sortable-column:focus-visible {
+    outline: 2px solid var(--rz-primary);
+    outline-offset: 2px;
+    border-radius: var(--tm-radius-sm, 3px);
+}
+
+/* -----------------------------------------------------------------------------
+   Thin themed scrollbars (desktop detail)
+   -----------------------------------------------------------------------------
+   Default browser scrollbars are chunky and OS-styled — they clash with
+   the app's soft-shadow ERP look. These rules render slim, rounded,
+   theme-adaptive scrollbars everywhere (page body, grid internals,
+   dialogs, dropdown option lists):
+     - Firefox: scrollbar-width + scrollbar-color (one thumb color).
+     - Chromium/Safari: ::-webkit-scrollbar pseudo-elements with a
+       rounded, inset thumb and a subtle hover state.
+   The mobile layout HIDES some scrollbars deliberately (mobile.css,
+   higher specificity: .m-cat-scroll etc.) — those rules keep winning;
+   this only restyles the scrollbars that remain visible.
+   -------------------------------------------------------------------------- */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rz-border-color) transparent;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rz-border-color);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rz-secondary-text-color);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* -----------------------------------------------------------------------------
+   Tabular numerals in data grids (typographic detail)
+   -----------------------------------------------------------------------------
+   Money, quantity, stock and ID columns render with proportional digits
+   by default, so equal values look ragged and columns of numbers don't
+   align. font-variant-numeric: tabular-nums gives every digit the same
+   advance width — the classic ERP/Banking table treatment. Applied to the
+   whole grid so totals, sale numbers, stock counts and phone-column
+   digits all line up.
+   -------------------------------------------------------------------------- */
+.rz-datatable {
+    font-variant-numeric: tabular-nums;
+}
+
+/* -----------------------------------------------------------------------------
+   Status-dot detail on pill badges inside data grids
+   -----------------------------------------------------------------------------
+   The Sales and AdminUsers grids render status as solid pill badges
+   (Draft/Pending/Approved/Invoiced/Cancelled, Active/Inactive). A small
+   leading dot — the "status LED" pattern used by modern ERPs (GitHub
+   states, Linear workflow chips) — makes the state readable at a glance
+   without reading the label.
+
+   Implementation notes:
+   - currentColor keeps the dot theme-safe: badge text is the theme's
+     contrast color (white on solid fills in light themes), so the dot
+     always reads as "lit" on every badge color in every theme.
+   - margin-inline-end (logical property) flips the gap automatically
+     for RTL fa-IR renders.
+   - Scoped to .rz-datatable so standalone badges elsewhere (detail
+     pages, custom components) keep their existing look.
+   -------------------------------------------------------------------------- */
+.rz-datatable .rz-badge-pill {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.rz-datatable .rz-badge-pill::before {
+    content: "";
+    display: inline-block;
+    width: 0.42em;
+    height: 0.42em;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.92;
+    margin-inline-end: 0.42em;
+    vertical-align: 0.06em;
+}
+
+/* Bare status badges rendered OUTSIDE grids but on list rows (e.g. the
+   sales page's sale-status-badge class) opt into the same treatment so
+   the detail stays consistent between the grid and any row-level
+   rendering. */
+span.sale-status-badge {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+span.sale-status-badge::before {
+    content: "";
+    display: inline-block;
+    width: 0.42em;
+    height: 0.42em;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.92;
+    margin-inline-end: 0.42em;
+    vertical-align: 0.06em;
+}

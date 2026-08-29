@@ -184,4 +184,53 @@ public sealed class PurchaseLimitPolicy : IPurchaseLimitPolicy
             group.Salary.Currency,
             StringComparison.Ordinal);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyCollection<Guid>> GetCurrencyMismatchedProductIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid? groupId,
+        CancellationToken cancellationToken = default)
+    {
+        // Same short-circuits as IsCurrencyMatchAsync, applied once for
+        // the whole batch: staff (no group) means "no constraint for ANY
+        // product" — an empty mismatch set.
+        if (groupId is null || productIds.Count == 0)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        // ONE group load for the whole batch (the single-product variant
+        // re-loaded the identical group per call).
+        var group = await _customerGroupRepository.GetByIdReadOnlyAsync(groupId.Value, cancellationToken);
+        if (group is null)
+        {
+            _logger.LogWarning(
+                "PurchaseLimitPolicy.GetCurrencyMismatchedProductIdsAsync: customer group {GroupId} not found. " +
+                "Returning an empty mismatch set (no constraint).",
+                groupId);
+            return Array.Empty<Guid>();
+        }
+
+        // ONE product batch load for the whole batch. Products that no
+        // longer exist are simply absent — they are NOT reported as
+        // mismatched (mirrors the single-product variant's "return true
+        // for a missing product" no-constraint semantics).
+        var products = await _productRepository.GetByIdsReadOnlyAsync(productIds, cancellationToken);
+
+        // Same comparison as the single-product variant — same rule, so
+        // the two paths can never diverge.
+        var mismatched = new List<Guid>();
+        foreach (var product in products)
+        {
+            if (!string.Equals(
+                    product.Price.Currency,
+                    group.Salary.Currency,
+                    StringComparison.Ordinal))
+            {
+                mismatched.Add(product.Id);
+            }
+        }
+
+        return mismatched;
+    }
 }

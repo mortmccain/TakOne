@@ -109,7 +109,11 @@ public class DeactivateProductDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true)));
+        // WaitForAssertion removes the async-completion race on the click
+        // pipeline (same hardening as the other dialog tests).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -130,7 +134,10 @@ public class DeactivateProductDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false)));
+        // WaitForAssertion for the async-completion race (see above).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]

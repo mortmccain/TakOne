@@ -95,9 +95,10 @@ public sealed class Notification : AggregateRoot
     public string? ActorName { get; private set; }
 
     /// <summary>
-    /// The cancellation reason — only set for <see cref="NotificationKind.SaleCancelled"/>.
-    /// Null for all other kinds. The UI surfaces this as a sub-line in
-    /// the cancelled notification.
+    /// Context sub-line rendered under the notification message. Set for
+    /// <see cref="NotificationKind.SaleCancelled"/> (the cancellation
+    /// reason) and <see cref="NotificationKind.GroupChanged"/> (the new
+    /// group's display name). Null for all other kinds.
     /// </summary>
     public string? Reason { get; private set; }
 

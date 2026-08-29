@@ -175,6 +175,27 @@ public sealed class QuickReorderLastSaleCommandHandler
             : null;
         var remainingBudget = salaryBudgetInfo?.Remaining ?? decimal.MaxValue;
 
+        // ------------------------------------------------------------------
+        // 2b-2. Round 2 N+1 fix: resolve the per-product purchase limits
+        //       AND the currency-mismatch set for the WHOLE reorder batch
+        //       up-front, in two round-trips total.
+        //
+        //       Previously the loop below called GetCountLimitAsync and
+        //       IsCurrencyMatchAsync once PER LINE — each re-loading a
+        //       Product this handler had ALREADY batch-loaded into
+        //       productById, and IsCurrencyMatchAsync re-loaded the same
+        //       group every time too. A 20-line reorder meant ~40+ needless
+        //       sequential DB round-trips. The batched policy calls keep
+        //       the exact same per-product semantics in two queries.
+        // ------------------------------------------------------------------
+        var limitByProductId = groupId is not null
+            ? await purchaseLimitPolicy.GetCountLimitsAsync(productIds, groupId, cancellationToken)
+            : new Dictionary<Guid, int?>();
+        var currencyMismatchedProductIds = groupId is not null
+            ? await purchaseLimitPolicy.GetCurrencyMismatchedProductIdsAsync(
+                productIds, groupId, cancellationToken)
+            : (IReadOnlyCollection<Guid>)Array.Empty<Guid>();
+
         var linesToAdd = new List<(Product Product, int Quantity, int? PurchaseLimit)>();
 
         // We need the existing draft's line quantities to compute "remaining
@@ -230,27 +251,26 @@ public sealed class QuickReorderLastSaleCommandHandler
             // in USD. Skip the line silently (the user can manually add it
             // if they switch groups — but that's an admin action).
             // ------------------------------------------------------------------
-            if (groupId is not null)
+            // Round 2 N+1 fix: the mismatch set was resolved ONCE for the
+            // whole batch above — the per-line check is now a set lookup.
+            if (currencyMismatchedProductIds.Contains(product.Id))
             {
-                var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
-                    (product.Id, groupId, cancellationToken);
-
-                if (!currencyOk)
-                {
-                    logger.LogInformation
-                        ("QuickReorderLastSale: skipping line for product {ProductId} " +
-                         "(currency mismatch with user {UserId}'s salary).",
-                        product.Id, currentUser.UserId);
-                    continue;
-                }
+                logger.LogInformation
+                    ("QuickReorderLastSale: skipping line for product {ProductId} " +
+                     "(currency mismatch with user {UserId}'s salary).",
+                     product.Id, currentUser.UserId);
+                continue;
             }
 
             // Current per-group limit for this caller (null for staff).
+            // Round 2 N+1 fix: limits were resolved ONCE for the whole
+            // batch above — the per-line lookup is now a dictionary read
+            // (missing key or null value both mean "no limit", matching
+            // the single-product GetCountLimitAsync semantics).
             int? purchaseLimit = null;
-            if (groupId is not null)
+            if (groupId is not null && limitByProductId.TryGetValue(product.Id, out var batchedLimit))
             {
-                purchaseLimit = await purchaseLimitPolicy.GetCountLimitAsync
-                    (product.Id, groupId, cancellationToken);
+                purchaseLimit = batchedLimit;
             }
 
             // Existing draft quantity for this product (0 if no draft or

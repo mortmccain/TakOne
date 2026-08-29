@@ -18,6 +18,7 @@ public sealed class CreateCustomerCommandHandler
         CreateCustomerCommand command,
         ICurrentUserService currentUser,
         IUserRepository userRepository,
+        ICustomerGroupRepository customerGroupRepository,
         IUserAccountService userAccountService,
         IUnitOfWork unitOfWork,
         ILogger<CreateCustomerCommandHandler> logger,
@@ -50,6 +51,42 @@ public sealed class CreateCustomerCommandHandler
 
             return Result<Guid>.Failure
                 ($"A user with worker ID '{command.WorkerId}' already exists.");
+        }
+
+        // ------------------------------------------------------------------
+        // 1.5. Phantom-group guard (Round 2 deep-dive fix).
+        //
+        // Same rationale as AssignUserToGroupCommandHandler: the GroupId
+        // comes from the CreateUser page's active-group dropdown, but a
+        // stale page (or a hand-crafted command) can reference a group
+        // that no longer exists or has been deactivated. Without this
+        // check the failure mode is a raw FK-violation DbUpdateException
+        // at step 5 — AFTER the Identity account has already been created,
+        // leaving Wolverine's transaction middleware to unwind it and the
+        // admin staring at an "unexpected error" toast. Validating here
+        // (BEFORE any mutation) keeps the failure cheap, deterministic,
+        // and user-explainable.
+        // ------------------------------------------------------------------
+        var targetGroup = await customerGroupRepository.GetByIdReadOnlyAsync(
+            command.GroupId, cancellationToken);
+
+        if (targetGroup is null)
+        {
+            logger.LogWarning
+                ("CreateCustomer: group {GroupId} was not found. Requested by user {UserId}.",
+                command.GroupId, currentUser.UserId);
+
+            return Result<Guid>.Failure($"Customer group '{command.GroupId}' was not found.");
+        }
+
+        if (!targetGroup.IsActive)
+        {
+            logger.LogWarning
+                ("CreateCustomer: group {GroupId} ('{GroupName}') is deactivated. Requested by user {UserId}.",
+                command.GroupId, targetGroup.Name, currentUser.UserId);
+
+            return Result<Guid>.Failure(
+                $"Customer group '{targetGroup.Name}' is deactivated. Reactivate the group before creating customers in it.");
         }
 
         // ------------------------------------------------------------------

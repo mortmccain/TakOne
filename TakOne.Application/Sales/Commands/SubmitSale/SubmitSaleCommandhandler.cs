@@ -243,9 +243,19 @@ public sealed class SubmitSaleCommandHandler
             //              a GroupId — staff have no per-product cap).
             //              Uses the policy (replaces inline GetPurchaseLimitForGroup)
             //              so the LimitMode is respected: when mode is SalaryOnly,
-            //              GetCountLimitAsync returns null and the check is skipped.
+            //              GetCountLimitsAsync returns no limits and the check is skipped.
+            //
+            //              Round 2 N+1 fix: this used to loop the single-product
+            //              GetCountLimitAsync PER LINE — each call re-loaded a
+            //              Product this handler had ALREADY batch-loaded into
+            //              lineProductById. The batched variant resolves every
+            //              line's limit in ONE query with identical semantics
+            //              (missing key / null value both mean "no limit").
             if (customer.GroupId is not null)
             {
+                var limitByProductId = await purchaseLimitPolicy.GetCountLimitsAsync
+                    (lineProductIds, customer.GroupId, cancellationToken);
+
                 foreach (var line in sale.LineItems)
                 {
                     // lineProductById was populated above; the TryGetValue
@@ -256,8 +266,9 @@ public sealed class SubmitSaleCommandHandler
                         continue;
                     }
 
-                    var limitVo = await purchaseLimitPolicy.GetCountLimitAsync
-                        (lineProduct.Id, customer.GroupId, cancellationToken);
+                    var limitVo = limitByProductId.TryGetValue(lineProduct.Id, out var batchedLimit)
+                        ? batchedLimit
+                        : null;
                     if (limitVo is not null && line.Quantity > limitVo.Value)
                     {
                         logger.LogWarning(
@@ -283,7 +294,14 @@ public sealed class SubmitSaleCommandHandler
                 // via UpdateCustomerGroupSalary (preserves currency — admin
                 // must deactivate + create new). So this check is purely
                 // defensive against the product's price having been edited.
+                //
+                // Round 2 N+1 fix: the mismatch set is resolved ONCE for the
+                // whole sale (single group load + single product batch load)
+                // instead of re-loading the same group and product per line.
                 // ------------------------------------------------------------------
+                var mismatchedProductIds = await purchaseLimitPolicy.GetCurrencyMismatchedProductIdsAsync
+                    (lineProductIds, customer.GroupId, cancellationToken);
+
                 foreach (var line in sale.LineItems)
                 {
                     if (!lineProductById.TryGetValue(line.ProductId, out var lineProduct))
@@ -291,10 +309,7 @@ public sealed class SubmitSaleCommandHandler
                         continue;
                     }
 
-                    var currencyOk = await purchaseLimitPolicy.IsCurrencyMatchAsync
-                        (lineProduct.Id, customer.GroupId, cancellationToken);
-
-                    if (!currencyOk)
+                    if (mismatchedProductIds.Contains(lineProduct.Id))
                     {
                         var salary = await salaryBudgetService.GetGroupSalaryAsync
                             (customer.GroupId, cancellationToken);

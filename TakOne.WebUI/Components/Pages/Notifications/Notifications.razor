@@ -63,6 +63,7 @@
         .notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
         .notif-icon-broadcast { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
         .notif-icon-appupdate { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
+        .notif-icon-groupchange { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
         .notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
         .notif-body { flex: 1; min-width: 0; }
         .notif-title { font-weight: 600; color: var(--rz-text-color); margin-bottom: 0.25rem; }
@@ -385,6 +386,7 @@
         // empty title (shouldn't happen — the validator rejects it).
         NotificationKind.Broadcast => n.Title ?? Loc["Title_Broadcast"],
         NotificationKind.AppUpdate => n.Title ?? Loc["Title_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["Title_GroupChanged"],
         _ => Loc["Title_Unknown"]
     };
 
@@ -403,6 +405,9 @@
             // somehow sent an empty message (shouldn't happen).
             NotificationKind.Broadcast => n.Message ?? Loc["Message_Unknown"],
             NotificationKind.AppUpdate => n.Message ?? Loc["Message_Unknown"],
+            // Group-changed message is generic (the new group name is in
+            // Reason, rendered as the context sub-line below the message).
+            NotificationKind.GroupChanged => Loc["Message_GroupChanged"],
             _ => Loc["Message_Unknown"]
         };
     }
@@ -415,6 +420,7 @@
         NotificationKind.SaleCancelled => "notif-icon-cancel",
         NotificationKind.Broadcast => "notif-icon-broadcast",
         NotificationKind.AppUpdate => "notif-icon-appupdate",
+        NotificationKind.GroupChanged => "notif-icon-groupchange",
         _ => "notif-icon-default"
     };
 
@@ -429,6 +435,9 @@
         // into a tray, for the auto-emitted app-update broadcast.
         NotificationKind.Broadcast => "campaign",
         NotificationKind.AppUpdate => "system_update",
+        // "swap_horiz" = left-right arrows, for a purchase-group change
+        // (budget/limits/currency all change).
+        NotificationKind.GroupChanged => "swap_horiz",
         _ => "notifications"
     };
 

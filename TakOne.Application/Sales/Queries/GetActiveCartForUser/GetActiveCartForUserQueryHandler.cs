@@ -151,34 +151,30 @@ public sealed class GetActiveCartForUserQueryHandler
 
         // ------------------------------------------------------------------
         // Resolve the caller's per-product count limit for EACH line, going
-        // through IPurchaseLimitPolicy.GetCountLimitAsync so that the
-        // LimitMode (CountOnly / SalaryOnly / Both) is honored. This is
-        // the Step 12-c runtime fix: previously this method called
-        // product.GetPurchaseLimitForGroup(groupId)?.Limit DIRECTLY, which
-        // bypassed the policy and returned the configured limit even when
-        // LimitMode was SalaryOnly — the UI then clamped the qty selector
-        // to the limit (e.g. 1), preventing the customer from adding
-        // more than 1 unit even though the backend wouldn't have
-        // enforced the count limit in SalaryOnly mode.
+        // through IPurchaseLimitPolicy so that the LimitMode (CountOnly /
+        // SalaryOnly / Both) is honored. This is the Step 12-c runtime fix:
+        // previously this method called product.GetPurchaseLimitForGroup
+        // (groupId)?.Limit DIRECTLY, which bypassed the policy and returned
+        // the configured limit even when LimitMode was SalaryOnly — the UI
+        // then clamped the qty selector to the limit (e.g. 1), preventing
+        // the customer from adding more than 1 unit even though the
+        // backend wouldn't have enforced the count limit in SalaryOnly mode.
         //
-        // IPurchaseLimitPolicy.GetCountLimitAsync already short-circuits
-        // correctly:
-        //   - groupId null (staff)                → returns null
-        //   - LimitMode == SalaryOnly            → returns null
-        //   - product has no limit for this group → returns null
-        //   - otherwise                           → returns the configured limit
+        // IPurchaseLimitPolicy short-circuits correctly:
+        //   - groupId null (staff)                → no limit
+        //   - LimitMode == SalaryOnly             → no limit
+        //   - product has no limit for this group → no limit
+        //   - otherwise                           → the configured limit
         //
-        // We resolve all limits up-front into a dictionary so the LINQ
-        // projection below can stay synchronous (and so we make at most
-        // one policy call per distinct product — typically just one
-        // cached LimitMode read for the whole batch).
+        // Round 2 N+1 fix: this used to loop GetCountLimitAsync per
+        // distinct product — one product-load DB round-trip PER CART LINE
+        // on every cart render (the hottest read path in the app). The
+        // batched GetCountLimitsAsync resolves the whole cart in ONE
+        // query while keeping the exact same semantics per product
+        // (missing key / null value both mean "no limit").
         // ------------------------------------------------------------------
-        var limitByProductId = new Dictionary<Guid, int?>();
-        foreach (var productId in productIds)
-        {
-            limitByProductId[productId] = await purchaseLimitPolicy.GetCountLimitAsync
-                (productId, groupId, cancellationToken);
-        }
+        var limitByProductId = await purchaseLimitPolicy.GetCountLimitsAsync(
+            productIds, groupId, cancellationToken);
 
         int? ResolveMyLimit(Guid productId)
         {

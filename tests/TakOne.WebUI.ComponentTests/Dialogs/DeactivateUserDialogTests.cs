@@ -192,7 +192,11 @@ public class DeactivateUserDialogTests
         // Use Equals(o, true) instead of `o is true` because NSubstitute's
         // Arg.Is<T>(predicate) is an expression-tree, and expression trees
         // can't contain C# pattern-matching operators (CS8122).
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true)));
+        // WaitForAssertion removes the async-completion race on the click
+        // pipeline (mirrors the same hardening in the other dialog tests).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -219,7 +223,10 @@ public class DeactivateUserDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false)));
+        // WaitForAssertion for the async-completion race (see above).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]

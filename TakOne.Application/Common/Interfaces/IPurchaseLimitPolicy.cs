@@ -100,4 +100,33 @@ public interface IPurchaseLimitPolicy
     /// <see cref="CurrencyMismatchErrors.Format"/>.
     /// </summary>
     Task<bool> IsCurrencyMatchAsync(Guid productId, Guid? groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BATCHED variant of <see cref="IsCurrencyMatchAsync"/> — resolves,
+    /// for a whole set of products in ONE round-trip (single group load +
+    /// single product batch load), WHICH products' price currencies do
+    /// NOT match the given group's salary currency.
+    /// </summary>
+    /// <remarks>
+    /// WHY THIS EXISTS: the cart-path handlers (QuickReorderLastSale,
+    /// SubmitSale) previously called <see cref="IsCurrencyMatchAsync"/>
+    /// once PER LINE — each call re-loaded the (identical) group AND
+    /// re-loaded a product the handler had ALREADY batch-loaded — an N+1
+    /// that scaled with the number of cart lines on the hottest write
+    /// paths. This variant collapses the per-line calls into one query.
+    ///
+    /// SEMANTICS (identical to the single-product variant, applied to a
+    /// batch):
+    ///   - groupId null (staff)                → empty set (no constraint)
+    ///   - group missing (defensive)           → empty set (no constraint)
+    ///   - product missing from the result set  → NOT in the mismatch set
+    ///     (the single-product variant returns true for a missing product;
+    ///     here the product simply isn't reported as mismatched)
+    ///   - otherwise                            → product Id is in the set
+    ///     iff its price currency differs from the group's salary currency.
+    /// </remarks>
+    Task<IReadOnlyCollection<Guid>> GetCurrencyMismatchedProductIdsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid? groupId,
+        CancellationToken cancellationToken = default);
 }

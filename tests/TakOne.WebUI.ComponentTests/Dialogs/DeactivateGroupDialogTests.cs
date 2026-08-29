@@ -113,7 +113,14 @@ public class DeactivateGroupDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true)));
+        // WaitForAssertion: the Radzen click pipeline can complete the
+        // DialogService.Close call asynchronously w.r.t. the test thread
+        // (observed as an intermittent ~1-in-15 flake with an immediate
+        // assert). Polling the spy through bUnit's renderer-aware waiter
+        // removes that race without weakening the assertion.
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, true))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -133,7 +140,11 @@ public class DeactivateGroupDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false)));
+        // WaitForAssertion for the same async-completion race as the
+        // confirm-click test above (deterministic even under load).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, false))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]

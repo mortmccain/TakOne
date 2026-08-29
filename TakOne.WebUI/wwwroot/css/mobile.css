@@ -3939,6 +3939,7 @@ button.m-notif-card.m-notif-unread {
 .m-notif-icon-cancel { background: rgba(220, 53, 69, 0.12); color: #c83245; }
 .m-notif-icon-broadcast { background: rgba(124, 58, 237, 0.12); color: #7c3aed; }
 .m-notif-icon-appupdate { background: rgba(13, 148, 136, 0.12); color: #0d9488; }
+.m-notif-icon-groupchange { background: rgba(255, 152, 0, 0.12); color: #c67d00; }
 .m-notif-icon-default { background: rgba(108, 117, 125, 0.12); color: #6c7d85; }
 
 .m-notif-body {

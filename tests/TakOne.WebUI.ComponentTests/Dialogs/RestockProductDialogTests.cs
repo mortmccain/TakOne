@@ -151,7 +151,11 @@ public class RestockProductDialogTests
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
         // Close is called with _quantity.Value = 10 (the default).
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, 10)));
+        // WaitForAssertion removes the async-completion race on the click
+        // pipeline (same hardening as the other dialog tests).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, 10))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -182,7 +186,10 @@ public class RestockProductDialogTests
 
         // Assert
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
-        spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, 100)));
+        // WaitForAssertion for the async-completion race (see above).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(Arg.Is<object?>(o => Equals(o, 100))),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -288,7 +295,10 @@ public class RestockProductDialogTests
         var spy = ComponentTestSetup.GetDialogServiceSpy(ctx);
         // The Cancel button calls DialogService.Close(null) — the parent
         // treats anything that isn't a positive int as "aborted".
-        spy.Received(1).Close(null);
+        // WaitForAssertion for the async-completion race (see above).
+        cut.WaitForAssertion(
+            () => spy.Received(1).Close(null),
+            TimeSpan.FromSeconds(2));
     }
 
     [Fact]

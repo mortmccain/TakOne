@@ -427,6 +427,182 @@ public class PurchaseLimitPolicyTests
         result.Should().BeFalse();
     }
 
+    // ── GetCurrencyMismatchedProductIdsAsync (Round 2 batched variant) ──
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_WithNullGroupId_ReturnsEmptyWithoutDbCall()
+    {
+        // Arrange
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            new[] { TestValues.ProductId }, null, CancellationToken.None);
+
+        // Assert
+        // Staff (no group) bypasses currency matching — no constraint for
+        // ANY product in the batch.
+        result.Should().BeEmpty();
+        await groupRepo.DidNotReceive().GetByIdReadOnlyAsync(
+            Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await productRepo.DidNotReceive().GetByIdsReadOnlyAsync(
+            Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_WithEmptyProductIds_ReturnsEmptyWithoutDbCall()
+    {
+        // Arrange
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            Array.Empty<Guid>(), TestValues.GroupId, CancellationToken.None);
+
+        // Assert
+        result.Should().BeEmpty();
+        await groupRepo.DidNotReceive().GetByIdReadOnlyAsync(
+            Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await productRepo.DidNotReceive().GetByIdsReadOnlyAsync(
+            Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_WhenGroupNotFound_ReturnsEmptyWithWarning()
+    {
+        // Arrange
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((CustomerGroup?)null);
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            new[] { TestValues.ProductId }, TestValues.GroupId, CancellationToken.None);
+
+        // Assert
+        // Group missing → no constraint (mirrors IsCurrencyMatchAsync).
+        result.Should().BeEmpty();
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+        await productRepo.DidNotReceive().GetByIdsReadOnlyAsync(
+            Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_WithMixedBatch_ReturnsOnlyMismatchedProductIds()
+    {
+        // Arrange — a 3-product batch where the middle product is priced
+        // in USD against an IRR salary. Only its Id may come back.
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var group = BuildGroup(new Money(5000m, IRR));
+        var matching1 = BuildProduct(new Money(100m, IRR));
+        var mismatching = BuildProduct(new Money(100m, USD));
+        var matching2 = BuildProduct(new Money(250m, IRR));
+        groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(group);
+        productRepo.GetByIdsReadOnlyAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Product> { matching1, mismatching, matching2 });
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var productIds = new[] { matching1.Id, mismatching.Id, matching2.Id };
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            productIds, TestValues.GroupId, CancellationToken.None);
+
+        // Assert
+        result.Should().ContainSingle().Which.Should().Be(mismatching.Id);
+
+        // ONE batch load for the whole set — no per-product round-trips.
+        await productRepo.Received(1).GetByIdsReadOnlyAsync(
+            Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>());
+        await productRepo.DidNotReceive().GetByIdReadOnlyAsync(
+            Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_WhenProductsMissingFromBatch_OmitsThemFromResult()
+    {
+        // Arrange — the batch requests two products but only one exists;
+        // the missing product must NOT be reported as mismatched (same
+        // no-constraint semantics as IsCurrencyMatchAsync's missing-product
+        // branch).
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var group = BuildGroup(new Money(5000m, IRR));
+        var existing = BuildProduct(new Money(100m, IRR));
+        groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(group);
+        productRepo.GetByIdsReadOnlyAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Product> { existing });
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            new[] { existing.Id, Guid.NewGuid() }, TestValues.GroupId, CancellationToken.None);
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_InCountOnlyMode_StillEnforcesCurrencyMismatch()
+    {
+        // Arrange — guards against a future refactor tying currency
+        // matching to the salary-budget enforcement flag (currency rules
+        // apply in EVERY mode).
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var group = BuildGroup(new Money(5000m, IRR));
+        var product = BuildProduct(new Money(100m, USD));
+        groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(group);
+        productRepo.GetByIdsReadOnlyAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Product> { product });
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+
+        // Act
+        var result = await sut.GetCurrencyMismatchedProductIdsAsync(
+            new[] { product.Id }, TestValues.GroupId, CancellationToken.None);
+
+        // Assert
+        result.Should().ContainSingle().Which.Should().Be(product.Id);
+    }
+
+    // ── CancellationToken forwarding ─────────────────────────────────
+
+    [Fact]
+    public async Task GetCurrencyMismatchedProductIdsAsync_ForwardsCancellationTokenToRepositories()
+    {
+        // Arrange
+        var (systemSettings, groupRepo, productRepo, logger) = BuildMocks(LimitMode.CountOnly);
+        var group = BuildGroup(new Money(5000m, IRR));
+        var product = BuildProduct(new Money(100m, IRR));
+        groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(group);
+        productRepo.GetByIdsReadOnlyAsync(Arg.Any<IEnumerable<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Product> { product });
+        var sut = new PurchaseLimitPolicy(systemSettings, groupRepo, productRepo, logger);
+        using var cts = new CancellationTokenSource();
+        var ct = cts.Token;
+
+        // Act
+        await sut.GetCurrencyMismatchedProductIdsAsync(
+            new[] { product.Id }, TestValues.GroupId, ct);
+
+        // Assert
+        await groupRepo.Received(1).GetByIdReadOnlyAsync(
+            Arg.Any<Guid>(),
+            Arg.Is<CancellationToken>(t => t == ct));
+        await productRepo.Received(1).GetByIdsReadOnlyAsync(
+            Arg.Any<IEnumerable<Guid>>(),
+            Arg.Is<CancellationToken>(t => t == ct));
+    }
+
     // ── CancellationToken forwarding ─────────────────────────────────
 
     [Fact]

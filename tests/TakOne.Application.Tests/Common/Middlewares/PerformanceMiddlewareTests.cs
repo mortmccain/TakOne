@@ -92,6 +92,11 @@ public class PerformanceMiddlewareTests
     {
         // Arrange
         var logger = Substitute.For<ILogger<PerformanceMiddleware>>();
+        // The LoggerMessage source-generated delegate (CA1848 refactor)
+        // gates the underlying ILogger.Log call on IsEnabled — NSubstitute's
+        // auto-value for bool is false, which would suppress the warning
+        // this test verifies. Enable logging explicitly.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new PerformanceMiddleware(logger);
         var envelope = BuildEnvelope(new SampleCommand());
         await sut.BeforeAsync(envelope, CancellationToken.None);
@@ -148,6 +153,9 @@ public class PerformanceMiddlewareTests
     {
         // Arrange
         var logger = Substitute.For<ILogger<PerformanceMiddleware>>();
+        // See AfterAsync_WhenSlowCall_LogsWarningWithSlowRequestTemplate:
+        // the source-generated delegate checks IsEnabled before logging.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var originalThreshold = PerformanceMiddleware.SlowRequestThresholdMs;
         var sut = new PerformanceMiddleware(logger);
         var envelope = BuildEnvelope(new SampleCommand());

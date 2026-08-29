@@ -1,0 +1,29 @@
+/* =============================================================================
+   Sales.razor.css — scoped styling detail for the Sales list page.
+
+   Blazor CSS isolation: these rules compile into the TakOne.WebUI.styles.css
+   bundle and apply ONLY to elements rendered by Sales.razor (the scope
+   attribute is splatted onto the RadzenLink/RadzenBadge root elements via
+   attribute forwarding). The global app.css handles the shared badge /
+   focus / scrollbar / tabular-numeral polish; this file adds the
+   page-specific typographic detail.
+   ========================================================================== */
+
+/* Sale-number links ("INT-1403-00000001") — the document identity of the
+   row. Tabular numerals keep the digits monospaced-width so a column of
+   sale numbers forms a clean visual gutter; the slightly heavier weight
+   signals clickability beyond the link color alone. */
+.sale-number-link {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+/* Money totals — tabular numerals keep the amount columns decimal-aligned
+   row over row (matching the .rz-datatable rule in app.css, restated here
+   so the intent is explicit at the cell level even if the grid rule is
+   ever refactored away). */
+.sale-total {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}

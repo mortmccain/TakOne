@@ -434,6 +434,7 @@ else
         // empty title (shouldn't happen — the validator rejects it).
         NotificationKind.Broadcast => n.Title ?? Loc["Title_Broadcast"],
         NotificationKind.AppUpdate => n.Title ?? Loc["Title_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["Title_GroupChanged"],
         _ => Loc["Title_Unknown"]
     };
 
@@ -458,6 +459,9 @@ else
             // the notification's body (stored on the row at fanout time).
             NotificationKind.Broadcast => n.Message ?? Loc["Message_Unknown"],
             NotificationKind.AppUpdate => n.Message ?? Loc["Message_Unknown"],
+            // Group-changed message is generic (the new group name is in
+            // Reason, rendered as the context sub-line below the message).
+            NotificationKind.GroupChanged => Loc["Message_GroupChanged"],
             _ => Loc["Message_Unknown"]
         };
     }
@@ -473,6 +477,7 @@ else
         NotificationKind.SaleCancelled => "m-notif-icon-cancel",
         NotificationKind.Broadcast => "m-notif-icon-broadcast",
         NotificationKind.AppUpdate => "m-notif-icon-appupdate",
+        NotificationKind.GroupChanged => "m-notif-icon-groupchange",
         _ => "m-notif-icon-default"
     };
 
@@ -492,6 +497,9 @@ else
             // System update icon (downward arrow into a tray) for the
             // auto-emitted app-update broadcast.
             NotificationKind.AppUpdate => "<path stroke-linecap='round' stroke-linejoin='round' d='M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3' />",
+            // Two horizontal opposing arrows ("swap") for a purchase-group
+            // change — budget/limits/currency all change with the group.
+            NotificationKind.GroupChanged => "<path stroke-linecap='round' stroke-linejoin='round' d='M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5' />",
             _ => "<path stroke-linecap='round' stroke-linejoin='round' d='M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0' />"
         };
         return (Microsoft.AspNetCore.Components.MarkupString)path;
