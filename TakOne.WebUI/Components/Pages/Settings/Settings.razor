@@ -111,6 +111,10 @@
 @using Wolverine
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Queries.GetUserById
+@using TakOne.Application.Notifications.DTOs
+@using TakOne.Application.Notifications.Queries.GetNotificationPreferences
+@using TakOne.Application.Notifications.Commands.SetNotificationMuted
+@using TakOne.Domain.Notifications.Enums
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
@@ -280,6 +284,65 @@
                 margin-top: 0.75rem;
             }
 
+            /* ── Notification preferences card (Round 3) ─────────────
+               One row per NotificationKind: leading icon in a tinted
+               squircle (same visual family as the Notifications page's
+               .notif-icon), kind label + short description, and a
+               RadzenSwitch on the trailing edge. Rows separate with a
+               hairline so the list reads as a table without being one. */
+            .notif-prefs-list {
+                display: flex;
+                flex-direction: column;
+                margin-top: 0.75rem;
+            }
+
+            .notif-pref-row {
+                display: flex;
+                align-items: center;
+                gap: 0.85rem;
+                padding: 0.6rem 0.25rem;
+                border-bottom: 1px solid var(--rz-border-color);
+            }
+
+            .notif-pref-row:last-child {
+                border-bottom: none;
+            }
+
+            .notif-pref-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 2.35rem;
+                height: 2.35rem;
+                border-radius: 10px;
+                flex: none;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                color: var(--rz-primary);
+            }
+
+            .notif-pref-text {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .notif-pref-name {
+                font-weight: 600;
+                font-size: 0.9rem;
+            }
+
+            .notif-pref-desc {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.75rem;
+                line-height: 1.35;
+            }
+
+            .notif-pref-hint {
+                margin-top: 0.6rem;
+                color: var(--rz-text-secondary-color);
+                font-size: 0.78rem;
+                line-height: 1.5;
+            }
+
             /* Loading + error + not-found states reuse Radzen's alert
                                        components — same pattern as ProductDetail.razor. */
     </style>
@@ -443,10 +506,65 @@
                 </RadzenCard>
             </RadzenStack>
 
-            @* RIGHT — help / about card. Keeps the page from looking
-               empty on the right side, and gives the user a place to
-               read about what each section does. *@
+            @* RIGHT — notification preferences card (Round 3 feature:
+               per-user, per-kind mute flags enforced at notification
+               creation time), then help / about cards. *@
             <RadzenStack Orientation="Orientation.Vertical" Gap="1rem">
+                <RadzenCard Variant="Variant.Outlined" Style="padding: 1.25rem;">
+                    <div class="section-title">
+                        <RadzenIcon Icon="notifications" Style="color: var(--rz-primary);" />
+                        <span>@Loc["NotifPrefsCardTitle"]</span>
+                    </div>
+                    @if (_prefsLoadError is not null)
+                    {
+                        <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                     Text="@_prefsLoadError"
+                                     AlertStyle="AlertStyle.Danger"
+                                     Variant="Variant.Filled"
+                                     ShowIcon="true"
+                                     Style="margin-top: 0.75rem;" />
+                    }
+                    else if (_notificationPreferences is null)
+                    {
+                        <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="margin-top: 0.75rem;">
+                            @for (var i = 0; i < 4; i++)
+                            {
+                                <div class="tm-skel-row">
+                                    <div class="tm-skel tm-skel--thumb"></div>
+                                    <div class="tm-skel-stack" style="gap:.4rem; flex:1;">
+                                        <div class="tm-skel tm-skel--line"></div>
+                                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                                    </div>
+                                    <div class="tm-skel tm-skel--chip"></div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="notif-prefs-list">
+                            @foreach (var pref in _notificationPreferences)
+                            {
+                                <div class="notif-pref-row">
+                                    <div class="notif-pref-icon">
+                                        <RadzenIcon Icon="@GetNotifPrefIcon(pref.Kind)" />
+                                    </div>
+                                    <div class="notif-pref-text">
+                                        <div class="notif-pref-name">@GetNotifPrefName(pref.Kind)</div>
+                                        <div class="notif-pref-desc">@GetNotifPrefDesc(pref.Kind)</div>
+                                    </div>
+                                    <RadzenSwitch TValue="bool"
+                                                  Value="@pref.IsMuted"
+                                                  Disabled="@_isSavingPref"
+                                                  Name="@($"pref-switch-{(int)pref.Kind}")"
+                                                  Change="@(async value => await HandleNotifPrefToggleAsync(pref.Kind, value))" />
+                                </div>
+                            }
+                        </div>
+                        <p class="notif-pref-hint">@Loc["NotifPrefsHint"]</p>
+                    }
+                </RadzenCard>
+
                 <RadzenCard Variant="Variant.Outlined" Style="padding: 1.25rem;">
                     <div class="section-title">
                         <RadzenIcon Icon="help_outline" Style="color: var(--rz-primary);" />
@@ -479,6 +597,29 @@
     private UserDto? _user;
     private string? _loadError;
     private bool _isLoading = true;
+
+    /// <summary>
+    /// The user's per-kind notification preferences (Round 3). Null while
+    /// loading / on load failure (the card renders its skeleton / error
+    /// state respectively). One entry per NotificationKind — the query
+    /// guarantees the complete list.
+    /// </summary>
+    private List<NotificationPreferenceDto>? _notificationPreferences;
+
+    /// <summary>
+    /// Non-null when the preferences query failed — the card renders an
+    /// inline RadzenAlert instead of the list (the rest of the page still
+    /// works; account + theme are loaded independently).
+    /// </summary>
+    private string? _prefsLoadError;
+
+    /// <summary>
+    /// True while a SetNotificationMutedCommand is in flight — disables
+    /// ALL the switches (prevents stacking a second toggle on a
+    /// first-in-flight one; the upsert's race-loser path would surface a
+    /// confusing error toast for a double-click).
+    /// </summary>
+    private bool _isSavingPref;
 
     /// <summary>
     /// The currently-applied theme name. Initialized to "tak-light" (the
@@ -635,6 +776,12 @@
                 // surface a generic message to avoid leaking which.
                 _loadError = Loc["Error_GenericLoad"];
             }
+
+            // ── Notification preferences (Round 3) — loaded independently
+            // so a prefs failure never takes the account card down with
+            // it. The query resolves the CURRENT user server-side (no
+            // client-supplied Id — anti-CSRF). ──
+            await LoadNotificationPreferencesAsync();
         }
         catch
         {
@@ -708,6 +855,168 @@
             _themeToast = Loc["Error_ThemeSwitch"];
         }
     }
+
+    // ── Notification preferences (Round 3) ─────────────────────────────
+
+    /// <summary>
+    /// Loads the complete per-kind preference list. A failure sets
+    /// <see cref="_prefsLoadError"/> (inline alert) and leaves the list
+    /// null — it never throws out to OnInitializedAsync, so the account +
+    /// theme cards keep working.
+    /// </summary>
+    private async Task LoadNotificationPreferencesAsync()
+    {
+        try
+        {
+            var result = await MessageBus.InvokeAsync<
+                Result<IReadOnlyList<NotificationPreferenceDto>>>(
+                new GetNotificationPreferencesQuery());
+
+            if (result.IsSuccess)
+            {
+                _notificationPreferences = result.Value.ToList();
+            }
+            else
+            {
+                _prefsLoadError = Loc["NotifPrefsErrorLoad"];
+            }
+        }
+        catch
+        {
+            _prefsLoadError = Loc["NotifPrefsErrorLoad"];
+        }
+    }
+
+    /// <summary>
+    /// Handles a RadzenSwitch Change for one kind. OPTIMISTIC update (the
+    /// switch is already visually flipped by Radzen before this runs) +
+    /// dispatch of the upsert command; on failure the local state is
+    /// REVERTED and an error toast explains what happened. Muting takes
+    /// effect on the next notification created for the user — it is not
+    /// retroactive (existing rows stay in the feed).
+    /// </summary>
+    private async Task HandleNotifPrefToggleAsync(NotificationKind kind, bool isMuted)
+    {
+        if (_notificationPreferences is null || _isSavingPref)
+        {
+            return;
+        }
+
+        _isSavingPref = true;
+
+        // Optimistic local update — the switch's own visual state already
+        // flipped; this keeps the rest of the list consistent with it.
+        var entry = _notificationPreferences.FirstOrDefault(p => p.Kind == kind);
+        if (entry is not null)
+        {
+            var index = _notificationPreferences.IndexOf(entry);
+            _notificationPreferences[index] = new NotificationPreferenceDto
+            {
+                Kind = kind,
+                IsMuted = isMuted
+            };
+        }
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(
+                new SetNotificationMutedCommand(kind, isMuted));
+
+            if (!result.IsSuccess)
+            {
+                RevertNotifPref(kind);
+                await Toast.Warning(
+                    Loc["NotifPrefsErrorSave"],
+                    summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch
+        {
+            RevertNotifPref(kind);
+            await Toast.Warning(
+                Loc["NotifPrefsErrorSave"],
+                summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isSavingPref = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Reverts the local optimistic state for one kind after a failed
+    /// save (so the switch reflects the persisted truth, not the wish).
+    /// </summary>
+    private void RevertNotifPref(NotificationKind kind)
+    {
+        if (_notificationPreferences is null)
+        {
+            return;
+        }
+
+        var entry = _notificationPreferences.FirstOrDefault(p => p.Kind == kind);
+        if (entry is not null)
+        {
+            var index = _notificationPreferences.IndexOf(entry);
+            _notificationPreferences[index] = new NotificationPreferenceDto
+            {
+                Kind = kind,
+                IsMuted = !entry.IsMuted
+            };
+        }
+    }
+
+    /// <summary>
+    /// Material Symbols icon per kind — same mapping as the Notifications
+    /// page's GetIconName, so the icon the user mutes in Settings is the
+    /// same icon they see in the feed. Kept as a small local copy (not a
+    /// shared service) to match the page's self-contained helper style.
+    /// </summary>
+    private static string GetNotifPrefIcon(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => "shopping_cart",
+        NotificationKind.SaleApproved => "check_circle",
+        NotificationKind.SaleInvoiced => "receipt_long",
+        NotificationKind.SaleCancelled => "cancel",
+        NotificationKind.Broadcast => "campaign",
+        NotificationKind.AppUpdate => "system_update",
+        NotificationKind.GroupChanged => "swap_horiz",
+        _ => "notifications"
+    };
+
+    /// <summary>
+    /// Localized kind label — same titles as the Notifications page's
+    /// feed (Title_Submitted etc.), so "Sale Submitted" means the same
+    /// thing in both places.
+    /// </summary>
+    private string GetNotifPrefName(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["NotifPrefName_Submitted"],
+        NotificationKind.SaleApproved => Loc["NotifPrefName_Approved"],
+        NotificationKind.SaleInvoiced => Loc["NotifPrefName_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["NotifPrefName_Cancelled"],
+        NotificationKind.Broadcast => Loc["NotifPrefName_Broadcast"],
+        NotificationKind.AppUpdate => Loc["NotifPrefName_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["NotifPrefName_GroupChanged"],
+        _ => kind.ToString()
+    };
+
+    /// <summary>
+    /// Localized one-line description of what muting the kind means —
+    /// the row's secondary text under the kind label.
+    /// </summary>
+    private string GetNotifPrefDesc(NotificationKind kind) => kind switch
+    {
+        NotificationKind.SaleSubmitted => Loc["NotifPrefDesc_Submitted"],
+        NotificationKind.SaleApproved => Loc["NotifPrefDesc_Approved"],
+        NotificationKind.SaleInvoiced => Loc["NotifPrefDesc_Invoiced"],
+        NotificationKind.SaleCancelled => Loc["NotifPrefDesc_Cancelled"],
+        NotificationKind.Broadcast => Loc["NotifPrefDesc_Broadcast"],
+        NotificationKind.AppUpdate => Loc["NotifPrefDesc_AppUpdate"],
+        NotificationKind.GroupChanged => Loc["NotifPrefDesc_GroupChanged"],
+        _ => string.Empty
+    };
 
     // ── Display helpers ────────────────────────────────────────────────
 

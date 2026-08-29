@@ -22,6 +22,12 @@
     <RadzenTheme Theme="standard-dark" />
 
     <link rel="stylesheet" href="_content/Radzen.Blazor/Radzen.Blazor.css" />
+    @* SELF-HOSTED Vazirmatn (was: Google Fonts @import inside the Tak theme
+       files). Loaded BEFORE app.css + theme overrides so the font-family
+       tokens everywhere resolve to the local files. Serves the app's own
+       origin: works on air-gapped intranets, no third-party CDN requests,
+       no DNS/TLS handshake tax on first paint. See /css/fonts.css. *@
+    <link rel="stylesheet" href="css/fonts.css?v=1" />
     @* BUGFIX (Issue #08 — UI): href was "app.css" (missing "css/" prefix).
        The actual file lives at wwwroot/css/app.css. Without the prefix,
        the browser requests /app.css → 404 → global styles (KPI card
@@ -244,6 +250,13 @@
         serving the old v5 JS which leaks a MutationObserver on
         document.documentElement every time the user switches views. *@
     <script src="js/adminCategoriesTree.js?v=6"></script>
+
+    @* Download helper (Round 3 CSV exports): Blob + object-URL + synthetic
+        click persistence for files built in .NET (Blazor Server circuits
+        have no HttpResponse to stream through). takDownload.csv prepends
+        the UTF-8 BOM so Excel opens Persian text correctly. See
+        wwwroot/js/download.js. *@
+    <script src="js/download.js?v=1"></script>
 
     <HeadOutlet @rendermode="@RenderModeForPage" />
 </head>

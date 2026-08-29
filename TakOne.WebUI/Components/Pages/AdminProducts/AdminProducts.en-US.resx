@@ -204,4 +204,14 @@
   <data name="AlreadyDeactivated" xml:space="preserve">
     <value>This product is already deactivated (stock is 0). Use Restock to reactivate it.</value>
   </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>Currency</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The CSV export failed. Please try again.</value>
+  </data>
+
 </root>

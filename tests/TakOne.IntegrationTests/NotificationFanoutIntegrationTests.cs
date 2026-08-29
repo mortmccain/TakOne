@@ -62,6 +62,7 @@ public class NotificationFanoutIntegrationTests
         ICustomerGroupRepository groupRepo,
         IBroadcastNotificationRepository broadcastRepo,
         INotificationRepository notificationRepo,
+        INotificationPreferenceRepository preferenceRepo,
         IUnitOfWork unitOfWork,
         ApplicationDbContext db,
         ILogger<EmitAppUpdateBroadcastCommandHandler> emitLogger,
@@ -73,12 +74,15 @@ public class NotificationFanoutIntegrationTests
         var groupRepo = new CustomerGroupRepository(db);
         var broadcastRepo = new BroadcastNotificationRepository(db);
         var notificationRepo = new NotificationRepository(db);
+        // Round 3 — real preference repository against the same SQLite DB
+        // (default: no rows = nobody muted, matching production defaults).
+        var preferenceRepo = new NotificationPreferenceRepository(db);
         var unitOfWork = new UnitOfWork(db);
 
         var emitLogger = Substitute.For<ILogger<EmitAppUpdateBroadcastCommandHandler>>();
         var sendLogger = Substitute.For<ILogger<SendBroadcastNotificationCommandHandler>>();
 
-        return (userRepo, groupRepo, broadcastRepo, notificationRepo,
+        return (userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo,
             unitOfWork, db, emitLogger, sendLogger);
     }
 
@@ -200,6 +204,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.userRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.emitLogger,
                 CancellationToken.None);
@@ -254,6 +259,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.userRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.emitLogger,
                 CancellationToken.None);
@@ -268,6 +274,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.userRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.emitLogger,
                 CancellationToken.None);
@@ -301,6 +308,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.userRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.emitLogger,
                 CancellationToken.None);
@@ -311,6 +319,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.userRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.emitLogger,
                 CancellationToken.None);
@@ -355,6 +364,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.groupRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.sendLogger,
                 CancellationToken.None);
@@ -407,6 +417,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.groupRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.sendLogger,
                 CancellationToken.None);
@@ -466,6 +477,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.groupRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.sendLogger,
                 CancellationToken.None);
@@ -514,6 +526,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.groupRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.sendLogger,
                 CancellationToken.None);
@@ -569,6 +582,7 @@ public class NotificationFanoutIntegrationTests
                 collaborators.groupRepo,
                 collaborators.broadcastRepo,
                 collaborators.notificationRepo,
+                collaborators.preferenceRepo,
                 collaborators.unitOfWork,
                 collaborators.sendLogger,
                 CancellationToken.None);

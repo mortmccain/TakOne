@@ -75,6 +75,7 @@ public sealed class NotifyOnSaleSubmittedEventHandler
     public static async Task HandleAsync(
         SaleSubmittedDomainEvent @event,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUnitOfWork unitOfWork,
         ILogger<NotifyOnSaleSubmittedEventHandler> logger,
         CancellationToken cancellationToken)
@@ -93,6 +94,7 @@ public sealed class NotifyOnSaleSubmittedEventHandler
             saleDisplayNumber: @event.SaleNumber?.Value,
             actorName: null, // self-buy: no actor name needed
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             logger: logger,
             cancellationToken: cancellationToken);
 
@@ -108,6 +110,7 @@ public sealed class NotifyOnSaleSubmittedEventHandler
                 saleDisplayNumber: @event.SaleNumber?.Value,
                 actorName: null,
                 notificationRepository: notificationRepository,
+                preferenceRepository: preferenceRepository,
                 logger: logger,
                 cancellationToken: cancellationToken);
         }
@@ -129,9 +132,25 @@ public sealed class NotifyOnSaleSubmittedEventHandler
         string? saleDisplayNumber,
         string? actorName,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        // MUTE SUPPRESSION (per-user notification preferences): a muted
+        // kind skips row creation ENTIRELY — no Notification INSERT, no
+        // NotificationCreatedDomainEvent, no SignalR ping. The suppression
+        // happens HERE (creation time), not at read time, so muted kinds
+        // never accumulate unread rows. Not retroactive — rows created
+        // before the mute stay in the feed. Sparse default: no preference
+        // row = not muted (single indexed seek).
+        if (await preferenceRepository.IsMutedAsync(userId, kind, cancellationToken))
+        {
+            logger.LogDebug(
+                "Notification ({Kind}, sale={SaleId}, user={UserId}) suppressed — kind muted by user.",
+                kind, saleId, userId);
+            return;
+        }
+
         // Idempotency short-circuit: avoid a wasted INSERT+retry if the
         // event was redelivered. The unique index catches the race
         // anyway, but this avoids the round-trip in the common case.

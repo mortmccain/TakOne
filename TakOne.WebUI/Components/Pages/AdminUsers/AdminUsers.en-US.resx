@@ -244,4 +244,14 @@
     <value>Password must be at least 8 characters.</value>
   </data>
 
+  <data name="ColRoles" xml:space="preserve">
+    <value>Roles</value>
+  </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The CSV export failed. Please try again.</value>
+  </data>
+
 </root>

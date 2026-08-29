@@ -260,4 +260,27 @@
   <data name="DraftPseudoIdTooltip" xml:space="preserve">
     <value>سفارش‌های پیش‌نویس هنوز شمارهٔ دائمی ندارند — شماره در زمان ثبت سفارش اختصاص می‌یابد.</value>
   </data>
+  <!-- Printable invoice (Round 3) -->
+  <data name="PrintInvoiceButton" xml:space="preserve">
+    <value>چاپ فاکتور</value>
+  </data>
+  <data name="PrintInvoiceError" xml:space="preserve">
+    <value>باز شدن پنجره چاپ با خطا مواجه شد. دوباره تلاش کنید یا از Ctrl+P استفاده کنید.</value>
+  </data>
+  <data name="InvoiceSubtitle" xml:space="preserve">
+    <value>فاکتور فروش</value>
+  </data>
+  <data name="InvoiceNumber" xml:space="preserve">
+    <value>شماره فاکتور</value>
+  </data>
+  <data name="InvoiceDate" xml:space="preserve">
+    <value>تاریخ</value>
+  </data>
+  <data name="InvoiceCustomer" xml:space="preserve">
+    <value>خریدار</value>
+  </data>
+  <data name="InvoicePrintedAt" xml:space="preserve">
+    <value>چاپ شده در {0}</value>
+  </data>
+
 </root>

@@ -167,6 +167,16 @@ public class ApplicationDbContext
     public DbSet<BroadcastNotification> BroadcastNotifications { get; set; } = null!;
 
     /// <summary>
+    /// NotificationPreference aggregate root — a per-user, per-kind mute
+    /// flag (sparse: no row = not muted). Consulted by the NotifyOn*
+    /// event handlers and BroadcastFanout to suppress notification-row
+    /// creation for muted kinds; edited from the Settings page.
+    /// Maps to the <c>NotificationPreferences</c> table (unique index on
+    /// UserId + Kind).
+    /// </summary>
+    public DbSet<NotificationPreference> NotificationPreferences { get; set; } = null!;
+
+    /// <summary>
     /// ASP.NET Core Data Protection key ring. One row per key. The
     /// <c>DataProtectionKey</c> entity (from
     /// <c>Microsoft.AspNetCore.DataProtection.EntityFrameworkCore</c>)

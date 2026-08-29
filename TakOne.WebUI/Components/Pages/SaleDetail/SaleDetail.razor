@@ -43,7 +43,7 @@
           via AuditByFormat)
         - Staff-only action buttons: Approve (Pending→Approved),
           Mark as invoiced (Approved→Invoiced), Cancel (Pending/Approved
-          → Cancelled, requires reason via JS prompt)
+          → Cancelled, requires reason via the inline cancel form)
         - Totals summary (grand total, line count, total units)
      4. Line items table:
         - Line #, Product name, Quantity, Unit price, Line total
@@ -55,7 +55,7 @@
    STAFF-ACTION UX:
      Approve and Mark as invoiced are direct clicks — no confirmation needed
      because they're forward-only transitions and reversible by cancellation
-     (in the case of Approve). Cancel opens a JS prompt() for the reason
+     (in the case of Approve). Cancel opens the inline reason form
      (same pattern as AdminProducts.razor's restock flow) — simplest UX for
      a staff tool, no custom dialog component required.
 
@@ -112,6 +112,106 @@
                 grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
                 gap: 1.5rem;
                 align-items: start;
+            }
+
+            /* ── PRINTABLE INVOICE (Round 3) ─────────────────────────────
+               The page doubles as its own print stylesheet: Ctrl+P (or the
+               "Print invoice" button, which calls window.print()) produces a
+               clean, single-column, near-black-on-white invoice regardless
+               of the ACTIVE THEME (dark themes would otherwise print white
+               text on white paper — the color nuke below is deliberate).
+
+               WHAT PRINTS: the masthead (print-only), sale number + status
+               text, the line-items table, the audit trail, and the totals
+               summary — everything a customer or accountant needs on paper.
+               WHAT DOESN'T: app chrome (sidebar + top bar — they live in
+               MainLayout, so the rules target the rendered Radzen classes),
+               the back button, breadcrumb, and the staff ACTION buttons
+               (approving a sale from a printout is a UX bug, not a feature). */
+            .print-only {
+                display: none;
+            }
+
+            .invoice-masthead {
+                border-bottom: 2px solid #111;
+                padding-bottom: 0.75rem;
+                margin-bottom: 1rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                gap: 1rem;
+                flex-wrap: wrap;
+            }
+
+            .invoice-masthead .invoice-brand {
+                font-size: 1.5rem;
+                font-weight: 800;
+                letter-spacing: 0.02em;
+            }
+
+            .invoice-masthead .invoice-sub {
+                font-size: 0.8rem;
+                color: #555;
+                margin-top: 0.15rem;
+            }
+
+            .invoice-masthead .invoice-meta {
+                text-align: end;
+                font-size: 0.85rem;
+                line-height: 1.5;
+            }
+
+            @@media print {
+                /* Hide the app shell (lives in MainLayout — global selectors
+                   are intentional here; scoped CSS can't reach outside the
+                   component). */
+                .rz-sidebar,
+                .tm-shop-header,
+                .tm-portal-block,
+                .breadcrumb,
+                .action-stack,
+                .cancel-form {
+                    display: none !important;
+                }
+
+                /* Single column: items first, then the totals panel. */
+                .detail-grid {
+                    grid-template-columns: 1fr !important;
+                    gap: 1rem !important;
+                }
+
+                /* Theme-independent print palette: dark themes set text
+                   colors near-white — invisible on paper. Force near-black
+                   text, gray hairlines, and strip card fills + shadows so
+                   the printout reads as a clean invoice on white. */
+                .detail-grid, .detail-grid * {
+                    color: #111 !important;
+                    background: transparent !important;
+                    border-color: #bbb !important;
+                    box-shadow: none !important;
+                    text-shadow: none !important;
+                }
+
+                /* The back button is the component's first child — hide by
+                   class rather than fragile nth-child selectors. */
+                .no-print {
+                    display: none !important;
+                }
+
+                .print-only {
+                    display: block !important;
+                }
+
+                /* Avoid a grid row being split across pages mid-line. */
+                .rz-datatable tr,
+                .totals-row {
+                    break-inside: avoid;
+                }
+
+                /* Print URLs after links — no links here, but harmless. */
+                a {
+                    text-decoration: none !important;
+                }
             }
 
             @@media (max-width: 992px) {
@@ -371,6 +471,7 @@
                   Icon="arrow_back"
                   ButtonStyle="ButtonStyle.Secondary"
                   Variant="Variant.Outlined"
+                  Class="no-print"
                   Style="align-self: flex-start;"
                   Click="@(() => Navigation.NavigateTo("/Sales", forceLoad: false))" />
 
@@ -422,6 +523,23 @@
         <div class="detail-grid">
             @* LEFT — header + line items + cancellation reason (if any) *@
             <div>
+                @* PRINT-ONLY INVOICE MASTHEAD (Round 3) — visible exclusively
+                   in the print output (@media print). Carries the brand, the
+                   invoice title, and the at-a-glance meta (sale number, date,
+                   customer) so the printout stands alone without app context. *@
+                <div class="print-only invoice-masthead" aria-hidden="true">
+                    <div>
+                        <div class="invoice-brand">TakOne</div>
+                        <div class="invoice-sub">@Loc["InvoiceSubtitle"]</div>
+                    </div>
+                    <div class="invoice-meta">
+                        <div><strong>@Loc["InvoiceNumber"]:</strong> @(CultureFormat.FormatDigits(_sale.DisplayNumber))</div>
+                        <div><strong>@Loc["InvoiceDate"]:</strong> @FormatTimestamp(_sale.SubmittedAtUtc ?? _sale.CreatedAtUtc)</div>
+                        <div><strong>@Loc["InvoiceCustomer"]:</strong> @_sale.CustomerName</div>
+                        <div class="invoice-sub">@string.Format(Loc["InvoicePrintedAt"], FormatTimestamp(DateTime.UtcNow))</div>
+                    </div>
+                </div>
+
                 @* Breadcrumb: My orders / [Sale number] *@
                 <nav class="breadcrumb" aria-label="breadcrumb">
                     <a href="/Sales">@Loc["BreadcrumbSales"]</a>
@@ -429,7 +547,10 @@
                     <span class="crumb-current">@(CultureFormat.FormatDigits(_sale.DisplayNumber))</span>
                 </nav>
 
-                @* Page header — sale number + status badge inline *@
+                @* Page header — sale number + status badge + print button.
+                   The PRINT button (Round 3) is visible to everyone viewing a
+                   SUBMITTED sale (staff + customers print their own copies);
+                   drafts have no SaleNumber and nothing invoice-like to print. *@
                 <div class="detail-header" Style="margin-bottom: 1rem;">
                     <h1 class="detail-sale-number"
                         title="@GetSaleNumberTooltip()">
@@ -438,6 +559,18 @@
                     <RadzenBadge Text="@GetStatusLabel(_sale.Status)"
                                  BadgeStyle="@GetStatusBadgeStyle(_sale.Status)"
                                  IsPill="true" />
+                    @if (_sale.SaleNumber is not null)
+                    {
+                        <span style="flex: 1;"></span>
+                        <RadzenButton Text="@Loc["PrintInvoiceButton"]"
+                                      Icon="print"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Size="ButtonSize.Small"
+                                      Class="no-print"
+                                      Disabled="@_isBusy"
+                                      Click="@PrintInvoiceAsync" />
+                    }
                 </div>
 
                 @* Cancellation reason — only shown when the sale is Cancelled *@
@@ -864,6 +997,33 @@
     }
 
     // ── Staff actions ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens the browser's print dialog for the sale-as-invoice (Round 3).
+    /// The @media print stylesheet (this page's <style> block) handles the
+    /// transformation: hides app chrome + actions, forces a
+    /// near-black-on-white palette (theme-independent), and reveals the
+    /// print-only invoice masthead. No server round-trip, no new route —
+    /// the user prints exactly what they see, re-laid-out for paper.
+    /// </summary>
+    /// <remarks>
+    /// JS interop errors (e.g. after a circuit reconnect) surface as a
+    /// toast instead of a dead button — same pattern as every other
+    /// JS-calling action in this page family.
+    /// </remarks>
+    private async Task PrintInvoiceAsync()
+    {
+        if (_sale is null || _isBusy) return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("window.print");
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["PrintInvoiceError"], summary: Loc["ErrorTitle"]);
+        }
+    }
 
     private async Task HandleApproveAsync()
     {

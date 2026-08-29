@@ -56,6 +56,9 @@ public sealed class SaleByCustomerSpecification : Specification<Sale>
 {
     public SaleByCustomerSpecification(Guid customerId) : this(customerId, status: null) { }
 
+    public SaleByCustomerSpecification(Guid customerId, SaleStatus? status)
+        : this(customerId, status, fromUtc: null, toUtcExclusive: null) { }
+
     /// <param name="customerId">
     /// The user whose purchases we want (sales where they are the
     /// <c>CustomerId</c>). Must be non-empty.
@@ -64,7 +67,18 @@ public sealed class SaleByCustomerSpecification : Specification<Sale>
     /// Optional status filter. When non-null, restricts the spec to sales in
     /// the given status. When null, matches all statuses for the customer.
     /// </param>
-    public SaleByCustomerSpecification(Guid customerId, SaleStatus? status)
+    /// <param name="fromUtc">
+    /// Optional INCLUSIVE lower bound on CreatedAtUtc (UTC). Half-open
+    /// interval semantics — see AllSalesSpecification's identical block.
+    /// </param>
+    /// <param name="toUtcExclusive">
+    /// Optional EXCLUSIVE upper bound on CreatedAtUtc (UTC).
+    /// </param>
+    public SaleByCustomerSpecification(
+        Guid customerId,
+        SaleStatus? status,
+        DateTime? fromUtc,
+        DateTime? toUtcExclusive)
     {
         // Defensive: a Guid.Empty customer id would silently match every
         // sale whose CustomerId hasn't been set yet (which shouldn't happen,
@@ -83,6 +97,19 @@ public sealed class SaleByCustomerSpecification : Specification<Sale>
         if (status.HasValue)
         {
             Query.Where(sale => sale.Status == status.Value);
+        }
+
+        // Optional creation-date range (Round 3) — half-open interval
+        // [fromUtc, toUtcExclusive), pushed down to SQL. Same semantics
+        // as AllSalesSpecification's identical block.
+        if (fromUtc.HasValue)
+        {
+            Query.Where(sale => sale.CreatedAtUtc >= fromUtc.Value);
+        }
+
+        if (toUtcExclusive.HasValue)
+        {
+            Query.Where(sale => sale.CreatedAtUtc < toUtcExclusive.Value);
         }
 
         // PERFORMANCE: list views (where this spec is used) don't need line

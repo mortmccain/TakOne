@@ -264,4 +264,27 @@
   <data name="DraftPseudoIdTooltip" xml:space="preserve">
     <value>Draft orders have no permanent number yet — one is assigned when the order is submitted.</value>
   </data>
+  <!-- Printable invoice (Round 3) -->
+  <data name="PrintInvoiceButton" xml:space="preserve">
+    <value>Print invoice</value>
+  </data>
+  <data name="PrintInvoiceError" xml:space="preserve">
+    <value>Opening the print dialog failed. Please try again or use Ctrl+P.</value>
+  </data>
+  <data name="InvoiceSubtitle" xml:space="preserve">
+    <value>Sales invoice</value>
+  </data>
+  <data name="InvoiceNumber" xml:space="preserve">
+    <value>Invoice no.</value>
+  </data>
+  <data name="InvoiceDate" xml:space="preserve">
+    <value>Date</value>
+  </data>
+  <data name="InvoiceCustomer" xml:space="preserve">
+    <value>Customer</value>
+  </data>
+  <data name="InvoicePrintedAt" xml:space="preserve">
+    <value>Printed {0}</value>
+  </data>
+
 </root>

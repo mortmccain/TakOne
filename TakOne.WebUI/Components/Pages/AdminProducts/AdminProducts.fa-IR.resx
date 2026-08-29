@@ -206,4 +206,14 @@
   <data name="AlreadyDeactivated" xml:space="preserve">
     <value>این محصول از قبل غیرفعال است (موجودی صفر). برای فعال‌سازی از «افزایش موجودی» استفاده کنید.</value>
   </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>ارز</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
 </root>

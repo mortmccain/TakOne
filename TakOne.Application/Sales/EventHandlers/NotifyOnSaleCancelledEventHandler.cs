@@ -47,6 +47,7 @@ public sealed class NotifyOnSaleCancelledEventHandler
     public static async Task HandleAsync(
         SaleCancelledDomainEvent @event,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUserRepository userRepository,
         ISaleRepository saleRepository,
         IUnitOfWork unitOfWork,
@@ -78,6 +79,7 @@ public sealed class NotifyOnSaleCancelledEventHandler
                 actorName: cancellerName,
                 reason: @event.Reason,
                 notificationRepository: notificationRepository,
+                preferenceRepository: preferenceRepository,
                 logger: logger,
                 cancellationToken: cancellationToken);
         }
@@ -91,6 +93,7 @@ public sealed class NotifyOnSaleCancelledEventHandler
             actorName: null,
             reason: @event.Reason,
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             logger: logger,
             cancellationToken: cancellationToken);
     }
@@ -103,9 +106,21 @@ public sealed class NotifyOnSaleCancelledEventHandler
         string? actorName,
         string? reason,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        // MUTE SUPPRESSION (per-user notification preferences): see the
+        // equivalent block in NotifyOnSaleSubmittedEventHandler for the
+        // full rationale — muted kind ⇒ no INSERT, no event, no ping.
+        if (await preferenceRepository.IsMutedAsync(userId, kind, cancellationToken))
+        {
+            logger.LogDebug(
+                "Notification ({Kind}, sale={SaleId}, user={UserId}) suppressed — kind muted by user.",
+                kind, saleId, userId);
+            return;
+        }
+
         if (await notificationRepository.ExistsAsync(userId, saleId, kind, cancellationToken))
         {
             logger.LogDebug(

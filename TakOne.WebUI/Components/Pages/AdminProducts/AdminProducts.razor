@@ -97,6 +97,7 @@
 @inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 @inject Microsoft.Extensions.Logging.ILogger<AdminProducts> Logger
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -196,25 +197,47 @@
             <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
         </RadzenStack>
 
-        <RadzenButton Text="@Loc["CreateProductButton"]"
-                      Icon="add"
-                      ButtonStyle="ButtonStyle.Primary"
-                      Variant="Variant.Filled"
-                      Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            @* Export CSV (Round 3) — exports the currently loaded products
+               (the same rows the grid shows). Admin-only page ⇒ admin-only
+               export; no extra server round-trip. *@
+            <RadzenButton Text="@Loc["ExportCsvButton"]"
+                          Icon="download"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Disabled="@(_isLoading || _products.Count == 0)"
+                          Click="@ExportProductsCsvAsync" />
+            <RadzenButton Text="@Loc["CreateProductButton"]"
+                          Icon="add"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Filled"
+                          Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+        </RadzenStack>
     </div>
 
-    @* ── Loading spinner ── *@
+    @* ── Loading skeleton (Round 3 styling) ──
+       Mirrors the product grid's column rhythm (thumbnail, name+category,
+       price, stock, status, actions) so the layout doesn't jump when real
+       rows replace the skeleton. *@
     @if (_isLoading)
     {
-        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
-                     Style="height: 40vh;" Gap="1rem">
-            <RadzenProgressBarCircular ShowValue="false"
-                                       Mode="ProgressBarMode.Indeterminate"
-                                       Size="ProgressBarCircularSize.Large" />
-            <RadzenText Text="@Loc["LoadingText"]"
-                        TextStyle="TextStyle.Caption"
-                        Style="color: var(--rz-text-secondary-color);" />
-        </RadzenStack>
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.5rem;">
+            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
+                @for (var i = 0; i < 8; i++)
+                {
+                    <div class="tm-skel-row">
+                        <div class="tm-skel tm-skel--thumb"></div>
+                        <div class="tm-skel-stack" style="gap:.4rem; flex:1;">
+                            <div class="tm-skel tm-skel--line"></div>
+                            <div class="tm-skel tm-skel--line tm-skel--w40"></div>
+                        </div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                        <div class="tm-skel tm-skel--line" style="width:5rem;"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                    </div>
+                }
+            </div>
+        </RadzenCard>
     }
 
     @* ── Error banner ── *@
@@ -855,6 +878,68 @@
 
     private string GetStatusLabel(bool inStock)
         => inStock ? Loc["StatusInStockBadge"] : Loc["StatusOutOfStockBadge"];
+
+    // ── CSV export (Round 3) ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a CSV of the currently loaded products (the same rows the
+    /// grid shows) and downloads it via takDownload.js. Column shape
+    /// mirrors the grid: name, full category path, price (+currency as
+    /// its own column), stock, and in/out-of-stock status.
+    /// See Sales.razor's ExportSalesCsvAsync for the format rationale
+    /// (RFC 4180 + invariant numbers + ISO-8601 + BOM-at-save).
+    /// </summary>
+    private async Task ExportProductsCsvAsync()
+    {
+        if (_products.Count == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColName"],
+                Loc["ColCategory"],
+                Loc["ColSubCategory"],
+                Loc["ColSubSubCategory"],
+                Loc["ColPrice"],
+                Loc["ColCurrency"],
+                Loc["ColStock"],
+                Loc["ColStatus"]);
+
+            foreach (var product in _products)
+            {
+                builder.AddRow(
+                    product.Name,
+                    AppendDeactivated(product.CategoryName, product.CategoryIsActive),
+                    AppendDeactivated(product.SubCategoryName, product.SubCategoryIsActive),
+                    AppendDeactivated(product.SubSubCategoryName, product.SubSubCategoryIsActive),
+                    product.Price?.Amount,
+                    product.Price?.Currency,
+                    product.StockQuantity,
+                    GetStatusLabel(product.StockQuantity > 0));
+            }
+
+            var fileName = $"takone-products-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button.
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Renders a category cell for the export: the name, suffixed with a
+    /// marker when the category is deactivated (mirrors the grid's
+    /// "(deactivated)" badge so the export doesn't hide deactivations).
+    /// </summary>
+    private string AppendDeactivated(string name, bool isActive)
+        => isActive || string.IsNullOrEmpty(name) ? name : $"{name} ({Loc["DeactivatedSuffix"]})";
 
     private string GetStatusLabel(string? status)
         => status switch

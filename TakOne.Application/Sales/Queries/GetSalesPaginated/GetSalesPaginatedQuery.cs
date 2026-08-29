@@ -58,6 +58,41 @@ public sealed class GetSalesPaginatedQuery
     /// </summary>
     public SaleStatus? Status { get; init; }
 
+    /// <summary>
+    /// Optional INCLUSIVE lower bound on the sale's creation time, as a UTC
+    /// instant. When non-null, only sales created ON OR AFTER this instant
+    /// are returned. Applied in SQL via the specification.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>TIMEZONE CONTRACT</b>: the bound is a raw UTC instant — the
+    /// server never applies an implicit offset, so the same query means
+    /// the same rows regardless of the server's or caller's locale. The
+    /// UI (which renders CreatedAtUtc in Tehran time, +03:30 with no DST
+    /// since 2022) converts the picked LOCAL date to UTC before
+    /// dispatching: local midnight → UTC = localDate − 3:30. See
+    /// Sales.razor's ToUtcInstant helper.
+    /// </para>
+    /// </remarks>
+    public DateTime? FromDateUtc { get; init; }
+
+    /// <summary>
+    /// Optional EXCLUSIVE upper bound on the sale's creation time, as a
+    /// UTC instant. When non-null, only sales created STRICTLY BEFORE
+    /// this instant are returned. Applied in SQL via the specification.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Exclusive upper + inclusive lower = the canonical half-open
+    /// interval <c>[from, to)</c>: consecutive ranges tile perfectly with
+    /// no gaps and no double-counted midnights, and "through Aug 29"
+    /// is expressed as "before Aug 30 local midnight" — every sale
+    /// placed any time ON Aug 29 is included with no time-of-day
+    /// guesswork.
+    /// </para>
+    /// </remarks>
+    public DateTime? ToDateUtc { get; init; }
+
     // NOTE: no FilterByCreatorId on the query object — the handler resolves
     // the current user's id from ICurrentUserService so callers can't snoop
 }

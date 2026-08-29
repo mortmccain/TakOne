@@ -44,15 +44,36 @@ public sealed class AllSalesSpecification : Specification<Sale>
 {
     public AllSalesSpecification() : this(status: null) { }
 
+    public AllSalesSpecification(SaleStatus? status)
+        : this(status, fromUtc: null, toUtcExclusive: null) { }
+
     /// <param name="status">
     /// Optional status filter. When non-null, restricts the spec to sales in
     /// the given status. When null, matches all statuses.
     /// </param>
-    public AllSalesSpecification(SaleStatus? status)
+    public AllSalesSpecification(
+        SaleStatus? status,
+        DateTime? fromUtc,
+        DateTime? toUtcExclusive)
     {
         if (status.HasValue)
         {
             Query.Where(sale => sale.Status == status.Value);
+        }
+
+        // Optional creation-date range (Round 3) — half-open interval
+        // [fromUtc, toUtcExclusive), pushed down to SQL like the status
+        // filter so TotalCount stays accurate. Either bound may be null
+        // (open-ended). Both are UTC; the caller (the query handler)
+        // normalizes them BEFORE constructing the spec.
+        if (fromUtc.HasValue)
+        {
+            Query.Where(sale => sale.CreatedAtUtc >= fromUtc.Value);
+        }
+
+        if (toUtcExclusive.HasValue)
+        {
+            Query.Where(sale => sale.CreatedAtUtc < toUtcExclusive.Value);
         }
 
         // No further Where clause = match everything (modulo the optional

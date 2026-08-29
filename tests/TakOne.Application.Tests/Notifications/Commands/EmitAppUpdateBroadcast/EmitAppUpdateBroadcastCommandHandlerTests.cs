@@ -57,6 +57,7 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
         IUserRepository userRepo,
         IBroadcastNotificationRepository broadcastRepo,
         INotificationRepository notificationRepo,
+        INotificationPreferenceRepository preferenceRepo,
         IUnitOfWork unitOfWork,
         ILogger<EmitAppUpdateBroadcastCommandHandler> logger)
         BuildMocks(BroadcastNotification? existing = null)
@@ -78,12 +79,19 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
 
         var notificationRepo = Substitute.For<INotificationRepository>();
 
+        // Round 3 — notification preferences: default = nobody muted the
+        // AppUpdate kind (empty muted set), so the fanout reaches everyone.
+        var preferenceRepo = Substitute.For<INotificationPreferenceRepository>();
+        preferenceRepo.GetMutedUserIdsAsync(
+                Arg.Any<NotificationKind>(), Arg.Any<CancellationToken>())
+            .Returns( new HashSet<Guid>() as IReadOnlySet<Guid>);
+
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.SaveChangesAsync(default).ReturnsForAnyArgs(1);
 
         var logger = Substitute.For<ILogger<EmitAppUpdateBroadcastCommandHandler>>();
 
-        return (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger);
+        return (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger);
     }
 
     // ── Dedup hit path ──────────────────────────────────────────────────
@@ -108,12 +116,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
             message: "Please reload the app.",
             fanoutKind: NotificationKind.AppUpdate,
             recipientCount: 42);
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks(existing);
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(existing);
         var command = BuildValidCommand(title: "TakOne updated to v1.2.3");
 
         // Act
         var result = await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -139,12 +147,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
             message: "Please reload the app.",
             fanoutKind: NotificationKind.AppUpdate,
             recipientCount: 42);
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks(existing);
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(existing);
         var command = BuildValidCommand(title: "TakOne updated to v1.2.3");
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -173,12 +181,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
             message: "Please reload the app.",
             fanoutKind: NotificationKind.AppUpdate,
             recipientCount: 42);
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks(existing);
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(existing);
         var command = BuildValidCommand(title: "TakOne updated to v1.2.3");
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -203,12 +211,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
             message: "Please reload the app.",
             fanoutKind: NotificationKind.AppUpdate,
             recipientCount: 42);
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks(existing);
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(existing);
         var command = BuildValidCommand(title: "TakOne updated to v1.2.3");
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -228,12 +236,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
         // Arrange
         // Default BuildMocks returns null for GetByTitleAndKindAsync
         // (dedup miss → fanout runs).
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = BuildValidCommand();
 
         // Act
         var result = await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -248,12 +256,12 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
     public async Task HandleAsync_WhenNoExistingAuditRow_CallsGetByTitleAndKindAsyncWithAppUpdateKind()
     {
         // Arrange
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = BuildValidCommand(title: "TakOne updated to v9.9.9");
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            command, userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -270,11 +278,11 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
     public async Task HandleAsync_WhenNoExistingAuditRow_CallsSaveChangesAsyncOnce()
     {
         // Arrange
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -287,11 +295,11 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
     public async Task HandleAsync_WhenNoExistingAuditRow_LogsInformation()
     {
         // Arrange
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -320,13 +328,13 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
     public async Task HandleAsync_WhenCalledWithCancellationToken_ForwardsItToGetByTitleAndKindAsync()
     {
         // Arrange
-        var (userRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         using var cts = new CancellationTokenSource();
         var ct = cts.Token;
 
         // Act
         await EmitAppUpdateBroadcastCommandHandler.HandleAsync(
-            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, unitOfWork, logger, ct);
+            BuildValidCommand(), userRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger, ct);
 
         // Assert
         await broadcastRepo.Received(1).GetByTitleAndKindAsync(

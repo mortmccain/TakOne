@@ -104,6 +104,7 @@ public sealed class EmitAppUpdateBroadcastCommandHandler
         IUserRepository userRepository,
         IBroadcastNotificationRepository broadcastRepository,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUnitOfWork unitOfWork,
         ILogger<EmitAppUpdateBroadcastCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -222,6 +223,7 @@ public sealed class EmitAppUpdateBroadcastCommandHandler
             userRepository: userRepository,
             broadcastRepository: broadcastRepository,
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             unitOfWork: unitOfWork,
             logger: logger,
             cancellationToken: cancellationToken);
