@@ -91,6 +91,32 @@
         .notif-kind-select:focus-visible { border-color: var(--rz-primary); box-shadow: 0 0 0 3px rgba(0,100,250,0.12); }
         .notif-kind-select:disabled { opacity: 0.55; cursor: not-allowed; }
 
+        /* Round 5 — trailing "manage preferences" link in the toolbar: a
+           quiet, theme-variable link (tinted like secondary text, primary
+           on hover/focus) with a settings glyph. Keyboard accessible as a
+           native anchor. */
+        .notif-manage-prefs-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--rz-text-secondary-color);
+            text-decoration: none;
+            border-radius: 6px;
+            padding: 0.25rem 0.35rem;
+            transition: color 0.15s ease;
+        }
+
+        .notif-manage-prefs-link svg { width: 0.95rem; height: 0.95rem; }
+
+        .notif-manage-prefs-link:hover { color: var(--rz-primary); }
+
+        .notif-manage-prefs-link:focus-visible {
+            outline: 2px solid var(--rz-primary);
+            outline-offset: 1px;
+        }
+
         /* Round 4: per-notification dismiss — the row itself is a BUTTON
            element, so the dismiss control is a span with role=button
            (nested buttons are invalid HTML). Subtle by default; reveals
@@ -206,6 +232,19 @@
                               Disabled="@_isMarkingAllRead"
                               Click="@MarkAllReadAsync" />
             }
+
+            @* Round 5 — one-click hop to the per-kind mute settings: the
+               kind filter shows what each kind IS; the Settings page lets
+               the user silence the noisy ones. Spacers to the trailing edge
+               (flex:1) so the link sits at the end of the toolbar row. *@
+            <span style="flex: 1;"></span>
+            <a href="/Settings" class="notif-manage-prefs-link">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>@Loc["ManagePrefsLink"]</span>
+            </a>
         </div>
 
         @* ── List ── *@

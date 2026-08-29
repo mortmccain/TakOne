@@ -85,4 +85,8 @@
     <value>Could not dismiss the notification. Please try again.</value>
     <comment>Round 4 — toast when the dismiss command fails.</comment>
   </data>
+  <data name="ManagePrefsLink" xml:space="preserve">
+    <value>Notification preferences</value>
+  </data>
+
 </root>

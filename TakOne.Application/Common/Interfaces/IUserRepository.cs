@@ -1,4 +1,5 @@
-﻿using TakOne.Domain.Users;
+﻿using TakOne.Application.Users.Queries.GetUsersPaginated;
+using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Common.Interfaces;
@@ -32,21 +33,32 @@ public interface IUserRepository
     Task<List<User>> GetByGroupIdAsync(Guid groupId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns a paginated list of users, optionally filtered by a free-text
-    /// search term (matched against WorkerId and FullName, case-insensitive),
-    /// an IsActive filter, and/or a GroupId filter.
+    /// Returns a paginated list of users with ALL filtering + sorting
+    /// applied SERVER-SIDE (Round 5 — server-driven paging for the
+    /// AdminUsers grid; previously the page requested PageSize=500 and the
+    /// handler's MaxPageSize=100 clamp silently truncated the list to the
+    /// first 100 users).
     ///
-    /// Used by the admin user-management page (all users) and by staff
-    /// dashboards (e.g. "all customers in group X").
+    /// FILTERS (see <see cref="UsersListFilters"/> — null members add no
+    /// WHERE clause):
+    ///   - <c>SearchTerm</c>: WorkerId OR FullName, case-insensitive
+    ///     contains (the legacy cross-column search).
+    ///   - <c>GroupId</c>: exact group membership.
+    ///   - <c>IsActive</c>: tristate.
+    ///   - <c>Gender</c>: exact enum match (int storage).
+    ///   - <c>WorkerId</c> / <c>FullName</c>: typed per-column text
+    ///     filters (operator + value) evaluated in SQL.
     ///
-    /// Pass <c>isActive: null</c> to include both active and inactive users.
-    /// Pass <c>groupId: null</c> to include users from all groups (and
-    /// staff users who have no group).
+    /// SORT: <c>SortBy</c> + <c>SortDescending</c> with the user Id as a
+    /// deterministic tiebreaker. Null SortBy = FullName ascending — the
+    /// pre-Round-5 default order (the mobile admin-users list and the
+    /// notification recipient typeahead rely on it).
+    ///
+    /// Used by the admin user-management page (all users, server-paged),
+    /// the mobile admin-users list, and the staff dashboards.
     /// </summary>
     Task<PaginatedResult<User>> GetPaginatedAsync(
-        string? searchTerm = null,
-        bool? isActive = null,
-        Guid? groupId = null,
+        UsersListFilters? filters,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default);

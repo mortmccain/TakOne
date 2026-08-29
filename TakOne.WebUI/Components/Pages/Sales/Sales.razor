@@ -481,6 +481,8 @@
                                 AllowPaging="true"
                                 PageSize="20"
                                 PagerAlwaysVisible="true"
+                                PageSizeOptions="@(new[] { 20, 50, 100 })"
+                                PageSizeText="@Loc["PagerPageSizeText"]"
                                 PagerHorizontalAlign="HorizontalAlign.Center"
                                 ShowPagingSummary="true"
                                 PagingSummaryFormat="@Loc["PagerSummaryFormat"]"

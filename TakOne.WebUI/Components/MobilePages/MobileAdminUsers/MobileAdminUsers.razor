@@ -333,8 +333,16 @@ else
         _loadError = null;
         try
         {
+            // Load up to 100 users (the backend handler's MaxPageSize cap —
+            // asking for more, as this page historically did with 500, is
+            // silently clamped). Filtering happens client-side via the
+            // search box + status tabs (same mobile-list pattern as
+            // MobileSales). The DESKTOP AdminUsers grid is fully
+            // server-driven as of Round 5 — adopting that pattern here is
+            // a future-round item (needs debounced search to keep the
+            // instant-filter UX).
             var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
-                new GetUsersPaginatedQuery { PageNumber = 1, PageSize = 500 });
+                new GetUsersPaginatedQuery { PageNumber = 1, PageSize = 100 });
             _users = page.Items?.ToList() ?? new List<UserListItemDto>();
         }
         catch

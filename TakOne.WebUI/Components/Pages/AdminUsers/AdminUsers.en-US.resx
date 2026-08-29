@@ -89,19 +89,35 @@
   </data>
 
   <!-- EmptyText — shown by RadzenDataGrid's EmptyText when the grid has
-       no rows (either no users at all, or filters yielded nothing). -->
+       no rows (a past-the-end page mid-heal, or a race before the empty
+       state swaps in). The page-level empty states below carry the real
+       copy. -->
   <data name="EmptyText" xml:space="preserve">
     <value>No users found.</value>
   </data>
 
-  <data name="LoadingText" xml:space="preserve">
-    <value>Loading users…</value>
+  <!-- ── Empty states (Round 5 — server-driven paging) ──
+       Two variants replace the grid's built-in empty text at the page
+       level: a fresh-install state (no filters active) and a
+       filtered-to-nothing state with a one-click Clear-all escape hatch. -->
+  <data name="EmptyTitle" xml:space="preserve">
+    <value>No users yet</value>
   </data>
+  <data name="EmptyMessage" xml:space="preserve">
+    <value>No user accounts exist. Create the first user to get started.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>No users match your filters</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>Try adjusting or clearing the filters to see more users.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>Clear filters</value>
+  </data>
+
   <data name="ErrorTitle" xml:space="preserve">
     <value>Something went wrong</value>
-  </data>
-  <data name="Error_FailedToLoad" xml:space="preserve">
-    <value>We couldn't load the users. Please try again.</value>
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>Retry</value>
@@ -164,13 +180,6 @@
     <value>As a Manager, you can only activate or deactivate Employee and Customer accounts. Other managers, administrators, and read-only users require Administrator access.</value>
   </data>
 
-  <data name="ConfirmDeactivate" xml:space="preserve">
-    <value>Deactivate "{0}" ({1})? They will no longer be able to log in. Their sales and history are kept.</value>
-  </data>
-  <!-- DeactivateDialogTitle — title shown at the top of the DeactivateUserDialog
-       modal (the second-step confirmation with the 3-second countdown). Kept
-       here (not in DeactivateUserDialog.en-US.resx) so the page that opens
-       the dialog owns its title, matching the SaleDetail pattern. -->
   <data name="DeactivateDialogTitle" xml:space="preserve">
     <value>Confirm deactivation</value>
   </data>
@@ -187,12 +196,6 @@
     <value>"{0}" has been activated and can now log in.</value>
   </data>
 
-  <data name="ResetPrompt" xml:space="preserve">
-    <value>Enter a new password for "{0}" ({1}). The user will need it to log in:</value>
-  </data>
-  <data name="ResetInvalidPassword" xml:space="preserve">
-    <value>Password must be at least 8 characters. Please try again.</value>
-  </data>
   <data name="ResetSuccessTitle" xml:space="preserve">
     <value>Password reset</value>
   </data>
@@ -247,11 +250,26 @@
   <data name="ColRoles" xml:space="preserve">
     <value>Roles</value>
   </data>
+
+  <!-- ── Round 5 (server-driven paging) ── -->
   <data name="ExportCsvButton" xml:space="preserve">
     <value>Export CSV</value>
   </data>
   <data name="ExportCsvError" xml:space="preserve">
     <value>The CSV export failed. Please try again.</value>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} users exported to CSV</value>
+  </data>
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>Page {0} of {1} ({2} users)</value>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>Loading users</value>
+  </data>
+
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>rows per page</value>
   </data>
 
 </root>

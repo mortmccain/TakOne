@@ -280,6 +280,46 @@ public sealed class GetDashboardStatsQueryHandler
         var yesterdayUtc = todayUtc.AddDays(-1);
         var lastMonthStartUtc = thisMonthStartUtc.AddMonths(-1); // exclusive end = thisMonthStartUtc
 
+        // ------------------------------------------------------------------
+        // ROUND 5 — PERIOD SELECTOR window. When the query carries a
+        // FromUtc, the three flow-type KPI cards re-anchor to the
+        // half-open interval [periodFrom, periodTo) and their deltas
+        // compare against the immediately-preceding equal-length window
+        // [previousFrom, periodFrom). ToUtc defaults to "now". An
+        // inverted/degenerate window yields an empty interval (zero
+        // KPIs) — never an exception, mirroring the sales list's
+        // degenerate-range semantics.
+        //
+        // The anchor helper below (anchored on SubmittedAtUtc ?? CreatedAtUtc)
+        // matches every other in-memory KPI filter in this handler.
+        // ------------------------------------------------------------------
+        var isPeriodScoped = query.FromUtc.HasValue;
+        DateTime? periodFromUtc = query.FromUtc;
+        DateTime periodToUtc = query.ToUtc ?? now;
+        DateTime? previousPeriodFromUtc = null;
+        if (isPeriodScoped)
+        {
+            var length = periodToUtc - periodFromUtc!.Value;
+            if (length > TimeSpan.Zero)
+            {
+                previousPeriodFromUtc = periodFromUtc.Value - length;
+            }
+            else
+            {
+                // Degenerate/inverted window: no period rows can match,
+                // and the previous window is meaningless — leave
+                // previousPeriodFromUtc null; both windows filter to empty.
+                periodFromUtc = periodToUtc; // empty interval [x, x)
+                previousPeriodFromUtc = periodToUtc;
+            }
+        }
+
+        static bool InWindow(Sale sale, DateTime? fromUtc, DateTime toUtc)
+        {
+            var anchored = sale.SubmittedAtUtc ?? sale.CreatedAtUtc;
+            return anchored >= fromUtc && anchored < toUtc;
+        }
+
         var rawCurrency = sales
             .Where(s => !string.IsNullOrEmpty(s.Total.Currency))
             .Select(s => s.Total.Currency)
@@ -635,6 +675,43 @@ public sealed class GetDashboardStatsQueryHandler
                 .Count(s => s.Status == SaleStatus.Invoiced &&
                             (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= lastMonthStartUtc &&
                             (s.SubmittedAtUtc ?? s.CreatedAtUtc) < thisMonthStartUtc),
+
+            // ── ROUND 5 — period-scoped KPIs (the period selector) ──
+            // Same status filters as their fixed-anchor counterparts,
+            // anchored on the [FromUtc, ToUtc) window and the
+            // equal-length preceding window. Computed in memory on the
+            // already-loaded submittedSales list (same cost profile as
+            // every other KPI filter above). Zero when the query carried
+            // no window — the page renders the fixed-anchor fields then.
+            IsPeriodScoped = isPeriodScoped,
+            PeriodFromUtc = isPeriodScoped ? periodFromUtc : null,
+            PeriodToUtc = isPeriodScoped ? query.ToUtc : null,
+            PeriodOrdersCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status != SaleStatus.Cancelled &&
+                            InWindow(s, periodFromUtc, periodToUtc)) : 0,
+            PreviousPeriodOrdersCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status != SaleStatus.Cancelled &&
+                            InWindow(s, previousPeriodFromUtc, periodFromUtc!.Value)) : 0,
+            PeriodEmployeePurchaseTotal = isPeriodScoped ? submittedSales
+                .Where(s => s.Status != SaleStatus.Cancelled &&
+                            InWindow(s, periodFromUtc, periodToUtc))
+                .Sum(s => ToDisplay(s.Total.Amount)) : 0m,
+            PreviousPeriodEmployeePurchaseTotal = isPeriodScoped ? submittedSales
+                .Where(s => s.Status != SaleStatus.Cancelled &&
+                            InWindow(s, previousPeriodFromUtc, periodFromUtc!.Value))
+                .Sum(s => ToDisplay(s.Total.Amount)) : 0m,
+            PeriodApprovedSalesCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status == SaleStatus.Approved &&
+                            InWindow(s, periodFromUtc, periodToUtc)) : 0,
+            PeriodInvoicedSalesCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status == SaleStatus.Invoiced &&
+                            InWindow(s, periodFromUtc, periodToUtc)) : 0,
+            PreviousPeriodApprovedSalesCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status == SaleStatus.Approved &&
+                            InWindow(s, previousPeriodFromUtc, periodFromUtc!.Value)) : 0,
+            PreviousPeriodInvoicedSalesCount = isPeriodScoped ? submittedSales
+                .Count(s => s.Status == SaleStatus.Invoiced &&
+                            InWindow(s, previousPeriodFromUtc, periodFromUtc!.Value)) : 0,
 
             ThisMonthEmployeePurchaseTotal = thisMonthSales
                 .Sum(s => ToDisplay(s.Total.Amount)),

@@ -276,6 +276,47 @@ span.sale-status-badge {
     letter-spacing: 0.01em;
 }
 
+/* -----------------------------------------------------------------------------
+   Pager page-size selector polish (Round 5 detail)
+   -----------------------------------------------------------------------------
+   The Sales + AdminUsers grids (server-driven paging) now render Radzen's
+   built-in page-size dropdown in the pager (PageSizeOptions 20/50/100).
+   Out of the box the dropdown renders at input height with a bold label
+   that visually outweighs the pager buttons; these rules quiet it down so
+   it reads as pager chrome, not a form field:
+     - compact height matching the pager buttons,
+     - secondary text color for the "rows per page" caption,
+     - themed border that only lights up on hover/focus.
+   Scoped to the pager so standalone RadzenDropDowns elsewhere (filter
+   templates, toolbars) keep the standard input look.
+   -------------------------------------------------------------------------- */
+.rz-pager .rz-dropdown {
+    min-height: 1.875rem;
+    border-radius: var(--tm-radius-sm, 4px);
+}
+
+.rz-pager .rz-dropdown .rz-dropdown-label {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    padding-block: 0.25rem;
+}
+
+.rz-pager .rz-pagesize-text {
+    color: var(--rz-text-secondary-color);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* The page-size combobox is keyboard-focusable (tabindex=0) — it joins
+   the global :focus-visible ring contract at the top of this file. */
+.rz-pager .rz-dropdown:focus-within {
+    outline: 2px solid var(--rz-primary);
+    outline-offset: 1px;
+    border-radius: var(--tm-radius-sm, 4px);
+}
+
+
 span.sale-status-badge::before {
     content: "";
     display: inline-block;

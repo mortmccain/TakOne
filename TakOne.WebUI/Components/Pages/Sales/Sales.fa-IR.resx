@@ -237,4 +237,8 @@
     <value>{0} فروش به CSV صادر شد</value>
     <comment>پیام موفقیت پس از تکمیل خروجی CSV؛ {0}=تعداد ردیف‌های صادرشده (دور ۴: خروجی همهٔ ردیف‌های فیلترشده تا سقف ۲۰۰۰ ردیف).</comment>
   </data>
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>ردیف در صفحه</value>
+  </data>
+
 </root>

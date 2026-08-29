@@ -146,6 +146,72 @@ public sealed class DashboardStatsDto
 
 
     // ───────────────────────────────────────────────────────────────
+    // ROUND 5 — PERIOD-SCOPED KPIs (the period selector). When the query
+    // carries a FromUtc window, these fields hold the flow-type KPI
+    // values re-anchored to [FromUtc, ToUtc), and their Previous*
+    // counterparts hold the immediately-preceding equal-length window
+    // (the delta chips then read "vs previous period"). When the query
+    // carries NO window (the default), IsPeriodScoped is false and every
+    // field below is zero — the page renders the fixed-anchor
+    // Today*/ThisMonth* fields instead. Keeping the two families in
+    // SEPARATE fields (rather than overloading TodayOrdersCount etc.)
+    // keeps every field's name honest about its semantics.
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the query carried a FromUtc window — the page switches
+    /// the three flow-type KPI cards to the Period* fields (and their
+    /// labels to the period variants).
+    /// </summary>
+    public bool IsPeriodScoped { get; set; }
+
+    /// <summary>The window's inclusive lower bound (echoed back for the UI).</summary>
+    public DateTime? PeriodFromUtc { get; set; }
+
+    /// <summary>The window's exclusive upper bound (echoed back for the UI).</summary>
+    public DateTime? PeriodToUtc { get; set; }
+
+    /// <summary>
+    /// Non-cancelled submitted sales with (SubmittedAtUtc ?? CreatedAtUtc)
+    /// inside [PeriodFromUtc, PeriodToUtc) — the period counterpart of
+    /// <see cref="TodayOrdersCount"/>.
+    /// </summary>
+    public int PeriodOrdersCount { get; set; }
+
+    /// <summary>
+    /// The same count over the immediately-preceding equal-length window
+    /// — the period counterpart of <see cref="YesterdayOrdersCount"/>.
+    /// </summary>
+    public int PreviousPeriodOrdersCount { get; set; }
+
+    /// <summary>
+    /// Non-cancelled submitted sales' total (display currency) inside the
+    /// window — the period counterpart of
+    /// <see cref="ThisMonthEmployeePurchaseTotal"/>.
+    /// </summary>
+    public decimal PeriodEmployeePurchaseTotal { get; set; }
+
+    /// <summary>
+    /// The previous window's counterpart of
+    /// <see cref="PeriodEmployeePurchaseTotal"/> — the period version of
+    /// <see cref="LastMonthEmployeePurchaseTotal"/>.
+    /// </summary>
+    public decimal PreviousPeriodEmployeePurchaseTotal { get; set; }
+
+    /// <summary>APPROVED sales submitted inside the window.</summary>
+    public int PeriodApprovedSalesCount { get; set; }
+
+    /// <summary>INVOICED sales submitted inside the window.</summary>
+    public int PeriodInvoicedSalesCount { get; set; }
+
+    /// <summary>The previous window's counterpart of <see cref="PeriodApprovedSalesCount"/>.</summary>
+    public int PreviousPeriodApprovedSalesCount { get; set; }
+
+    /// <summary>The previous window's counterpart of <see cref="PeriodInvoicedSalesCount"/>.</summary>
+    public int PreviousPeriodInvoicedSalesCount { get; set; }
+
+
+    // ───────────────────────────────────────────────────────────────
     // NEW KPI FOOTER DATA — computed values for the footer line on each
     // KPI card. Previously these were hard-coded placeholders ("هدف ماهانه:
     // ۳۰M تومان", "قدیمی‌ترین: ۲ ساعت پیش"). Per user spec, the footers

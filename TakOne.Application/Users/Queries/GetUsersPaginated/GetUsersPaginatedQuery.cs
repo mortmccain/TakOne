@@ -1,4 +1,5 @@
 ﻿using TakOne.Application.Common.Authorization;
+using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Users.Queries.GetUsersPaginated;
@@ -27,6 +28,19 @@ namespace TakOne.Application.Users.Queries.GetUsersPaginated;
 ///   - <see cref="IsActive"/>: tristate. Null = both, true = active only,
 ///     false = inactive only.
 ///
+/// ROUND 5 (server-driven paging for the AdminUsers grid):
+///   - <see cref="Gender"/>: exact enum match (translated to the column's
+///     int storage in SQL).
+///   - <see cref="WorkerIdFilter"/> / <see cref="FullNameFilter"/>: typed
+///     per-column text filters (operator + value), replacing the grid's
+///     client-side text filtering.
+///   - <see cref="SortBy"/> + <see cref="SortDescending"/>: user-selected
+///     server-side ordering with an Id tiebreaker (deterministic paging).
+///     Null SortBy = the FullName-ascending default.
+///   All new members are optional and null-defaulting, so the query stays
+///   source-compatible with its other callers (the notification recipient
+///   typeahead on desktop + mobile, and the mobile admin-users list).
+///
 /// SALARY FEATURE (Step 3):
 ///   Replaced <c>GroupName</c> (string) filter with <c>GroupId</c> (Guid).
 /// </summary>
@@ -49,4 +63,34 @@ public sealed class GetUsersPaginatedQuery
     /// false = inactive only.
     /// </summary>
     public bool? IsActive { get; init; }
+
+    /// <summary>
+    /// Optional gender filter (Round 5). Null = both genders.
+    /// </summary>
+    public Gender? Gender { get; init; }
+
+    /// <summary>
+    /// Typed text filter for the WorkerId column (Round 5) — operator +
+    /// value, evaluated in SQL. Null = no filter.
+    /// </summary>
+    public UsersTextFilter? WorkerIdFilter { get; init; }
+
+    /// <summary>
+    /// Typed text filter for the FullName column (Round 5) — operator +
+    /// value, evaluated in SQL. Null = no filter.
+    /// </summary>
+    public UsersTextFilter? FullNameFilter { get; init; }
+
+    /// <summary>
+    /// Server-side sort key (Round 5). Null = the repository's default
+    /// (FullName ascending, the pre-Round-5 order every existing caller
+    /// relies on).
+    /// </summary>
+    public UsersSortBy? SortBy { get; init; }
+
+    /// <summary>
+    /// Sort direction for <see cref="SortBy"/> (Round 5). Ignored when
+    /// SortBy is null.
+    /// </summary>
+    public bool SortDescending { get; init; }
 }
