@@ -1,0 +1,89 @@
+/* =============================================================================
+   fonts.css — SELF-HOSTED Vazirmatn font faces (all themes)
+   -----------------------------------------------------------------------------
+   WHY SELF-HOSTED (was: Google Fonts @import inside tak-light.css /
+   tak-dark.css):
+     1. OFFLINE / AIR-GAP SAFETY — the ERP may run on an intranet with no
+        outbound internet access. A remote @import silently fails there and
+        the whole app falls back to system fonts (visual regression that is
+        hard to diagnose from the server side).
+     2. PERFORMANCE — no extra DNS + TLS handshake to fonts.googleapis.com
+        on first paint. The woff2 files are served from the app's own
+        origin with browser caching.
+     3. PRIVITY / COMPLIANCE — no user IP addresses leak to a third-party
+        font CDN on every page load (GDPR-style concern for EU deployments).
+     4. STABILITY — third-party CDN outages or URL changes can never break
+        the app's typography again.
+
+   FILES: /fonts/Vazirmatn-{Light,Regular,Medium,SemiBold,Bold,ExtraBold,
+   Black}.woff2 (v33.0.3, official npm build — same files Google Fonts
+   serves). ~50 KB each; the browser only downloads the weights actually
+   used by the rendered page (unicode-range is not split because Vazirmatn
+   ships Arabic + Latin in a single file per weight).
+
+   WEIGHT MAPPING (Radzen font weights used across the app):
+     300 Light, 400 Regular, 500 Medium, 600 SemiBold, 700 Bold,
+     800 ExtraBold, 900 Black — identical to the previous Google Fonts
+     request (?wght@300;400;500;600;700;800;900), so rendered weights
+     are unchanged.
+
+   font-display: swap — text renders immediately in the fallback font and
+   swaps to Vazirmatn once the file arrives (same anti-FOIT behaviour as
+   the old &display=swap parameter).
+   ========================================================================== */
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-Light.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-Medium.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-ExtraBold.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Vazirmatn';
+    font-style: normal;
+    font-weight: 900;
+    font-display: swap;
+    src: url('/fonts/Vazirmatn-Black.woff2') format('woff2');
+}

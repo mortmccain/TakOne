@@ -34,8 +34,9 @@
    =========================================================================== */
 
 /* ---- Vazirmatn font -------------------------------------------------------
-   Same font as tak-light. Loaded via @import so the theme is self-contained. */
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+   Same font as tak-light. The @font-face declarations live in /css/fonts.css
+   (SELF-HOSTED woff2 under /fonts/ — offline-safe, no third-party CDN).
+   Linked unconditionally in App.razor before any theme file. */
 
 /* ---- Tak design tokens (DARK palette) -------------------------------------
    Exposed as CSS variables under the --tm-* namespace. Pages that reference

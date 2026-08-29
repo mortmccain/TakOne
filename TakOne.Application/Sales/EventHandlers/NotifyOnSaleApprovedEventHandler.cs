@@ -52,6 +52,7 @@ public sealed class NotifyOnSaleApprovedEventHandler
     public static async Task HandleAsync(
         SaleApprovedDomainEvent @event,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUserRepository userRepository,
         ISaleRepository saleRepository,
         IUnitOfWork unitOfWork,
@@ -82,6 +83,7 @@ public sealed class NotifyOnSaleApprovedEventHandler
             saleDisplayNumber: saleDisplayNumber,
             actorName: approverName,
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             logger: logger,
             cancellationToken: cancellationToken);
 
@@ -93,6 +95,7 @@ public sealed class NotifyOnSaleApprovedEventHandler
             saleDisplayNumber: saleDisplayNumber,
             actorName: null, // self-name omitted
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             logger: logger,
             cancellationToken: cancellationToken);
     }
@@ -104,9 +107,23 @@ public sealed class NotifyOnSaleApprovedEventHandler
         string? saleDisplayNumber,
         string? actorName,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        // MUTE SUPPRESSION (per-user notification preferences): a muted
+        // kind skips row creation ENTIRELY — no Notification INSERT, no
+        // NotificationCreatedDomainEvent, no SignalR ping. Not
+        // retroactive; sparse default = not muted. See the equivalent
+        // block in NotifyOnSaleSubmittedEventHandler for full rationale.
+        if (await preferenceRepository.IsMutedAsync(userId, kind, cancellationToken))
+        {
+            logger.LogDebug(
+                "Notification ({Kind}, sale={SaleId}, user={UserId}) suppressed — kind muted by user.",
+                kind, saleId, userId);
+            return;
+        }
+
         if (await notificationRepository.ExistsAsync(userId, saleId, kind, cancellationToken))
         {
             logger.LogDebug(

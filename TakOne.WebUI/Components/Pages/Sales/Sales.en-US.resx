@@ -129,6 +129,35 @@
   <data name="EmptyFilteredMessage" xml:space="preserve">
     <value>Try a different search term or status filter.</value>
   </data>
+  <!-- Date-range filter (Round 3) -->
+  <data name="FilterAriaLabel" xml:space="preserve">
+    <value>Filter orders by date</value>
+  </data>
+  <data name="FilterDateFrom" xml:space="preserve">
+    <value>From date</value>
+  </data>
+  <data name="FilterDateTo" xml:space="preserve">
+    <value>To date</value>
+  </data>
+  <data name="ApplyDateFilterButton" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="ClearDateFilterButton" xml:space="preserve">
+    <value>Clear date filter</value>
+  </data>
+  <data name="DateFilterInvalidRange" xml:space="preserve">
+    <value>The "from" date must not be after the "to" date.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>No orders in this date range</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>No orders were created between the selected dates. Widen the range or clear the filter to see all your orders.</value>
+  </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+
   <data name="GoToCartButton" xml:space="preserve">
     <value>Go to cart</value>
   </data>
@@ -186,4 +215,14 @@
   <data name="PageInfoFormat" xml:space="preserve">
     <value>Page {0} of {1} • {2} orders</value>
   </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>Currency</value>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>Created At (UTC)</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The CSV export failed. Please try again.</value>
+  </data>
+
 </root>

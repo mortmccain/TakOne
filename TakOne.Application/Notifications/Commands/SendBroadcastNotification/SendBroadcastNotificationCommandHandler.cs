@@ -47,6 +47,7 @@ public sealed class SendBroadcastNotificationCommandHandler
         ICustomerGroupRepository groupRepository,
         IBroadcastNotificationRepository broadcastRepository,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUnitOfWork unitOfWork,
         ILogger<SendBroadcastNotificationCommandHandler> logger,
         CancellationToken cancellationToken)
@@ -110,6 +111,7 @@ public sealed class SendBroadcastNotificationCommandHandler
             userRepository: userRepository,
             broadcastRepository: broadcastRepository,
             notificationRepository: notificationRepository,
+            preferenceRepository: preferenceRepository,
             unitOfWork: unitOfWork,
             logger: logger,
             cancellationToken: cancellationToken);

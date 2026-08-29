@@ -64,7 +64,8 @@ internal static class BroadcastFanout
 {
     /// <summary>
     /// Executes the broadcast fanout. Returns the number of per-user
-    /// Notification rows created (= recipient count).
+    /// Notification rows created (= recipients who were NOT muted for
+    /// the fanout kind).
     /// </summary>
     public static async Task<int> ExecuteAsync(
         Guid sentByUserId,
@@ -78,6 +79,7 @@ internal static class BroadcastFanout
         IUserRepository userRepository,
         IBroadcastNotificationRepository broadcastRepository,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUnitOfWork unitOfWork,
         ILogger logger,
         CancellationToken cancellationToken)
@@ -96,6 +98,34 @@ internal static class BroadcastFanout
             BroadcastScope.User => await ResolveSingleUserAsync(userRepository, targetUserId!.Value, cancellationToken),
             _ => throw new InvalidOperationException($"Unknown BroadcastScope: {scope}")
         };
+
+        // ── 1b. MUTE SUPPRESSION (per-user notification preferences). ──
+        // One batch query loads every user who muted this kind; muted
+        // recipients are skipped BELOW (no fanout row, no SignalR ping).
+        // RecipientCount on the audit row records the POST-filter count —
+        // "reached N users" is the operationally meaningful number. The
+        // admin's auditability is preserved (the broadcast row itself is
+        // always created, and the log line below records the skip count).
+        var mutedUserIds = await preferenceRepository.GetMutedUserIdsAsync(
+            fanoutKind, cancellationToken);
+        var mutedSkipCount = 0;
+        if (mutedUserIds.Count > 0)
+        {
+            var filtered = new List<Guid>(recipientIds.Count);
+            foreach (var recipientId in recipientIds)
+            {
+                if (mutedUserIds.Contains(recipientId))
+                {
+                    mutedSkipCount++;
+                }
+                else
+                {
+                    filtered.Add(recipientId);
+                }
+            }
+
+            recipientIds = filtered;
+        }
 
         // ── 2. Create the parent BroadcastNotification audit row. ──
         // The factory enforces scope-target consistency + title/message
@@ -141,8 +171,9 @@ internal static class BroadcastFanout
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Broadcast {BroadcastId} ({Kind}, scope={Scope}, sentBy={SentByUserId}) fanned out to {Count} recipient(s).",
-            broadcast.Id, fanoutKind, scope, sentByUserId, recipientIds.Count);
+            "Broadcast {BroadcastId} ({Kind}, scope={Scope}, sentBy={SentByUserId}) fanned out to {Count} recipient(s){MutedSuffix}.",
+            broadcast.Id, fanoutKind, scope, sentByUserId, recipientIds.Count,
+            mutedSkipCount > 0 ? $" ({mutedSkipCount} muted recipient(s) skipped)" : string.Empty);
 
         return recipientIds.Count;
     }

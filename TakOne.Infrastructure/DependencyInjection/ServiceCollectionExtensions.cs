@@ -635,6 +635,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBroadcastNotificationRepository, BroadcastNotificationRepository>();
 
         // ------------------------------------------------------------------
+        // 5b-4. Notification PREFERENCE repository — Scoped (shares the
+        //       scoped ApplicationDbContext). Two consumer families:
+        //       (a) the NotifyOn* event handlers + BroadcastFanout
+        //           (suppression hot path, read-only), and
+        //       (b) the Settings page's upsert command handler
+        //           (SetNotificationMutedCommandHandler, load-for-mutation).
+        // ------------------------------------------------------------------
+        services.AddScoped<INotificationPreferenceRepository, NotificationPreferenceRepository>();
+
+        // ------------------------------------------------------------------
         // 5c. Claims transformation — keeps FullName claim current.
         //
         //     FullNameClaimsTransformation runs on every authenticated

@@ -43,6 +43,16 @@ public static class NotificationErrors
     /// </summary>
     public static string FormatNotFound() => "NotificationNotFound";
 
+    /// <summary>
+    /// The caller supplied a value that is not a defined
+    /// <c>NotificationKind</c> (e.g. a bad model bind producing
+    /// <c>(NotificationKind)42</c>). Returned by
+    /// <c>SetNotificationMutedCommandHandler</c>'s defense-in-depth guard
+    /// so the failure is a clean, localizable Result instead of a 500
+    /// from the domain factory's DomainException.
+    /// </summary>
+    public static string FormatInvalidKind() => "NotificationKindInvalid";
+
     // ── BROADCAST-SPECIFIC ERRORS ──────────────────────────────────────
     //
     // Used by SendBroadcastNotificationCommandHandler and

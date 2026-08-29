@@ -129,6 +129,35 @@
   <data name="EmptyFilteredMessage" xml:space="preserve">
     <value>عبارت جستجو یا فیلتر وضعیت دیگری را امتحان کنید.</value>
   </data>
+  <!-- Date-range filter (Round 3) -->
+  <data name="FilterAriaLabel" xml:space="preserve">
+    <value>فیلتر سفارش‌ها بر اساس تاریخ</value>
+  </data>
+  <data name="FilterDateFrom" xml:space="preserve">
+    <value>از تاریخ</value>
+  </data>
+  <data name="FilterDateTo" xml:space="preserve">
+    <value>تا تاریخ</value>
+  </data>
+  <data name="ApplyDateFilterButton" xml:space="preserve">
+    <value>اعمال</value>
+  </data>
+  <data name="ClearDateFilterButton" xml:space="preserve">
+    <value>حذف فیلتر تاریخ</value>
+  </data>
+  <data name="DateFilterInvalidRange" xml:space="preserve">
+    <value>تاریخ «از» نمی‌تواند بعد از تاریخ «تا» باشد.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>سفارشی در این بازه تاریخ نیست</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>در بازه تاریخ انتخاب‌شده سفارشی ثبت نشده است. بازه را بزرگ‌تر کنید یا فیلتر را حذف کنید تا همه سفارش‌هایتان را ببینید.</value>
+  </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+  </data>
+
   <data name="GoToCartButton" xml:space="preserve">
     <value>رفتن به سبد خرید</value>
   </data>
@@ -186,4 +215,14 @@
   <data name="PageInfoFormat" xml:space="preserve">
     <value>صفحه {0} از {1} • {2} سفارش</value>
   </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>ارز</value>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>تاریخ ثبت (UTC)</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
 </root>

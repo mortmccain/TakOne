@@ -34,13 +34,13 @@
    =========================================================================== */
 
 /* ---- Vazirmatn font -------------------------------------------------------
-   The source HTML loads Vazirmatn from Google Fonts. It's a high-quality
-   open-source Persian/Latin font that handles both fa-IR and en-US well.
-   Loaded via @import so the theme is self-contained — no extra <link>
-   needed in App.razor. The display=swap parameter means text renders
-   immediately in the fallback font and swaps to Vazirmatn once it loads,
-   avoiding invisible-text flash. */
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap');
+   The Vazirmatn @font-face declarations now live in /css/fonts.css
+   (SELF-HOSTED woff2 files under /fonts/ — see that file for the full
+   rationale: offline/air-gap safety, no third-party CDN dependency).
+   fonts.css is linked unconditionally in App.razor BEFORE any theme file
+   so every theme (Tak Light, Tak Dark, and the built-in Radzen themes)
+   gets the same Vazirmatn stack. The font-family token below is unchanged:
+   'Vazirmatn', 'Segoe UI', system-ui, -apple-system, sans-serif. */
 
 /* ---- Tak design tokens ----------------------------------------------------
    Exposed as CSS variables under the --tm-* namespace so pages can use

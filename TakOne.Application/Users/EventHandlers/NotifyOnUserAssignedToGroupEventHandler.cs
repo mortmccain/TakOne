@@ -70,6 +70,7 @@ public sealed class NotifyOnUserAssignedToGroupEventHandler
         UserAssignedToGroupDomainEvent @event,
         ICustomerGroupRepository customerGroupRepository,
         INotificationRepository notificationRepository,
+        INotificationPreferenceRepository preferenceRepository,
         IUnitOfWork unitOfWork,
         ILogger<NotifyOnUserAssignedToGroupEventHandler> logger,
         CancellationToken cancellationToken)
@@ -94,6 +95,20 @@ public sealed class NotifyOnUserAssignedToGroupEventHandler
         var newGroup = await customerGroupRepository.GetByIdReadOnlyAsync(
             @event.NewGroupId, cancellationToken);
         var newGroupName = newGroup?.Name;
+
+        // MUTE SUPPRESSION (per-user notification preferences): see the
+        // equivalent block in NotifyOnSaleSubmittedEventHandler for the
+        // full rationale — muted kind ⇒ no INSERT, no event, no ping.
+        // Placed AFTER the (cheap) no-op + name lookups above so the mute
+        // check only runs for genuine reassignments.
+        if (await preferenceRepository.IsMutedAsync(
+                @event.UserId, NotificationKind.GroupChanged, cancellationToken))
+        {
+            logger.LogDebug(
+                "GroupChanged notification suppressed for user {UserId}: kind muted by user.",
+                @event.UserId);
+            return;
+        }
 
         var notification = Notification.Create(
             userId: @event.UserId,

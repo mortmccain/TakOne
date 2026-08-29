@@ -220,6 +220,62 @@
     <value>Theme switched to "{0}".</value>
   </data>
 
+  <!-- Notification preferences card (Round 3) -->
+  <data name="NotifPrefsCardTitle" xml:space="preserve">
+    <value>Notification preferences</value>
+  </data>
+  <data name="NotifPrefsHint" xml:space="preserve">
+    <value>Turn a notification type off to stop receiving it. Muting takes effect for new notifications only — items already in your feed stay there. Your choice never affects the business records; it only silences the bell.</value>
+  </data>
+  <data name="NotifPrefsErrorLoad" xml:space="preserve">
+    <value>Could not load your notification preferences. Please reload the page.</value>
+  </data>
+  <data name="NotifPrefsErrorSave" xml:space="preserve">
+    <value>Could not save the change. The switch has been reverted — please try again.</value>
+  </data>
+  <data name="NotifPrefName_Submitted" xml:space="preserve">
+    <value>Order submitted</value>
+  </data>
+  <data name="NotifPrefName_Approved" xml:space="preserve">
+    <value>Order approved</value>
+  </data>
+  <data name="NotifPrefName_Invoiced" xml:space="preserve">
+    <value>Order invoiced</value>
+  </data>
+  <data name="NotifPrefName_Cancelled" xml:space="preserve">
+    <value>Order cancelled</value>
+  </data>
+  <data name="NotifPrefName_Broadcast" xml:space="preserve">
+    <value>Announcements</value>
+  </data>
+  <data name="NotifPrefName_AppUpdate" xml:space="preserve">
+    <value>App updates</value>
+  </data>
+  <data name="NotifPrefName_GroupChanged" xml:space="preserve">
+    <value>Group changes</value>
+  </data>
+  <data name="NotifPrefDesc_Submitted" xml:space="preserve">
+    <value>Confirmation when a cart is submitted for approval.</value>
+  </data>
+  <data name="NotifPrefDesc_Approved" xml:space="preserve">
+    <value>When an order you're involved in is approved.</value>
+  </data>
+  <data name="NotifPrefDesc_Invoiced" xml:space="preserve">
+    <value>When an order is marked invoiced and ready.</value>
+  </data>
+  <data name="NotifPrefDesc_Cancelled" xml:space="preserve">
+    <value>When an order is cancelled, including the reason.</value>
+  </data>
+  <data name="NotifPrefDesc_Broadcast" xml:space="preserve">
+    <value>Messages sent by administrators to groups of users.</value>
+  </data>
+  <data name="NotifPrefDesc_AppUpdate" xml:space="preserve">
+    <value>System notices when the application is updated.</value>
+  </data>
+  <data name="NotifPrefDesc_GroupChanged" xml:space="preserve">
+    <value>When your purchase group (budget and limits) changes.</value>
+  </data>
+
   <!-- Help / About cards -->
   <data name="HelpCardTitle" xml:space="preserve">
     <value>Help</value>

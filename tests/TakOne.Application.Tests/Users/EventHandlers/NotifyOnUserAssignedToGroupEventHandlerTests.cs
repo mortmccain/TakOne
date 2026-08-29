@@ -33,6 +33,8 @@ namespace TakOne.Application.Tests.Users.EventHandlers;
 ///     • new group no longer resolvable (hard-delete race) → notification
 ///       still created, Reason null (degrades gracefully)
 ///     • CancellationToken forwarding to both repositories
+///     • user muted the GroupChanged kind → NO notification (per-user
+///       notification preferences, Round 3)
 /// </summary>
 public class NotifyOnUserAssignedToGroupEventHandlerTests
 {
@@ -44,9 +46,10 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
     private static (
         ICustomerGroupRepository groupRepo,
         INotificationRepository notificationRepo,
+        INotificationPreferenceRepository preferenceRepo,
         IUnitOfWork unitOfWork,
         ILogger<NotifyOnUserAssignedToGroupEventHandler> logger)
-        BuildMocks(CustomerGroup? newGroup = null)
+        BuildMocks(CustomerGroup? newGroup = null, bool groupChangedMuted = false)
     {
         var groupRepo = Substitute.For<ICustomerGroupRepository>();
         groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -54,11 +57,18 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
 
         var notificationRepo = Substitute.For<INotificationRepository>();
 
+        var preferenceRepo = Substitute.For<INotificationPreferenceRepository>();
+        preferenceRepo.IsMutedAsync(
+                Arg.Any<Guid>(),
+                TakOne.Domain.Notifications.Enums.NotificationKind.GroupChanged,
+                Arg.Any<CancellationToken>())
+            .Returns(groupChangedMuted);
+
         var unitOfWork = Substitute.For<IUnitOfWork>();
 
         var logger = Substitute.For<ILogger<NotifyOnUserAssignedToGroupEventHandler>>();
 
-        return (groupRepo, notificationRepo, unitOfWork, logger);
+        return (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger);
     }
 
     // ── Genuine reassignment ─────────────────────────────────────────
@@ -68,13 +78,13 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
     {
         // Arrange — user moved from one group to another.
         var newGroup = BuildGroup("Wholesale Tier");
-        var (groupRepo, notificationRepo, unitOfWork, logger) = BuildMocks(newGroup);
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(newGroup);
         var @event = new UserAssignedToGroupDomainEvent(
             TestValues.UserId, TestValues.GroupId, newGroup.Id);
 
         // Act
         await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
-            @event, groupRepo, notificationRepo, unitOfWork, logger, CancellationToken.None);
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, CancellationToken.None);
 
         // Assert — one notification for the affected user, Kind GroupChanged,
         // Reason carrying the new group's display name.
@@ -94,13 +104,13 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
         // Arrange — PreviousGroupId null: the user had no group (staff),
         // and now joins one — their budget/limits/currency constraints
         // all newly apply. This is a meaningful change worth notifying.
-        var (groupRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var @event = new UserAssignedToGroupDomainEvent(
             TestValues.UserId, null, TestValues.GroupId);
 
         // Act
         await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
-            @event, groupRepo, notificationRepo, unitOfWork, logger, CancellationToken.None);
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, CancellationToken.None);
 
         // Assert
         await notificationRepo.Received(1).AddAsync(
@@ -116,13 +126,13 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
         // Arrange — AssignToGroup raises the event unconditionally, even
         // for a same-group reassignment. The handler must suppress the
         // notification (nothing changed — noise otherwise).
-        var (groupRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var @event = new UserAssignedToGroupDomainEvent(
             TestValues.UserId, TestValues.GroupId, TestValues.GroupId);
 
         // Act
         await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
-            @event, groupRepo, notificationRepo, unitOfWork, logger, CancellationToken.None);
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, CancellationToken.None);
 
         // Assert
         await notificationRepo.DidNotReceiveWithAnyArgs().AddAsync(
@@ -138,7 +148,7 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
         // notification (extremely unlikely; assignment requires an
         // existing group). The notification degrades gracefully: the
         // message itself is meaningful without the sub-line.
-        var (groupRepo, notificationRepo, unitOfWork, logger) = BuildMocks(newGroup: null);
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks(newGroup: null);
         groupRepo.GetByIdReadOnlyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns((CustomerGroup?)null);
         var @event = new UserAssignedToGroupDomainEvent(
@@ -146,7 +156,7 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
 
         // Act
         await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
-            @event, groupRepo, notificationRepo, unitOfWork, logger, CancellationToken.None);
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, CancellationToken.None);
 
         // Assert
         await notificationRepo.Received(1).AddAsync(
@@ -161,7 +171,7 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
     public async Task HandleAsync_ForwardsCancellationTokenToRepositories()
     {
         // Arrange
-        var (groupRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var @event = new UserAssignedToGroupDomainEvent(
             TestValues.UserId, TestValues.GroupId, TestValues.GroupId2);
         using var cts = new CancellationTokenSource();
@@ -169,7 +179,7 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
 
         // Act
         await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
-            @event, groupRepo, notificationRepo, unitOfWork, logger, ct);
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, ct);
 
         // Assert
         await groupRepo.Received(1).GetByIdReadOnlyAsync(
@@ -178,5 +188,34 @@ public class NotifyOnUserAssignedToGroupEventHandlerTests
         await notificationRepo.Received(1).AddAsync(
             Arg.Any<TakOne.Domain.Notifications.Entities.Notification>(),
             Arg.Is<CancellationToken>(t => t == ct));
+    }
+
+    // ── Mute suppression (Round 3 — notification preferences) ────────
+
+    [Fact]
+    public async Task HandleAsync_WhenUserMutedGroupChangedKind_DoesNotCreateNotification()
+    {
+        // Arrange — the user muted the GroupChanged kind in Settings.
+        // The handler must skip row creation entirely: no INSERT, no
+        // NotificationCreatedDomainEvent, no SignalR ping. The sale-audit
+        // trail is unaffected (mutes only silence the bell).
+        var (groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger) =
+            BuildMocks(groupChangedMuted: true);
+        var @event = new UserAssignedToGroupDomainEvent(
+            TestValues.UserId, TestValues.GroupId, TestValues.GroupId2);
+
+        // Act
+        await NotifyOnUserAssignedToGroupEventHandler.HandleAsync(
+            @event, groupRepo, notificationRepo, preferenceRepo, unitOfWork, logger, CancellationToken.None);
+
+        // Assert
+        await notificationRepo.DidNotReceiveWithAnyArgs().AddAsync(
+            default(TakOne.Domain.Notifications.Entities.Notification)!, default);
+        // The mute check must have consulted the preference repository
+        // for the AFFECTED user (scope guard: preferences are per-user).
+        await preferenceRepo.Received(1).IsMutedAsync(
+            TestValues.UserId,
+            TakOne.Domain.Notifications.Enums.NotificationKind.GroupChanged,
+            Arg.Any<CancellationToken>());
     }
 }

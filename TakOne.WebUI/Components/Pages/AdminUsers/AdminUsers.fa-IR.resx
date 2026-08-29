@@ -244,4 +244,14 @@
     <value>گذرواژه باید حداقل ۸ نویسه باشد.</value>
   </data>
 
+  <data name="ColRoles" xml:space="preserve">
+    <value>نقش‌ها</value>
+  </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
 </root>

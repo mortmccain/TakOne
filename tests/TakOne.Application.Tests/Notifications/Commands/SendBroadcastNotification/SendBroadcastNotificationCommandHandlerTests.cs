@@ -69,6 +69,7 @@ public class SendBroadcastNotificationCommandHandlerTests
         ICustomerGroupRepository groupRepo,
         IBroadcastNotificationRepository broadcastRepo,
         INotificationRepository notificationRepo,
+        INotificationPreferenceRepository preferenceRepo,
         IUnitOfWork unitOfWork,
         ILogger<SendBroadcastNotificationCommandHandler> logger)
         BuildMocks()
@@ -111,12 +112,20 @@ public class SendBroadcastNotificationCommandHandlerTests
         var broadcastRepo = Substitute.For<IBroadcastNotificationRepository>();
         var notificationRepo = Substitute.For<INotificationRepository>();
 
+        // Round 3 — notification preferences: default = nobody muted the
+        // Broadcast kind (empty muted set), so the fanout reaches everyone.
+        var preferenceRepo = Substitute.For<INotificationPreferenceRepository>();
+        preferenceRepo.GetMutedUserIdsAsync(
+                Arg.Any<TakOne.Domain.Notifications.Enums.NotificationKind>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid>() as IReadOnlySet<Guid>);
+
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.SaveChangesAsync(default).ReturnsForAnyArgs(1);
 
         var logger = Substitute.For<ILogger<SendBroadcastNotificationCommandHandler>>();
 
-        return (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger);
+        return (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger);
     }
 
     // ── Scope=All happy path ──────────────────────────────────────────
@@ -125,7 +134,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsAllAndNoTargets_ReturnsSuccessWithRecipientCount()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         // Scope=All — all target fields are null per the validator's
         // Custom rule (the validator would reject this command if any
         // target was set).
@@ -139,7 +148,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -157,7 +166,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsAll_DoesNotCallCheckGroupRepository()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = new SendBroadcastNotificationCommand(
             Title: "Global announcement",
             Message: "Hello everyone",
@@ -168,7 +177,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -182,7 +191,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsRoleAndTargetRoleNameSet_ReturnsSuccessWithRecipientCount()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = new SendBroadcastNotificationCommand(
             Title: "Customer-only sale",
             Message: "20% off this weekend",
@@ -193,7 +202,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -208,7 +217,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsGroupAndGroupExists_ReturnsSuccessWithRecipientCount()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = new SendBroadcastNotificationCommand(
             Title: "Group-targeted message",
             Message: "Hello group members",
@@ -219,7 +228,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -239,7 +248,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsGroupAndGroupDoesNotExist_ReturnsBroadcastGroupNotFound()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         groupRepo.GetByIdReadOnlyAsync(default, default)
             .ReturnsForAnyArgs((CustomerGroup?)null);
         var command = new SendBroadcastNotificationCommand(
@@ -252,7 +261,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -273,7 +282,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsUserAndUserExistsAndIsActive_ReturnsSuccess()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         var command = new SendBroadcastNotificationCommand(
             Title: "User-targeted message",
             Message: "Hello there",
@@ -284,7 +293,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -310,7 +319,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsUserAndUserDoesNotExist_ReturnsBroadcastUserNotFound()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         userRepo.GetByIdAsync(default, default)
             .ReturnsForAnyArgs((User?)null);
         var command = new SendBroadcastNotificationCommand(
@@ -323,7 +332,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -342,7 +351,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsUserAndUserIsInactive_ReturnsBroadcastUserInactive()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         // Build a user, then deactivate it.
         var targetUser = User.CreateStaff("EMP-001", "Target User");
         targetUser.Deactivate();
@@ -358,7 +367,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -379,7 +388,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenNotAuthenticated_ReturnsBroadcastAuthRequired()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         currentUser.IsAuthenticated.Returns(false);
         var command = new SendBroadcastNotificationCommand(
             Title: "Hello",
@@ -391,7 +400,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -411,7 +420,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenUserIdIsEmpty_ReturnsBroadcastAuthRequired()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         currentUser.IsAuthenticated.Returns(true);
         currentUser.UserId.Returns(Guid.Empty);
         var command = new SendBroadcastNotificationCommand(
@@ -424,7 +433,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -440,7 +449,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenNotAdmin_ReturnsBroadcastAuthRequired()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         currentUser.IsInRole(Roles.Admin).Returns(false);
         // Even if they're in some other role, the admin check fails.
         currentUser.IsInRole(Roles.Manager).Returns(true);
@@ -454,7 +463,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger,
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
             CancellationToken.None);
 
         // Assert
@@ -471,7 +480,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsGroup_ForwardsCancellationTokenToGroupRepository()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         using var cts = new CancellationTokenSource();
         var ct = cts.Token;
         var command = new SendBroadcastNotificationCommand(
@@ -484,7 +493,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger, ct);
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger, ct);
 
         // Assert
         await groupRepo.Received(1).GetByIdReadOnlyAsync(
@@ -496,7 +505,7 @@ public class SendBroadcastNotificationCommandHandlerTests
     public async Task HandleAsync_WhenScopeIsUser_ForwardsCancellationTokenToUserRepository()
     {
         // Arrange
-        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger) = BuildMocks();
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
         using var cts = new CancellationTokenSource();
         var ct = cts.Token;
         var command = new SendBroadcastNotificationCommand(
@@ -509,7 +518,7 @@ public class SendBroadcastNotificationCommandHandlerTests
 
         // Act
         await SendBroadcastNotificationCommandHandler.HandleAsync(
-            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, unitOfWork, logger, ct);
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger, ct);
 
         // Assert
         // The handler calls GetByIdAsync TWICE for Scope=User (once in
@@ -518,5 +527,53 @@ public class SendBroadcastNotificationCommandHandlerTests
         await userRepo.Received(2).GetByIdAsync(
             Arg.Any<Guid>(),
             Arg.Is<CancellationToken>(t => t == ct));
+    }
+
+    // ── Mute suppression (Round 3 — notification preferences) ──────────
+
+    // Users who muted the Broadcast kind are EXCLUDED from the fanout:
+    // no Notification row, no SignalR ping. RecipientCount reflects the
+    // POST-filter count ("reached N users"), and the muted users' Ids
+    // never reach notificationRepository.AddAsync.
+    [Fact]
+    public async Task HandleAsync_WhenSomeRecipientsMutedBroadcastKind_SkipsThemAndReturnsFilteredCount()
+    {
+        // Arrange — BuildMocks wires 3 Scope=All recipients:
+        // CreatedByUserId, CustomerId, UserId. Mute CustomerId.
+        var (currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger) = BuildMocks();
+        preferenceRepo.GetMutedUserIdsAsync(
+                Arg.Any<Domain.Notifications.Enums.NotificationKind>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new HashSet<Guid> { TestValues.CustomerId } as IReadOnlySet<Guid>);
+        var command = new SendBroadcastNotificationCommand(
+            Title: "Global announcement",
+            Message: "Hello everyone",
+            Scope: BroadcastScope.All,
+            TargetRoleName: null,
+            TargetGroupId: null,
+            TargetUserId: null);
+
+        // Act
+        var result = await SendBroadcastNotificationCommandHandler.HandleAsync(
+            command, currentUser, userRepo, groupRepo, broadcastRepo, notificationRepo, preferenceRepo, unitOfWork, logger,
+            CancellationToken.None);
+
+        // Assert — 3 resolved, 1 muted ⇒ 2 fanout rows + RecipientCount=2.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(2);
+
+        // The muted user's fanout row was never created…
+        await notificationRepo.Received(2).AddAsync(
+            Arg.Any<Domain.Notifications.Entities.Notification>(),
+            Arg.Any<CancellationToken>());
+        await notificationRepo.DidNotReceive().AddAsync(
+            Arg.Is<Domain.Notifications.Entities.Notification>(n => n.UserId == TestValues.CustomerId),
+            Arg.Any<CancellationToken>());
+
+        // …and the audit row records the post-filter count (the
+        // operationally meaningful "reached" number).
+        await broadcastRepo.Received(1).AddAsync(
+            Arg.Is<Domain.Notifications.Entities.BroadcastNotification>(b => b.RecipientCount == 2),
+            Arg.Any<CancellationToken>());
     }
 }

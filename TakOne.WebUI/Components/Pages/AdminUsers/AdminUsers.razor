@@ -93,6 +93,7 @@
 @inject ErrorDisplayService ErrorDisplay
 @inject Radzen.DialogService DialogService
 @inject Microsoft.Extensions.Logging.ILogger<AdminUsers> Logger
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -311,26 +312,46 @@
             <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
         </RadzenStack>
 
-        <RadzenButton Text="@Loc["CreateUserButton"]"
-                      Icon="person_add"
-                      ButtonStyle="ButtonStyle.Primary"
-                      Variant="Variant.Filled"
-                      Visible="@(_isAdmin || _isManagerOnly)"
-                      Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            @* Export CSV (Round 3) — exports the currently loaded users
+               (the same rows the grid shows). Admin/Manager-only page ⇒ no
+               extra authorization needed beyond the page's [Authorize]. *@
+            <RadzenButton Text="@Loc["ExportCsvButton"]"
+                          Icon="download"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Disabled="@(_isLoading || _users.Count == 0)"
+                          Click="@ExportUsersCsvAsync" />
+            <RadzenButton Text="@Loc["CreateUserButton"]"
+                          Icon="person_add"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Filled"
+                          Visible="@(_isAdmin || _isManagerOnly)"
+                          Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
+        </RadzenStack>
     </div>
 
-    @* ── Loading spinner ── *@
+    @* ── Loading skeleton (Round 3 styling) ──
+       Mirrors the user grid's column rhythm (worker id, name, gender,
+       group, status, actions). Same shared .tm-skel utilities as the
+       Sales + AdminProducts pages. *@
     @if (_isLoading)
     {
-        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
-                     Style="height: 40vh;" Gap="1rem">
-            <RadzenProgressBarCircular ShowValue="false"
-                                       Mode="ProgressBarMode.Indeterminate"
-                                       Size="ProgressBarCircularSize.Large" />
-            <RadzenText Text="@Loc["LoadingText"]"
-                        TextStyle="TextStyle.Caption"
-                        Style="color: var(--rz-text-secondary-color);" />
-        </RadzenStack>
+        <RadzenCard Variant="Variant.Filled" Class="admin-users-grid" Style="padding: 0.5rem;">
+            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
+                @for (var i = 0; i < 8; i++)
+                {
+                    <div class="tm-skel-grid" style="--tm-skel-cols: 1fr 1.4fr 0.8fr 1fr 0.8fr 0.7fr;">
+                        <div class="tm-skel tm-skel--line"></div>
+                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                    </div>
+                }
+            </div>
+        </RadzenCard>
     }
 
     @* ── Error banner ── *@
@@ -1401,6 +1422,58 @@
 
     private string GetStatusLabel(bool isActive)
         => isActive ? Loc["StatusActiveBadge"] : Loc["StatusInactiveBadge"];
+
+    // ── CSV export (Round 3) ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a CSV of the currently loaded users (the same rows the grid
+    /// shows) and downloads it via takDownload.js. Column shape mirrors the
+    /// grid: worker id, full name, gender, group, roles (semicolon-joined —
+    /// commas would break the CSV field), and active/inactive status.
+    /// See Sales.razor's ExportSalesCsvAsync for the format rationale
+    /// (RFC 4180 + invariant numbers + BOM-at-save).
+    /// </summary>
+    private async Task ExportUsersCsvAsync()
+    {
+        if (_users.Count == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColWorkerId"],
+                Loc["ColFullName"],
+                Loc["ColGender"],
+                Loc["ColGroup"],
+                Loc["ColRoles"],
+                Loc["ColStatus"]);
+
+            foreach (var user in _users)
+            {
+                builder.AddRow(
+                    user.WorkerId,
+                    user.FullName,
+                    GetGenderLabel(user.Gender),
+                    user.GroupName,
+                    // Semicolon-joined INSIDE one CSV field: role lists are
+                    // multi-valued and commas are the record separator.
+                    string.Join("; ", user.Roles),
+                    GetStatusLabel(user.IsActive));
+            }
+
+            var fileName = $"takone-users-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button.
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+    }
 
     private string GetStatusLabel(string? status)
         => status switch

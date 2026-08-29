@@ -79,11 +79,14 @@
 @using TakOne.Application.Sales.Queries.GetSalesPaginated
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
+@using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Sales> Loc
 @inject ErrorDisplayService ErrorDisplay
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -140,6 +143,57 @@
                 justify-content: center;
                 align-items: center;
             }
+
+            /* ── Date-range filter toolbar (Round 3) ───────────────────
+               A single horizontal row: calendar icon, From picker, an
+               em-dash separator, To picker, Apply button, and — when a
+               range is active — a chip restating the applied range with
+               a built-in clear (×) button. Wraps on narrow screens. */
+            .sales-datefilter {
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+                flex-wrap: wrap;
+            }
+
+            .sales-datefilter-sep {
+                color: var(--rz-text-secondary-color);
+                user-select: none;
+            }
+
+            .sales-datefilter-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.28rem 0.7rem;
+                border-radius: 999px;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                border: 1px solid var(--rz-border-color);
+                color: var(--rz-primary);
+                font-size: 0.8rem;
+                font-weight: 600;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .sales-datefilter-chip-x {
+                /* Native button reset — the RadzenIcon inside provides the ×. */
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0.05rem;
+                border: none;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                border-radius: 50%;
+                min-height: 44px; /* a11y: comfortable touch target */
+                min-width: 44px;
+            }
+
+            .sales-datefilter-chip-x:hover {
+                color: var(--rz-danger, #e74c3c);
+                background: var(--rz-secondary-background-color, transparent);
+            }
     </style>
 </HeadContent>
 
@@ -163,18 +217,28 @@
                       Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
     </div>
 
-    @* ── Loading spinner ── *@
+    @* ── Loading skeleton (Round 3 styling) ──
+       Same 7-column rhythm as the real grid so the layout doesn't jump
+       when data replaces the skeleton. Uses the shared .tm-skel utilities
+       from app.css (theme-adaptive, prefers-reduced-motion aware). *@
     @if (_isLoading)
     {
-        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center"
-                     Style="height: 40vh;" Gap="1rem">
-            <RadzenProgressBarCircular ShowValue="false"
-                                       Mode="ProgressBarMode.Indeterminate"
-                                       Size="ProgressBarCircularSize.Large" />
-            <RadzenText Text="@Loc["Loading"]"
-                        TextStyle="TextStyle.Caption"
-                        Style="color: var(--rz-text-secondary-color);" />
-        </RadzenStack>
+        <RadzenCard Variant="Variant.Filled" Class="sales-grid" Style="padding: 0.5rem;">
+            <div class="tm-skel-stack" aria-busy="true" aria-live="polite" style="padding: 0.5rem;">
+                @for (var i = 0; i < 8; i++)
+                {
+                    <div class="tm-skel-grid" style="--tm-skel-cols: 1.3fr 0.9fr 0.8fr 1fr 1fr 1.1fr 0.7fr;">
+                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                        <div class="tm-skel tm-skel--line"></div>
+                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                        <div class="tm-skel tm-skel--line tm-skel--w60"></div>
+                        <div class="tm-skel tm-skel--line tm-skel--w80"></div>
+                        <div class="tm-skel tm-skel--chip"></div>
+                    </div>
+                }
+            </div>
+        </RadzenCard>
     }
 
     @* ── Error banner ── *@
@@ -194,35 +258,70 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state (no orders at all) ──
-       Shown only when the backend returns zero sales total — i.e. a fresh
-       customer with no orders yet. When the grid has data but the user's
-       column filters match zero rows, Radzen's built-in EmptyText takes
-       over inside the grid (no separate empty state needed for that case). *@
+    @* ── Empty state (no orders at all, or none in the applied range) ──
+       When NO date filter is applied and the backend returns zero sales
+       total, this is a fresh customer with no orders yet — the original
+       "start shopping" empty state. When a date range IS applied and
+       matches zero rows, the user just filtered themselves into an empty
+       corner — a targeted message (plus the Clear button in the toolbar
+       above) beats telling them to go shopping. When the grid has data
+       but the user's column filters match zero rows, Radzen's built-in
+       EmptyText takes over inside the grid. *@
     else if (_sales.Count == 0)
     {
-        <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-            <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                <RadzenIcon Icon="receipt_long"
-                            Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                <RadzenText Text="@Loc["EmptyTitle"]"
-                            TextStyle="TextStyle.H6" />
-                <RadzenText Text="@Loc["EmptyMessage"]"
-                            Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" JustifyContent="JustifyContent.Center">
-                    <RadzenButton Text="@Loc["GoToCartButton"]"
-                                  Icon="shopping_cart"
-                                  ButtonStyle="ButtonStyle.Primary"
-                                  Click="@(() => Navigation.NavigateTo("/Cart", forceLoad: false))" />
-                    <RadzenButton Text="@Loc["BrowseProductsButton"]"
-                                  Icon="inventory_2"
+        @if (HasAppliedDateFilter)
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="event_busy"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    <RadzenButton Text="@Loc["ClearDateFilterButton"]"
+                                  Icon="filter_alt_off"
                                   ButtonStyle="ButtonStyle.Secondary"
                                   Variant="Variant.Outlined"
-                                  Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+                                  Click="@ClearDateFilterAsync" />
                 </RadzenStack>
-            </RadzenStack>
-        </RadzenCard>
+            </RadzenCard>
+        }
+        else
+        {
+            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="receipt_long"
+                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
+                    <RadzenText Text="@Loc["EmptyTitle"]"
+                                TextStyle="TextStyle.H6" />
+                    <RadzenText Text="@Loc["EmptyMessage"]"
+                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" JustifyContent="JustifyContent.Center">
+                        <RadzenButton Text="@Loc["GoToCartButton"]"
+                                      Icon="shopping_cart"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Click="@(() => Navigation.NavigateTo("/Cart", forceLoad: false))" />
+                        <RadzenButton Text="@Loc["BrowseProductsButton"]"
+                                      Icon="inventory_2"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        }
     }
+
+    @* ── Date-range filter toolbar (Round 3) ──
+       Server-side creation-date filter: the picked Tehran-local dates are
+       converted to UTC half-open interval instants [from, to) and pushed
+       into GetSalesPaginatedQuery, so the SQL WHERE clause + TotalCount
+       are accurate (the grid's per-column filters stay client-side on
+       the loaded page — same split as before). Rendered above the grid
+       whenever there is data to filter; the filtered-empty state carries
+       its own one-click Clear instead. The active range renders as a
+       chip so the user can always see WHY the list is what it is. *@
 
     @* ── Sales table ──
        RadzenDataGrid with built-in filter row per column (AllowFiltering +
@@ -241,6 +340,68 @@
        paged client-side — same approach as AdminUsers.razor. *@
     else
     {
+        <RadzenCard Variant="Variant.Filled" Style="padding: 0.75rem 1rem; margin-bottom: 0;">
+            <div class="sales-datefilter" role="group" aria-label="@Loc["FilterAriaLabel"]">
+                <RadzenIcon Icon="calendar_month"
+                            Style="color: var(--rz-primary); align-self: center;" />
+                <RadzenDatePicker @bind-Value="_dateFrom"
+                                  TValue="DateTime?"
+                                  ShowTime="false"
+                                  AllowClear="true"
+                                  Placeholder="@Loc["FilterDateFrom"]"
+                                  DateFormat="yyyy/MM/dd"
+                                  ShowWeekNumbers="false"
+                                  Style="width: 10.5rem;"
+                                  Disabled="@_isLoading" />
+                <span class="sales-datefilter-sep" aria-hidden="true">—</span>
+                <RadzenDatePicker @bind-Value="_dateTo"
+                                  TValue="DateTime?"
+                                  ShowTime="false"
+                                  AllowClear="true"
+                                  Placeholder="@Loc["FilterDateTo"]"
+                                  DateFormat="yyyy/MM/dd"
+                                  ShowWeekNumbers="false"
+                                  Style="width: 10.5rem;"
+                                  Disabled="@_isLoading" />
+                <RadzenButton Text="@Loc["ApplyDateFilterButton"]"
+                              Icon="filter_alt"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Variant="Variant.Outlined"
+                              Size="ButtonSize.Small"
+                              Disabled="@(_isLoading || (_dateFrom is null && _dateTo is null))"
+                              Click="@ApplyDateFilterAsync" />
+                @if (HasAppliedDateFilter)
+                {
+                    <span class="sales-datefilter-chip">
+                        <RadzenIcon Icon="event_available" />
+                        <span>@FormatAppliedRange()</span>
+                        <button type="button"
+                                class="sales-datefilter-chip-x"
+                                title="@Loc["ClearDateFilterButton"]"
+                                aria-label="@Loc["ClearDateFilterButton"]"
+                                @onclick="@ClearDateFilterAsync">
+                            <RadzenIcon Icon="close" />
+                        </button>
+                    </span>
+                }
+
+                @* Export CSV (Round 3) — exports exactly what the list shows
+                   (the loaded page, including the applied date range and the
+                   server-side scoping: a customer exports their own sales,
+                   staff export the audit view). "What you see is what you
+                   get" beats a surprise full-table dump. Spacer pushes it to
+                   the trailing edge on wide screens. *@
+                <span style="flex: 1;"></span>
+                <RadzenButton Text="@Loc["ExportCsvButton"]"
+                              Icon="download"
+                              ButtonStyle="ButtonStyle.Secondary"
+                              Variant="Variant.Outlined"
+                              Size="ButtonSize.Small"
+                              Disabled="@(_isLoading || _sales.Count == 0)"
+                              Click="@ExportSalesCsvAsync" />
+            </div>
+        </RadzenCard>
+
         <RadzenCard Variant="Variant.Filled" Class="sales-grid" Style="padding: 0.5rem;">
             <RadzenDataGrid @ref="grid"
                             Data="@_sales"
@@ -487,6 +648,56 @@
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
+    // ── Date-range filter (Round 3) ──────────────────────────────────
+
+    /// <summary>
+    /// The picked (not yet applied) From date, as a Tehran-LOCAL date —
+    /// what the RadzenDatePicker binds to. Local midnight semantics: the
+    /// sale list renders CreatedAtUtc in Tehran time, so "from Aug 1"
+    /// must mean "from Aug 1 00:00 Tehran", not "from Aug 1 00:00 UTC".
+    /// </summary>
+    private DateTime? _dateFrom;
+
+    /// <summary>
+    /// The picked (not yet applied) To date, Tehran-local. Applied as an
+    /// EXCLUSIVE upper bound at local midnight of the NEXT day — "through
+    /// Aug 29" includes every sale placed any time on Aug 29.
+    /// </summary>
+    private DateTime? _dateTo;
+
+    /// <summary>
+    /// The APPLIED range as UTC half-open interval instants — what
+    /// LoadSalesAsync actually dispatches. Kept separate from the picker
+    /// fields so the list always reflects the last APPLIED filter (the
+    /// pickers can hold an unapplied edit while the grid shows the old
+    /// range — standard ERP apply-on-click semantics).
+    /// </summary>
+    private DateTime? _appliedFromUtc;
+    private DateTime? _appliedToUtc;
+
+    /// <summary>
+    /// True when a server-side date range is currently applied — drives
+    /// the chip rendering and the filtered-empty state's copy.
+    /// </summary>
+    private bool HasAppliedDateFilter => _appliedFromUtc.HasValue || _appliedToUtc.HasValue;
+
+    /// <summary>
+    /// Tehran's fixed UTC offset. Iran abolished DST in 2022, so +03:30
+    /// is exact for every date the ERP will ever render (see the class
+    /// docs under "Tehran timezone" below for why we don't use
+    /// TimeZoneInfo).
+    /// </summary>
+    private static readonly TimeSpan TehranUtcOffset = TimeSpan.FromHours(3.5);
+
+    /// <summary>
+    /// Converts a Tehran-local DATE to the UTC instant of its local
+    /// midnight: <c>localDate − 03:30</c>. Used for both bounds — the To
+    /// bound gets <c>.AddDays(1)</c> first (exclusive upper at the NEXT
+    /// day's local midnight).
+    /// </summary>
+    private static DateTime ToUtcInstant(DateTime localDate)
+        => DateTime.SpecifyKind(localDate.Date, DateTimeKind.Utc) - TehranUtcOffset;
+
     /// <summary>
     /// True if the current user is in Admin / Manager / Employee / ReadOnly
     /// role (i.e. "staff" — sees all sales + the Customer and Created By
@@ -571,12 +782,19 @@
             //
             // SearchTerm + Status are null: filtering happens client-side
             // via Radzen's per-column filter row (no external filter bar).
+            // The DATE RANGE is the one SERVER-side filter — it must prune
+            // rows BEFORE the PageSize=100 slice, otherwise "show me last
+            // week" on a 10,000-sale DB returns the newest 100 regardless
+            // of the range (the pre-Round-3 behavior — everything past row
+            // 100 was invisible).
             var query = new GetSalesPaginatedQuery
             {
                 PageNumber = 1,
                 PageSize = 100,
                 SearchTerm = null,
-                Status = null
+                Status = null,
+                FromDateUtc = _appliedFromUtc,
+                ToDateUtc = _appliedToUtc
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
@@ -589,6 +807,145 @@
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    // ── Date-range filter handlers ─────────────────────────────────────
+
+    /// <summary>
+    /// Applies the picked range: converts the local dates to the UTC
+    /// half-open interval [from-local-midnight, to+1day-local-midnight),
+    /// stores them as the APPLIED bounds, and reloads. A degenerate range
+    /// (From AFTER To) is rejected with a toast BEFORE reloading — clearer
+    /// than silently showing an empty list the user would misread as "no
+    /// orders in that period".
+    /// </summary>
+    private async Task ApplyDateFilterAsync()
+    {
+        if (_dateFrom.HasValue && _dateTo.HasValue && _dateFrom.Value.Date > _dateTo.Value.Date)
+        {
+            await Toast.Warning(Loc["DateFilterInvalidRange"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        _appliedFromUtc = _dateFrom.HasValue ? ToUtcInstant(_dateFrom.Value) : null;
+        _appliedToUtc = _dateTo.HasValue ? ToUtcInstant(_dateTo.Value.AddDays(1)) : null;
+
+        await LoadSalesAsync();
+    }
+
+    /// <summary>
+    /// Clears BOTH the pickers and the applied range, then reloads the
+    /// unfiltered list. Called from the chip's ×, the filtered-empty
+    /// state's Clear button, and the toolbar.
+    /// </summary>
+    private async Task ClearDateFilterAsync()
+    {
+        _dateFrom = null;
+        _dateTo = null;
+        _appliedFromUtc = null;
+        _appliedToUtc = null;
+
+        await LoadSalesAsync();
+    }
+
+    /// <summary>
+    /// Human-readable restatement of the applied range for the chip —
+    /// localized dates via the page's CultureFormat helper (Persian
+    /// digits + Jalali calendar in fa-IR), and an open-ended ellipsis
+    /// when only one bound is set.
+    /// </summary>
+    private string FormatAppliedRange()
+    {
+        // Display in Tehran local dates (what the user picked), converting
+        // the stored UTC instants back: local = utc + 03:30.
+        var fromLocal = _appliedFromUtc.HasValue
+            ? (_appliedFromUtc.Value + TehranUtcOffset).ToString("yyyy/MM/dd", System.Globalization.CultureInfo.InvariantCulture)
+            : "…";
+        var toLocal = _appliedToUtc.HasValue
+            ? ((_appliedToUtc.Value + TehranUtcOffset).AddDays(-1)).ToString("yyyy/MM/dd", System.Globalization.CultureInfo.InvariantCulture)
+            : "…";
+
+        return $"{CultureFormat.ToCultureDigits(fromLocal)} – {CultureFormat.ToCultureDigits(toLocal)}";
+    }
+
+    // ── CSV export (Round 3) ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a CSV of the CURRENTLY LOADED sales (the same rows the grid
+    /// shows — server-side date range + role scoping included; the grid's
+    /// per-column client-side filters are NOT applied, matching the
+    /// "export what the server returned" contract documented on the
+    /// button) and downloads it via the takDownload.js helper.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>FORMAT</b> (see CsvBuilder's class docs): RFC 4180 quoting,
+    /// CRLF records, invariant number formatting, ISO-8601 timestamps,
+    /// UTF-8 + BOM at save time (Excel-safe Persian text). Money exports
+    /// the RAW amount + currency code — data-processing friendly.
+    /// </para>
+    /// <para>
+    /// <b>LOCALIZED HEADERS + STATUS</b>: the header captions and the
+    /// status labels use the page's resx (same wording as the grid), so
+    /// an fa-IR user gets a Persian-headed spreadsheet.
+    /// </para>
+    /// </remarks>
+    private async Task ExportSalesCsvAsync()
+    {
+        if (_sales.Count == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        try
+        {
+            // Column shape mirrors the grid: number, status, total (+currency
+            // as its own column for data processing), staff-only customer +
+            // creator audit columns, and the creation timestamp.
+            var header = new List<string>
+            {
+                Loc["ColSaleNumber"], Loc["ColStatus"], Loc["ColTotal"], Loc["ColCurrency"]
+            };
+            if (_isStaff)
+            {
+                header.Add(Loc["ColCustomer"]);
+                header.Add(Loc["ColCreatedBy"]);
+            }
+            header.Add(Loc["ColCreatedAt"]);
+
+            var builder = new CsvBuilder();
+            builder.AddHeader(header.ToArray());
+
+            foreach (var sale in _sales)
+            {
+                var row = new List<object?>
+                {
+                    sale.SaleNumber ?? $"DRAFT-{sale.Id.ToString()[..8].ToUpperInvariant()}",
+                    GetStatusLabel(sale.Status),
+                    sale.Total?.Amount,
+                    sale.Total?.Currency,
+                };
+                if (_isStaff)
+                {
+                    row.Add(sale.CustomerName);
+                    row.Add(sale.CreatedByName);
+                }
+                row.Add(sale.CreatedAtUtc);
+
+                builder.AddRow(row.ToArray());
+            }
+
+            var csv = builder.ToString();
+
+            var fileName = $"takone-sales-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, csv);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button.
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
         }
     }
 

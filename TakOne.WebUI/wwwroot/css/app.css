@@ -287,3 +287,132 @@ span.sale-status-badge::before {
     margin-inline-end: 0.42em;
     vertical-align: 0.06em;
 }
+
+/* -----------------------------------------------------------------------------
+   prefers-reduced-motion accessibility support
+   -----------------------------------------------------------------------------
+   The WCAG 2.1 "Animation from Interactions" criterion (2.3.3) asks that
+   motion can be disabled for users with vestibular disorders (vertigo,
+   motion sickness). The app uses animations deliberately but sparingly:
+   card hover lifts, the shop-header golden shimmer, skeleton shimmers,
+   Radzen component transitions. None of them carry information, so
+   disabling them loses nothing.
+
+   Users opt in via their OS setting (Windows: Settings → Accessibility →
+   Visual effects → Animation effects OFF; macOS: Reduce Motion; iOS/
+   Android: Reduce Motion / Remove animations) — the browser surfaces it
+   through the prefers-reduced-motion media query.
+
+   Implementation notes:
+   - !important is required: many animation declarations live in theme
+     files that load AFTER this file (tak-light.css / tak-dark.css would
+     otherwise win the cascade).
+   - 0.01ms (not 0s) — some engines treat 0s as "use the original value";
+     a sub-frame duration reliably ends the animation immediately while
+     still firing animationend (Radzen dialogs listen for it).
+   - animation-iteration-count: 1 stops infinite loops (shimmer).
+   - scroll-behavior: auto disables smooth scrolling.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* -----------------------------------------------------------------------------
+   Reusable skeleton loader utilities (desktop grids + cards)
+   -----------------------------------------------------------------------------
+   Mobile pages have their own .m-skeleton system (mobile.css); desktop
+   grid pages (Sales / AdminUsers / AdminProducts) previously showed only
+   a spinner. These utilities give any desktop page the same perceived-
+   performance treatment as the Notifications page, using ONLY Radzen
+   CSS variables so they adapt to every theme (Tak Light, Tak Dark, and
+   the built-in Radzen themes) with zero per-theme overrides.
+
+   Usage (renders 6 shimmering table-ish rows while data loads):
+     <div class="tm-skel-stack" aria-busy="true" aria-live="polite">
+         @for (var i = 0; i < 6; i++)
+         {
+             <div class="tm-skel-row">
+                 <div class="tm-skel tm-skel--thumb"></div>
+                 <div class="tm-skel-stack" style="gap:.4rem; flex:1;">
+                     <div class="tm-skel tm-skel--line"></div>
+                     <div class="tm-skel tm-skel--line tm-skel--w40"></div>
+                 </div>
+                 <div class="tm-skel tm-skel--chip"></div>
+             </div>
+         }
+     </div>
+
+   a11y: containers should carry aria-busy="true" (see usage above) so
+   screen readers announce the pending region instead of reading empty
+   boxes.
+   -------------------------------------------------------------------------- */
+.tm-skel {
+    display: inline-block;
+    border-radius: 6px;
+    background-color: var(--rz-border-color);
+    /* The shimmer is a translucent white sweep over the base tint. On dark
+       themes a white sweep at low alpha still reads as a "light passing
+       over" without blowing out the surface. */
+    background-image: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.16) 50%,
+        transparent 100%);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: tm-skel-shimmer 1.4s ease-in-out infinite;
+    /* Announced as decorative/loading by the container's aria-busy. */
+    pointer-events: none;
+    user-select: none;
+}
+
+@keyframes tm-skel-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Sizing modifiers */
+.tm-skel--line    { height: 0.8rem; width: 100%; }
+.tm-skel--w40     { width: 40%; }
+.tm-skel--w60     { width: 60%; }
+.tm-skel--w80     { width: 80%; }
+.tm-skel--thumb   { width: 2.6rem; height: 2.6rem; border-radius: 8px; flex: none; }
+.tm-skel--chip    { width: 4.2rem; height: 1.5rem; border-radius: 999px; flex: none; }
+.tm-skel--block   { display: block; height: 6rem; width: 100%; border-radius: 10px; }
+
+/* Layout helpers */
+.tm-skel-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.tm-skel-row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.65rem 0.9rem;
+    background: var(--rz-base-background-color);
+    border: 1px solid var(--rz-border-color);
+    border-radius: 10px;
+}
+
+/* Table-shaped skeleton: N column bars mimicking the grid's rhythm so the
+   layout doesn't jump when real data replaces the skeleton. */
+.tm-skel-grid {
+    display: grid;
+    grid-template-columns: var(--tm-skel-cols, 1.4fr 1fr 1fr 0.8fr 0.8fr);
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.65rem 0.9rem;
+    background: var(--rz-base-background-color);
+    border: 1px solid var(--rz-border-color);
+    border-radius: 10px;
+}

@@ -68,12 +68,24 @@ public sealed class GetSalesPaginatedQueryHandler
         // SpecificationEvaluator translates whichever spec we hand it into
         // the appropriate LINQ query against the Sales DbSet.
         //
-        // The optional Status filter (Phase 7 item E) is pushed down into
-        // the spec so it becomes part of the SQL WHERE clause — accurate
-        // TotalCount, no in-memory filtering, scales beyond one page.
+        // The optional Status filter (Phase 7 item E) and the optional
+        // creation-time range (Round 3) are pushed down into the spec so
+        // they become part of the SQL WHERE clause — accurate TotalCount,
+        // no in-memory filtering, scales beyond one page.
+        //
+        // DATE-RANGE CONTRACT: the bounds are RAW UTC instants (inclusive
+        // lower, exclusive upper — the half-open interval [from, to)). The
+        // handler passes them through untouched: no implicit offset, no
+        // date flooring — the same query means the same rows regardless of
+        // the server's locale. The UI converts Tehran-local picked dates
+        // to UTC midnights before dispatching (Sales.razor's ToUtcInstant).
+        // A From later than or equal to the To is degenerate (matches
+        // nothing) — treated as an empty result, not an error, mirroring
+        // the lenient search-term contract above.
         ISpecification<Sale> spec = canSeeAllSales
-            ? new AllSalesSpecification(query.Status)
-            : new SaleByCustomerSpecification(currentUser.UserId, query.Status);
+            ? new AllSalesSpecification(query.Status, query.FromDateUtc, query.ToDateUtc)
+            : new SaleByCustomerSpecification(
+                currentUser.UserId, query.Status, query.FromDateUtc, query.ToDateUtc);
 
         // ------------------------------------------------------------------
         // 2. Clamp page parameters to safe values. Negative or zero page
