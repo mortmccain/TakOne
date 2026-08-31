@@ -297,21 +297,30 @@ else if (_stats is not null)
            ════════════════════════════════════════ *@
         <div class="tm-dash-chart-row tm-dash-chart-row-2-1">
 
-            @* Revenue Trend (Line) *@
+            @* Revenue Trend (Line) — ROUND 6: the card follows the period
+               selector (daily buckets of the window vs the equal-length
+               preceding window); without a window it stays the fixed
+               last-7-days vs previous-7 trend. *@
             <div class="tm-dash-card">
                 <div class="tm-dash-card-head">
                     <div>
                         <h3 class="tm-dash-card-title">@Loc["Chart_WeeklyRevenue"]</h3>
-                        <p class="tm-dash-card-subtitle">@Loc["Chart_WeeklyRevenue_Sub"]</p>
+                        <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                            ? Loc["Chart_WeeklyRevenue_PeriodSub"]
+                            : Loc["Chart_WeeklyRevenue_Sub"])</p>
                     </div>
                     <div style="display:flex; align-items:center; gap:0.5rem;">
+                        @if (_stats.IsPeriodScoped)
+                        {
+                            <span class="tm-dash-period-badge" title="@PeriodRangeLabel()">@Loc["Chart_PeriodBadge"]</span>
+                        }
                         <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
                             <span style="width:10px; height:10px; border-radius:2px; background:#2A9D7E;"></span>
-                            @Loc["Chart_WeeklyLegend_This"]
+                            @(_stats.IsPeriodScoped ? Loc["Chart_PeriodLegend_This"] : Loc["Chart_WeeklyLegend_This"])
                         </div>
                         <div style="display:flex; align-items:center; gap:0.375rem; font-size:0.6875rem; color:var(--tm-gray, var(--rz-text-secondary-color, #94A3A0));">
                             <span style="width:10px; height:10px; border-radius:2px; background:rgba(212, 175, 55, 0.6);"></span>
-                            @Loc["Chart_WeeklyLegend_Last"]
+                            @(_stats.IsPeriodScoped ? Loc["Chart_PeriodLegend_Last"] : Loc["Chart_WeeklyLegend_Last"])
                         </div>
                     </div>
                 </div>
@@ -328,7 +337,9 @@ else if (_stats is not null)
                         <p class="tm-dash-chart-footer-value gold">@FormatMoneyShort(WeeklyMax) @_stats.DisplayCurrency</p>
                     </div>
                     <div>
-                        <p class="tm-dash-chart-footer-label">@Loc["Chart_WeeklyGrowth"]</p>
+                        <p class="tm-dash-chart-footer-label">@(_stats.IsPeriodScoped
+                            ? Loc["Chart_PeriodGrowth"]
+                            : Loc["Chart_WeeklyGrowth"])</p>
                         <p class="tm-dash-chart-footer-value green">@FormatPercent(WeeklyGrowthPct, 1)</p>
                     </div>
                 </div>
@@ -371,40 +382,57 @@ else if (_stats is not null)
            ════════════════════════════════════════ *@
         <div class="tm-dash-chart-row tm-dash-chart-row-2-1">
 
-            @* Top Products (Bar) *@
+            @* Top Products (Bar) — ROUND 6: re-anchors to the period window
+               when one is selected (fixed mode keeps last-30-days). *@
             <div class="tm-dash-card">
                 <div class="tm-dash-card-head">
                     <div>
                         <h3 class="tm-dash-card-title">@Loc["Chart_TopProducts"]</h3>
-                        <p class="tm-dash-card-subtitle">@Loc["Chart_TopProducts_Sub"]</p>
+                        <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                            ? Loc["Chart_TopProducts_PeriodSub"]
+                            : Loc["Chart_TopProducts_Sub"])</p>
                     </div>
-                    @* "View All" link to /Admin/Products — hidden from ReadOnly
-                       users because /Admin/Products is gated to
-                       Admin/Manager/Employee. Showing ReadOnly a link they
-                       can't follow would be misleading UX. The chart itself
-                       stays visible to ReadOnly (they can see top-selling
-                       products, just not navigate to the admin product list). *@
-                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                        <a href="/Admin/Products" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
-                            @Loc["Chart_ViewAll"]
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                            </svg>
-                        </a>
-                    </AuthorizeView>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        @if (_stats.IsPeriodScoped)
+                        {
+                            <span class="tm-dash-period-badge">@Loc["Chart_PeriodBadge"]</span>
+                        }
+                        @* "View All" link to /Admin/Products — hidden from ReadOnly
+                           users because /Admin/Products is gated to
+                           Admin/Manager/Employee. Showing ReadOnly a link they
+                           can't follow would be misleading UX. The chart itself
+                           stays visible to ReadOnly (they can see top-selling
+                           products, just not navigate to the admin product list). *@
+                        <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                            <a href="/Admin/Products" class="tm-dash-card-subtitle" style="color:var(--tm-gold, #D4AF37); text-decoration:none;">
+                                @Loc["Chart_ViewAll"]
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </a>
+                        </AuthorizeView>
+                    </div>
                 </div>
                 <div class="tm-dash-chart-canvas-wrap tall" style="height:288px;">
                     <canvas id="tm-dash-top-products-chart"></canvas>
                 </div>
             </div>
 
-            @* Category Pie *@
+            @* Category Pie — ROUND 6: re-anchors to the period window when
+               one is selected (fixed mode is all-time — the label now says
+               so; it previously claimed "this month" incorrectly). *@
             <div class="tm-dash-card">
                 <div class="tm-dash-card-head">
                     <div>
                         <h3 class="tm-dash-card-title">@Loc["Chart_CategoryPie"]</h3>
-                        <p class="tm-dash-card-subtitle">@Loc["Chart_CategoryPie_Sub"]</p>
+                        <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                            ? Loc["Chart_CategoryPie_PeriodSub"]
+                            : Loc["Chart_CategoryPie_Sub"])</p>
                     </div>
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <span class="tm-dash-period-badge">@Loc["Chart_PeriodBadge"]</span>
+                    }
                 </div>
                 <div class="tm-dash-chart-canvas-wrap short">
                     <canvas id="tm-dash-category-pie"></canvas>
@@ -499,17 +527,28 @@ else if (_stats is not null)
                 </div>
             </div>
 
-            @* Top Employees card *@
+            @* Top Employees card — ROUND 6: re-anchors to the period window
+               when one is selected (fixed mode keeps this-month). *@
             <div class="tm-dash-card">
                 <div class="tm-dash-card-head" style="margin-bottom:1rem;">
                     <div>
-                        <h3 class="tm-dash-card-title" style="font-size:0.875rem;">@Loc["TopEmployees_Title"]</h3>
-                        <p class="tm-dash-card-subtitle">@Loc["TopEmployees_Sub"]</p>
+                        <h3 class="tm-dash-card-title" style="font-size:0.875rem;">@(_stats.IsPeriodScoped
+                            ? Loc["TopEmployees_PeriodTitle"]
+                            : Loc["TopEmployees_Title"])</h3>
+                        <p class="tm-dash-card-subtitle">@(_stats.IsPeriodScoped
+                            ? Loc["TopEmployees_PeriodSub"]
+                            : Loc["TopEmployees_Sub"])</p>
                     </div>
+                    @if (_stats.IsPeriodScoped)
+                    {
+                        <span class="tm-dash-period-badge">@Loc["Chart_PeriodBadge"]</span>
+                    }
                 </div>
                 @if (_stats.TopEmployees.Count == 0)
                 {
-                    <div class="tm-dash-empty">@Loc["TopEmployees_Empty"]</div>
+                    <div class="tm-dash-empty">@(_stats.IsPeriodScoped
+                        ? Loc["TopEmployees_PeriodEmpty"]
+                        : Loc["TopEmployees_Empty"])</div>
                 }
                 else
                 {
@@ -691,9 +730,10 @@ else if (_stats is not null)
                 _stats = result.Value;
                 // Re-hand the (fresh) DTO to dashboard.js on the next
                 // render. takDashboard.render is idempotent — it destroys
-                // the existing charts first — and the chart data is
-                // period-independent, so this keeps the charts in lockstep
-                // with the DTO without any period awareness in the JS.
+                // the existing charts first. ROUND 6: in period mode the
+                // chart series themselves carry the window's daily
+                // buckets + the period legend labels, so a plain re-render
+                // keeps the charts in lockstep with the DTO.
                 _chartsInitialized = false;
             }
             else
@@ -797,6 +837,11 @@ else if (_stats is not null)
         // Pass the dashboard data + localized labels to dashboard.js so it
         // can initialize all 4 charts. We pass a plain anonymous object —
         // System.Text.Json serializes it as JSON for the JS side.
+        //
+        // ROUND 6: in period mode the revenue chart carries the window's
+        // daily buckets (variable point count) — the JS renders whatever
+        // array it receives, and the legend labels switch to the period
+        // variants.
         var chartData = new
         {
             isToman = _stats.IsToman,
@@ -822,8 +867,12 @@ else if (_stats is not null)
             // (donut/line/bar). The pie chart tooltip was the only one that
             // didn't consume any label field, which is why it was the only
             // correct tooltip.
-            labelThisWeek = Loc["Chart_WeeklyLegend_This"].Value,
-            labelLastWeek = Loc["Chart_WeeklyLegend_Last"].Value,
+            labelThisWeek = (_stats.IsPeriodScoped
+                ? Loc["Chart_PeriodLegend_This"]
+                : Loc["Chart_WeeklyLegend_This"]).Value,
+            labelLastWeek = (_stats.IsPeriodScoped
+                ? Loc["Chart_PeriodLegend_Last"]
+                : Loc["Chart_WeeklyLegend_Last"]).Value,
             labelApproved = Loc["Status_Approved"].Value,
             labelShipped = Loc["Status_Shipped"].Value,
             labelPending = Loc["Status_Pending"].Value,

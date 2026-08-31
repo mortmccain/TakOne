@@ -71,24 +71,32 @@
     <value>Create the first product</value>
   </data>
 
-  <data name="LoadingText" xml:space="preserve">
-    <value>Loading products…</value>
-  </data>
   <data name="ErrorTitle" xml:space="preserve">
     <value>Something went wrong</value>
-  </data>
-  <data name="Error_FailedToLoad" xml:space="preserve">
-    <value>We couldn't load the products. Please try again.</value>
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>Retry</value>
   </data>
 
+  <!-- ── Empty states (Round 6 — server-driven paging) ──
+       Two variants replace the grid's built-in empty text at the page
+       level: a fresh-install state (no filters active) and a
+       filtered-to-nothing state with a one-click Clear-all escape hatch.
+       EmptyText below remains the GRID's own race-guard text. -->
   <data name="EmptyTitle" xml:space="preserve">
     <value>No products yet</value>
   </data>
   <data name="EmptyMessage" xml:space="preserve">
     <value>There are no products in the catalog yet. Create the first one to start selling.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>No products match your filters</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>Try adjusting or clearing the filters to see more products.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>Clear filters</value>
   </data>
   <data name="EmptyText" xml:space="preserve">
     <value>No products found.</value>
@@ -166,12 +174,6 @@
   <data name="RestockDialogTitle" xml:space="preserve">
     <value>Add to stock</value>
   </data>
-  <data name="RestockPrompt" xml:space="preserve">
-    <value>Add to stock for "{0}" (current: {1}). Enter quantity to add:</value>
-  </data>
-  <data name="RestockInvalidQuantity" xml:space="preserve">
-    <value>Please enter a positive whole number.</value>
-  </data>
   <data name="RestockSuccessTitle" xml:space="preserve">
     <value>Stock updated</value>
   </data>
@@ -181,10 +183,6 @@
   <data name="RestockError" xml:space="preserve">
     <value>We couldn't update the stock. Please try again.</value>
   </data>
-  <data name="RestockDialogError" xml:space="preserve">
-    <value>Could not open the restock dialog. Try again; if the problem persists, refresh the page.</value>
-  </data>
-
   <!-- Deactivate flow -->
   <data name="DeactivateDialogTitle" xml:space="preserve">
     <value>Confirm deactivation</value>
@@ -198,9 +196,6 @@
   <data name="DeactivateError" xml:space="preserve">
     <value>We couldn't deactivate the product. Please try again.</value>
   </data>
-  <data name="DeactivateDialogError" xml:space="preserve">
-    <value>Could not open the confirmation dialog. Try again; if the problem persists, refresh the page.</value>
-  </data>
   <data name="AlreadyDeactivated" xml:space="preserve">
     <value>This product is already deactivated (stock is 0). Use Restock to reactivate it.</value>
   </data>
@@ -212,6 +207,21 @@
   </data>
   <data name="ExportCsvError" xml:space="preserve">
     <value>The CSV export failed. Please try again.</value>
+  </data>
+
+  <!-- ── Round 6 (server-driven paging) ── -->
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} products exported to CSV</value>
+  </data>
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>Page {0} of {1} ({2} products)</value>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>Loading products</value>
+  </data>
+
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>rows per page</value>
   </data>
 
 </root>

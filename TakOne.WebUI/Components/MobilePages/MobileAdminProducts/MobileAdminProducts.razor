@@ -20,8 +20,10 @@
      Per-row _restockingId / _deactivatingId guards prevent
      double-clicks on the same row's action button.
 
-   FILTERS (client-side only — the backend already returns 100 rows,
-   more than enough to filter in the browser):
+   FILTERS (client-side only — the backend returns the FIRST 100 rows
+   (name-ordered, the MaxPageSize cap), so filtering happens in the
+   browser over that slice; products past the first 100 are not visible
+   here — see the LoadAsync comment for the Round 6 desktop parity note):
      - Search box filters by Name (case-insensitive contains).
      - Status tabs: All / In stock / Out of stock (StockQuantity > 0
        = in stock; <= 0 = out of stock — matches desktop's filter
@@ -343,11 +345,16 @@ else
 
         try
         {
-            // Same query as the desktop AdminProducts page: pull up to 100
-            // products (the backend cap) in one round-trip, with
-            // IncludeInactive=true so deactivated (zero-stock) products are
-            // visible to staff. The handler enforces role-gating on this
-            // flag — non-staff callers silently get active-only.
+            // Load up to 100 products (the backend handler's MaxPageSize
+            // cap — asking for more is silently clamped). Filtering
+            // happens client-side via the search box + status tabs (same
+            // mobile-list pattern as MobileAdminUsers/MobileSales), which
+            // means products past the first 100 (name-ordered) are
+            // INVISIBLE here. The DESKTOP AdminProducts grid is fully
+            // server-driven as of Round 6 (Radzen LoadData — every filter
+            // and sort runs in SQL with exact paging); adopting that
+            // pattern on mobile is a future-round item (needs debounced
+            // search to keep the instant-filter UX).
             var query = new GetProductsPaginatedQuery
             {
                 PageNumber = 1,

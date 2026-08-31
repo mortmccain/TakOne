@@ -200,6 +200,39 @@
     cursor: not-allowed;
 }
 
+/* ── Period badge (Round 6) ───────────────────────────────────────────
+   Small pill on every chart card that re-anchors to the period selector's
+   window (revenue trend, top products, category pie, top employees). It
+   tells the user the card's scope follows the selector — the tooltip
+   carries the concrete range. Shares the selector's gold accent; RTL-safe
+   (no directional properties); tabular digits keep the label compact. */
+.tm-dash-period-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 9999px;
+    color: var(--tm-gold, #D4AF37);
+    background: color-mix(in srgb, var(--tm-gold, #D4AF37) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tm-gold, #D4AF37) 38%, transparent);
+    white-space: nowrap;
+    cursor: help;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+}
+
+.tm-dash-period-badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+}
+
 /* KPI grid dim while a period re-query is in flight — the cards keep
    rendering (no layout jump), just visibly "settling". */
 .tm-dash-kpi-grid--reloading {

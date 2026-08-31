@@ -73,24 +73,31 @@
     <value>ایجاد اولین محصول</value>
   </data>
 
-  <data name="LoadingText" xml:space="preserve">
-    <value>در حال بارگذاری محصولات…</value>
-  </data>
   <data name="ErrorTitle" xml:space="preserve">
     <value>خطایی رخ داد</value>
-  </data>
-  <data name="Error_FailedToLoad" xml:space="preserve">
-    <value>بارگذاری محصولات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
   <data name="RetryButton" xml:space="preserve">
     <value>تلاش مجدد</value>
   </data>
 
+  <!-- ── حالت‌های خالی (دورۀ ۶ — صفحه‌بندی سمت سرور) ──
+       دو نسخه جایگزین متن خالی داخلی گرید در سطح صفحه می‌شوند:
+       حالت نصب تازه (بدون فیلتر فعال) و حالت فیلتر-تا-هیچ با دکمه
+       پاک‌سازی یک‌کلیکی. EmptyText زیرین متن خودِ گرید می‌ماند. -->
   <data name="EmptyTitle" xml:space="preserve">
     <value>هنوز محصولی ثبت نشده</value>
   </data>
   <data name="EmptyMessage" xml:space="preserve">
     <value>هنوز محصولی در فهرست وجود ندارد. برای شروع فروش، اولین محصول را ایجاد کنید.</value>
+  </data>
+  <data name="EmptyTitleFiltered" xml:space="preserve">
+    <value>هیچ محصولی با فیلترهای شما مطابقت ندارد</value>
+  </data>
+  <data name="EmptyMessageFiltered" xml:space="preserve">
+    <value>برای دیدن محصولات بیشتر، فیلترها را تنظیم یا پاک کنید.</value>
+  </data>
+  <data name="ClearFiltersButton" xml:space="preserve">
+    <value>پاک کردن فیلترها</value>
   </data>
   <data name="EmptyText" xml:space="preserve">
     <value>محصولی یافت نشد.</value>
@@ -168,12 +175,6 @@
   <data name="RestockDialogTitle" xml:space="preserve">
     <value>افزایش موجودی</value>
   </data>
-  <data name="RestockPrompt" xml:space="preserve">
-    <value>افزایش موجودی برای «{0}» (فعلی: {1}). تعداد مورد افزودن را وارد کنید:</value>
-  </data>
-  <data name="RestockInvalidQuantity" xml:space="preserve">
-    <value>لطفاً یک عدد صحیح مثبت وارد کنید.</value>
-  </data>
   <data name="RestockSuccessTitle" xml:space="preserve">
     <value>موجودی به‌روز شد</value>
   </data>
@@ -183,10 +184,6 @@
   <data name="RestockError" xml:space="preserve">
     <value>به‌روزرسانی موجودی ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
-  <data name="RestockDialogError" xml:space="preserve">
-    <value>باز کردن پنجرهٔ افزایش موجودی ممکن نشد. دوباره تلاش کنید؛ اگر مشکل پابرجا بود، صفحه را تازه‌سازی کنید.</value>
-  </data>
-
   <!-- Deactivate flow -->
   <data name="DeactivateDialogTitle" xml:space="preserve">
     <value>تأیید غیرفعال‌سازی</value>
@@ -200,9 +197,6 @@
   <data name="DeactivateError" xml:space="preserve">
     <value>غیرفعال‌سازی محصول ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
-  <data name="DeactivateDialogError" xml:space="preserve">
-    <value>باز کردن پنجرهٔ تأیید ممکن نشد. دوباره تلاش کنید؛ اگر مشکل پابرجا بود، صفحه را تازه‌سازی کنید.</value>
-  </data>
   <data name="AlreadyDeactivated" xml:space="preserve">
     <value>این محصول از قبل غیرفعال است (موجودی صفر). برای فعال‌سازی از «افزایش موجودی» استفاده کنید.</value>
   </data>
@@ -214,6 +208,21 @@
   </data>
   <data name="ExportCsvError" xml:space="preserve">
     <value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <!-- ── دورۀ ۶ (صفحه‌بندی سمت سرور) ── -->
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} محصول به CSV صادر شد</value>
+  </data>
+  <data name="PagerSummaryFormat" xml:space="preserve">
+    <value>صفحه {0} از {1} ({2} محصول)</value>
+  </data>
+  <data name="LoadingAriaLabel" xml:space="preserve">
+    <value>در حال بارگذاری محصولات</value>
+  </data>
+
+  <data name="PagerPageSizeText" xml:space="preserve">
+    <value>ردیف در صفحه</value>
   </data>
 
 </root>

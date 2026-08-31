@@ -591,15 +591,15 @@
                        missed empty groups). The selected value is the
                        group's Guid (stable across renames) and is
                        translated server-side into a GroupId exact-match.
-                       AllowClear resets to null (All groups). The column
-                       is deliberately NOT sortable — the group name lives
-                       on the CustomerGroup aggregate, so a name sort
-                       would need a cross-table join in the ORDER BY. *@
+                       AllowClear resets to null (All groups).
+                       ROUND 6: the column IS sortable now — the repository
+                       LEFT-JOINs CustomerGroups to ORDER BY the name
+                       (UsersSortBy.GroupName); groupless users carry a NULL
+                       sort key and sort first ascending / last descending. *@
                     <RadzenDataGridColumn TItem="UserListItemDto"
                                           Property="GroupName"
                                           Title="@Loc["ColGroup"]"
                                           Width="180px"
-                                          Sortable="false"
                                           FilterOperator="FilterOperator.Equals">
                         <Template Context="user">
                             @if (string.IsNullOrWhiteSpace(user.GroupName))

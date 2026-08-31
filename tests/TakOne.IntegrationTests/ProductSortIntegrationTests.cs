@@ -35,6 +35,29 @@ namespace TakOne.IntegrationTests;
 public class ProductSortIntegrationTests
 {
     /// <summary>
+    /// Builds the Round-6 filters record with only the sort (and optional
+    /// search term) set — the same record the query handler packs.
+    /// </summary>
+    private static ProductsListFilters SortFilters(
+        ProductSortBy sortBy,
+        string? searchTerm = null,
+        bool sortDescending = false)
+        => new(
+            SearchTerm: searchTerm,
+            CategoryId: null,
+            SubCategoryId: null,
+            SubSubCategoryId: null,
+            Name: null,
+            StockStatus: null,
+            Price: null,
+            Stock: null,
+            CategoryIds: null,
+            SubCategoryIds: null,
+            SubSubCategoryIds: null,
+            SortBy: sortBy,
+            SortDescending: sortDescending);
+
+    /// <summary>
     /// Creates the SQLite db, seeds one category, then creates the named
     /// products (with prices) under it. Product.Create validates the
     /// category id up front, so the category must exist first.
@@ -89,7 +112,7 @@ public class ProductSortIntegrationTests
         await using (db)
         {
             var result = await repo.GetPaginatedAsync(
-                pageNumber: 1, pageSize: 10, sortBy: ProductSortBy.PriceLowToHigh);
+                SortFilters(ProductSortBy.PriceLowToHigh), pageNumber: 1, pageSize: 10, cancellationToken: CancellationToken.None);
 
             result.Items.Select(p => p.Name)
                 .Should().ContainInOrder("Cheap", "Middle", "Expensive");
@@ -104,7 +127,7 @@ public class ProductSortIntegrationTests
         await using (db)
         {
             var result = await repo.GetPaginatedAsync(
-                pageNumber: 1, pageSize: 10, sortBy: ProductSortBy.PriceHighToLow);
+                SortFilters(ProductSortBy.PriceHighToLow), pageNumber: 1, pageSize: 10, cancellationToken: CancellationToken.None);
 
             result.Items.Select(p => p.Name)
                 .Should().ContainInOrder("Expensive", "Middle", "Cheap");
@@ -129,7 +152,7 @@ public class ProductSortIntegrationTests
             for (var page = 1; page <= 3; page++)
             {
                 var result = await repo.GetPaginatedAsync(
-                    pageNumber: page, pageSize: 2, sortBy: ProductSortBy.PriceLowToHigh);
+                    SortFilters(ProductSortBy.PriceLowToHigh), pageNumber: page, pageSize: 2, cancellationToken: CancellationToken.None);
                 result.TotalCount.Should().Be(6);
                 all.AddRange(result.Items.Select(p => p.Name));
             }
@@ -155,9 +178,8 @@ public class ProductSortIntegrationTests
         await using (db)
         {
             var result = await repo.GetPaginatedAsync(
-                searchTerm: "berry",
-                pageNumber: 1, pageSize: 10,
-                sortBy: ProductSortBy.PriceLowToHigh);
+                SortFilters(ProductSortBy.PriceLowToHigh, searchTerm: "berry"),
+                pageNumber: 1, pageSize: 10, cancellationToken: CancellationToken.None);
 
             result.TotalCount.Should().Be(3);
             result.Items.Select(p => p.Name)

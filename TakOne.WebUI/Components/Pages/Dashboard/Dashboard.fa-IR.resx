@@ -229,8 +229,40 @@
   <data name="Chart_WeeklyGrowth" xml:space="preserve">
     <value>رشد هفتگی</value>
   </data>
+
+  <!-- ROUND 6 — period-selector chart labels (cards re-anchor to the window) -->
+  <data name="Chart_WeeklyRevenue_PeriodSub" xml:space="preserve">
+    <value>بازه انتخابی • به تفکیک روز</value>
+  </data>
+  <data name="Chart_PeriodLegend_This" xml:space="preserve">
+    <value>بازه انتخابی</value>
+  </data>
+  <data name="Chart_PeriodLegend_Last" xml:space="preserve">
+    <value>بازه قبلی</value>
+  </data>
+  <data name="Chart_PeriodGrowth" xml:space="preserve">
+    <value>رشد بازه</value>
+  </data>
+  <data name="Chart_PeriodBadge" xml:space="preserve">
+    <value>بازه</value>
+  </data>
+  <data name="Chart_TopProducts_PeriodSub" xml:space="preserve">
+    <value>مبلغ فروش • بازه انتخابی</value>
+  </data>
+  <data name="Chart_CategoryPie_PeriodSub" xml:space="preserve">
+    <value>از کل فروش بازه انتخابی</value>
+  </data>
+  <data name="TopEmployees_PeriodTitle" xml:space="preserve">
+    <value>کارکنان با بالاترین مبلغ خرید در بازه انتخابی</value>
+  </data>
+  <data name="TopEmployees_PeriodSub" xml:space="preserve">
+    <value>بازه انتخابی</value>
+  </data>
+  <data name="TopEmployees_PeriodEmpty" xml:space="preserve">
+    <value>در این بازه خریدی ثبت نشده است.</value>
+  </data>
   <data name="Chart_StatusDonut_Sub" xml:space="preserve">
-    <value>مجموع ماه جاری</value>
+    <value>کل فروش‌های قابل مشاهده</value>
   </data>
   <data name="Chart_StatusDonut_Total" xml:space="preserve">
     <value>کل سفارش‌ها</value>
@@ -245,7 +277,7 @@
     <value>سهم دسته‌بندی‌ها</value>
   </data>
   <data name="Chart_CategoryPie_Sub" xml:space="preserve">
-    <value>از کل فروش ماه</value>
+    <value>از کل فروش‌ها</value>
   </data>
   <data name="Chart_ViewAll" xml:space="preserve">
     <value>مشاهده همه</value>

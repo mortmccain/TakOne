@@ -49,10 +49,11 @@ public static class UsersGridStateTranslator
             "FullName" => UsersSortBy.FullName,
             "Gender" => UsersSortBy.Gender,
             "IsActive" => UsersSortBy.IsActive,
-            // "GroupName" is deliberately absent: the group name lives on
-            // the CustomerGroup aggregate, so a name sort would need a
-            // cross-table join — the column's header sort is disabled in
-            // the UI and an unexpected descriptor is skipped here.
+            // "GroupName" (Round 6): the group name lives on the
+            // CustomerGroup aggregate — the repository's ApplySort
+            // LEFT-JOINs CustomerGroups to order by it (see UsersSortBy's
+            // doc for the NULL-ordering contract for groupless users).
+            "GroupName" => UsersSortBy.GroupName,
             _ => (UsersSortBy?)null
         };
         if (sortBy is null) return (null, false);

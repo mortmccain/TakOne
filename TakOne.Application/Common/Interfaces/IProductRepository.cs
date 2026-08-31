@@ -53,9 +53,23 @@ public interface IProductRepository
         );
 
     /// <summary>
-    /// Returns a paginated list of products, optionally filtered by category.
-    /// Used by the customer-facing shop view.
+    /// Returns a paginated list of products. Used by the customer-facing
+    /// shop view AND (Round 6) the staff AdminProducts grid — the latter
+    /// drives it through Radzen LoadData mode with the full
+    /// <see cref="ProductsListFilters"/> aggregate so every column filter
+    /// and sort runs in SQL.
     /// </summary>
+    /// <param name="filters">
+    /// The complete set of list filters + sort (Round 6 — same aggregate
+    /// shape as the users list's <c>UsersListFilters</c>): legacy
+    /// search/category filters, the grid's typed column filters (name
+    /// text, stock status, price/stock numeric comparisons), the
+    /// category-NAME filters already resolved to Id sets by the query
+    /// handler, and the sort key + direction. Null members add no WHERE
+    /// clause; a null record itself means "no filters, default Name-asc
+    /// order". See <see cref="ProductsListFilters"/> for the per-member
+    /// contracts.
+    /// </param>
     /// <param name="visibility">
     /// CUSTOMER-VISIBILITY FILTER — when non-null, the repository applies
     /// the in-stock + active-category-hierarchy predicates INSIDE the SQL
@@ -67,14 +81,10 @@ public interface IProductRepository
     /// </param>
     Task<PaginatedResult<Product>> GetPaginatedAsync
         (
-        Guid? categoryId = null,
-        Guid? subCategoryId = null,
-        Guid? subSubCategoryId = null,
-        string? searchTerm = null,
+        ProductsListFilters? filters = null,
+        ProductVisibilityFilter? visibility = null,
         int pageNumber = 1,
         int pageSize = 20,
-        ProductVisibilityFilter? visibility = null,
-        ProductSortBy sortBy = ProductSortBy.Name,
         CancellationToken cancellationToken = default
         );
 

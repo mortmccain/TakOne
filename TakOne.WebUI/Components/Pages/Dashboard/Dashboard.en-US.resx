@@ -226,8 +226,40 @@
   <data name="Chart_WeeklyGrowth" xml:space="preserve">
     <value>Weekly growth</value>
   </data>
+
+  <!-- ROUND 6 — period-selector chart labels (cards re-anchor to the window) -->
+  <data name="Chart_WeeklyRevenue_PeriodSub" xml:space="preserve">
+    <value>Selected period · by day</value>
+  </data>
+  <data name="Chart_PeriodLegend_This" xml:space="preserve">
+    <value>Selected period</value>
+  </data>
+  <data name="Chart_PeriodLegend_Last" xml:space="preserve">
+    <value>Previous period</value>
+  </data>
+  <data name="Chart_PeriodGrowth" xml:space="preserve">
+    <value>Period growth</value>
+  </data>
+  <data name="Chart_PeriodBadge" xml:space="preserve">
+    <value>Period</value>
+  </data>
+  <data name="Chart_TopProducts_PeriodSub" xml:space="preserve">
+    <value>Sales amount · selected period</value>
+  </data>
+  <data name="Chart_CategoryPie_PeriodSub" xml:space="preserve">
+    <value>Of the selected period's sales</value>
+  </data>
+  <data name="TopEmployees_PeriodTitle" xml:space="preserve">
+    <value>Employees with the highest purchase amount in the period</value>
+  </data>
+  <data name="TopEmployees_PeriodSub" xml:space="preserve">
+    <value>Selected period</value>
+  </data>
+  <data name="TopEmployees_PeriodEmpty" xml:space="preserve">
+    <value>No employee purchases in this period yet.</value>
+  </data>
   <data name="Chart_StatusDonut_Sub" xml:space="preserve">
-    <value>Total this month</value>
+    <value>All sales in scope</value>
   </data>
   <data name="Chart_StatusDonut_Total" xml:space="preserve">
     <value>Total orders</value>
@@ -242,7 +274,7 @@
     <value>Category share</value>
   </data>
   <data name="Chart_CategoryPie_Sub" xml:space="preserve">
-    <value>Of this month's sales</value>
+    <value>Of all sales</value>
   </data>
   <data name="Chart_ViewAll" xml:space="preserve">
     <value>View all</value>

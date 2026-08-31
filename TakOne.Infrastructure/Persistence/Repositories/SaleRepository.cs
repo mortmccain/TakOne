@@ -2,6 +2,7 @@
 using Ardalis.Specification.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Common.Models;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
 using TakOne.SharedKernel.Common;
@@ -179,18 +180,6 @@ public sealed class SaleRepository : ISaleRepository
     }
 
     /// <inheritdoc />
-    public async Task<List<Sale>> GetAllWithLineItemsBySpecificationAsync(
-        ISpecification<Sale> specification,
-        CancellationToken cancellationToken = default)
-    {
-        // Same as GetAllBySpecificationAsync but eagerly includes line items
-        // via EF Core's Include. Single round-trip — avoids N+1 when the
-        // caller needs line items for many sales (e.g. dashboard aggregations).
-        var query = _evaluator.GetQuery(_db.Sales.Include(s => s.LineItems), specification);
-        return await query.ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
     public async Task<Sale?> GetLastSubmittedSaleForUserAsync
         (
         Guid userId,
@@ -358,42 +347,332 @@ public sealed class SaleRepository : ISaleRepository
     }
 
     // ==================================================================
-    // SCALAR + BOUNDED-SLICE IMPLEMENTATIONS
-    // (Brutal Code Review v3 #23, Round 18-C — see ISaleRepository docs)
+    // SCALAR + GROUPED-AGGREGATION IMPLEMENTATIONS
+    // (Brutal Code Review v3 #23 / Round 18-C + Round 6 — see
+    // ISaleRepository docs; every method here runs a single SQL
+    // statement and returns only aggregated rows, never entities)
     // ==================================================================
 
     /// <inheritdoc />
-    public async Task<int> CountBySpecificationAsync(
+    public async Task<List<StatusCountRow>> GetStatusCountsAsync(
         ISpecification<Sale> specification,
         CancellationToken cancellationToken = default)
     {
-        // Spec evaluator produces an IQueryable<Sale> with all the spec's
-        // Where/OrderBy/Include clauses applied. CountAsync ignores the
-        // ORDER BY (SQL Server optimizes it out) and any Include (COUNT
-        // doesn't need joined rows). The result is a single SQL
-        // SELECT COUNT(*) FROM Sales WHERE [spec.Where].
+        // SQL: SELECT Status, COUNT(*) FROM Sales
+        //      WHERE [spec.Where] GROUP BY Status
         //
-        // AsNoTracking: pure read — caller never mutates these sales.
+        // One round-trip replaces the former five COUNT queries (one
+        // per KPI status) AND the in-memory GroupBy the handler used
+        // for the status donut (which was the only place Invoiced was
+        // counted). Zero-count statuses are simply absent from the
+        // result — callers coalesce with 0.
         var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
-        return await query.CountAsync(cancellationToken);
+        return await query
+            .GroupBy(s => s.Status)
+            .Select(g => new StatusCountRow(g.Key, g.Count()))
+            .ToListAsync(cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<int> CountByStatusAsync(
-        SaleStatus status,
+    public async Task<List<DailySaleStatsRow>> GetDailyStatusStatsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int bucketOffsetMinutes,
         ISpecification<Sale> specification,
         CancellationToken cancellationToken = default)
     {
-        // The .Where(s => s.Status == status) is composed ON TOP of the
-        // spec's Where clauses. EF Core combines them into a single
-        // SQL WHERE: WHERE [spec.Where] AND Status = @status.
+        // SQL: SELECT YEAR/MONTH/DAY of COALESCE(SubmittedAtUtc,
+        //      CreatedAtUtc) [+ @offset], Status, COUNT(*),
+        //             SUM(Total_Amount)
+        //      FROM Sales
+        //      WHERE [spec.Where] AND anchor >= @from AND anchor < @to
+        //      GROUP BY day-triple, Status
         //
-        // The Status index (SaleConfiguration adds HasIndex(s => s.Status))
-        // makes the status filter fast for high-cardinality statuses
-        // (Pending is the typical bottleneck — sales pile up while
-        // approval is slow).
+        // DAY BUCKETING: the anchor's .Year/.Month/.Day triple is used
+        // instead of .Date because the member triple translates on BOTH
+        // providers (SQL Server: DATEPART/YEAR(); SQLite: strftime) —
+        // while DateTime.Date has no SQLite translation. The C# side
+        // reassembles the triple into a Date (see below).
+        //
+        // BUCKET OFFSET: the anchor is shifted by bucketOffsetMinutes
+        // BEFORE the triple is taken (AddMinutes translates on both
+        // providers — DATEADD on SQL Server, datetime() modifiers on
+        // SQLite). 0 = UTC days; 210 = Tehran days (see the interface
+        // doc for why the period chart needs Tehran alignment).
+        //
+        // HALF-OPEN WINDOW: anchor >= fromUtc AND anchor < toUtc —
+        // matching every other windowed method on this repository.
         var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
-        return await query.CountAsync(s => s.Status == status, cancellationToken);
+
+        IQueryable<Sale> windowed = query
+            .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= fromUtc
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc);
+
+        var rows = await windowed
+            .GroupBy(s => new
+            {
+                Year = (s.SubmittedAtUtc ?? s.CreatedAtUtc).AddMinutes(bucketOffsetMinutes).Year,
+                Month = (s.SubmittedAtUtc ?? s.CreatedAtUtc).AddMinutes(bucketOffsetMinutes).Month,
+                Day = (s.SubmittedAtUtc ?? s.CreatedAtUtc).AddMinutes(bucketOffsetMinutes).Day,
+                Status = s.Status
+            })
+            .Select(g => new
+            {
+                g.Key.Year,
+                g.Key.Month,
+                g.Key.Day,
+                g.Key.Status,
+                Count = g.Count(),
+                TotalAmountRaw = g.Sum(s => s.Total.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        // Reassemble the (Year, Month, Day) triple into a Date. The
+        // intermediate anonymous projection keeps the SQL translation
+        // provider-agnostic; this loop is a handful of rows.
+        return rows
+            .Select(r => new DailySaleStatsRow(
+                new DateTime(r.Year, r.Month, r.Day, 0, 0, 0, DateTimeKind.Utc),
+                r.Status,
+                r.Count,
+                r.TotalAmountRaw))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<List<WindowStatusStatsRow>> GetWindowStatusStatsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT Status, COUNT(*), SUM(Total_Amount)
+        //      FROM Sales
+        //      WHERE [spec.Where] AND anchor >= @from AND anchor < @to
+        //      GROUP BY Status
+        //
+        // Instant-precision counterpart of GetDailyStatusStatsAsync:
+        // no day bucketing at all, so non-UTC-midnight window bounds
+        // (Tehran midnights) are honored exactly. ≤5 rows come back.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        var rows = await query
+            .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= fromUtc
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc)
+            .GroupBy(s => s.Status)
+            .Select(g => new
+            {
+                Status = g.Key,
+                Count = g.Count(),
+                TotalAmountRaw = g.Sum(s => s.Total.Amount)
+            })
+            .ToListAsync(cancellationToken);
+
+        // Map to the record OUTSIDE the queryable — see the note on
+        // GetTopProductsAsync.
+        return rows
+            .Select(r => new WindowStatusStatsRow(r.Status, r.Count, r.TotalAmountRaw))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<List<TopProductSaleRow>> GetTopProductsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int top,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT li.ProductName, SUM(li.Quantity),
+        //             SUM(li.Quantity * li.UnitPrice_Amount)
+        //      FROM Sales s JOIN SaleLineItems li ON li.SaleId = s.Id
+        //      WHERE [spec.Where] AND s.Status IN (Pending, Approved,
+        //            Invoiced) AND s.anchor >= @from AND s.anchor < @to
+        //      GROUP BY li.ProductName
+        //      ORDER BY SUM(...) DESC LIMIT @top
+        //
+        // GROSSTOTAL: the domain's SaleLineItem.GrossTotal is a computed
+        // C# property (Quantity * UnitPrice) with no mapped column — EF
+        // cannot translate the property getter, so the arithmetic is
+        // expressed inline in the SUM selector. UnitPrice is a complex
+        // Money property flattened to UnitPrice_Amount, the same
+        // flattening SumRevenueAsync relies on for Total.Amount.
+        if (top <= 0)
+        {
+            return new List<TopProductSaleRow>();
+        }
+
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        var rows = await query
+            .Where(s => (s.Status == SaleStatus.Pending
+                         || s.Status == SaleStatus.Approved
+                         || s.Status == SaleStatus.Invoiced)
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= fromUtc
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc)
+            .SelectMany(s => s.LineItems)
+            .GroupBy(li => li.ProductName)
+            .Select(g => new
+            {
+                ProductName = g.Key,
+                QuantitySold = g.Sum(li => li.Quantity),
+                TotalAmountRaw = g.Sum(li => li.Quantity * li.UnitPrice.Amount)
+            })
+            .OrderByDescending(r => r.TotalAmountRaw)
+            .Take(top)
+            .ToListAsync(cancellationToken);
+
+        // Map to the record OUTSIDE the queryable: EF's SQLite/SQL Server
+        // translators reject a positional-constructor projection whose
+        // members feed a subsequent OrderBy/Take (the anonymous-type
+        // projection above translates cleanly on both providers).
+        return rows
+            .Select(r => new TopProductSaleRow(r.ProductName, r.QuantitySold, r.TotalAmountRaw))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<List<CategorySaleCountRow>> GetCategorySalesCountsAsync(
+        DateTime? fromUtc,
+        DateTime toUtc,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT p.CategoryId, COUNT(DISTINCT s.Id)
+        //      FROM Sales s
+        //      JOIN SaleLineItems li ON li.SaleId = s.Id
+        //      JOIN Products p ON p.Id = li.ProductId
+        //      WHERE [spec.Where] AND s.Status IN (Pending, Approved,
+        //            Invoiced) [AND s.anchor >= @from] AND s.anchor < @to
+        //      GROUP BY p.CategoryId
+        //
+        // COUNT(DISTINCT SaleId) is the "a sale counts once per category
+        // no matter how many of its line items belong to that category"
+        // rule. A null fromUtc means ALL TIME (the default card).
+        //
+        // The SelectMany with a result selector keeps the parent Sale's
+        // Id in scope so it can feed the DISTINCT; EF translates the
+        // correlated collection + cross-DbSet Join into one SQL
+        // statement (same context, so Products is queryable here).
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification)
+            .Where(s => s.Status == SaleStatus.Pending
+                        || s.Status == SaleStatus.Approved
+                        || s.Status == SaleStatus.Invoiced);
+
+        if (fromUtc.HasValue)
+        {
+            var from = fromUtc.Value;
+            query = query.Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= from);
+        }
+
+        var rows = await query
+            .Where(s => (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc)
+            .SelectMany(s => s.LineItems,
+                (sale, lineItem) => new { SaleId = sale.Id, ProductId = lineItem.ProductId })
+            .Join(_db.Products.AsNoTracking(),
+                x => x.ProductId,
+                p => p.Id,
+                (x, product) => new { x.SaleId, CategoryId = product.CategoryId })
+            .GroupBy(x => x.CategoryId)
+            .Select(g => new
+            {
+                CategoryId = g.Key,
+                SalesCount = g.Select(x => x.SaleId).Distinct().Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        // Map to the record OUTSIDE the queryable — see the note on
+        // GetTopProductsAsync.
+        return rows
+            .Select(r => new CategorySaleCountRow(r.CategoryId, r.SalesCount))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<List<TopPurchaserRow>> GetTopPurchasersAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int top,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT CustomerId, CustomerName, SUM(Total_Amount)
+        //      FROM Sales
+        //      WHERE [spec.Where] AND Status IN (Pending, Approved,
+        //            Invoiced) AND anchor >= @from AND anchor < @to
+        //      GROUP BY CustomerId, CustomerName
+        //      ORDER BY SUM(...) DESC LIMIT @top
+        //
+        // CustomerName is denormalized onto the sale (snapshot at sale
+        // time), so grouping by the pair needs no join. A customer who
+        // changed their display name mid-window can appear twice — same
+        // behavior as the handler's former in-memory GroupBy.
+        if (top <= 0)
+        {
+            return new List<TopPurchaserRow>();
+        }
+
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        var rows = await query
+            .Where(s => (s.Status == SaleStatus.Pending
+                         || s.Status == SaleStatus.Approved
+                         || s.Status == SaleStatus.Invoiced)
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= fromUtc
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc)
+            .GroupBy(s => new { s.CustomerId, s.CustomerName })
+            .Select(g => new
+            {
+                g.Key.CustomerId,
+                g.Key.CustomerName,
+                TotalAmountRaw = g.Sum(s => s.Total.Amount)
+            })
+            .OrderByDescending(r => r.TotalAmountRaw)
+            .Take(top)
+            .ToListAsync(cancellationToken);
+
+        // Map to the record OUTSIDE the queryable — see the note on
+        // GetTopProductsAsync (constructor projections don't compose
+        // with the subsequent OrderBy/Take on EF's translators).
+        return rows
+            .Select(r => new TopPurchaserRow(r.CustomerId, r.CustomerName, r.TotalAmountRaw))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<DateTime?> GetOldestPendingSaleAnchorAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT MIN(COALESCE(SubmittedAtUtc, CreatedAtUtc))
+        //      FROM Sales WHERE [spec.Where] AND Status = Pending
+        //
+        // The nullable cast makes MinAsync return null for an empty
+        // set (no pending sales) instead of throwing.
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        return await query
+            .Where(s => s.Status == SaleStatus.Pending)
+            .MinAsync(s => (DateTime?)(s.SubmittedAtUtc ?? s.CreatedAtUtc), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountDistinctPurchasersAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default)
+    {
+        // SQL: SELECT COUNT(DISTINCT CustomerId)
+        //      FROM Sales
+        //      WHERE [spec.Where] AND Status IN (Pending, Approved,
+        //            Invoiced) AND anchor >= @from AND anchor < @to
+        var query = _evaluator.GetQuery(_db.Sales.AsNoTracking(), specification);
+        return await query
+            .Where(s => (s.Status == SaleStatus.Pending
+                         || s.Status == SaleStatus.Approved
+                         || s.Status == SaleStatus.Invoiced)
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) >= fromUtc
+                        && (s.SubmittedAtUtc ?? s.CreatedAtUtc) < toUtc)
+            .Select(s => s.CustomerId)
+            .Distinct()
+            .CountAsync(cancellationToken);
     }
 
     /// <inheritdoc />

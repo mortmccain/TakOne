@@ -2324,6 +2324,16 @@
     gap: 0.375rem;
     height: 7.5rem;
     padding: 0.75rem 0.25rem 0;
+    /* ROUND 6: in period mode the row carries one column per day of the
+       selected window (30/90 points on the presets). Past ~12 columns the
+       bars + labels get unreadably thin — switch to horizontal scrolling
+       with a sensible per-column floor instead of squishing. RTL-safe:
+       overflow-x works in both directions; scroll-snap keeps a day
+       aligned at the scroll edge. */
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
 }
 
 .m-dash-spark-col {
@@ -2333,9 +2343,26 @@
     align-items: center;
     gap: 0.25rem;
     min-width: 0;
+    scroll-snap-align: start;
 }
 
-.m-dash-spark-bar-track {
+/* Long series (period mode): give every column a readable floor so the
+   row scrolls instead of collapsing. 7 columns never hit this. */
+.m-dash-spark-row:not(:has(.m-dash-spark-col:nth-child(13))) .m-dash-spark-col {
+    min-width: 0;
+}
+
+.m-dash-spark-row:has(.m-dash-spark-col:nth-child(13)) .m-dash-spark-col {
+    min-width: 2.25rem;
+    flex: 0 0 auto;
+}
+
+.m-dash-spark-bar-track,
+/* ROUND 6 fix: the dashboard's mobile sparkline markup uses
+   .m-dash-spark-bar-wrap, but only -track was ever defined — the wrap
+   div rendered unstyled (bars lost their flex-stretch + centering).
+   Alias the same rules so both spellings work. */
+.m-dash-spark-bar-wrap {
     flex: 1;
     width: 100%;
     display: flex;

@@ -58,6 +58,7 @@ public class UsersGridStateTranslatorTests
     [InlineData("FullName", UsersSortBy.FullName)]
     [InlineData("Gender", UsersSortBy.Gender)]
     [InlineData("IsActive", UsersSortBy.IsActive)]
+    [InlineData("GroupName", UsersSortBy.GroupName)]
     public void TranslateSort_KnownColumns_MapToSortKeys(
         string property, UsersSortBy expected)
     {
@@ -68,16 +69,15 @@ public class UsersGridStateTranslatorTests
     }
 
     [Fact]
-    public void TranslateSort_GroupNameColumn_YieldsNoSortKey()
+    public void TranslateSort_UnknownColumn_YieldsNoSortKey()
     {
-        // The Group column is deliberately unsortable in the UI, but a
-        // stale/deserialized descriptor (e.g. a preserved grid state) must
-        // degrade to the default sort, not throw and not attempt a
-        // cross-aggregate join.
+        // A stale/deserialized descriptor (e.g. a preserved grid state
+        // for a column that no longer exists) must degrade to the default
+        // sort, not throw.
         var (sortBy, _) = UsersGridStateTranslator.TranslateSort(
-            new[] { new SortDescriptor { Property = "GroupName", SortOrder = SortOrder.Ascending } });
+            new[] { new SortDescriptor { Property = "LegacyColumn", SortOrder = SortOrder.Ascending } });
 
-        sortBy.Should().BeNull("GroupName has no server-side sort key (cross-aggregate)");
+        sortBy.Should().BeNull("unknown properties are skipped leniently");
     }
 
     [Fact]

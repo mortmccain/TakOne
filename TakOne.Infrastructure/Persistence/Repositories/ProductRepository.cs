@@ -32,17 +32,18 @@ namespace TakOne.Infrastructure.Persistence.Repositories;
 ///   loaded with their owner) and NAVIGATION properties (separate entity,
 ///   lazy/explicit load required).
 ///
-/// SEARCH-TERM SEMANTICS:
-///   <c>searchTerm</c> matches <see cref="Product.Name"/> with a
-///   case-insensitive <c>Contains</c>. SQL Server translates
-///   <c>string.Contains</c> with <c>StringComparison.OrdinalIgnoreCase</c>
-///   into a <c>LIKE '%term%'</c> expression. We use the EF.Functions.Like
-///   free-text helper indirectly via <c>Contains</c> — both produce the same
-///   SQL but <c>Contains</c> is more readable.
-///   (Note: for case-insensitive matching on a case-insensitive collation
-///   database, plain <c>Contains</c> works. For case-sensitive collations,
-///   we'd need <c>EF.Functions.Like(p.Name, $"%{term}%")</c> with explicit
-///   LOWER() — but the default SQL Server collation is case-insensitive.)
+/// SEARCH-TERM SEMANTICS (Round 6 — aligned with the users/sales lists):
+///   <c>searchTerm</c> (and the Name column filter) match
+///   <see cref="Product.Name"/> with a case-insensitive <c>Contains</c>,
+///   implemented as <c>p.Name.ToLower().Contains(term.ToLowerInvariant())</c>
+///   — the overload pair EF Core translates to <c>LOWER() LIKE '%term%'</c>
+///   on BOTH providers. The pre-Round-6 bare <c>Contains</c> relied on SQL
+///   Server's default case-insensitive collation and was NOT actually
+///   case-insensitive on SQLite (whose default collation is case-SENSITIVE) —
+///   the same latent defect the Round-5 users conversion fixed. The
+///   culture-taking overloads the analyzers prefer are NOT EF-translatable,
+///   hence the pragma-guarded region below (same rationale as
+///   <c>UserRepository</c> / <c>SalesSpecificationFilters</c>).
 /// </summary>
 public sealed class ProductRepository : IProductRepository
 {
@@ -127,16 +128,24 @@ public sealed class ProductRepository : IProductRepository
             .ToListAsync(cancellationToken);
     }
 
+    // ── Round 6: server-side text filters ──────────────────────────────
+    //
+    // The string predicates inside GetPaginatedAsync (both in the
+    // search-term lambda and in the Name column filter's operator switch)
+    // use the parameterless string.ToLower()/Contains(string) deliberately:
+    // those are the overloads EF Core translates to LOWER()/LIKE. The
+    // culture-taking overloads the analyzers prefer are NOT translatable
+    // (same rationale as UserRepository / SalesSpecificationFilters).
+#pragma warning disable CA1304 // ToLower culture — SQL LOWER() has no culture
+#pragma warning disable CA1311 // Contains culture — same
+#pragma warning disable CA1862 // OrdinalIgnoreCase overload — not EF-translatable
+
     /// <inheritdoc />
     public async Task<PaginatedResult<Product>> GetPaginatedAsync(
-        Guid? categoryId = null,
-        Guid? subCategoryId = null,
-        Guid? subSubCategoryId = null,
-        string? searchTerm = null,
+        ProductsListFilters? filters = null,
+        ProductVisibilityFilter? visibility = null,
         int pageNumber = 1,
         int pageSize = 20,
-        ProductVisibilityFilter? visibility = null,
-        ProductSortBy sortBy = ProductSortBy.Name,
         CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------
@@ -148,6 +157,21 @@ public sealed class ProductRepository : IProductRepository
         pageNumber = pageNumber < 1 ? 1 : pageNumber;
         pageSize = pageSize < 1 ? 20 : pageSize;
 
+        filters ??= new ProductsListFilters(
+            SearchTerm: null,
+            CategoryId: null,
+            SubCategoryId: null,
+            SubSubCategoryId: null,
+            Name: null,
+            StockStatus: null,
+            Price: null,
+            Stock: null,
+            CategoryIds: null,
+            SubCategoryIds: null,
+            SubSubCategoryIds: null,
+            SortBy: null,
+            SortDescending: false);
+
         // ------------------------------------------------------------------
         // Build the filter query. We use IQueryable so that all Where clauses
         // are composed into a SINGLE SQL statement (rather than fetching all
@@ -156,29 +180,39 @@ public sealed class ProductRepository : IProductRepository
         // ------------------------------------------------------------------
         var query = _db.Products.AsQueryable();
 
-        if (categoryId is not null)
+        // ── Legacy exact-match category filters (the shop's category
+        //    navigation; a CategoryId filter returns products in that
+        //    category OR any of its sub/subsub categories via the
+        //    hierarchy semantics documented on the query). ──
+        if (filters.CategoryId is not null)
         {
-            query = query.Where(p => p.CategoryId == categoryId.Value);
+            query = query.Where(p => p.CategoryId == filters.CategoryId.Value);
         }
 
-        if (subCategoryId is not null)
+        if (filters.SubCategoryId is not null)
         {
-            query = query.Where(p => p.SubCategoryId == subCategoryId.Value);
+            query = query.Where(p => p.SubCategoryId == filters.SubCategoryId.Value);
         }
 
-        if (subSubCategoryId is not null)
+        if (filters.SubSubCategoryId is not null)
         {
-            query = query.Where(p => p.SubSubCategoryId == subSubCategoryId.Value);
+            query = query.Where(p => p.SubSubCategoryId == filters.SubSubCategoryId.Value);
         }
 
         // searchTerm matches Product.Name (case-insensitive Contains).
         // We trim and skip empty/null so an empty search box doesn't accidentally
         // filter out products whose names are null (shouldn't happen, but cheap
         // to guard).
-        var trimmedSearch = searchTerm?.Trim();
+        //
+        // Round 6: the match is now genuinely case-insensitive on BOTH
+        // providers — SQLite's default collation is case-SENSITIVE, so the
+        // pre-Round-6 bare Contains was not actually case-insensitive there
+        // (same fix the Round-5 users list applied to its search term).
+        var trimmedSearch = filters.SearchTerm?.Trim();
         if (!string.IsNullOrWhiteSpace(trimmedSearch))
         {
-            query = query.Where(p => p.Name.Contains(trimmedSearch));
+            var searchLower = trimmedSearch.ToLowerInvariant();
+            query = query.Where(p => p.Name.ToLower().Contains(searchLower));
         }
 
         // ------------------------------------------------------------------
@@ -221,6 +255,150 @@ public sealed class ProductRepository : IProductRepository
             }
         }
 
+        // ── Round 6: the AdminProducts grid's typed column filters. ──
+        //
+        // Typed per-column text filter on Name. Written as a plain
+        // operator switch over lambdas (NOT the hand-built expression
+        // trees the users/sales lists use) because the products list has
+        // exactly ONE text column on the Product table — the expression-
+        // tree machinery earns its keep only when several columns share
+        // one ApplyTextFilter helper. Each arm is a simple MemberAccess →
+        // method-call chain that EF translates to LOWER()/LIKE on both
+        // providers.
+        var nameFilter = filters.Name;
+        var nameTerm = nameFilter?.Value?.Trim();
+        if (nameFilter is not null && !string.IsNullOrEmpty(nameTerm))
+        {
+            var loweredName = nameTerm.ToLowerInvariant();
+            query = nameFilter.Operator switch
+            {
+                ProductsTextOperator.Contains =>
+                    query.Where(p => p.Name.ToLower().Contains(loweredName)),
+                ProductsTextOperator.NotContains =>
+                    query.Where(p => !p.Name.ToLower().Contains(loweredName)),
+                ProductsTextOperator.Equals =>
+                    query.Where(p => p.Name.ToLower() == loweredName),
+                ProductsTextOperator.NotEquals =>
+                    query.Where(p => p.Name.ToLower() != loweredName),
+                ProductsTextOperator.StartsWith =>
+                    query.Where(p => p.Name.ToLower().StartsWith(loweredName)),
+                ProductsTextOperator.EndsWith =>
+                    query.Where(p => p.Name.ToLower().EndsWith(loweredName)),
+                // Unknown operator values (a malformed message could carry
+                // an out-of-range enum) are ignored — lenient no-filter.
+                _ => query
+            };
+        }
+
+        // Stock-status dropdown filter (the grid's Status column):
+        // In stock = StockQuantity > 0, Out of stock == 0. Composes with
+        // the numeric Stock filter below — both reference StockQuantity
+        // and are AND-ed.
+        if (filters.StockStatus is { } stockStatus)
+        {
+            query = stockStatus switch
+            {
+                ProductStockStatus.InStock => query.Where(p => p.StockQuantity > 0),
+                ProductStockStatus.OutOfStock => query.Where(p => p.StockQuantity == 0),
+                _ => query
+            };
+        }
+
+        // Numeric comparison filters — Price.Amount (complex property, EF
+        // flattens to the Price_Amount column — the same translation the
+        // Round-4 price sorts rely on) and StockQuantity. Unknown operator
+        // values are ignored (lenient no-filter).
+        if (filters.Price is { } price)
+        {
+            query = price.Operator switch
+            {
+                ProductsNumberOperator.Equals =>
+                    query.Where(p => p.Price.Amount == price.Value),
+                ProductsNumberOperator.NotEquals =>
+                    query.Where(p => p.Price.Amount != price.Value),
+                ProductsNumberOperator.GreaterThan =>
+                    query.Where(p => p.Price.Amount > price.Value),
+                ProductsNumberOperator.GreaterThanOrEqual =>
+                    query.Where(p => p.Price.Amount >= price.Value),
+                ProductsNumberOperator.LessThan =>
+                    query.Where(p => p.Price.Amount < price.Value),
+                ProductsNumberOperator.LessThanOrEqual =>
+                    query.Where(p => p.Price.Amount <= price.Value),
+                _ => query
+            };
+        }
+
+        // Numeric comparison filter — StockQuantity. Unknown operator
+        // values are ignored (lenient no-filter). See the Price filter
+        // above for the shared operator-switch shape.
+        //
+        // STOCK OPERAND CONVERSION: the typed record carries a decimal (one
+        // shape serves both columns), but StockQuantity is an int —
+        // comparing an INTEGER column against a decimal parameter is
+        // type-mismatched SQL on SQLite (cross-type comparisons are never
+        // equal and always ordered) and forces an index-hostile implicit
+        // conversion on SQL Server. The operand is converted to the
+        // column's CLR type ONCE, client-side, so the comparison is
+        // int-vs-int on every provider. Stock counts are integral by
+        // domain; a fractional operand (only possible from a stale filter
+        // state) truncates toward zero — a documented, harmless
+        // degradation.
+        if (filters.Stock is { } stock)
+        {
+            var stockValue = (int)stock.Value;
+            query = stock.Operator switch
+            {
+                ProductsNumberOperator.Equals =>
+                    query.Where(p => p.StockQuantity == stockValue),
+                ProductsNumberOperator.NotEquals =>
+                    query.Where(p => p.StockQuantity != stockValue),
+                ProductsNumberOperator.GreaterThan =>
+                    query.Where(p => p.StockQuantity > stockValue),
+                ProductsNumberOperator.GreaterThanOrEqual =>
+                    query.Where(p => p.StockQuantity >= stockValue),
+                ProductsNumberOperator.LessThan =>
+                    query.Where(p => p.StockQuantity < stockValue),
+                ProductsNumberOperator.LessThanOrEqual =>
+                    query.Where(p => p.StockQuantity <= stockValue),
+                _ => query
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // CATEGORY-NAME FILTERS as resolved Id sets (Round 6).
+        //
+        // The grid's Category columns filter by free text on the RESOLVED
+        // display name, but Product rows store only Guid FKs — the query
+        // handler resolves the name term against the category tree and
+        // hands us the matched Ids. NULL set = no filter; EMPTY set = "no
+        // category matches the term" (EF translates an empty-collection
+        // Contains to a matches-nothing predicate, so the filtered result
+        // is correctly zero rows).
+        //
+        // Sub/SubSub levels: products with a NULL reference never match —
+        // their cells render the "—" placeholder, which a text term cannot
+        // legitimately match. (For the VISIBILITY filter above, nulls PASS;
+        // here they are excluded — the two filters answer different
+        // questions: "is this product visible to customers?" vs "does this
+        // product's category name match the term?")
+        // ------------------------------------------------------------------
+        if (filters.CategoryIds is { } categoryIds)
+        {
+            query = query.Where(p => categoryIds.Contains(p.CategoryId));
+        }
+
+        if (filters.SubCategoryIds is { } subCategoryIds)
+        {
+            query = query.Where(p =>
+                p.SubCategoryId != null && subCategoryIds.Contains(p.SubCategoryId.Value));
+        }
+
+        if (filters.SubSubCategoryIds is { } subSubCategoryIds)
+        {
+            query = query.Where(p =>
+                p.SubSubCategoryId != null && subSubCategoryIds.Contains(p.SubSubCategoryId.Value));
+        }
+
         // ------------------------------------------------------------------
         // Total count — run BEFORE pagination. CountAsync translates to
         // SELECT COUNT(*) FROM Products WHERE ... — fast on indexed columns.
@@ -239,14 +417,45 @@ public sealed class ProductRepository : IProductRepository
         //   PriceLowToHigh / PriceHighToLow — with the product NAME as a
         //        tiebreaker so equal-priced products page deterministically
         //        (OFFSET/FETCH must never skip or duplicate rows).
+        //
+        // Round 6 — the AdminProducts grid adds: the Name-DESCENDING
+        // variant (via SortDescending) and the Stock orders. The
+        // descending variants of the price keys are new (key, direction)
+        // combinations only the admin grid can reach; the Round-4 arms
+        // existing callers rely on are bit-for-bit unchanged. Every arm
+        // carries a total tiebreaker (Id for the name orders — the name
+        // is the sort key itself; NAME for the price/stock orders —
+        // product names are unique, enforced by NameExistsAsync, so the
+        // tiebreaker is total) so OFFSET/FETCH paging stays deterministic.
         // ------------------------------------------------------------------
-        var ordered = sortBy switch
+        var ordered = (filters.SortBy ?? ProductSortBy.Name, filters.SortDescending) switch
         {
-            ProductSortBy.PriceLowToHigh =>
+            (ProductSortBy.Name, false) =>
+                query.OrderBy(p => p.Name).ThenBy(p => p.Id),
+            (ProductSortBy.Name, true) =>
+                query.OrderByDescending(p => p.Name).ThenByDescending(p => p.Id),
+
+            // Round-4 shop sorts (ascending arms unchanged from Round 4).
+            (ProductSortBy.PriceLowToHigh, false) =>
                 query.OrderBy(p => p.Price.Amount).ThenBy(p => p.Name),
-            ProductSortBy.PriceHighToLow =>
+            (ProductSortBy.PriceLowToHigh, true) =>
+                query.OrderByDescending(p => p.Price.Amount).ThenByDescending(p => p.Name),
+            (ProductSortBy.PriceHighToLow, false) =>
                 query.OrderByDescending(p => p.Price.Amount).ThenBy(p => p.Name),
-            _ => query.OrderBy(p => p.Name)
+            (ProductSortBy.PriceHighToLow, true) =>
+                query.OrderByDescending(p => p.Price.Amount).ThenByDescending(p => p.Name),
+
+            // Round 6 — the Stock orders.
+            (ProductSortBy.StockLowToHigh, false) =>
+                query.OrderBy(p => p.StockQuantity).ThenBy(p => p.Name),
+            (ProductSortBy.StockLowToHigh, true) =>
+                query.OrderByDescending(p => p.StockQuantity).ThenByDescending(p => p.Name),
+            (ProductSortBy.StockHighToLow, false) =>
+                query.OrderByDescending(p => p.StockQuantity).ThenBy(p => p.Name),
+            (ProductSortBy.StockHighToLow, true) =>
+                query.OrderByDescending(p => p.StockQuantity).ThenByDescending(p => p.Name),
+
+            _ => query.OrderBy(p => p.Name).ThenBy(p => p.Id)
         };
 
         var items = await ordered
@@ -256,6 +465,10 @@ public sealed class ProductRepository : IProductRepository
 
         return new PaginatedResult<Product>(items, totalCount, pageNumber, pageSize);
     }
+
+#pragma warning restore CA1304
+#pragma warning restore CA1311
+#pragma warning restore CA1862
 
     /// <inheritdoc />
     /// <remarks>

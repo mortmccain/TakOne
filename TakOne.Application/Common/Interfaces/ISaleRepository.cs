@@ -2,6 +2,7 @@
 using Ardalis.Specification;
 using TakOne.Domain.Sales.Enums;
 
+using TakOne.Application.Common.Models;
 using TakOne.SharedKernel.Common;
 
 namespace TakOne.Application.Common.Interfaces;
@@ -71,21 +72,6 @@ public interface ISaleRepository
     /// <see cref="GetByIdWithLineItemsAsync"/> per sale if you need them.
     /// </summary>
     Task<List<Sale>> GetAllBySpecificationAsync
-        (
-        ISpecification<Sale> specification,
-        CancellationToken cancellationToken = default
-        );
-
-    /// <summary>
-    /// Returns ALL matching sales WITHOUT pagination, with line items
-    /// eagerly loaded in a SINGLE round-trip (avoids N+1 when the caller
-    /// needs line items for many sales).
-    ///
-    /// Used by <c>GetDashboardStatsQueryHandler</c> to compute top-products,
-    /// top-categories, and recent-order product summaries without firing one
-    /// query per sale.
-    /// </summary>
-    Task<List<Sale>> GetAllWithLineItemsBySpecificationAsync
         (
         ISpecification<Sale> specification,
         CancellationToken cancellationToken = default
@@ -176,47 +162,176 @@ public interface ISaleRepository
         CancellationToken cancellationToken = default);
 
     // ------------------------------------------------------------------
-    // SCALAR + BOUNDED-SLICE METHODS (Brutal Code Review v3 #23, Round 18-C)
+    // SCALAR + GROUPED-AGGREGATION METHODS
+    // (Brutal Code Review v3 #23 / Round 18-C, scalarized further in Round 6)
     //
-    // The methods below push COUNT/SUM/TOP-N aggregation DOWN to SQL
-    // instead of materializing all sales into memory. Used by
-    // GetDashboardStatsQueryHandler — the previous handler loaded ALL
-    // sales in scope (with line items) via
-    // GetAllWithLineItemsBySpecificationAsync and aggregated in-memory
-    // with 350+ lines of LINQ. For 100k sales that's ~50MB per dashboard
+    // The methods below push COUNT/SUM/GROUP-BY/TOP-N aggregation DOWN
+    // to SQL instead of materializing all sales into memory. Used by
+    // GetDashboardStatsQueryHandler — the original handler loaded ALL
+    // sales in scope (with line items) and aggregated in-memory with
+    // 350+ lines of LINQ. For 100k sales that's ~50MB per dashboard
     // refresh. These methods drop that to a few KB.
+    //
+    // ROUND 6: the former GetAllWithLineItemsBySpecificationAsync
+    // (the full-table load) and the per-status Count methods were
+    // REMOVED from the contract so no future caller can reintroduce
+    // the ~50MB path: every aggregation the dashboard needs now has a
+    // dedicated SQL-side method.
     //
     // Each method takes an ISpecification<Sale> so the existing Employee
     // scoping (SaleByApproverSpecification — only sales the employee
     // personally approved) is preserved. The Admin path passes
     // AllSalesSpecification (no extra filter). The SpecificationEvaluator
     // composes the spec's Where clauses with the method's own
-    // (status / year / Take(N)) filter into a single SQL statement.
+    // (status / window / Take(N)) filter into a single SQL statement.
+    //
+    // DATE ANCHOR CONVENTION (all windowed methods):
+    //   a sale's "anchor" is COALESCE(SubmittedAtUtc, CreatedAtUtc) —
+    //   the same anchor the handler's former in-memory filters used.
+    //   Windows are HALF-OPEN [fromUtc, toUtc): inclusive lower bound,
+    //   exclusive upper bound. Day buckets are UTC calendar days.
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Counts ALL sales matching the given specification via SQL COUNT(*)
-    /// — no materialization. Used by GetDashboardStatsQueryHandler for
-    /// the <c>TotalSalesCount</c> KPI (the big number on the primary card).
+    /// Counts sales per status in ONE round-trip (SQL GROUP BY Status).
+    /// Returns one row per status PRESENT in scope — zero-count
+    /// statuses are simply absent. Used by the dashboard for the
+    /// per-status KPI counts (Draft/Pending/Approved/Cancelled —
+    /// plus Invoiced, which the old per-status COUNTs missed), the
+    /// TotalSalesCount KPI (sum of all rows), and the status donut.
     /// </summary>
-    /// <param name="specification">The scope spec — typically
-    /// <c>AllSalesSpecification</c> (Admin view) or
-    /// <c>SaleByApproverSpecification(userId)</c> (Employee view).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of sales matching the spec.</returns>
-    Task<int> CountBySpecificationAsync(
+    Task<List<StatusCountRow>> GetStatusCountsAsync(
         ISpecification<Sale> specification,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Counts sales matching the spec AND having the given
-    /// <paramref name="status"/>. Single SQL COUNT(*) with
-    /// <c>WHERE [spec.Where] AND Status = @status</c>. Used by the
-    /// dashboard's per-status KPI counts (Draft, Pending, Approved,
-    /// Cancelled).
+    /// Aggregates sales per (calendar day, status) over the half-open window
+    /// <c>[fromUtc, toUtc)</c>: one row per day × status with the sale
+    /// count and the RAW <c>Total.Amount</c> sum. Single SQL GROUP BY
+    /// with the day derived from
+    /// <c>COALESCE(SubmittedAtUtc, CreatedAtUtc)</c> — bucketed by
+    /// (Year, Month, Day) triple, which translates on both the SQL
+    /// Server and SQLite providers.
     /// </summary>
-    Task<int> CountByStatusAsync(
-        SaleStatus status,
+    /// <remarks>
+    /// ALL statuses are included (Draft and Cancelled included) — the
+    /// caller filters per-KPI. One call feeds the dashboard's daily
+    /// KPIs (today/yesterday/this-month/last-month windows),
+    /// the weekly revenue trend, and the monthly current-year chart.
+    /// <paramref name="fromUtc"/> should be the earliest anchor any
+    /// consumer needs (the caller computes the minimum of its windows'
+    /// starts); rows before it are simply not returned.
+    /// <para>
+    /// <b>BUCKET OFFSET:</b> <paramref name="bucketOffsetMinutes"/> shifts
+    /// each anchor BEFORE bucketing — the group key is
+    /// <c>(anchor + offsetMinutes).Year/Month/Day</c>. 0 = UTC calendar
+    /// days (the default — what the fixed-anchor KPIs and the weekly
+    /// trend use). TakOne passes 210 (Tehran's fixed UTC+03:30) for the
+    /// period-scoped chart series: the period selector's windows are
+    /// Tehran-midnight aligned, so Tehran-day buckets line up EXACTLY
+    /// with the window bounds (a UTC-day bucket would bleed up to
+    /// 3.5h of the adjacent period into each boundary day). The
+    /// returned <see cref="DailySaleStatsRow.Date"/> is the OFFSET
+    /// calendar date (a Tehran date when the offset is 210).
+    /// </para>
+    /// </remarks>
+    Task<List<DailySaleStatsRow>> GetDailyStatusStatsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int bucketOffsetMinutes,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Per-status counts and RAW amount sums over the half-open INSTANT
+    /// window <c>[fromUtc, toUtc)</c> — same shape as
+    /// <see cref="GetStatusCountsAsync"/> but windowed, with amounts.
+    /// Single SQL GROUP BY Status with an anchor range filter.
+    /// </summary>
+    /// <remarks>
+    /// Used by the dashboard's period-scoped KPIs: unlike the day-bucket
+    /// aggregation, this query keys on the raw anchor INSTANT, so windows
+    /// with non-UTC-midnight bounds (the period selector's Tehran
+    /// midnights) are evaluated exactly. The caller composes the four
+    /// KPI numbers (orders / amount / approved / invoiced) from the ≤5
+    /// returned rows.
+    /// </remarks>
+    Task<List<WindowStatusStatsRow>> GetWindowStatusStatsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Top products by summed line revenue over the half-open window
+    /// <c>[fromUtc, toUtc)</c>, across REVENUE-ELIGIBLE sales (Pending,
+    /// Approved, Invoiced). Groups the sales' line items by
+    /// <c>ProductName</c>, sums <c>Quantity</c> and
+    /// <c>Quantity × UnitPrice.Amount</c> (the SQL-side equivalent of
+    /// the domain's computed <c>GrossTotal</c>), orders by amount
+    /// descending, takes <paramref name="top"/>. Single SQL statement
+    /// (JOIN Sales → SaleLineItems, GROUP BY ProductName).
+    /// </summary>
+    Task<List<TopProductSaleRow>> GetTopProductsAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int top,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Per-category sale counts: for each product category, the number
+    /// of DISTINCT revenue-eligible sales (Pending/Approved/Invoiced)
+    /// anchored in <c>[fromUtc, toUtc)</c> whose line items include at
+    /// least one product of that category. Single SQL statement (JOIN
+    /// Sales → SaleLineItems → Products, GROUP BY CategoryId,
+    /// COUNT(DISTINCT SaleId)).
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="fromUtc"/> is NULLABLE: null means ALL TIME (no
+    /// anchor filter) — the dashboard's default top-categories card is
+    /// all-time. A sale counts at most ONCE per category even with
+    /// several line items in the same category.
+    /// </remarks>
+    Task<List<CategorySaleCountRow>> GetCategorySalesCountsAsync(
+        DateTime? fromUtc,
+        DateTime toUtc,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Top purchasers by summed <c>Total.Amount</c> over the half-open
+    /// window <c>[fromUtc, toUtc)</c>, across non-draft non-cancelled
+    /// sales (Pending/Approved/Invoiced). Groups by
+    /// (CustomerId, CustomerName), orders by amount descending, takes
+    /// <paramref name="top"/>. Single SQL GROUP BY.
+    /// </summary>
+    Task<List<TopPurchaserRow>> GetTopPurchasersAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int top,
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The oldest pending sale's anchor
+    /// (<c>COALESCE(SubmittedAtUtc, CreatedAtUtc)</c>) — SQL MIN over
+    /// pending sales only. Null when there are no pending sales. Used
+    /// by the dashboard's KPI 3 footer ("oldest pending: X hours").
+    /// </summary>
+    Task<DateTime?> GetOldestPendingSaleAnchorAsync(
+        ISpecification<Sale> specification,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts DISTINCT customers with at least one non-draft,
+    /// non-cancelled sale anchored in <c>[fromUtc, toUtc)</c> — SQL
+    /// COUNT(DISTINCT CustomerId). Used by the dashboard's
+    /// "active employees this month" KPI footer.
+    /// </summary>
+    Task<int> CountDistinctPurchasersAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
         ISpecification<Sale> specification,
         CancellationToken cancellationToken = default);
 
