@@ -164,6 +164,16 @@ public sealed class UserAccountService : IUserAccountService
         //    render without a join to the Domain Users table). The Domain
         //    User remains the source of truth.
         //
+        //    EMAIL (OPTIONAL):
+        //    The email parameter is OPTIONAL. TakOne authenticates users via
+        //    WorkerId (UserName), not email; the create-user flows pass an
+        //    empty/null email by design. When the email is null/whitespace,
+        //    we leave ApplicationUser.Email = null (not empty string) —
+        //    otherwise Identity's email format validator would fire even
+        //    with RequireUniqueEmail=false, returning an "InvalidEmail"
+        //    IdentityError and blocking user creation. Passing null lets
+        //    Identity skip email validation entirely.
+        //
         //    MUST_CHANGE_PASSWORD (Issue #08 — all new users must change
         //    password on first login):
         //      Every account created through this method gets
@@ -181,12 +191,13 @@ public sealed class UserAccountService : IUserAccountService
         //      the eventual human user are different from that point forward.
         //      The creator cannot log in as the new user after first login.
         // ------------------------------------------------------------------
+        var normalizedEmail = string.IsNullOrWhiteSpace(email) ? null : email;
         var appUser = new ApplicationUser
         {
             Id = userId,
             UserName = workerId,         // login identifier (matches Domain User.WorkerId)
-            Email = email,
-            EmailConfirmed = true,       // admin-created accounts skip email confirmation
+            Email = normalizedEmail,     // optional — null when caller didn't provide one
+            EmailConfirmed = normalizedEmail is not null,  // only flag confirmed when an email was actually set
             IsActive = true,             // mirrors Domain User.IsActive default
             Gender = gender,             // denormalized copy (Phase 0.5)
             MustChangePassword = true,   // Issue #08 — force one-time change on first login

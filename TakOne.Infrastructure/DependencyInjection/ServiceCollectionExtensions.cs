@@ -290,16 +290,19 @@ public static class ServiceCollectionExtensions
         // <IdentityOptions>. ASP.NET Core runs all registered
         // IValidateOptions<T> the first time the IOptions<IdentityOptions>
         // value is resolved. If the bound values do not meet our security
-        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10,
-        // RequireUniqueEmail = true), startup throws
-        // OptionsValidationException BEFORE traffic is served.
+        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10), startup
+        // throws OptionsValidationException BEFORE traffic is served.
         //
-        // This is the fail-fast safety net for the structural config-
-        // binding bug (Brutal Code Review v3 finding #01): if the JSON
-        // path is ever re-broken so Identity options don't reach the bound
-        // instance, ASP.NET Identity DEFAULTS take over (RequiredLength=6,
-        // RequireUniqueEmail=false), which FAIL the validator — so a
-        // broken binding cannot boot silently.
+        // This is the fail-fast safety net for the structural config-binding
+        // bug (Brutal Code Review v3 finding #01): if the JSON path is ever
+        // re-broken so Identity options don't reach the bound instance,
+        // ASP.NET Identity DEFAULTS take over (RequiredLength=6), which
+        // FAILS the validator — so a broken binding cannot boot silently.
+        //
+        // NOTE: RequireUniqueEmail is intentionally NOT enforced — TakOne
+        // authenticates via WorkerId (UserName), not email, and the
+        // create-user flows pass null/empty email by design. See
+        // TakOneIdentityOptionsValidator's EMAIL POLICY remark.
         // ------------------------------------------------------------------
         services.AddSingleton<IValidateOptions<Microsoft.AspNetCore.Identity.IdentityOptions>,
             TakOneIdentityOptionsValidator>();
