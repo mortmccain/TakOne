@@ -64,9 +64,10 @@
      Email was removed because employees don't have company emails and
      login uses WorkerId (UserName) — not email. The CreateCustomer /
      CreateStaff commands still accept an Email parameter for forward
-     compatibility, but we pass empty string. Identity's
-     RequireUniqueEmail=false (in appsettings.json) so empty emails
-     don't collide. The validators were updated to make email optional.
+     compatibility, but we pass empty string. UserAccountService
+     normalizes null/empty email to null on ApplicationUser so Identity
+     skips email validation entirely. Identity's RequireUniqueEmail is
+     false in appsettings.json so accounts with no email are accepted.
 
    VALIDATION:
      - FluentValidation runs server-side via Wolverine's pipeline

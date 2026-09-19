@@ -43,8 +43,10 @@ public sealed class CreateCustomerCommandValidator : AbstractValidator<CreateCus
             // max length and valid format WHEN a non-empty value is provided
             // (for forward compatibility — e.g. if a future admin UI re-adds
             // an optional email field for password-reset flow). Empty/null
-            // emails are passed straight through to Identity, which has
-            // RequireUniqueEmail=false in appsettings.json.
+            // emails are passed straight through to UserAccountService, which
+            // normalizes them to null so Identity skips email validation
+            // entirely. appsettings.json has RequireUniqueEmail=false so
+            // accounts with null/empty emails are accepted.
             .MaximumLength(MaxEmailLength)
             .WithMessage($"Email cannot exceed {MaxEmailLength} characters.")
             .EmailAddress()

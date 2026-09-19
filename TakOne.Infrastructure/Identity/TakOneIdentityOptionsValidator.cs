@@ -21,12 +21,12 @@ namespace TakOne.Infrastructure.Identity;
 ///
 ///   This validator makes a re-introduction of the binding bug LOUD:
 ///   if the bound <c>IdentityOptions</c> do not meet our security policy
-///   (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10, RequireUniqueEmail
-///   = true), startup throws <see cref="OptionsValidationException"/>
-///   BEFORE the app starts serving traffic. The key insight: if the
-///   config-binding path is wrong, ASP.NET Identity DEFAULTS take over
-///   (RequiredLength=6, RequireUniqueEmail=false), which FAIL this
-///   validator — so a broken binding cannot boot silently.
+///   (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10), startup throws
+///   <see cref="OptionsValidationException"/> BEFORE the app starts
+///   serving traffic. The key insight: if the config-binding path is
+///   wrong, ASP.NET Identity DEFAULTS take over (RequiredLength=6),
+///   which FAILS this validator — so a broken binding cannot boot
+///   silently.
 ///
 /// VALIDATION INVARIANTS (security policy — not arbitrary):
 ///   - <c>Password.RequiredLength</c> ≥ 8  (OWASP minimum; Identity default is 6)
@@ -39,9 +39,22 @@ namespace TakOne.Infrastructure.Identity;
 ///     brute-force)
 ///   - <c>Lockout.AllowedForNewUsers</c> = true (lockout must apply during
 ///     the initial login attempts, not just after the first success)
-///   - <c>User.RequireUniqueEmail</c> = true (Identity default is false —
-///     allows unlimited accounts with empty emails; our policy requires
-///     unique emails so accounts are recoverable and auditable)
+///
+/// EMAIL POLICY (UPDATED):
+///   We intentionally allow <c>User.RequireUniqueEmail = false</c>. The
+///   TakOne app authenticates users via their <c>WorkerId</c> (which
+///   becomes <c>ApplicationUser.UserName</c>), NOT via email. None of
+///   the create-user flows collect an email address — staff and customers
+///   don't have company emails, and the password-reset flow is admin-
+///   driven, not user-self-service-via-email. Forcing
+///   <c>RequireUniqueEmail = true</c> made every create-user call fail
+///   in <c>UserManager.CreateAsync</c> with an "Email is required" /
+///   "InvalidEmail" IdentityError because the empty/null email passed
+///   in from the command handlers failed Identity's email validator.
+///   By leaving <c>RequireUniqueEmail = false</c> (the ASP.NET Identity
+///   default), accounts with no email are accepted, and accounts that
+///   DO carry an email (e.g. the bootstrap admin) are still subject
+///   to Identity's email format validation.
 ///
 /// HOW IT WIRES UP:
 ///   Registered in <see cref="DependencyInjection.ServiceCollectionExtensions"/>
@@ -131,20 +144,18 @@ internal sealed class TakOneIdentityOptionsValidator : IValidateOptions<Identity
         }
 
         // ── User policy ──
-        // ASP.NET Identity default is RequireUniqueEmail=false (unsafe).
-        // Our policy requires true — so a broken binding (defaults take
-        // over) fails this check LOUDLY at startup.
-        if (!options.User.RequireUniqueEmail)
-        {
-            failures.Add(
-                "TakOne:Identity:User:RequireUniqueEmail must be true — without it, " +
-                "unlimited accounts can be created with empty emails (no recovery " +
-                "flow, no verification). If this is false, the config-binding path " +
-                "is wrong — Identity options are NOT reaching the bound instance. " +
-                "Check that appsettings.json places 'Identity' as a sibling of " +
-                "'TakOne:Database' (NOT nested under it). " +
-                "See Brutal Code Review v3 findings #01 + #22.");
-        }
+        // ASP.NET Identity default is RequireUniqueEmail=false. We DO NOT
+        // enforce RequireUniqueEmail=true here — TakOne authenticates users
+        // via WorkerId (UserName), NOT email, and the create-user flows do
+        // not collect an email address. Forcing RequireUniqueEmail=true
+        // made every create-user call fail with "Email is required" /
+        // "InvalidEmail" because the empty/null email passed by the
+        // command handlers failed Identity's email validator. We leave
+        // RequireUniqueEmail=false (the ASP.NET default) so accounts with
+        // no email are accepted. Accounts that DO carry an email (e.g.
+        // the bootstrap admin) are still subject to Identity's email
+        // format validation.
+        // See the class-level EMAIL POLICY remark for the full rationale.
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
