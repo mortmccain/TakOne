@@ -506,14 +506,15 @@ span.sale-status-badge::before {
    force the browser to fetch the fresh version after a deploy.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Shell — full-screen 50/50 split. Background is HARDCODED cream. */
+/* Shell — full-screen 50/50 split. Background is HARDCODED light gold
+   (TakLight --tm-gold-tint #FBF4D6) per user directive. */
 .login-shell {
     position: fixed;
     inset: 0;
     display: grid;
     grid-template-columns: 1fr 1fr;
     overflow: hidden;
-    background: #FAF7F0 !important;
+    background: #FBF4D6 !important;
 }
 
 .login-panel {
@@ -525,9 +526,9 @@ span.sale-status-badge::before {
     box-sizing: border-box;
 }
 
-/* LEFT panel — form side (cream background) */
+/* LEFT panel — form side (light gold background — TakLight --tm-gold-tint #FBF4D6) */
 .login-panel--form {
-    background: #FAF7F0 !important;
+    background: #FBF4D6 !important;
     color: #1F2937 !important;
     justify-content: center;
     align-items: stretch;
