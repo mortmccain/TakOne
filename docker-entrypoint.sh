@@ -73,6 +73,27 @@ fi
 # before the database ENGINE is ready to accept logins. Short safety pause.
 sleep 3
 
+# ── Run MigrationFixer BEFORE the efbundle ──
+# The MigrationFixer marks existing migrations as applied in
+# __EFMigrationsHistory. This prevents the efbundle from failing with
+# SQL error 2714 "There is already an object named 'AspNetRoles' in the
+# database" when the database already has the schema (from a previous
+# deploy) but the migration history is missing or incomplete.
+#
+# The MigrationFixer:
+#   1. Creates __EFMigrationsHistory if it doesn't exist.
+#   2. Checks if AspNetRoles exists (proxy for "schema is applied").
+#   3. If the schema exists AND the migration isn't recorded, inserts
+#      the migration record — so the efbundle sees it as applied and
+#      skips it, running only genuinely new migrations (if any).
+#
+# The MigrationFixer is a .NET console app (not a SingleFileApp), so it
+# doesn't need DOTNET_BUNDLE_EXTRACT_BASE_DIR. It runs via `dotnet
+# migration-fixer/TakOne.MigrationFixer.dll` which uses the shared
+# ASP.NET runtime that's already in the image.
+echo "[entrypoint] Checking migration history..."
+dotnet migration-fixer/TakOne.MigrationFixer.dll "$CONN_STR" || true
+
 # ── Run EF Core migrations ──
 # The efbundle is a self-contained executable that:
 #   - Reads the connection string from --connection

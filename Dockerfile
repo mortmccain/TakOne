@@ -66,6 +66,7 @@ COPY ["TakOne.Domain/TakOne.Domain.csproj", "TakOne.Domain/"]
 COPY ["TakOne.Infrastructure/TakOne.Infrastructure.csproj", "TakOne.Infrastructure/"]
 COPY ["TakOne.SharedKernel/TakOne.SharedKernel.csproj", "TakOne.SharedKernel/"]
 COPY ["TakOne.Analyzers/TakOne.Analyzers.csproj", "TakOne.Analyzers/"]
+COPY ["TakOne.MigrationFixer/TakOne.MigrationFixer.csproj", "TakOne.MigrationFixer/"]
 
 RUN dotnet restore "TakOne.WebUI/TakOne.WebUI.csproj"
 
@@ -76,6 +77,19 @@ COPY . .
 RUN dotnet publish "TakOne.WebUI/TakOne.WebUI.csproj" \
     -c Release \
     -o /app/publish \
+    /p:UseAppHost=false
+
+# Publish the MigrationFixer — a tiny console app that marks existing
+# migrations as applied in __EFMigrationsHistory before the efbundle runs.
+# This handles the case where the database already has the schema (from a
+# previous deploy) but __EFMigrationsHistory is missing the migration record.
+# Without this, the efbundle tries to CREATE TABLE [AspNetRoles] ... and
+# fails with SQL error 2714 "There is already an object named 'AspNetRoles'
+# in the database." The MigrationFixer marks the migration as applied so
+# the efbundle skips it and only runs genuinely new migrations (if any).
+RUN dotnet publish "TakOne.MigrationFixer/TakOne.MigrationFixer.csproj" \
+    -c Release \
+    -o /app/migration-fixer \
     /p:UseAppHost=false
 
 # Build the EF Core migrations bundle (single self-contained executable that
@@ -136,6 +150,12 @@ COPY --from=builder /app/publish ./
 
 # Copy the migrations bundle.
 COPY --from=builder /app/efbundle ./
+
+# Copy the MigrationFixer tool (marks existing migrations as applied
+# in __EFMigrationsHistory before the efbundle runs — prevents SQL
+# error 2714 "There is already an object named 'AspNetRoles'" when
+# the database already has the schema from a previous deploy).
+COPY --from=builder /app/migration-fixer ./migration-fixer/
 
 # Copy the entrypoint script and make it executable.
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
