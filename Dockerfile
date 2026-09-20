@@ -108,6 +108,27 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_HTTP_PORTS=8080
 ENV DOTNET_RUNNING_IN_CONTAINER=true
 
+# .NET SingleFileApp bundle extraction directory.
+# /app/efbundle is a SingleFileApp (built by `dotnet ef migrations bundle`)
+# that extracts its embedded managed assemblies into a base directory before
+# loading them. By default .NET uses $HOME/.net, but on the aspnet:10.0 image
+# the `app` user has no home directory, and even if it did, the container
+# runs read-only (see docker-compose.yml `read_only: true`), so the default
+# location is unwritable. Without this env var, efbundle fails with
+# "DOTNET_BUNDLE_EXTRACT_BASE_DIR is not set, and a read-write cache
+# directory couldn't be created" and the container restart-loops on every
+# migration run.
+#
+# /tmp is the only directory that's writable in a read-only container
+# (via the tmpfs mount in docker-compose.yml). When the image is run
+# standalone (without compose), /tmp is writable by default on Linux,
+# so this still works.
+#
+# docker-compose.yml ALSO sets this env var explicitly (same value) so
+# the contract is enforced at the orchestration layer too — but setting
+# it here as the image default means the image is correct in isolation.
+ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR=/tmp/dotnet-bundle
+
 WORKDIR /app
 
 # Copy the published app from the builder stage.

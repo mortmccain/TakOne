@@ -65,6 +65,24 @@ services:
       # the container defaults to UTC and the greeting is wrong
       # for Iranian users (e.g. 15:00 Tehran = 11:30 UTC → "morning").
       TZ: "Asia/Tehran"
+
+      # .NET SingleFileApp bundle extraction directory for /app/efbundle.
+      # The efbundle is a SingleFileApp: when invoked, it extracts its
+      # embedded managed assemblies to a base directory before loading
+      # them. The default base directory is $HOME/.net (which resolves to
+      # /home/app for the `app` user on the aspnet:10.0 image — but that
+      # directory doesn't exist, and even if it did, the container's
+      # rootfs is read-only). Without this env var, efbundle fails with
+      # "DOTNET_BUNDLE_EXTRACT_BASE_DIR is not set, and a read-write
+      # cache directory couldn't be created" and the container restart-
+      # loops on every migration run.
+      # /tmp is a tmpfs mount (see `tmpfs:` below), so it's writable and
+      # RAM-backed — perfect for the ephemeral extraction. The app
+      # itself (dotnet TakOne.WebUI.dll) does NOT need this because the
+      # publish step builds it as a regular DLL layout (not a SingleFileApp),
+      # so only the efbundle cares about this env var.
+      DOTNET_BUNDLE_EXTRACT_BASE_DIR: "/tmp/dotnet-bundle"
+
       # Uploads now live outside wwwroot (see the volume mount below) so
       # they are never served by the unauthenticated UseStaticFiles
       # middleware. See Brutal Code Review v3 finding #09.
