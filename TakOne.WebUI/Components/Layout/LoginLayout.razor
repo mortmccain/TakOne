@@ -60,58 +60,49 @@
     @* ── RIGHT panel — branding side (deep green with radial glow) ── *@
     <aside class="login-panel login-panel--brand" aria-label="TakOne brand">
         @* Radial glow — a subtle spotlight effect behind the brand
-           text + icon area, like the design mockup. Implemented as a
-           separate div so it can be positioned absolutely without
-           affecting the content flow. *@
+           text + icon area, like the design mockup. *@
         <div class="login-brand-glow" aria-hidden="true"></div>
 
-        @* Brand logo + language switcher — top-right corner.
-           The TakLogo.png image is DECORATIVE (no click handler) — it
-           is the brand mark, not a button.
-           The text label below the logo ("EN" in FA mode, "فا" in EN
-           mode) IS the language switch trigger — clicking it calls
-           takSwitchCulture which sets the takone_culture cookie and
-           force-reloads so the localization middleware re-evaluates.
-
-           LAYOUT:
-           .login-brand-logo is a flex-column container, anchored to
-           the top-right corner (right: 1.5rem). align-items: center
-           keeps both the image and the text label horizontally
-           CENTERED in the container — so the label always appears
-           DIRECTLY BELOW the logo, in both LTR (English) and RTL
-           (Persian) modes. The previous version used align-items:
-           flex-end, which in RTL flipped the cross-axis end to the
-           LEFT, making the label appear to the LEFT of the logo
-           (the user-reported bug). center is direction-agnostic.
-
-           TakLogo.png lives at wwwroot/TakLogo.png — referenced as a
-           relative URL "TakLogo.png" (NOT "/TakLogo.png") so it works
-           whether the app is hosted at the domain root or under a
-           sub-path. The same file is the site favicon (set in App.razor
-           via <link rel="icon" type="image/png" href="TakLogo.png" />). *@
-        <div class="login-brand-logo">
-            <img src="TakLogo.png"
-                 alt="TakOne"
-                 class="login-brand-logo-img" />
-            <button type="button"
-                    class="login-brand-logo-label"
-                    aria-label="@Localizer["LangSwitchAriaLabel"]"
-                    title="@Localizer["LangSwitchAriaLabel"]"
-                    onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
-                @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
-            </button>
-        </div>
+        @* Language switcher — top-right corner. JUST the text label
+           ("EN" / "فا"), no logo. The TakLogo.png image is moved INTO
+           the .login-brand-content stack below (above the title) per
+           the user directive: "the logo should be on top of that (as
+           of picture) not on top of the green page as it is now".
+           The logo now sits at the top of the brand content stack,
+           above the "Alone at the peak," / "تنها در اوج،" title. *@
+        <button type="button"
+                class="login-lang-switch"
+                aria-label="@Localizer["LangSwitchAriaLabel"]"
+                title="@Localizer["LangSwitchAriaLabel"]"
+                onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
+            @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
+        </button>
 
         <div class="login-brand-content">
+            @* Brand logo — at the TOP of the brand content stack,
+               above the title. Previously this was in the top-right
+               corner; now it's part of the vertical content flow. *@
+            <img src="TakLogo.png"
+                 alt="TakOne"
+                 class="login-brand-content-logo" />
+
             <h2 class="login-brand-title">@Localizer["RightPanelTitle"]</h2>
             <p class="login-brand-subtitle">@Localizer["RightPanelSubtitle"]</p>
 
             <p class="login-brand-intro">@Localizer["RightPanelIntro"]</p>
 
-            <ul class="login-brand-features">
-                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature3"]</span></li>
-                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature4"]</span></li>
-            </ul>
+            @* Feature list — 4 items, no gold-dot bullets (per user
+               directive: "the two texts that existed before don't need
+               the dot in front of the sentences"). Plain <p> tags
+               instead of <ul><li> with bullet spans. The 2 new texts
+               (RightPanelFeature5 + 6) are appended after the
+               existing 2. *@
+            <div class="login-brand-features">
+                <p class="login-brand-feature">@Localizer["RightPanelFeature3"]</p>
+                <p class="login-brand-feature">@Localizer["RightPanelFeature4"]</p>
+                <p class="login-brand-feature">@Localizer["RightPanelFeature5"]</p>
+                <p class="login-brand-feature">@Localizer["RightPanelFeature6"]</p>
+            </div>
         </div>
 
         <footer class="login-brand-footer">

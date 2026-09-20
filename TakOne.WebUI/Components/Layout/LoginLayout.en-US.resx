@@ -78,10 +78,10 @@
     <value>Enter your worker ID and password to access the system.</value>
   </data>
   <data name="RightPanelTitle" xml:space="preserve">
-    <value>TakOne</value>
+    <value>Alone at the peak,</value>
   </data>
   <data name="RightPanelSubtitle" xml:space="preserve">
-    <value>Enterprise Sales Management</value>
+    <value>Tak Makaron</value>
   </data>
   <data name="RightPanelIntro" xml:space="preserve">
     <value>The enterprise employee shop and sales management portal — role-aware access, real-time notifications, and audit-ready reports.</value>
@@ -97,6 +97,12 @@
   </data>
   <data name="RightPanelFeature4" xml:space="preserve">
     <value>Analytical summaries and operational performance reports.</value>
+  </data>
+  <data name="RightPanelFeature5" xml:space="preserve">
+    <value>Online order placement.</value>
+  </data>
+  <data name="RightPanelFeature6" xml:space="preserve">
+    <value>Order status tracking and purchase history.</value>
   </data>
   <data name="RightPanelCopyright" xml:space="preserve">
     <value>© {0} TakOne. All rights reserved. — Version 1.0.0</value>

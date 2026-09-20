@@ -78,10 +78,10 @@
     <value>برای دسترسی، کد پرسنلی و رمز عبور خود را وارد کنید.</value>
   </data>
   <data name="RightPanelTitle" xml:space="preserve">
-    <value>تک‌وان</value>
+    <value>تنها در اوج،</value>
   </data>
   <data name="RightPanelSubtitle" xml:space="preserve">
-    <value>سیستم مدیریت فروش سازمانی</value>
+    <value>تک ماکارون</value>
   </data>
   <data name="RightPanelIntro" xml:space="preserve">
     <value>پورتال اختصاصی فروش و مدیریت فروش سازمانی — دسترسی نقش‌محور، اعلان‌های بلادرنگ، و گزارش‌های آمادهٔ حسابرسی.</value>
@@ -97,6 +97,12 @@
   </data>
   <data name="RightPanelFeature4" xml:space="preserve">
     <value>خلاصه‌های تحلیلی و گزارش‌های عملکردی.</value>
+  </data>
+  <data name="RightPanelFeature5" xml:space="preserve">
+    <value>ثبت سفارش آنلاین.</value>
+  </data>
+  <data name="RightPanelFeature6" xml:space="preserve">
+    <value>پیگیری وضعیت سفارش و تاریخچه خرید.</value>
   </data>
   <data name="RightPanelCopyright" xml:space="preserve">
     <value>© {0} تک‌وان. کلیه حقوق محفوظ است. — نسخهٔ ۱.۰.۰</value>

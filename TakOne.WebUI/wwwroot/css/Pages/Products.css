@@ -235,37 +235,35 @@
         box-shadow: 0 4px 12px rgba(14, 77, 60, 0.35);
     }
 
-    .tm-portal-icon img {
-        /* LAUNCH-D7: changed from object-fit: cover (which fills + crops
-           the image to the box) to object-fit: contain (which letterboxes
-           the image inside the box, preserving aspect ratio). Per the user
-           directive: "the logo should stay in the rectangle and not take
-           full size" — the TakLogo.png should be visible in full inside
-           the 44x44 button, not cropped. The 4px padding gives the logo
-           breathing room from the box edges. box-sizing: border-box
-           ensures the padding doesn't add to the rendered size. */
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        max-height: 100% !important;
-        object-fit: contain !important;
-        padding: 4px;
-        box-sizing: border-box;
-        display: block;
-    }
-
-    /* New class for the TakLogo.png image — same rules as .tm-portal-icon img
-       but with a more specific selector so it doesn't get overridden by
-       any future generic img rule. */
+    .tm-portal-icon img,
     .tm-portal-icon .tm-portal-icon-logo {
+        /* LAUNCH-D8: SUPER-ROBUST image sizing. The TakLogo.png is
+           1475x1759 (portrait, RGBA with transparency). With
+           object-fit: contain in a 44x44 box, it should render as
+           37x44 (fills height, letterboxed on sides) — no cropping.
+
+           The previous version had padding: 4px which reduced the
+           image area to 36x36. Reduced to 2px to give the image more
+           space (40x40 effective area). The image is still letterboxed
+           but fills more of the box.
+
+           The !important on ALL properties + box-sizing: border-box
+           guarantees the image CANNOT render at its intrinsic size
+           (1475x1759) which would cause overflow:hidden on the parent
+           button to clip it. width: 100% + height: 100% + max-width:
+           100% + max-height: 100% all !important ensure the image is
+           constrained to the parent's 44x44 box. */
         width: 100% !important;
         height: 100% !important;
         max-width: 100% !important;
         max-height: 100% !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
         object-fit: contain !important;
-        padding: 4px;
-        box-sizing: border-box;
-        display: block;
+        padding: 2px !important;
+        box-sizing: border-box !important;
+        display: block !important;
+        margin: 0 !important;
     }
 
 .tm-portal-icon-fallback {
