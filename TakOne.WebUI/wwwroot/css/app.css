@@ -486,3 +486,302 @@ span.sale-status-badge::before {
     right: auto;
     left: 25%;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOGIN PAGE — global CSS (Launch-D6)
+   ═══════════════════════════════════════════════════════════════════
+   These rules DUPLICATE the rules in LoginLayout.razor.css. The reason
+   for the duplication: Blazor CSS isolation (scoped .razor.css files)
+   has historically been flaky for LAYOUT components (@inherits
+   LayoutComponentBase) — the scope attribute isn't always applied
+   reliably to every rendered element, especially when the layout's
+   @Body is a child component (Login.razor) that re-renders
+   independently. Putting the rules here in GLOBAL app.css ensures
+   they ALWAYS apply, regardless of any scoped-CSS isolation quirks.
+
+   All colors are HARDCODED TakLight hex values (not var(--tm-*)) so
+   the login page is immune to the user's saved theme preference
+   (which loads tak-dark.css and would otherwise resolve var(--tm-cream)
+   to dark green #0E1A14 instead of cream #FAF7F0). The login page is
+   the BRAND STOREFRONT — it should always look TakLight.
+
+   NOTE: the link to this stylesheet in App.razor carries ?v=1 to
+   force the browser to fetch the fresh version after a deploy.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Shell — full-screen 50/50 split. Background is HARDCODED cream. */
+.login-shell {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+    background: #FAF7F0 !important;
+}
+
+.login-panel {
+    position: relative;
+    padding: 3rem 3.5rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* LEFT panel — form side (cream background) */
+.login-panel--form {
+    background: #FAF7F0 !important;
+    color: #1F2937 !important;
+    justify-content: center;
+    align-items: stretch;
+}
+
+.login-form-header {
+    margin-bottom: 2rem;
+    text-align: left;
+}
+
+.login-form-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: #0A3528 !important;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+.login-form-subtext {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6B7280 !important;
+    line-height: 1.55;
+    max-width: 28rem;
+}
+
+.login-form-body {
+    width: 100%;
+}
+
+/* RIGHT panel — brand side (deep forest green + radial glow) */
+.login-panel--brand {
+    background:
+        radial-gradient(circle at 70% 30%, rgba(212, 175, 55, 0.18) 0%, transparent 55%),
+        linear-gradient(135deg, #0A3528 0%, #0E4D3C 100%) !important;
+    color: #FAF7F0 !important;
+    justify-content: space-between;
+}
+
+.login-brand-glow {
+    position: absolute;
+    top: 18%;
+    right: 25%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(circle, rgba(212, 175, 55, 0.10) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── Brand logo — TakLogo.png. SUPER-ROBUST size constraints so a
+   large source PNG can NEVER overflow the top-right corner area.
+   The !important on width/height/max-width/max-height + box-sizing:
+   border-box + object-fit: contain guarantees the image renders inside
+   a 4rem × 4rem box regardless of its intrinsic dimensions. */
+.login-brand-logo {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    cursor: pointer;
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    transition: opacity 0.15s ease;
+    /* Constrain the WHOLE logo button to a max width so even if the
+       image somehow tried to render large, the parent clips it. */
+    max-width: 5rem;
+}
+
+.login-brand-logo:hover {
+    opacity: 0.85;
+}
+
+.login-brand-logo:focus-visible {
+    outline: 2px solid #D4AF37;
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
+.login-brand-logo-img {
+    /* HARD CONSTRAINTS — !important to override any competing rule
+       from Radzen's component CSS or browser defaults. The image
+       CANNOT render larger than 4rem × 4rem no matter how big the
+       source PNG is. box-sizing: border-box ensures the padding
+       doesn't add to the rendered size. */
+    width: 4rem !important;
+    height: 4rem !important;
+    max-width: 4rem !important;
+    max-height: 4rem !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    display: block;
+    border-radius: 0.625rem;
+    box-shadow: 0 4px 16px rgba(212, 175, 55, 0.30);
+    background: rgba(250, 247, 240, 0.95);
+    object-fit: contain;
+    padding: 0.25rem;
+    box-sizing: border-box;
+    /* Some browsers render the image at intrinsic size if width/height
+       auto. Force width AND height to the fixed rem values + add
+       object-fit so the image is letterboxed inside the box. */
+}
+
+.login-brand-logo-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #D4AF37;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+}
+
+.login-brand-content {
+    position: relative;
+    z-index: 1;
+    margin-top: auto;
+    margin-bottom: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 32rem;
+}
+
+.login-brand-title {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 800;
+    color: #FFFFFF !important;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+.login-brand-subtitle {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #D4AF37 !important;
+    line-height: 1.4;
+}
+
+.login-brand-intro {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 400;
+    color: rgba(250, 247, 240, 0.78) !important;
+    line-height: 1.65;
+    max-width: 30rem;
+}
+
+.login-brand-features {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+}
+
+.login-brand-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(250, 247, 240, 0.92) !important;
+    line-height: 1.55;
+}
+
+.login-brand-bullet {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-top: 0.5rem;
+    background: #C9A227;
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.18);
+}
+
+.login-brand-footer {
+    position: relative;
+    z-index: 1;
+    margin-top: 2rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid rgba(250, 247, 240, 0.10);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(250, 247, 240, 0.55) !important;
+    letter-spacing: 0.02em;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Responsive — below 960px stack vertically, below 640px hide brand
+   panel entirely.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 960px) {
+    .login-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+    }
+
+    .login-panel {
+        padding: 2rem 1.5rem;
+    }
+
+    .login-panel--brand {
+        order: -1;
+        min-height: 8rem;
+    }
+
+    .login-brand-content {
+        gap: 0.5rem;
+    }
+
+    .login-brand-title {
+        font-size: 1.25rem;
+    }
+
+    .login-brand-subtitle {
+        font-size: 0.875rem;
+    }
+
+    .login-brand-intro,
+    .login-brand-features {
+        display: none;
+    }
+
+    .login-brand-footer {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .login-panel--brand {
+        display: none;
+    }
+
+    .login-panel--form {
+        padding: 2rem 1.25rem;
+    }
+
+    .login-form-title {
+        font-size: 1.5rem;
+    }
+}
