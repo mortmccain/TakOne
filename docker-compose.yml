@@ -16,6 +16,16 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: takone-db
     restart: unless-stopped
+    # Log rotation — caps each log file at 200MB, keeps 3 rotated files
+    # max = 600MB total. When the 3rd file hits 200MB, Docker deletes
+    # the oldest and starts a new one — automatic, permanent, no
+    # maintenance needed. Without this, Docker's default json-file
+    # driver keeps ALL logs forever → eventually fills the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "200m"
+        max-file: "3"
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD}
@@ -49,6 +59,16 @@ services:
       dockerfile: Dockerfile
     container_name: takone-web
     restart: unless-stopped
+    # Log rotation — caps each log file at 200MB, keeps 3 rotated files
+    # max = 600MB total. When the 3rd file hits 200MB, Docker deletes
+    # the oldest and starts a new one — automatic, permanent, no
+    # maintenance needed. Without this, Docker's default json-file
+    # driver keeps ALL logs forever → eventually fills the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "200m"
+        max-file: "3"
     depends_on:
       takone-db:
         condition: service_healthy
