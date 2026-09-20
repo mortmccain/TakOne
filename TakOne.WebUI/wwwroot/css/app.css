@@ -887,3 +887,82 @@ span.sale-status-badge::before {
         font-size: 0.6875rem;
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RADZEN THEME COMPATIBILITY — maps --tm-* variables to --rz-* when a
+   non-Tak theme (e.g. Radzen "standard", "default", light themes) is
+   active. This ensures:
+     1. Text colors are readable (no white-on-white).
+     2. The Radzen standard blue shows up wherever --tm-green is used.
+     3. Dashboard cards use proper surface colors (not black↔white
+        gradient from the hardcoded dark fallbacks).
+
+   This block is scoped to :root:not([data-theme-family="tak"]) so it
+   ONLY applies when a Radzen theme is active. When tak-light.css or
+   tak-dark.css is active, data-theme-family="tak" is set on <html>
+   by theme.js → this block is skipped → the Tak theme's --tm-*
+   definitions take precedence (unchanged, work perfectly).
+
+   The mapping uses --rz-* fallbacks (which Radzen defines for every
+   theme) with a final hardcoded fallback if --rz-* is also undefined.
+   ═══════════════════════════════════════════════════════════════════ */
+:root:not([data-theme-family="tak"]) {
+    /* Brand greens → Radzen primary (blue on "standard", varies per theme) */
+    --tm-green: var(--rz-primary, #3b82f6);
+    --tm-green-dark: var(--rz-primary-darker, #1d4ed8);
+    --tm-green-light: var(--rz-primary-lighter, #60a5fa);
+    --tm-green-mint: var(--rz-base-background-color, #f8fafc);
+
+    /* Accent golds → Radzen secondary */
+    --tm-gold: var(--rz-secondary, #eab308);
+    --tm-gold-bright: var(--rz-secondary-lighter, #facc15);
+    --tm-gold-soft: var(--rz-base-hover-bg, #f1f5f9);
+    --tm-gold-tint: var(--rz-panel-content-background-color, #f8fafc);
+
+    /* Neutrals → Radzen text + surface tokens */
+    --tm-cream: var(--rz-base-background-color, #ffffff);
+    --tm-text: var(--rz-text-color, #1f2937);
+    --tm-gray: var(--rz-text-secondary-color, #6b7280);
+    --tm-gray-light: var(--rz-border-color, #e5e7eb);
+
+    /* Semantic aliases */
+    --tm-surface: var(--rz-panel-background-color, #ffffff);
+    --tm-surface-muted: var(--rz-base-background-color, #f8fafc);
+    --tm-on-primary: #ffffff;
+    --tm-on-accent: var(--rz-text-color, #1f2937);
+
+    /* Dashboard variables → Radzen panel tokens */
+    --tm-dash-surface: var(--rz-panel-background-color, #ffffff);
+    --tm-dash-surface-2: var(--rz-panel-content-background-color, #f8fafc);
+    --tm-dash-border: var(--rz-border-color, #e5e7eb);
+    --tm-dash-text: var(--rz-text-color, #1f2937);
+    --tm-dash-muted: var(--rz-text-secondary-color, #6b7280);
+    --tm-dash-table-hover: var(--rz-base-hover-bg, #f8fafc);
+    --tm-dash-table-border: var(--rz-border-color, #e5e7eb);
+    --tm-dash-avatar-bg: var(--rz-base-hover-bg, #f1f5f9);
+    --tm-dash-badge-bg: var(--rz-border-color, #e5e7eb);
+
+    /* Sidebar variables → Radzen tokens */
+    --tm-sidebar-text: var(--rz-text-color, #1f2937);
+    --tm-sidebar-muted: var(--rz-text-secondary-color, #6b7280);
+    --tm-sidebar-hover-bg: var(--rz-base-hover-bg, rgba(0,0,0,0.04));
+    --tm-sidebar-active-bg: var(--rz-primary-lighter, rgba(59,130,246,0.12));
+    --tm-sidebar-active-text: var(--rz-primary, #3b82f6);
+}
+
+/* Dashboard KPI card gradient — on Radzen themes, use a subtle
+   surface-to-surface gradient (both colors from --rz-* tokens) instead
+   of the hardcoded dark fallback that causes the black↔white gradient.
+   The .tm-dash-kpi-card rule in Dashboard.css already has a fallback
+   chain, but the dark fallback values (#152019, #1A2820) kick in when
+   --rz-panel-background-color is somehow not defined. This rule ensures
+   the card uses proper Radzen surface colors on non-Tak themes. */
+:root:not([data-theme-family="tak"]) .tm-dash-kpi-card {
+    background: linear-gradient(135deg,
+        var(--rz-panel-background-color, #ffffff) 0%,
+        var(--rz-panel-content-background-color, #f8fafc) 100%) !important;
+}
+
+:root:not([data-theme-family="tak"]) .tm-dash-card {
+    background: var(--rz-panel-background-color, #ffffff) !important;
+}
