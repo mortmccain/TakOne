@@ -457,3 +457,32 @@ span.sale-status-badge::before {
     border: 1px solid var(--rz-border-color);
     border-radius: 10px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RTL overrides for the redesigned LoginLayout (Launch-D5).
+   These rules live here (global app.css) — NOT in
+   LoginLayout.razor.css — because the [dir="rtl"] selector targets
+   <html>, which is rendered by App.razor, not LoginLayout. Blazor
+   CSS isolation can't reach parent elements outside the component's
+   own render tree, so global app.css is the correct home.
+   ═══════════════════════════════════════════════════════════════════ */
+[dir="rtl"] .login-form-header {
+    text-align: right;
+}
+
+[dir="rtl"] .login-lang-switch {
+    /* Keep the lang switch in the physical top-right corner — it's a
+       globe icon, not directional text, so it shouldn't flip with RTL.
+       The `right` property is physical (not logical inset-inline-end),
+       so this rule is just defensive documentation that the switch
+       stays in place regardless of direction. */
+    right: 1.5rem;
+    left: auto;
+}
+
+[dir="rtl"] .login-brand-glow {
+    /* Mirror the radial glow to the OPPOSITE side in RTL so it stays
+       "behind" the brand content (which is now right-aligned). */
+    right: auto;
+    left: 25%;
+}

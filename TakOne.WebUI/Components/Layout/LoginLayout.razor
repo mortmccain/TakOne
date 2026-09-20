@@ -1,89 +1,110 @@
-﻿﻿@* LoginLayout.razor — Phase 0.11
-   Per roadmap Concern A: real branded full-screen layout (NOT a pass-through).
-   - Full-screen dark gradient background (overrides the main Radzen theme)
-   - Centered card container for the Login.razor child
-   - TakOne brand mark + tagline at the top
-   - Footer with copyright + language switcher link
+@* LoginLayout.razor — Phase 0.11 (redesigned Launch-D5 — split-screen)
+   50/50 split-screen layout with TakLight theme colors:
+   - LEFT panel (cream background): the login form, centered.
+     The form is rendered by Login.razor (a child of this layout via @Body).
+     Above the form: a localized heading + subtext.
+   - RIGHT panel (deep forest green with radial gradient glow):
+     Brand mark + title + subtitle + intro paragraph + 4 gold-dot
+     feature bullets + copyright footer.
+     The language switcher is a gold rounded-square button in the
+     top-right corner — clicking it toggles between EN and FA.
 
-   Login.razor itself becomes a child of this layout (it sets
-   @layout LoginLayout) and just renders the form fields inside the card. *@
+   CRITICAL — STATIC SSR (no Blazor circuit):
+   Login.razor and ChangePassword.razor are STATIC-SSR pages (no
+   Blazor circuit). Blazor's @onclick handler requires a live circuit
+   to round-trip the click event to the server — with no circuit,
+   @onclick silently never fires. The language switcher therefore uses
+   plain HTML onclick + inline JS (takSwitchCulture at the bottom of
+   this file), exactly as the previous version did. The password eye-
+   toggle on Login.razor uses the same pattern (onclick="takTogglePw"
+   — see Login.razor's inline <script>).
+
+   CRITICAL — RTL Persian text input bidi fix PRESERVED:
+   The form's native <input> elements have dir="ltr" hardcoded so that
+   typing "miow2323!" in Persian mode doesn't show as "!miow2323"
+   (the bidi algorithm places neutral characters at the start of the
+   LTR run when the surrounding context is RTL). This fix lives in
+   Login.razor itself (NOT in this layout) — the dir="ltr" attribute
+   is on the <input> elements. The new layout does NOT touch this; it
+   only changes the LOOKS (split-screen shell + TakLight colors), not
+   the form internals.
+
+   TAKLIGHT THEME COLORS:
+   All colors use var(--tm-*) tokens defined by tak-light.css (loaded
+   by RadzenTheme + theme.js). When the user switches to dark theme
+   (tak-dark.css), the same variables resolve to dark-theme values —
+   but this layout is the LOGIN page, which is shown BEFORE the user
+   is authenticated. The login page uses TakLight colors REGARDLESS
+   of the user's saved theme preference (the in-app theme switcher
+   only affects the post-login pages). This is intentional: the login
+   page is the brand storefront, and the brand is TakLight. *@
 
 @inherits LayoutComponentBase
-@inject NavigationManager Navigation
+@inject IStringLocalizer<LoginLayout> Localizer
+@using System.Globalization
+@using TakOne.WebUI.Services
 
 <div class="login-shell">
-    <div class="login-bg"></div>
-
-    <main class="login-card">
-        <header class="login-brand">
-            <h1>TakOne</h1>
-            <p>@Localizer["Tagline"]</p>
+    @* ── LEFT panel — form side (cream background) ── *@
+    <section class="login-panel login-panel--form" aria-label="@Localizer["FormHeading"]">
+        <header class="login-form-header">
+            <h1 class="login-form-title">@Localizer["FormHeading"]</h1>
+            <p class="login-form-subtext">@Localizer["FormSubtext"]</p>
         </header>
 
-        @Body
+        <div class="login-form-body">
+            @Body
+        </div>
+    </section>
 
-        <footer class="login-footer">
-            <span>&copy; @(CultureFormat.FormatDigits(DateTime.UtcNow.Year)) TakOne</span>
-            @* Language switcher — writes the `takone_culture` cookie in the
-               format CookieRequestCultureProvider expects (`c=X|uic=X`), then
-               force-reloads so the localization middleware re-evaluates.
-               MUST match MainLayout.razor's OnCultureChanged exactly so the
-               two switchers stay in sync.
+    @* ── RIGHT panel — branding side (deep green with radial glow) ── *@
+    <aside class="login-panel login-panel--brand" aria-label="TakOne brand">
+        @* Radial glow — a subtle spotlight effect behind the brand
+           text + icon area, like the design mockup. Implemented as a
+           separate div so it can be positioned absolutely without
+           affecting the content flow. *@
+        <div class="login-brand-glow" aria-hidden="true"></div>
 
-               IMPORTANT — WHY PLAIN HTML onclick + JS (not Blazor @onclick):
-               Login.razor and ChangePassword.razor are STATIC SSR pages (no
-               Blazor circuit). Blazor's @onclick handler requires a live
-               circuit to round-trip the click event to the server — with no
-               circuit, @onclick silently never fires. This is the same
-               reason the eye-toggle button on those pages uses plain
-               onclick="takTogglePw(this)" instead of @onclick.
+        @* Language switcher — gold rounded-square button in the
+           top-right corner. Shows "فا" in EN mode (click → switch to
+           Persian) and "EN" in FA mode (click → switch to English).
+           This is the same takSwitchCulture JS function as the
+           previous version — sets the takone_culture cookie and
+           force-reloads so the localization middleware re-evaluates. *@
+        <button type="button"
+                class="login-lang-switch"
+                aria-label="@Localizer["LangSwitchAriaLabel"]"
+                title="@Localizer["LangSwitchAriaLabel"]"
+                onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
+            @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
+        </button>
 
-               The inline takSwitchCulture() function at the bottom of this
-               file sets the cookie via document.cookie and force-reloads
-               via window.location.reload() — pure browser, no server
-               round-trip needed. Works identically on /Account/Login and
-               /Account/ChangePassword (both static SSR) AND on any future
-               page that adopts this layout.
+        <div class="login-brand-content">
+            <div class="login-brand-mark" aria-hidden="true">ت</div>
 
-               Previous version used `@onclick="SwitchCultureAsync"` — that
-               was the bug: clicks were silently ignored on /Account/Login
-               and /Account/ChangePassword because no circuit existed. The
-               `@inject IJSRuntime JS` + `Navigation.NavigateTo(Uri,
-               forceLoad: true)` pattern only works when a circuit is
-               established (the JSRuntime needs a circuit to dispatch
-               through). With no circuit, the @onclick never fires AND the
-               JSRuntime call would also fail — but we never got that far
-               because the click itself was the broken link in the chain.
+            <h2 class="login-brand-title">@Localizer["RightPanelTitle"]</h2>
+            <p class="login-brand-subtitle">@Localizer["RightPanelSubtitle"]</p>
 
-               The href="javascript:void(0)" keeps the <a> semantically a
-               link (cursor: pointer, focusable, keyboard-accessible) while
-               the onclick handler does the actual work. *@
-            <a href="javascript:void(0)"
-               onclick="takSwitchCulture('en-US')">@Localizer["SwitchToEnglish"]</a>
-            <a href="javascript:void(0)"
-               onclick="takSwitchCulture('fa-IR')">@Localizer["SwitchToPersian"]</a>
+            <p class="login-brand-intro">@Localizer["RightPanelIntro"]</p>
+
+            <ul class="login-brand-features">
+                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature1"]</span></li>
+                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature2"]</span></li>
+                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature3"]</span></li>
+                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature4"]</span></li>
+            </ul>
+        </div>
+
+        <footer class="login-brand-footer">
+            <span>@string.Format(Localizer["RightPanelCopyright"], CultureFormat.FormatDigits(DateTime.UtcNow.Year))</span>
         </footer>
-    </main>
+    </aside>
 </div>
 
 @* ── Inline culture-switch script ──
    Sets the `takone_culture` cookie in the format ASP.NET Core's
    CookieRequestCultureProvider expects (`c=XX|uic=XX`), then force-reloads
    so the localization middleware re-evaluates on the next request.
-
-   The cookie name MUST match `CookieRequestCultureProvider.DefaultCookieName`
-   ("takone_culture" is configured in Program.cs via
-   options.CookieName = "takone_culture"). The value format
-   `c={culture}|uic={culture}` is the standard CookieRequestCultureProvider
-   format — `c` is the culture (used for formatting dates/numbers), `uic`
-   is the UI culture (used for resource lookups). We set both to the same
-   value because we don't differentiate them in this app.
-
-   The max-age=31536000 (1 year) + path=/ + samesite=strict attributes
-   match what MainLayout.razor's SwitchCultureAsync sets via JSRuntime.
-   samesite=strict is the security default — the cookie is only sent on
-   same-site requests, so a malicious site can't trick the user's browser
-   into switching their TakOne language by linking to a TakOne URL.
 
    WHY INLINE (not a separate .js file):
      - The function is 3 lines of trivial cookie + reload — too small to
@@ -92,16 +113,12 @@
      - It's layout-local: only the LoginLayout uses it (the main app's
        MainLayout has its own SwitchCultureAsync via JSRuntime because
        the main app DOES have a Blazor circuit).
-     - It MUST run without a Blazor circuit (see the comment above), so
-       it can't use JSRuntime — inline browser JS is the only option.
+     - It MUST run without a Blazor circuit (LoginLayout is static-SSR),
+       so it can't use JSRuntime — inline browser JS is the only option.
 
    Identical in spirit to MainLayout.SwitchCultureAsync — kept duplicated
    because the two layouts live in different worlds (MainLayout always
-   has a circuit; LoginLayout never does). Trying to share a single
-   implementation would require either (a) JSRuntime (broken without a
-   circuit) or (b) a shared <script src> in App.razor (loads the function
-   on every page even when LoginLayout isn't used). The 3-line
-   duplication is the lesser evil. *@
+   has a circuit; LoginLayout never does). *@
 <script>
     function takSwitchCulture(culture) {
         var cookieValue = 'c=' + culture + '|uic=' + culture;
@@ -109,7 +126,3 @@
         window.location.reload();
     }
 </script>
-
-@code {
-    [Inject] private IStringLocalizer<LoginLayout> Localizer { get; set; } = default!;
-}

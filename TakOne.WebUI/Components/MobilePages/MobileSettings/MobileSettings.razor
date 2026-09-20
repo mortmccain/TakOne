@@ -224,9 +224,9 @@ else if (_user is not null)
                             <span class="m-notif-pref-desc">@GetNotifPrefDesc(kind)</span>
                         </span>
                         <button type="button"
-                                class="m-switch @(_isSavingPref ? "m-switch--disabled" : "") @(pref.IsMuted ? "on" : "")"
+                                class="m-switch @(_isSavingPref ? "m-switch--disabled" : "") @(!pref.IsMuted ? "on" : "")"
                                 role="switch"
-                                aria-checked="@pref.IsMuted"
+                                aria-checked="@(!pref.IsMuted)"
                                 aria-label="@GetNotifPrefName(kind)"
                                 disabled="@_isSavingPref"
                                 @onclick="(() => HandleNotifPrefToggleAsync(kind, !pref.IsMuted))">
