@@ -65,23 +65,43 @@
            affecting the content flow. *@
         <div class="login-brand-glow" aria-hidden="true"></div>
 
-        @* Language switcher — gold rounded-square button in the
-           top-right corner. Shows "فا" in EN mode (click → switch to
-           Persian) and "EN" in FA mode (click → switch to English).
-           This is the same takSwitchCulture JS function as the
-           previous version — sets the takone_culture cookie and
-           force-reloads so the localization middleware re-evaluates. *@
+        @* Brand logo — TakLogo.png from wwwroot. Replaces the previous
+           gold .login-lang-switch button per the launch directive.
+           The image is clickable: clicking it toggles between EN and FA
+           (same takSwitchCulture JS function as before — sets the
+           takone_culture cookie and force-reloads). A small text label
+           below the logo indicates which language clicking will switch TO
+           ("فا" in EN mode → click switches to Persian; "EN" in FA mode
+           → click switches to English).
+
+           WHY THE LOGO IS THE LANGUAGE TOGGLE:
+           The user said "the yellow rectangular thing on the top right,
+           I want that to be the TakLogo.png". The yellow rectangle was
+           the language switcher button. Replacing it with the brand logo
+           means the language-toggle click target moves onto the logo.
+           This preserves the language-switching UX (still one click in
+           the top-right corner) without adding a separate text link
+           that would clutter the brand panel.
+
+           TakLogo.png lives at wwwroot/TakLogo.png — referenced as a
+           relative URL "TakLogo.png" (NOT "/TakLogo.png") so it works
+           whether the app is hosted at the domain root or under a
+           sub-path. The same file is the site favicon (set in App.razor
+           via <link rel="icon" type="image/png" href="TakLogo.png" />). *@
         <button type="button"
-                class="login-lang-switch"
+                class="login-brand-logo"
                 aria-label="@Localizer["LangSwitchAriaLabel"]"
                 title="@Localizer["LangSwitchAriaLabel"]"
                 onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
-            @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
+            <img src="TakLogo.png"
+                 alt="TakOne"
+                 class="login-brand-logo-img" />
+            <span class="login-brand-logo-label">
+                @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
+            </span>
         </button>
 
         <div class="login-brand-content">
-            <div class="login-brand-mark" aria-hidden="true">ت</div>
-
             <h2 class="login-brand-title">@Localizer["RightPanelTitle"]</h2>
             <p class="login-brand-subtitle">@Localizer["RightPanelSubtitle"]</p>
 
