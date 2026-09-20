@@ -390,7 +390,7 @@
 
 .tm-dash-badge-delivered {
     background: rgba(212, 175, 55, 0.15);
-    color: #D4AF37;
+    color: var(--tm-gold-bright);
 }
 
 .tm-dash-kpi-label {
