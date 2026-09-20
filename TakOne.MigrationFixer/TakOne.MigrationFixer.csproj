@@ -5,7 +5,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PublishSingleFile>true</PublishSingleFile>
+    <!-- NOT PublishSingleFile — the app runs via `dotnet TakOne.MigrationFixer.dll`
+         so it doesn't need to be a single-file executable. PublishSingleFile=true
+         requires UseAppHost=true, which conflicts with the /p:UseAppHost=false
+         flag the Dockerfile uses for all publish steps. -->
     <SelfContained>false</SelfContained>
     <!-- Suppress nullable warnings — this is a tiny utility, not a production app. -->
     <NoWarn>CS8600;CS8603;CS8604;CS8625</NoWarn>
