@@ -55,54 +55,99 @@
         <div class="login-form-body">
             @Body
         </div>
+
+        @* Language switcher — BELOW the login form, centered.
+           Moved from the top-right corner per user directive: "the buttons
+           for changing the language should be under the login button
+           (middle)". Styled to match the in-app top bar language switcher
+           per user directive: "should have the exact same style as the
+           change language buttons on the top bar inside the app (a line
+           in between them and the one that is currently chosen, a bit
+           darker)".
+
+           Two buttons "EN" and "FA" with a "|" separator between them.
+           The active language has full opacity + gold color + bold font.
+           The inactive language has muted opacity (0.55). This mirrors
+           the .tm-lang-toggle / .tm-lang-btn / .tm-lang-sep pattern from
+           MainLayout.razor's top bar.
+
+           Because this page is STATIC SSR (no Blazor circuit), the buttons
+           use plain HTML onclick + the takSwitchCulture JS function (sets
+           the takone_culture cookie and force-reloads) — NOT @onclick
+           (which needs a circuit). The .login-lang-toggle / .login-lang-btn
+           / .login-lang-sep classes are styled in app.css to mirror the
+           in-app .tm-lang-* classes but with hardcoded TakLight colors
+           (gold #D4AF37 for active, dark green #0A3528 for inactive text
+           on the cream background). *@
+        <div class="login-lang-toggle" role="group" aria-label="@Localizer["LangSwitchAriaLabel"]">
+            <button type="button"
+                    class='login-lang-btn @(CultureInfo.CurrentUICulture.Name == "en-US" ? "is-active" : "")'
+                    aria-pressed='@(CultureInfo.CurrentUICulture.Name == "en-US")'
+                    onclick="takSwitchCulture('en-US')">
+                EN
+            </button>
+            <span class="login-lang-sep" aria-hidden="true">|</span>
+            <button type="button"
+                    class='login-lang-btn @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "is-active" : "")'
+                    aria-pressed='@(CultureInfo.CurrentUICulture.Name == "fa-IR")'
+                    onclick="takSwitchCulture('fa-IR')">
+                FA
+            </button>
+        </div>
     </section>
 
     @* ── RIGHT panel — branding side (deep green with radial glow) ── *@
     <aside class="login-panel login-panel--brand" aria-label="TakOne brand">
         @* Radial glow — a subtle spotlight effect behind the brand
-           text + icon area, like the design mockup. *@
+           text + icon area. *@
         <div class="login-brand-glow" aria-hidden="true"></div>
-
-        @* Language switcher — top-right corner. JUST the text label
-           ("EN" / "فا"), no logo. The TakLogo.png image is moved INTO
-           the .login-brand-content stack below (above the title) per
-           the user directive: "the logo should be on top of that (as
-           of picture) not on top of the green page as it is now".
-           The logo now sits at the top of the brand content stack,
-           above the "Alone at the peak," / "تنها در اوج،" title. *@
-        <button type="button"
-                class="login-lang-switch"
-                aria-label="@Localizer["LangSwitchAriaLabel"]"
-                title="@Localizer["LangSwitchAriaLabel"]"
-                onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
-            @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
-        </button>
 
         <div class="login-brand-content">
             @* Brand logo — at the TOP of the brand content stack,
-               above the title. Previously this was in the top-right
-               corner; now it's part of the vertical content flow. *@
+               above the title. *@
             <img src="TakLogo.png"
                  alt="TakOne"
                  class="login-brand-content-logo" />
 
+            @* Title — "Alone at the peak," / "تنها در اوج،" — white, 2rem. *@
             <h2 class="login-brand-title">@Localizer["RightPanelTitle"]</h2>
+
+            @* Subtitle 1 — "Tak Makaron" / "تک ماکارون" — WHITE (was gold),
+               SAME SIZE as the title (2rem) per user directive. *@
             <p class="login-brand-subtitle">@Localizer["RightPanelSubtitle"]</p>
+
+            @* Subtitle 2 — "TakOne" / "تک وان" — white, current subtitle
+               font size (1.125rem). New line per user directive:
+               "under it with the current font size but the color of
+               white, should be written تک وان". *@
+            <p class="login-brand-brandname">@Localizer["RightPanelBrandName"]</p>
 
             <p class="login-brand-intro">@Localizer["RightPanelIntro"]</p>
 
-            @* Feature list — 4 items, no gold-dot bullets (per user
-               directive: "the two texts that existed before don't need
-               the dot in front of the sentences"). Plain <p> tags
-               instead of <ul><li> with bullet spans. The 2 new texts
-               (RightPanelFeature5 + 6) are appended after the
-               existing 2. *@
-            <div class="login-brand-features">
-                <p class="login-brand-feature">@Localizer["RightPanelFeature3"]</p>
-                <p class="login-brand-feature">@Localizer["RightPanelFeature4"]</p>
-                <p class="login-brand-feature">@Localizer["RightPanelFeature5"]</p>
-                <p class="login-brand-feature">@Localizer["RightPanelFeature6"]</p>
-            </div>
+            @* Feature list — 4 items WITH gold-dot bullets (brought back
+               per user directive: "i was in favor of the yellow dots
+               behind each text"). The dots have a slow glow animation.
+               The periods at the end of each sentence were removed
+               per user directive: "delete the dots at the end of the
+               sentences". *@
+            <ul class="login-brand-features">
+                <li>
+                    <span class="login-brand-bullet" aria-hidden="true"></span>
+                    <span>@Localizer["RightPanelFeature3"]</span>
+                </li>
+                <li>
+                    <span class="login-brand-bullet" aria-hidden="true"></span>
+                    <span>@Localizer["RightPanelFeature4"]</span>
+                </li>
+                <li>
+                    <span class="login-brand-bullet" aria-hidden="true"></span>
+                    <span>@Localizer["RightPanelFeature5"]</span>
+                </li>
+                <li>
+                    <span class="login-brand-bullet" aria-hidden="true"></span>
+                    <span>@Localizer["RightPanelFeature6"]</span>
+                </li>
+            </ul>
         </div>
 
         <footer class="login-brand-footer">
