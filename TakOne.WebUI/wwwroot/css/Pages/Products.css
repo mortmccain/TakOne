@@ -236,9 +236,36 @@
     }
 
     .tm-portal-icon img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+        /* LAUNCH-D7: changed from object-fit: cover (which fills + crops
+           the image to the box) to object-fit: contain (which letterboxes
+           the image inside the box, preserving aspect ratio). Per the user
+           directive: "the logo should stay in the rectangle and not take
+           full size" — the TakLogo.png should be visible in full inside
+           the 44x44 button, not cropped. The 4px padding gives the logo
+           breathing room from the box edges. box-sizing: border-box
+           ensures the padding doesn't add to the rendered size. */
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        padding: 4px;
+        box-sizing: border-box;
+        display: block;
+    }
+
+    /* New class for the TakLogo.png image — same rules as .tm-portal-icon img
+       but with a more specific selector so it doesn't get overridden by
+       any future generic img rule. */
+    .tm-portal-icon .tm-portal-icon-logo {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        padding: 4px;
+        box-sizing: border-box;
+        display: block;
     }
 
 .tm-portal-icon-fallback {

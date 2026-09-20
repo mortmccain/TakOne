@@ -48,7 +48,25 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
 }
+
+    /* LAUNCH-D7: TakLogo.png image inside the .m-brand-icon box.
+       object-fit: contain (NOT cover) so the logo is letterboxed
+       inside the box without cropping. 3px padding gives breathing
+       room from the box edges. The !important + box-sizing: border-box
+       + max-width/max-height guarantee the image stays inside the
+       2.5rem × 2.5rem box regardless of its intrinsic size. */
+    .m-brand-icon .m-brand-icon-img {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        padding: 3px;
+        box-sizing: border-box;
+        display: block;
+    }
 
 .m-brand-title {
     font-size: 0.875rem;

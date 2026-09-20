@@ -51,14 +51,25 @@
 @implements IDisposable
 
 @* Brand block — same .tm-sidebar-brand as before. The icon is a refresh
-   trigger (clicking it force-reloads the current page). *@
+   trigger (clicking it force-reloads the current page).
+   LAUNCH-D7: the previous <span class="tm-portal-icon-fallback">ت</span>
+   text fallback is replaced with the TakLogo.png image (the same file
+   used as the login brand mark + site favicon). The image is sized
+   to fit INSIDE the 44x44 .tm-portal-icon button via object-fit:
+   contain + 4px padding so it doesn't fill the entire button (per
+   user directive: "the logo should stay in the rectangle and not
+   take full size"). The .tm-portal-icon img CSS rule in Products.css
+   was updated from object-fit: cover (which fills + crops) to
+   object-fit: contain (which letterboxes the image inside the box). *@
 <div class="tm-sidebar-brand">
     <button type="button"
             class="tm-portal-icon"
             title="@ProductsLoc["RefreshProductsTitle"]"
             aria-label="@ProductsLoc["RefreshProductsTitle"]"
             @onclick="RefreshCurrentPage">
-        <span class="tm-portal-icon-fallback">ت</span>
+        <img src="TakLogo.png"
+             alt="TakOne"
+             class="tm-portal-icon-logo" />
     </button>
     <div class="tm-portal-text">
         <span class="tm-portal-title">@ProductsLoc["PortalTitle"]</span>

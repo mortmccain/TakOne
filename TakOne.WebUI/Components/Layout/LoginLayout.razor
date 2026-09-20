@@ -65,41 +65,42 @@
            affecting the content flow. *@
         <div class="login-brand-glow" aria-hidden="true"></div>
 
-        @* Brand logo — TakLogo.png from wwwroot. Replaces the previous
-           gold .login-lang-switch button per the launch directive.
-           The image is clickable: clicking it toggles between EN and FA
-           (same takSwitchCulture JS function as before — sets the
-           takone_culture cookie and force-reloads). A small text label
-           below the logo indicates which language clicking will switch TO
-           ("فا" in EN mode → click switches to Persian; "EN" in FA mode
-           → click switches to English).
+        @* Brand logo + language switcher — top-right corner.
+           The TakLogo.png image is DECORATIVE (no click handler) — it
+           is the brand mark, not a button.
+           The text label below the logo ("EN" in FA mode, "فا" in EN
+           mode) IS the language switch trigger — clicking it calls
+           takSwitchCulture which sets the takone_culture cookie and
+           force-reloads so the localization middleware re-evaluates.
 
-           WHY THE LOGO IS THE LANGUAGE TOGGLE:
-           The user said "the yellow rectangular thing on the top right,
-           I want that to be the TakLogo.png". The yellow rectangle was
-           the language switcher button. Replacing it with the brand logo
-           means the language-toggle click target moves onto the logo.
-           This preserves the language-switching UX (still one click in
-           the top-right corner) without adding a separate text link
-           that would clutter the brand panel.
+           LAYOUT:
+           .login-brand-logo is a flex-column container, anchored to
+           the top-right corner (right: 1.5rem). align-items: center
+           keeps both the image and the text label horizontally
+           CENTERED in the container — so the label always appears
+           DIRECTLY BELOW the logo, in both LTR (English) and RTL
+           (Persian) modes. The previous version used align-items:
+           flex-end, which in RTL flipped the cross-axis end to the
+           LEFT, making the label appear to the LEFT of the logo
+           (the user-reported bug). center is direction-agnostic.
 
            TakLogo.png lives at wwwroot/TakLogo.png — referenced as a
            relative URL "TakLogo.png" (NOT "/TakLogo.png") so it works
            whether the app is hosted at the domain root or under a
            sub-path. The same file is the site favicon (set in App.razor
            via <link rel="icon" type="image/png" href="TakLogo.png" />). *@
-        <button type="button"
-                class="login-brand-logo"
-                aria-label="@Localizer["LangSwitchAriaLabel"]"
-                title="@Localizer["LangSwitchAriaLabel"]"
-                onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
+        <div class="login-brand-logo">
             <img src="TakLogo.png"
                  alt="TakOne"
                  class="login-brand-logo-img" />
-            <span class="login-brand-logo-label">
+            <button type="button"
+                    class="login-brand-logo-label"
+                    aria-label="@Localizer["LangSwitchAriaLabel"]"
+                    title="@Localizer["LangSwitchAriaLabel"]"
+                    onclick="takSwitchCulture('@(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "en-US" : "fa-IR")')">
                 @(CultureInfo.CurrentUICulture.Name == "fa-IR" ? "EN" : "فا")
-            </span>
-        </button>
+            </button>
+        </div>
 
         <div class="login-brand-content">
             <h2 class="login-brand-title">@Localizer["RightPanelTitle"]</h2>
@@ -108,8 +109,6 @@
             <p class="login-brand-intro">@Localizer["RightPanelIntro"]</p>
 
             <ul class="login-brand-features">
-                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature1"]</span></li>
-                <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature2"]</span></li>
                 <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature3"]</span></li>
                 <li><span class="login-brand-bullet" aria-hidden="true"></span><span>@Localizer["RightPanelFeature4"]</span></li>
             </ul>

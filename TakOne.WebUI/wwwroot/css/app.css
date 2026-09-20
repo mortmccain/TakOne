@@ -583,11 +583,14 @@ span.sale-status-badge::before {
     z-index: 0;
 }
 
-/* ── Brand logo — TakLogo.png. SUPER-ROBUST size constraints so a
-   large source PNG can NEVER overflow the top-right corner area.
-   The !important on width/height/max-width/max-height + box-sizing:
-   border-box + object-fit: contain guarantees the image renders inside
-   a 4rem × 4rem box regardless of its intrinsic dimensions. */
+/* ── Brand logo + language switcher — top-right corner.
+   The TakLogo.png image is DECORATIVE (no click handler). The text
+   label below it ("EN" / "فا") is the language switch trigger.
+   align-items: CENTER (not flex-end) keeps both children horizontally
+   centered in the container — direction-agnostic, works the same in
+   LTR (English) and RTL (Persian). The previous flex-end made the
+   label flip to the LEFT of the logo in Persian mode (because RTL
+   reverses the cross-axis end). Center is the safe choice. */
 .login-brand-logo {
     position: absolute;
     top: 1.5rem;
@@ -595,36 +598,20 @@ span.sale-status-badge::before {
     z-index: 2;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
-    gap: 0.25rem;
-    cursor: pointer;
-    text-decoration: none;
+    align-items: center;   /* ← direction-agnostic centering */
+    gap: 0.375rem;
+    cursor: default;       /* the wrapper itself isn't clickable */
     background: transparent;
     border: none;
     padding: 0;
     font-family: inherit;
-    transition: opacity 0.15s ease;
-    /* Constrain the WHOLE logo button to a max width so even if the
-       image somehow tried to render large, the parent clips it. */
     max-width: 5rem;
 }
 
-.login-brand-logo:hover {
-    opacity: 0.85;
-}
-
-.login-brand-logo:focus-visible {
-    outline: 2px solid #D4AF37;
-    outline-offset: 4px;
-    border-radius: 4px;
-}
-
 .login-brand-logo-img {
-    /* HARD CONSTRAINTS — !important to override any competing rule
-       from Radzen's component CSS or browser defaults. The image
-       CANNOT render larger than 4rem × 4rem no matter how big the
-       source PNG is. box-sizing: border-box ensures the padding
-       doesn't add to the rendered size. */
+    /* HARD CONSTRAINTS — !important overrides any competing rule from
+       Radzen or browser defaults. The image CANNOT render larger than
+       4rem × 4rem no matter how big the source PNG is. */
     width: 4rem !important;
     height: 4rem !important;
     max-width: 4rem !important;
@@ -638,18 +625,38 @@ span.sale-status-badge::before {
     object-fit: contain;
     padding: 0.25rem;
     box-sizing: border-box;
-    /* Some browsers render the image at intrinsic size if width/height
-       auto. Force width AND height to the fixed rem values + add
-       object-fit so the image is letterboxed inside the box. */
+    pointer-events: none;   /* the image is decorative — clicks pass through to nothing */
 }
 
 .login-brand-logo-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
+    /* The clickable language-switch button below the logo. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    padding: 0.125rem 0.625rem;
+    background: rgba(212, 175, 55, 0.18);
     color: #D4AF37;
+    border: 1px solid rgba(212, 175, 55, 0.35);
+    border-radius: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.login-brand-logo-label:hover {
+    background: rgba(212, 175, 55, 0.30);
+    border-color: rgba(212, 175, 55, 0.55);
+}
+
+.login-brand-logo-label:focus-visible {
+    outline: 2px solid #D4AF37;
+    outline-offset: 2px;
 }
 
 .login-brand-content {
@@ -731,22 +738,44 @@ span.sale-status-badge::before {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Responsive — below 960px stack vertically, below 640px hide brand
-   panel entirely.
+   Responsive — below 960px, stack the panels VERTICALLY with the
+   form on TOP and the brand panel BELOW it (per the user directive:
+   "if the page is mobile, the green part goes under the login parts").
+
+   The previous version used `order: -1` on .login-panel--brand which
+   put the brand panel FIRST (above the form). That's wrong — on mobile,
+   the user wants to log in first, so the form should be on top. The
+   brand panel goes below as a secondary visual anchor.
+
+   Below 640px (phones), the brand panel stays visible but collapses
+   to a slim banner — just the logo + title + subtitle. The intro
+   paragraph + feature bullets are hidden (they're not essential on a
+   phone where every vertical pixel is precious). The previous version
+   hid the brand panel entirely below 640px, which removed the brand
+   anchor — the user wanted it visible.
    ═══════════════════════════════════════════════════════════════════ */
 @media (max-width: 960px) {
     .login-shell {
         grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
+        grid-template-rows: 1fr auto;
     }
 
     .login-panel {
         padding: 2rem 1.5rem;
     }
 
+    /* Form panel stays FIRST (default order) — the user's primary
+       task on mobile is to log in. */
+    .login-panel--form {
+        justify-content: center;
+    }
+
+    /* Brand panel goes BELOW the form (default order = 1, after the
+       form's default order = 0). Removed the previous `order: -1`
+       which put it on top. */
     .login-panel--brand {
-        order: -1;
-        min-height: 8rem;
+        min-height: auto;
+        padding: 1.5rem;
     }
 
     .login-brand-content {
@@ -761,9 +790,8 @@ span.sale-status-badge::before {
         font-size: 0.875rem;
     }
 
-    .login-brand-intro,
-    .login-brand-features {
-        display: none;
+    .login-brand-intro {
+        font-size: 0.8125rem;
     }
 
     .login-brand-footer {
@@ -773,15 +801,36 @@ span.sale-status-badge::before {
 }
 
 @media (max-width: 640px) {
-    .login-panel--brand {
-        display: none;
-    }
-
+    /* Phone — keep the brand panel visible (per user directive) but
+       collapse it to just the logo + title + subtitle. Hide the intro
+       paragraph and the feature bullets — they're nice-to-have, not
+       essential, and on a phone every vertical pixel is precious. */
     .login-panel--form {
         padding: 2rem 1.25rem;
     }
 
+    .login-panel--brand {
+        padding: 1.25rem 1.25rem 1.5rem;
+    }
+
     .login-form-title {
         font-size: 1.5rem;
+    }
+
+    .login-brand-intro,
+    .login-brand-features {
+        display: none;
+    }
+
+    .login-brand-title {
+        font-size: 1.125rem;
+    }
+
+    .login-brand-subtitle {
+        font-size: 0.8125rem;
+    }
+
+    .login-brand-footer {
+        font-size: 0.6875rem;
     }
 }
