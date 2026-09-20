@@ -46,6 +46,19 @@ WORKDIR /src
 
 # Copy .csproj files FIRST (Docker layer caching: restore only re-runs when
 # a package reference actually changes, not on every .cs file edit).
+#
+# NOTE ON SOLUTION FILE:
+#   TakOne.slnx references ALL projects in the repo, including 9 test
+#   projects under tests/*. The Dockerfile deliberately does NOT copy the
+#   test csproj files (tests are not built into the runtime image — the
+#   publish step below targets TakOne.WebUI only). Restoring the slnx
+#   therefore fails with MSB3202 "project file ... was not found" for
+#   every test csproj. We restore the WebUI csproj directly instead:
+#   `dotnet restore` walks ProjectReference edges, so restoring WebUI
+#   transitively restores Application, Domain, Infrastructure, SharedKernel,
+#   and Analyzers — every project the publish + efbundle steps need. The
+#   slnx is still COPY'd above (for reference / IDE compatibility inside
+#   the container if someone shells in), but it is not the restore target.
 COPY ["TakOne.slnx", "./"]
 COPY ["TakOne.WebUI/TakOne.WebUI.csproj", "TakOne.WebUI/"]
 COPY ["TakOne.Application/TakOne.Application.csproj", "TakOne.Application/"]
@@ -54,7 +67,7 @@ COPY ["TakOne.Infrastructure/TakOne.Infrastructure.csproj", "TakOne.Infrastructu
 COPY ["TakOne.SharedKernel/TakOne.SharedKernel.csproj", "TakOne.SharedKernel/"]
 COPY ["TakOne.Analyzers/TakOne.Analyzers.csproj", "TakOne.Analyzers/"]
 
-RUN dotnet restore "TakOne.slnx"
+RUN dotnet restore "TakOne.WebUI/TakOne.WebUI.csproj"
 
 # Now copy the rest of the source code.
 COPY . .
