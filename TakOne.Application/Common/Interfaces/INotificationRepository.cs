@@ -95,4 +95,46 @@ public interface INotificationRepository
         Guid saleId,
         NotificationKind kind,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HARD-DELETES every notification row whose <see cref="Notification.CreatedAtUtc"/>
+    /// is older than <paramref name="olderThanUtc"/>. Used by the
+    /// <c>NotificationRetentionCleanupHostedService</c> to enforce the
+    /// 60-day retention policy — keeps the <c>Notifications</c> table
+    /// bounded over multi-year operation (otherwise it grows unbounded
+    /// because there's no per-user "delete old notifications" UI flow).
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY A REPOSITORY METHOD (not a raw SQL DELETE in the hosted
+    /// service)</b>: keeps the cleanup logic persistence-agnostic at the
+    /// Application layer. The Infrastructure EF Core implementation uses
+    /// <c>ExecuteDeleteAsync</c> (single DELETE statement, no load-then-
+    /// remove round trip).
+    /// <para>
+    /// <b>READ + UNREAD, ALL USERS</b>: the cleanup is system-wide. A
+    /// notification's retention is based purely on age — the user might
+    /// have meant to come back to a 2-month-old unread notification, but
+    /// the trade-off is bounded storage vs. infinite backlog. The
+    /// <c>Notifications</c> page already shows newest-first paginated,
+    /// so users see recent activity first; 60-day retention covers any
+    /// realistic "scroll back to find that notification from last month"
+    /// flow.
+    /// </para>
+    /// <para>
+    /// <b>BROADCAST NOTIFICATIONS ARE SEPARATE</b>: the
+    /// <c>BroadcastNotifications</c> audit table is cleaned up by its
+    /// own method on <c>IBroadcastNotificationRepository</c>
+    /// (<c>DeleteOlderThanAsync</c>) — broadcast audit rows are kept
+    /// around longer (or indefinitely, depending on policy) because they
+    /// are audit records, not inbox items.
+    /// </para>
+    /// </remarks>
+    /// <param name="olderThanUtc">
+    /// The UTC cutoff. Any notification whose <c>CreatedAtUtc</c> is
+    /// STRICTLY LESS THAN this value is deleted. Pass
+    /// <c>DateTime.UtcNow - TimeSpan.FromDays(60)</c> for the standard
+    /// 60-day retention policy.
+    /// </param>
+    /// <returns>The number of rows deleted.</returns>
+    Task<int> DeleteOlderThanAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
 }

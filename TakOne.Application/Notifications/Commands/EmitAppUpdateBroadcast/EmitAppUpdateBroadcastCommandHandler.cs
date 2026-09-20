@@ -175,25 +175,38 @@ public sealed class EmitAppUpdateBroadcastCommandHandler
         // audit row + a SECOND set of per-user fanout rows → every user
         // would see duplicate "app updated" notifications.
         //
-        // The title is a safe dedup key: the hosted service composes it
-        // deterministically from AssemblyInformationalVersion
-        // ("TakOne updated to v{newVersion}"). A redelivered message has
-        // the SAME title; a legitimately-new broadcast has a DIFFERENT
-        // title (different newVersion → different title).
+        // The dedup is TIME-WINDOWED (last 5 minutes). This is essential
+        // because the user-facing title is now a constant "TakOne updated"
+        // (per the launch directive: no version/commit/ID in the
+        // notification text). Without a time window, a NEW deploy's
+        // broadcast (hours/days later, same constant title) would
+        // incorrectly dedup against an OLD broadcast and skip the fanout
+        // — users wouldn't be notified of the new update.
+        //
+        // The 5-minute window is generous headroom for Wolverine
+        // redelivery (which happens within seconds); a real new deploy
+        // is never within 5 minutes of the previous one in any sane CI/CD
+        // pipeline (build + push + pull + restart takes minutes minimum).
         //
         // Edge case: same version deployed → rolled back → redeployed.
         // After the first deploy, persistedVersion == newVersion. On
         // rollback (old image), persistedVersion stays newVersion but
-        // assemblyVersion is oldVersion → broadcast "updated from
-        // {newVersion} to {oldVersion}" (DIFFERENT title → no dedup hit,
-        // correctly announces the rollback as an "update"). On redeploy
-        // of newVersion, persistedVersion == newVersion == assemblyVersion
-        // → NO broadcast (the hosted service short-circuits before
-        // dispatching). So the dedup key is safe across rollback scenarios.
+        // assemblyVersion is oldVersion → broadcast fires (DIFFERENT
+        // version delta → broadcaster dispatches). The handler dedups
+        // against recent broadcasts with the same constant title — if
+        // the rollback happens within 5 minutes of the prior deploy, the
+        // dedup hits and the rollback is NOT announced (rare edge case,
+        // acceptable trade-off). On redeploy of newVersion,
+        // persistedVersion == newVersion == assemblyVersion → NO
+        // broadcast (the hosted service short-circuits before
+        // dispatching). So the dedup key is safe across rollback
+        // scenarios outside the 5-minute window.
+        var dedupWindowUtc = DateTime.UtcNow.AddMinutes(-5);
         var existing = await broadcastRepository.GetByTitleAndKindAsync(
             command.Title,
             NotificationKind.AppUpdate,
-            cancellationToken);
+            sentAfterUtc: dedupWindowUtc,
+            cancellationToken: cancellationToken);
 
         if (existing is not null)
         {
