@@ -36,7 +36,7 @@
        why this went unnoticed — the page renders, just without the
        global overrides. CSS files in wwwroot subdirectories MUST
        include the subdirectory in the href. *@
-    <link rel="stylesheet" href="css/app.css?v=3" />
+    <link rel="stylesheet" href="css/app.css?v=4" />
     <link rel="stylesheet" href="css/sidebar.css?v=1" />
     @* ?v=13 — bump cache-busting query string after adding the
        .tm-active-filters / .tm-filter-chip rules (search & category
@@ -44,11 +44,16 @@
        keep serving the previously-cached Products.css?v=12 (which predates
        the chip rules), so the chips render as plain unstyled rectangles
        with vertically-stacked icon/text/X instead of a horizontal pill. *@
-    <link rel="stylesheet" href="css/Pages/Products.css?v=3" />
+    <link rel="stylesheet" href="css/Pages/Products.css?v=4" />
     <link rel="stylesheet" href="css/Pages/Dashboard.css?v=1" />
     <link rel="stylesheet" href="css/Pages/CartBudgetBar.css?v=1" />
     <link rel="stylesheet" href="TakOne.WebUI.styles.css?v=3" />
-    <link rel="icon" type="image/png" href="TakLogo.png" />
+    @* LAUNCH-D10: use the SQUARE favicon.png (1759x1759, padded from the
+       portrait TakLogo.png 1475x1759 with transparent sides) so browsers
+       don't stretch the logo horizontally into a square (which made it
+       look "fat"). The square aspect ratio means the browser scales it
+       to 16x16/32x32/48x48 without distortion. *@
+    <link rel="icon" type="image/png" href="favicon.png" />
 
     @* FOUC-prevention script — extracted to wwwroot/js/theme.js.
        Runs synchronously in <head>. With <RadzenTheme> above, the theme

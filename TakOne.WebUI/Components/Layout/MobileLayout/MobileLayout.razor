@@ -29,13 +29,14 @@
     <header class="m-header">
         <div class="m-header-top">
             <div class="m-brand">
-                @* LAUNCH-D7: replaced the inline SVG (a wheat icon for "Makaron")
-                   with the TakLogo.png image (the same brand mark used in the
-                   sidebar + login page). object-fit: contain in mobile.css
-                   keeps the image inside the 2.5rem × 2.5rem .m-brand-icon
-                   box without filling it. *@
+                @* LAUNCH-D10: replaced TakLogo.png with logotak.gif —
+                   ANIMATED GIF (29 frames, 126x150, transparent background).
+                   The GIF inherits the .m-brand-icon button's background
+                   color (var(--tm-green) → changes with theme). Same CSS
+                   rule .m-brand-icon-img handles both PNG and GIF (object-fit:
+                   contain, padding, !important constraints). *@
                 <div class="m-brand-icon">
-                    <img src="TakLogo.png" alt="TakOne" class="m-brand-icon-img" />
+                    <img src="logotak.gif" alt="TakOne" class="m-brand-icon-img" />
                 </div>
                 <div class="m-brand-text">
                     <h1 class="m-brand-title">@Loc["BrandTitle"]</h1>

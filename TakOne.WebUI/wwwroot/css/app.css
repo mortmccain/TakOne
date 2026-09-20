@@ -685,13 +685,12 @@ span.sale-status-badge::before {
 
 .login-brand-subtitle {
     margin: 0;
-    /* LAUNCH-D9: changed from 1.125rem + gold to 2rem + WHITE per user
-       directive: "the تک ماکارون under the تنها در اوج should be the
-       same size" (same as the title which is 2rem). Color changed from
-       gold #D4AF37 to white #FFFFFF. */
+    /* LAUNCH-D10: 2rem font-size (same as title) per user directive.
+       Color is GOLD #D4AF37 (NOT white) — the user said "the تک ماکارون
+       text on the login page was supposed to be golden like the picture". */
     font-size: 2rem;
     font-weight: 800;
-    color: #FFFFFF !important;
+    color: #D4AF37 !important;
     line-height: 1.2;
     letter-spacing: -0.01em;
 }
