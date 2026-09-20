@@ -48,7 +48,12 @@ public interface IUserAccountService
     ///   2. Set the password via UserManager.CreateAsync.
     ///   3. Assign the user to the given role via UserManager.AddToRoleAsync.
     ///   4. Ensure the email is confirmed (admin-created accounts skip the
-    ///      email confirmation flow).
+    ///      email confirmation flow). When <paramref name="email"/> is null
+    ///      or whitespace, Email is left null on the ApplicationUser and
+    ///      EmailConfirmed is set to false — Identity skips email
+    ///      validation entirely on null emails. Sign-in still succeeds
+    ///      because <c>SignIn:RequireConfirmedEmail=false</c> in
+    ///      appsettings.json.
     /// </summary>
     /// <param name="gender">
     /// The user's gender. Copied onto the ApplicationUser so the admin

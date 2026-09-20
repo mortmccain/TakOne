@@ -53,14 +53,28 @@ public interface IBroadcastNotificationRepository
     /// between the SaveChanges commit and the worker ack. Without this
     /// dedup, a redelivery would create a SECOND audit row + a SECOND set
     /// of per-user fanout rows → every user would see duplicate
-    /// "TakOne updated to vX.Y.Z" notifications.
+    /// "TakOne updated" notifications.
     /// <para>
-    /// The title is a safe dedup key for AppUpdate broadcasts because the
-    /// hosted service composes it deterministically from
-    /// <c>AssemblyInformationalVersion</c> (<c>"TakOne updated to
-    /// v{newVersion}"</c>): a redelivered message has the SAME title, while
-    /// a legitimately-new broadcast has a DIFFERENT title (different
-    /// newVersion → different title).
+    /// <b>TIME-WINDOWED DEDUP (the <paramref name="sentAfterUtc"/>
+    /// parameter)</b>: when non-null, only broadcasts sent STRICTLY AFTER
+    /// this UTC timestamp are considered for dedup. This is essential for
+    /// the app-update flow because the user-facing title is now a constant
+    /// "TakOne updated" (no version embedded — per the launch directive
+    /// to not show commit/IDs). Without a time window, a NEW deploy's
+    /// broadcast would incorrectly dedup against an OLD broadcast with
+    /// the same title and skip the fanout — users wouldn't be notified
+    /// of subsequent updates. The app-update handler passes
+    /// <c>DateTime.UtcNow.AddMinutes(-5)</c>: Wolverine redelivery happens
+    /// within seconds, so 5 minutes is generous headroom; a real new
+    /// deploy hours/days later finds no recent broadcast and fans out
+    /// correctly.
+    /// </para>
+    /// <para>
+    /// <b>ADMIN-AUTHORED BROADCASTS</b>: the
+    /// <c>SendBroadcastNotificationCommandHandler</c> calls this with
+    /// <paramref name="sentAfterUtc"/> = null (no time filter). Admin-
+    /// authored broadcast titles are unique per call (admin-chosen
+    /// free-form text), so the original dedup semantics are preserved.
     /// </para>
     /// <para>
     /// Returns the FULL entity (not just a bool) so the handler can read
@@ -69,9 +83,25 @@ public interface IBroadcastNotificationRepository
     /// value, but returning the correct count keeps the audit log honest.
     /// </para>
     /// </remarks>
+    /// <param name="title">
+    /// The title to match EXACTLY (case-sensitive, ordinal).
+    /// </param>
+    /// <param name="kind">
+    /// The <see cref="TakOne.Domain.Notifications.Enums.NotificationKind"/>
+    /// to match (typically <see cref="TakOne.Domain.Notifications.Enums.NotificationKind.AppUpdate"/>
+    /// for the system-emitted app-update flow).
+    /// </param>
+    /// <param name="sentAfterUtc">
+    /// Optional: when non-null, restricts the lookup to broadcasts sent
+    /// strictly after this UTC timestamp. Pass
+    /// <c>DateTime.UtcNow.AddMinutes(-5)</c> for time-windowed dedup
+    /// (used by the app-update handler). Pass <c>null</c> for unbounded
+    /// dedup (used by the admin-broadcast handler).
+    /// </param>
     Task<BroadcastNotification?> GetByTitleAndKindAsync(
         string title,
         TakOne.Domain.Notifications.Enums.NotificationKind kind,
+        DateTime? sentAfterUtc = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -82,4 +112,33 @@ public interface IBroadcastNotificationRepository
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// HARD-DELETES every <c>BroadcastNotification</c> audit row whose
+    /// <see cref="BroadcastNotification.SentAtUtc"/> is older than
+    /// <paramref name="olderThanUtc"/>. Used by the
+    /// <c>NotificationRetentionCleanupHostedService</c> alongside the
+    /// per-user <c>Notifications</c> cleanup.
+    /// </summary>
+    /// <remarks>
+    /// <b>WHY DELETE BROADCAST AUDIT ROWS AT ALL</b>: broadcasts fan out
+    /// to per-user <c>Notification</c> rows at creation time. Once those
+    /// per-user rows are gone (per the 60-day per-user retention policy),
+    /// the broadcast audit row has no remaining business value — it's
+    /// just a header with no fanout left. Keeping stale audit rows
+    /// indefinitely would make the admin broadcast-list page paginated-
+    /// scroll longer and longer for no signal.
+    /// <para>
+    /// Same 60-day retention as per-user notifications: this keeps the
+    /// audit window aligned with the inbox window so an admin browsing
+    /// the audit page sees only broadcasts that AT LEAST ONE user could
+    /// still have in their inbox.
+    /// </para>
+    /// </remarks>
+    /// <param name="olderThanUtc">
+    /// The UTC cutoff. Any broadcast whose <c>SentAtUtc</c> is STRICTLY
+    /// LESS THAN this value is deleted.
+    /// </param>
+    /// <returns>The number of rows deleted.</returns>
+    Task<int> DeleteOlderThanAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default);
 }

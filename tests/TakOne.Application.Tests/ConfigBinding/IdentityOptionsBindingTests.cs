@@ -18,12 +18,11 @@ namespace TakOne.Application.Tests.ConfigBinding;
 /// <c>appsettings.json</c> previously nested <c>Identity</c>/<c>Auth</c>/
 /// <c>DefaultAdmin</c> UNDER <c>TakOne.Database.*</c> — but the binding
 /// code read them as <c>TakOne:Identity</c> (siblings of Database). The
-/// operator's configured password policy (RequiredLength=8), lockout
-/// window, and RequireUniqueEmail were SILENTLY IGNORED in Production;
-/// ASP.NET Identity DEFAULTS took over (RequiredLength=6,
-/// RequireUniqueEmail=false). The bug was invisible because no error
+/// operator's configured password policy (RequiredLength=8) and lockout
+/// window were SILENTLY IGNORED in Production; ASP.NET Identity DEFAULTS
+/// took over (RequiredLength=6). The bug was invisible because no error
 /// fired — the defaults happen to be safer in some dimensions (lockout
-/// attempts=5) and LESS safe in others (RequireUniqueEmail=false).
+/// attempts=5).
 /// </para>
 /// <para>
 /// <b>THE FIX (Round 18-B):</b>
@@ -46,7 +45,8 @@ namespace TakOne.Application.Tests.ConfigBinding;
 ///     (Identity is a sibling of Database under TakOne). Asserts the
 ///     operator-configured values bind: RequiredLength=8 (NOT the
 ///     ASP.NET default of 6), MaxFailedAccessAttempts=5,
-///     RequireUniqueEmail=true, RequireDigit=true, RequireUppercase=true.
+///     RequireUniqueEmail=false (TakOne authenticates via WorkerId,
+///     not email), RequireDigit=true, RequireUppercase=true.
 ///     The KEY assertion is <c>RequiredLength == 8</c> — if the JSON
 ///     path were wrong (nested under TakOne.Database.Identity), the
 ///     bound value would be the default 6, and this test would FAIL.</item>
@@ -90,13 +90,14 @@ public class IdentityOptionsBindingTests
     // — Identity is a SIBLING of Database under TakOne. The binding
     // code reads `TakOne:Identity:Password:RequiredLength`, which IS
     // present in this JSON. (Operator-configured values: RequiredLength=8,
-    // RequireUniqueEmail=true, MaxFailedAccessAttempts=5.)
+    // RequireUniqueEmail=false, MaxFailedAccessAttempts=5.)
     //
     // IMPORTANT: this is the SAME JSON structure that ships in
     // production (TakOne.WebUI/appsettings.Production.json after the
-    // Round 18-B fix). The brief allows embedding the file content as
-    // a test fixture instead of loading the actual file (see the WHY
-    // ADDJSONSTREAM comment in the class-level XML doc above).
+    // Round 18-B fix + the email-requirement removal). The brief allows
+    // embedding the file content as a test fixture instead of loading
+    // the actual file (see the WHY ADDJSONSTREAM comment in the
+    // class-level XML doc above).
     private const string CorrectlyNestedJson = """
         {
           "TakOne": {
@@ -116,7 +117,7 @@ public class IdentityOptionsBindingTests
                 "AllowedForNewUsers": true
               },
               "User": {
-                "RequireUniqueEmail": true,
+                "RequireUniqueEmail": false,
                 "AllowedUserNameCharacters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
               },
               "SignIn": {
@@ -155,7 +156,7 @@ public class IdentityOptionsBindingTests
                   "AllowedForNewUsers": true
                 },
                 "User": {
-                  "RequireUniqueEmail": true
+                  "RequireUniqueEmail": false
                 }
               }
             }
@@ -206,7 +207,7 @@ public class IdentityOptionsBindingTests
     // reflect the operator-configured values:
     //   - RequiredLength == 8  (the CRITICAL assertion — ASP.NET default is 6)
     //   - MaxFailedAccessAttempts == 5  (the lockout threshold)
-    //   - RequireUniqueEmail == true  (ASP.NET default is false)
+    //   - RequireUniqueEmail == false  (TakOne authenticates via WorkerId, not email)
     //   - RequireDigit == true
     //   - RequireUppercase == true
     //
@@ -242,8 +243,8 @@ public class IdentityOptionsBindingTests
         // ── Secondary assertions on the lockout + user policy ──
         options.Lockout.MaxFailedAccessAttempts.Should().Be(5,
             "TakOne:Identity:Lockout:MaxFailedAccessAttempts binds to the operator-configured 5");
-        options.User.RequireUniqueEmail.Should().BeTrue(
-            "TakOne:Identity:User:RequireUniqueEmail binds to the operator-configured true (ASP.NET default is false — a binding failure here would be the bug from cycle 1)");
+        options.User.RequireUniqueEmail.Should().BeFalse(
+            "TakOne:Identity:User:RequireUniqueEmail binds to the operator-configured false — TakOne authenticates via WorkerId (UserName), not email, so unique-email enforcement is intentionally disabled to allow null/empty emails on create-user flows.");
 
         // ── Tertiary assertions on the password character-class policy ──
         options.Password.RequireDigit.Should().BeTrue();
@@ -263,8 +264,9 @@ public class IdentityOptionsBindingTests
     //   - The default RequiredLength IS 6 (not the operator's 8) —
     //     confirming that with a WRONG JSON path, the operator's value
     //     doesn't bind.
-    //   - The default RequireUniqueEmail IS false (not the operator's
-    //     true) — same proof.
+    //   - The default RequireUniqueEmail IS false (which now matches the
+    //     operator's value, so this is not a discriminative assertion
+    //     anymore — but it's retained for documentation).
     //
     // WHY THIS MATTERS AS A REGRESSION TEST:
     // If a future refactor re-nests Identity under Database (either
@@ -286,15 +288,14 @@ public class IdentityOptionsBindingTests
         // The defaults from ASP.NET Identity's constructor:
         //   - Password.RequiredLength default = 6  (we configured 8 — proves the path is wrong)
         //   - Lockout.MaxFailedAccessAttempts default = 5  (matches by coincidence — our config also uses 5)
-        //   - User.RequireUniqueEmail default = false  (we configured true — proves the path is wrong)
+        //   - User.RequireUniqueEmail default = false  (matches our config — not a discriminative assertion)
         options.Password.RequiredLength.Should().Be(6,
             "with Identity nested under TakOne.Database (the original 3-cycles-missed-the-bug layout), " +
             "the `TakOne:Identity:Password:RequiredLength` binding path doesn't exist — the Bind() call is a no-op " +
             "and the IdentityOptions instance keeps its ASP.NET default of 6 (NOT the operator-configured 8)");
 
         options.User.RequireUniqueEmail.Should().BeFalse(
-            "same cause — the operator-configured `true` lives at `TakOne:Database:Identity:User:RequireUniqueEmail`, " +
-            "but the binding code reads `TakOne:Identity:User:RequireUniqueEmail` which doesn't exist in this JSON. " +
-            "The default (false) is retained — exactly the bug Brutal Code Review v3 finding #01 documented.");
+            "same cause — the binding code reads `TakOne:Identity:User:RequireUniqueEmail` which doesn't exist in this JSON. " +
+            "The default (false) is retained. (Note: our production config now also uses false, so this assertion is not discriminative; the RequiredLength assertion above is the regression-proof.)");
     }
 }

@@ -45,6 +45,8 @@ public sealed class CreateStaffCommandValidator : AbstractValidator<CreateStaffC
             // Email is OPTIONAL — staff don't have company emails, and login
             // uses WorkerId (UserName), not email. Same pattern as
             // CreateCustomerCommandValidator — see that file for rationale.
+            // UserAccountService normalizes null/empty email to null so
+            // Identity skips email validation entirely.
             .MaximumLength(MaxEmailLength)
             .WithMessage($"Email cannot exceed {MaxEmailLength} characters.")
             .EmailAddress()

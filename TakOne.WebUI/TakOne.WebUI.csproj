@@ -52,7 +52,7 @@
       Blazor template.
     -->
 
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
@@ -70,11 +70,11 @@
       for AddDbContextCheck..."). See Brutal Code Review v3 finding #11.
 
       Version must match the EF Core / ASP.NET Core stack used elsewhere
-      (10.0.10).
+      (10.0.12).
     -->
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
 
-    <PackageReference Include="Radzen.Blazor" Version="11.1.8" />
+    <PackageReference Include="Radzen.Blazor" Version="11.4.1" />
           
   </ItemGroup>
         

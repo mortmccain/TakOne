@@ -21,8 +21,8 @@
   -->
 <Project Sdk="Microsoft.NET.Sdk">
 
-	
-	
+        
+        
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -35,9 +35,9 @@
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
 
-	
-	
-	<!--
+        
+        
+        <!--
     ASP.NET Core shared framework reference.
 
     This is REQUIRED for any non-web class library (Sdk=Microsoft.NET.Sdk)
@@ -62,15 +62,15 @@
     Reference:
       https://learn.microsoft.com/en-us/aspnet/core/fundamentals/metapackage
   -->
-	<ItemGroup>
-		<FrameworkReference Include="Microsoft.AspNetCore.App" />
-	</ItemGroup>
-	
-	
-	
+        <ItemGroup>
+                <FrameworkReference Include="Microsoft.AspNetCore.App" />
+        </ItemGroup>
+        
+        
+        
   <ItemGroup>
 
-	  <!--
+          <!--
       Ardalis.Specification.EntityFrameworkCore — provides
       `SpecificationEvaluator`, which translates an `ISpecification<T>` into
       an EF Core `IQueryable<T>` (applying Where, OrderBy, Include, AsNoTracking,
@@ -83,10 +83,10 @@
 
       Version must match the Ardalis.Specification version used by Application.
     -->
-	  <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
+          <PackageReference Include="Ardalis.Specification.EntityFrameworkCore" Version="9.3.1" />
 
 
-	  <!--
+          <!--
       ASP.NET Core Data Protection — EF Core integration.
 
       Provides:
@@ -124,13 +124,13 @@
           shares eliminates both failure modes and gets backed up with
           the database automatically.
 
-      Version must match the EF Core / Identity versions above (10.0.10).
+      Version must match the EF Core / Identity versions above (10.0.12).
     -->
-	  <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.10" />
+          <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.12" />
 
 
 
-	  <!--
+          <!--
       ASP.NET Core Identity + EF Core integration.
       Pulls in:
         - Microsoft.AspNetCore.Identity (transitively)
@@ -142,22 +142,22 @@
       domain entities, so a User creation + role assignment can commit in
       the same transaction as a Sale creation, etc.
     -->
-	  <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
-	  <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
-	    <PrivateAssets>all</PrivateAssets>
-	    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-	  </PackageReference>
+          <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
+          <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+          </PackageReference>
 
 
-	  
-	  <!--
+          
+          <!--
       EF Core SQL Server provider. Used by the DbContext to talk to SQL Server.
     -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
 
 
 
-	  <!--
+          <!--
       DI / Configuration abstractions so this layer can expose its own
       `AddTakOneInfrastructure(...)` extension method on IServiceCollection
       and read configuration (connection strings, etc.).
@@ -166,7 +166,7 @@
 
 
 
-	  <!--
+          <!--
       Microsoft.Extensions.Options.ConfigurationExtensions — provides the
       `services.Configure<TOptions>(IConfigurationSection)` extension method,
       which we use in AddTakOneInfrastructure to bind TakOneDatabaseOptions
@@ -175,9 +175,9 @@
       longer binds it (after the SQL Server message store was moved here).
     -->
 
-	  
+          
 
-	  <!--
+          <!--
       WolverineFx.EntityFrameworkCore — provides:
         - `WolverineOptions.UseEntityFrameworkCoreTransactions()` (non-generic,
           auto-detects registered DbContexts) — enrolls every Wolverine handler
@@ -203,18 +203,18 @@
       Reference: https://wolverinefx.net/guide/durability/efcore/outbox-and-inbox
                  https://wolverinefx.net/guide/durability/efcore/domain-events
     -->
-	  
-	  
-	  
-    <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.23.1" />
-	  
-	  
-	  
-    <PackageReference Include="WolverineFx.RuntimeCompilation" Version="6.23.1" />
+          
+          
+          
+    <PackageReference Include="WolverineFx.EntityFrameworkCore" Version="6.39.1" />
+          
+          
+          
+    <PackageReference Include="WolverineFx.RuntimeCompilation" Version="6.39.1" />
 
 
 
-	  <!--
+          <!--
       WolverineFx.SqlServer — provides `WolverineOptions.PersistMessagesWithSqlServer(
       connectionString)`, the SQL Server message store backing the durable
       inbox / outbox. Creates the `wolverine_messages` table on first run
@@ -235,10 +235,10 @@
 
       Reference: https://wolverinefx.net/guide/durability/sqlserver
     -->
-    <PackageReference Include="WolverineFx.SqlServer" Version="6.23.1" />
-	  
-	  
-	  
+    <PackageReference Include="WolverineFx.SqlServer" Version="6.39.1" />
+          
+          
+          
   </ItemGroup>
 
 </Project>

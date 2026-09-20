@@ -50,6 +50,7 @@ public sealed class BroadcastNotificationRepository : IBroadcastNotificationRepo
     public async Task<BroadcastNotification?> GetByTitleAndKindAsync(
         string title,
         NotificationKind kind,
+        DateTime? sentAfterUtc = null,
         CancellationToken cancellationToken = default)
     {
         // AsNoTracking: pure read path for the idempotency dedup. The
@@ -62,9 +63,24 @@ public sealed class BroadcastNotificationRepository : IBroadcastNotificationRepo
         // somehow already exists (e.g. a prior redelivery that slipped
         // through before this dedup was added), return the MOST RECENT
         // one so the reported RecipientCount reflects the latest fanout.
-        return await _db.BroadcastNotifications
+        //
+        // TIME-WINDOWED DEDUP (sentAfterUtc): when non-null, restricts
+        // the lookup to broadcasts sent strictly AFTER this UTC cutoff.
+        // Used by the app-update handler to avoid deduping a NEW deploy's
+        // broadcast against an OLD broadcast that happens to share the
+        // same constant title ("TakOne updated"). See the interface XML
+        // doc for the full rationale. When null, no time filter is
+        // applied (the admin-broadcast handler path — original behavior).
+        var query = _db.BroadcastNotifications
             .AsNoTracking()
-            .Where(b => b.Title == title && b.FanoutKind == kind)
+            .Where(b => b.Title == title && b.FanoutKind == kind);
+
+        if (sentAfterUtc.HasValue)
+        {
+            query = query.Where(b => b.SentAtUtc > sentAfterUtc.Value);
+        }
+
+        return await query
             .OrderByDescending(b => b.SentAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -93,5 +109,21 @@ public sealed class BroadcastNotificationRepository : IBroadcastNotificationRepo
             .ToListAsync(cancellationToken);
 
         return new PaginatedResult<BroadcastNotification>(items, totalCount, pageNumber, pageSize);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> DeleteOlderThanAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default)
+    {
+        // Single DELETE statement. Same ExecuteDeleteAsync pattern as
+        // NotificationRepository.DeleteOlderThanAsync — no load-into-
+        // memory, no per-row round-trip, no change tracker. The
+        // SentAtUtc index doesn't directly index `<` range scans but
+        // the audit table is bounded by the 60-day retention window so
+        // this is fast.
+        var affected = await _db.BroadcastNotifications
+            .Where(b => b.SentAtUtc < olderThanUtc)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        return affected;
     }
 }

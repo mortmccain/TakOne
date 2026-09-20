@@ -290,16 +290,19 @@ public static class ServiceCollectionExtensions
         // <IdentityOptions>. ASP.NET Core runs all registered
         // IValidateOptions<T> the first time the IOptions<IdentityOptions>
         // value is resolved. If the bound values do not meet our security
-        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10,
-        // RequireUniqueEmail = true), startup throws
-        // OptionsValidationException BEFORE traffic is served.
+        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10), startup
+        // throws OptionsValidationException BEFORE traffic is served.
         //
-        // This is the fail-fast safety net for the structural config-
-        // binding bug (Brutal Code Review v3 finding #01): if the JSON
-        // path is ever re-broken so Identity options don't reach the bound
-        // instance, ASP.NET Identity DEFAULTS take over (RequiredLength=6,
-        // RequireUniqueEmail=false), which FAIL the validator — so a
-        // broken binding cannot boot silently.
+        // This is the fail-fast safety net for the structural config-binding
+        // bug (Brutal Code Review v3 finding #01): if the JSON path is ever
+        // re-broken so Identity options don't reach the bound instance,
+        // ASP.NET Identity DEFAULTS take over (RequiredLength=6), which
+        // FAILS the validator — so a broken binding cannot boot silently.
+        //
+        // NOTE: RequireUniqueEmail is intentionally NOT enforced — TakOne
+        // authenticates via WorkerId (UserName), not email, and the
+        // create-user flows pass null/empty email by design. See
+        // TakOneIdentityOptionsValidator's EMAIL POLICY remark.
         // ------------------------------------------------------------------
         services.AddSingleton<IValidateOptions<Microsoft.AspNetCore.Identity.IdentityOptions>,
             TakOneIdentityOptionsValidator>();
@@ -624,6 +627,32 @@ public static class ServiceCollectionExtensions
         //        responsible for its own memory management).
         // ------------------------------------------------------------------
         services.AddHostedService<SaleStateLockCleanupHostedService>();
+
+        // ------------------------------------------------------------------
+        // 5b-2c. Notification retention cleanup hosted service.
+        //
+        //        Periodically hard-deletes notification rows older than
+        //        the retention window (default 60 days) from BOTH the
+        //        per-user Notifications table AND the BroadcastNotifications
+        //        audit table. Keeps the tables bounded over multi-year
+        //        operation; without it, the Notifications table grows
+        //        unbounded (no per-user "delete old notifications" UI flow
+        //        exists, and the table fans out N rows per sale lifecycle
+        //        event — see NotificationRetentionCleanupHostedService
+        //        for the steady-state row-count math).
+        //
+        //        Configurable via Notifications:RetentionDays (default 60)
+        //        and Notifications:CleanupIntervalMinutes (default 60).
+        //        Runs once immediately on startup (so a freshly-deployed
+        //        container cleans up accumulated old rows), then on the
+        //        configured interval.
+        //
+        //        Registered as a Singleton IHostedService — depends on
+        //        the Scoped repositories (resolved via a per-run DI scope
+        //        inside ExecuteAsync, the standard BackgroundService pattern
+        //        for Scoped dependencies).
+        // ------------------------------------------------------------------
+        services.AddHostedService<NotificationRetentionCleanupHostedService>();
 
         // ------------------------------------------------------------------
         // 5b-3. Notification repository — Scoped (shares the scoped

@@ -29,16 +29,27 @@ window.takMobile = (function () {
     // v3 (Round 7): added detail routes — /Sales/{id}, /Products/{id},
     //     /Admin/Users/{id}, /Admin/Groups/Edit/{id}, and the /m/Dashboard
     //     home route so staff tapping Dashboard stay in the mobile shell.
+    // v4 (Launch directive): added the root URL '/' (the Dashboard @page
+    //     is at '/', not '/Dashboard' — the previous map missed the root
+    //     and a mobile user visiting '/' saw the PC dashboard instead of
+    //     being redirected to /m/Dashboard). Also added /Notifications and
+    //     /Admin/Notifications so EVERY PC route that has a mobile twin
+    //     triggers the redirect — previously only the shop page did
+    //     (which was the original user-reported bug). All pages now
+    //     check device + redirect.
     var pcToMobile = {
+        '/': '/m/Dashboard',                  // root URL — Dashboard @page is "/"
+        '/Dashboard': '/m/Dashboard',         // alias if anyone bookmarks /Dashboard
         '/Products': '/m/Products',
         '/Cart': '/m/Cart',
         '/Sales': '/m/Sales',
         '/Settings': '/m/Settings',
+        '/Notifications': '/m/Notifications',
         '/Admin/Products': '/m/Admin/Products',
         '/Admin/Users': '/m/Admin/Users',
         '/Admin/Categories': '/m/Admin/Categories',
         '/Admin/Groups': '/m/Admin/Groups',
-        '/Dashboard': '/m/Dashboard',
+        '/Admin/Notifications': '/m/Admin/Notifications',
         // Round 8: redirect the desktop Create pages to mobile equivalents so
         // admins using the mobile list pages' "Create" buttons stay on mobile.
         '/Admin/Products/Create': '/m/Admin/Products/Create',
@@ -56,11 +67,46 @@ window.takMobile = (function () {
     // the rest of the path + query string.
     // e.g. /Sales/abc-123 → /m/Sales/abc-123
     //      /Admin/Groups/Edit/abc-123 → /m/Admin/Groups/Edit/abc-123
+    //
+    // v4 (Launch directive): added /Admin/Groups/ → /m/Admin/Groups/Edit/.
+    //   The PC EditGroup page is at @page "/Admin/Groups/{GroupId:guid}"
+    //   (no "Edit" segment in the PC path), but MobileEditGroup is at
+    //   @page "/m/Admin/Groups/Edit/{GroupId:guid}". So the redirect
+    //   from PC → mobile needs to INSERT the "Edit" segment before the
+    //   {GroupId}. The prefix map below handles this naturally: a path
+    //   like "/Admin/Groups/abc-123" matches the prefix "/Admin/Groups/"
+    //   and is rewritten to "/m/Admin/Groups/Edit/abc-123" (the prefix's
+    //   mobile value replaces "/Admin/Groups" with "/m/Admin/Groups/Edit"
+    //   and appends the rest "/abc-123"). The exact-match keys
+    //   "/Admin/Groups", "/Admin/Groups/Create" take precedence over
+    //   this prefix (exact-match runs first), so list + create routes
+    //   are unaffected.
+    //   The reverse direction (mobile → PC) is also handled: visiting
+    //   "/m/Admin/Groups/Edit/abc-123" on a desktop browser redirects
+    //   back to "/Admin/Groups/abc-123" by stripping "Edit/" out via
+    //   the same prefix-match in reverse.
     var pcToMobilePrefixes = [
+        // NOTE: previously had a separate "/Admin/Groups/Edit/" → "/m/Admin/Groups/Edit/"
+        // entry for "forward compatibility" in case a future PC refactor added an
+        // explicit /Admin/Groups/Edit/{GroupId} route. That entry was REMOVED because
+        // it caused a reverse-direction bug: a desktop user visiting
+        // /m/Admin/Groups/Edit/abc-123 would be redirected to /Admin/Groups/Edit/abc-123
+        // (a non-existent PC URL — 404). The single "/Admin/Groups/" → "/m/Admin/Groups/Edit/"
+        // entry below handles BOTH directions correctly:
+        //   Forward: /Admin/Groups/abc-123 → /m/Admin/Groups/Edit/abc-123 (insert "Edit" segment)
+        //   Reverse: /m/Admin/Groups/Edit/abc-123 → /Admin/Groups/abc-123 (strip "Edit" segment,
+        //           because the reverse-direction code uses the SAME prefix entry's `pc` value,
+        //           which is "/Admin/Groups/" — so it sends back to /Admin/Groups/abc-123,
+        //           which IS the actual PC EditGroup route at @page "/Admin/Groups/{GroupId:guid}").
+        //
+        // ORDER MATTERS: more-specific prefixes must come BEFORE more-general ones
+        // to avoid substring-replacement duplication. The current list has no
+        // overlap (each prefix matches a distinct path shape), but if a future
+        // entry is added with overlap, put the longer/more-specific one first.
         { pc: '/Sales/',                       mobile: '/m/Sales/' },
         { pc: '/Products/',                    mobile: '/m/Products/' },
         { pc: '/Admin/Users/',                 mobile: '/m/Admin/Users/' },
-        { pc: '/Admin/Groups/Edit/',           mobile: '/m/Admin/Groups/Edit/' }
+        { pc: '/Admin/Groups/',                mobile: '/m/Admin/Groups/Edit/' }
     ];
 
     function redirect() {

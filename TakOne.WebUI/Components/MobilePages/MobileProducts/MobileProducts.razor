@@ -325,7 +325,12 @@ else
         </button>
     </div>
 
-    @* ── 6. Support card ── *@
+    @* ── 6. Support card ──
+       The "Call" button (tel:0211234 link) was REMOVED per the launch
+       directive — the support card now shows only the support title +
+       hours, with no call-to-action phone number rendered. The
+       .m-support-call-btn CSS class is kept in mobile.css for backward-
+       compatibility. *@
     <div class="m-support-card">
         <div class="m-support-icon">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="width: 20px; height: 20px;">
@@ -336,7 +341,6 @@ else
             <p class="m-support-title">@Loc["SupportTitle"]</p>
             <p class="m-support-hours">@Loc["SupportHours"]</p>
         </div>
-        <a href="tel:0211234" class="m-support-call-btn">@Loc["Call"]</a>
     </div>
 }
 

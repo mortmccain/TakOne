@@ -167,4 +167,23 @@ public sealed class NotificationRepository : INotificationRepository
                 n => n.UserId == userId && n.SaleId == saleId && n.Kind == kind,
                 cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<int> DeleteOlderThanAsync(DateTime olderThanUtc, CancellationToken cancellationToken = default)
+    {
+        // Single DELETE statement — EF Core 7+ ExecuteDeleteAsync translates
+        // to `DELETE FROM Notifications WHERE CreatedAtUtc < @cutoff`. No
+        // load-into-memory, no per-row round-trip, no change tracker. The
+        // (UserId, CreatedAtUtc) index doesn't directly support this filter
+        // (CreatedAtUtc alone), but the row count is bounded by the 60-day
+        // retention window so even a table scan is fast.
+        //
+        // READ + UNREAD, ALL USERS — see the interface XML doc for the
+        // rationale. This is system-wide age-based cleanup.
+        var affected = await _db.Notifications
+            .Where(n => n.CreatedAtUtc < olderThanUtc)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        return affected;
+    }
 }

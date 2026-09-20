@@ -216,34 +216,50 @@ public sealed class AppUpdateBroadcasterHostedService : BackgroundService
     /// per-user Notification rows in a Wolverine transaction (audit row +
     /// N fanout rows + N SignalR pings, all atomic).
     /// </summary>
+    /// <remarks>
+    /// <b>USER-FACING TEXT (LAUNCH DIRECTIVE)</b>: the title and message
+    /// are VERSION-AGNOSTIC — they say "TakOne updated" / "the app has
+    /// been updated" without showing the assembly version, commit hash,
+    /// or any other identifier. Per the launch directive, the user
+    /// should NOT see the commit number / ID — just a clean "the app was
+    /// updated, please reload" notification.
+    /// <para>
+    /// <b>DEDUP IMPLICATIONS</b>: because the title is now a constant,
+    /// the existing dedup-by-title mechanism (see
+    /// <c>EmitAppUpdateBroadcastCommandHandler</c>) is augmented with a
+    /// time window — the handler only dedups against broadcasts sent in
+    /// the last 5 minutes. This way:
+    /// <list type="bullet">
+    ///   <item>Wolverine redelivery (within seconds of the original) →
+    ///         dedup against the recent broadcast → SKIP (correct).</item>
+    ///   <item>A real new deploy hours/days later → no recent broadcast
+    ///         found → fanout proceeds (correct).</item>
+    /// </list>
+    /// See <c>IBroadcastNotificationRepository.GetByTitleAndKindAsync</c>'s
+    /// XML doc for the full rationale.
+    /// </para>
+    /// </remarks>
     private static async Task BroadcastAppUpdateAsync(
         IMessageBus messageBus,
         string newVersion,
         string oldVersion)
     {
-        // Compose the title + message. Kept short so they fit in the
-        // notification bell badge preview + the desktop toast.
+        // VERSION-AGNOSTIC user-facing text. The newVersion + oldVersion
+        // parameters are still passed (and used for the structured log
+        // below) but are NOT included in the user-facing notification
+        // text. The assembly version is internal-only info — useful for
+        // ops logs, not for the user's bell-badge preview.
         //
-        // NOTE: these strings are CULTURE-NEUTRAL placeholders that the
-        // UI localizes at render time via the AppUpdate-specific resx
-        // keys. Wait — actually the broadcast message is admin-authored
-        // free-form text that gets persisted VERBATIM into the per-user
-        // Notification rows. So these strings ARE the user-facing text.
-        // For now they're English; a future enhancement would localize
-        // by emitting N broadcasts (one per culture) or by storing
-        // resource keys + format args instead of literal text. The
-        // existing Notification aggregate's structured-only design
-        // (Kind + structured fields) doesn't extend cleanly to free-form
-        // broadcast text — this is a known trade-off. The current
-        // implementation favors simplicity: every user sees the same
-        // English message. Most enterprise apps do this for system
-        // messages.
-        var title = $"TakOne updated to v{newVersion}";
-        var message = $"The application has been updated from v{oldVersion} to v{newVersion}. " +
-                      "Please reload the page to load the new version.";
+        // NOTE: these strings are CULTURE-NEUTRAL — every user sees the
+        // same English message. This matches the existing convention
+        // (the previous version-specific message was also English-only).
+        // A future enhancement would localize at render time by emitting
+        // N broadcasts per culture, but for launch this is acceptable.
+        var title = "TakOne updated";
+        var message = "The application has been updated. Please reload the page to load the new version.";
 
         var command = new EmitAppUpdateBroadcastCommand(title, message);
-        // Wolverine 6.23.1's IMessageBus.PublishAsync signature is
+        // Wolverine 6.39.1's IMessageBus.PublishAsync signature is
         // (object message, DeliveryOptions? options = null) — there is no
         // CancellationToken overload. The message is durably queued to the
         // Wolverine message store and processed by Wolverine's own worker
@@ -254,7 +270,8 @@ public sealed class AppUpdateBroadcasterHostedService : BackgroundService
         // host shuts down AFTER the publish but BEFORE the worker
         // processes it, the durable outbox ensures it's processed on the
         // next boot — and the handler's idempotency dedup
-        // (GetByTitleAndKindAsync) prevents a duplicate fanout.
+        // (GetByTitleAndKindAsync with a 5-minute time window) prevents
+        // a duplicate fanout.
         await messageBus.PublishAsync(command);
     }
 }

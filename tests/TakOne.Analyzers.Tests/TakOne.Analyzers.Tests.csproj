@@ -65,7 +65,7 @@
       Without this reference the test-source compilation would fail with
       CS0103 ("ILogger not found").
     -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
 
     <!--
       Roslyn 4.11.0 — same version the analyzer project uses. The test
