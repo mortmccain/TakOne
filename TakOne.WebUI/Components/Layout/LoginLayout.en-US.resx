@@ -71,4 +71,37 @@
   <data name="SwitchToPersian" xml:space="preserve">
     <value>فارسی</value>
   </data>
+  <data name="FormHeading" xml:space="preserve">
+    <value>Sign in to TakOne</value>
+  </data>
+  <data name="FormSubtext" xml:space="preserve">
+    <value>Enter your worker ID and password to access the system.</value>
+  </data>
+  <data name="RightPanelTitle" xml:space="preserve">
+    <value>TakOne</value>
+  </data>
+  <data name="RightPanelSubtitle" xml:space="preserve">
+    <value>Enterprise Sales Management</value>
+  </data>
+  <data name="RightPanelIntro" xml:space="preserve">
+    <value>The enterprise employee shop and sales management portal — role-aware access, real-time notifications, and audit-ready reports.</value>
+  </data>
+  <data name="RightPanelFeature1" xml:space="preserve">
+    <value>24/7 online support for any question you may have.</value>
+  </data>
+  <data name="RightPanelFeature2" xml:space="preserve">
+    <value>Full coverage of small-scale financial and administrative systems.</value>
+  </data>
+  <data name="RightPanelFeature3" xml:space="preserve">
+    <value>Role-based access for precise control and high security.</value>
+  </data>
+  <data name="RightPanelFeature4" xml:space="preserve">
+    <value>Analytical summaries and operational performance reports.</value>
+  </data>
+  <data name="RightPanelCopyright" xml:space="preserve">
+    <value>© {0} TakOne. All rights reserved. — Version 1.0.0</value>
+  </data>
+  <data name="LangSwitchAriaLabel" xml:space="preserve">
+    <value>Switch language</value>
+  </data>
 </root>

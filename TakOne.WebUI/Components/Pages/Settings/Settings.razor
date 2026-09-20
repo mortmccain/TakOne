@@ -554,10 +554,10 @@
                                         <div class="notif-pref-desc">@GetNotifPrefDesc(pref.Kind)</div>
                                     </div>
                                     <RadzenSwitch TValue="bool"
-                                                  Value="@pref.IsMuted"
+                                                  Value="@(!pref.IsMuted)"
                                                   Disabled="@_isSavingPref"
                                                   Name="@($"pref-switch-{(int)pref.Kind}")"
-                                                  Change="@(async value => await HandleNotifPrefToggleAsync(pref.Kind, value))" />
+                                                  Change="@(async enabled => await HandleNotifPrefToggleAsync(pref.Kind, !enabled))" />
                                 </div>
                             }
                         </div>
