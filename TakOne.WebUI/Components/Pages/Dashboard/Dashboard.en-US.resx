@@ -477,4 +477,24 @@
     <value>new this month</value>
     <comment>Round 4 — chip label when the previous period had no activity (percentage undefined).</comment>
   </data>
+  <data name="Restock_Title" xml:space="preserve">
+    <value>Restock alert</value>
+    <comment>Low-stock banner (company-wide dashboards): active products at/below the low-stock threshold.</comment>
+  </data>
+  <data name="Restock_Sub" xml:space="preserve">
+    <value>{0} products are low or out of stock — most critical first</value>
+    <comment>{0} = localized count of low-stock products (capped listing; the full list lives on Admin/Products).</comment>
+  </data>
+  <data name="Restock_Manage" xml:space="preserve">
+    <value>Manage products</value>
+    <comment>Link to /Admin/Products (hidden from ReadOnly — they cannot open the admin product list).</comment>
+  </data>
+  <data name="Restock_OutTooltip" xml:space="preserve">
+    <value>Out of stock</value>
+    <comment>Chip tooltip for a product with zero remaining stock.</comment>
+  </data>
+  <data name="Restock_LowTooltip" xml:space="preserve">
+    <value>Only {0} left in stock</value>
+    <comment>Chip tooltip; {0} = localized remaining stock count.</comment>
+  </data>
 </root>

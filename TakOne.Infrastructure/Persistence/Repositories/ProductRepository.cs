@@ -556,6 +556,37 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Product>> GetLowStockProductsAsync(
+        int maxStock,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        // ------------------------------------------------------------------
+        // Restock-alert query for the company-wide dashboard:
+        //
+        //   SELECT TOP(@take) * FROM Products
+        //   WHERE IsActive = 1 AND StockQuantity <= @maxStock
+        //   ORDER BY StockQuantity ASC, Name ASC
+        //
+        // AS_NO_TRACKING: the alert is read-only (the dashboard never
+        // mutates products; restocking happens on Admin/Products through
+        // IncreaseProductStockCommand against a TRACKED load).
+        // Stock-ascending puts out-of-stock (0) first — the most urgent
+        // case leads the alert. Name is the deterministic tiebreaker so
+        // the alert doesn't reshuffle between page loads at equal stock.
+        // Take is applied IN SQL (TOP) — the payload stays tiny no
+        // matter how large the catalog is.
+        // ------------------------------------------------------------------
+        return await _db.Products
+            .AsNoTracking()
+            .Where(p => p.IsActive && p.StockQuantity <= maxStock)
+            .OrderBy(p => p.StockQuantity)
+            .ThenBy(p => p.Name)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<List<Guid>> GetAllProductIdsAsync(CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------

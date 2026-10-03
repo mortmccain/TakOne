@@ -293,6 +293,57 @@ else if (_stats is not null)
         </div>
 
         @* ════════════════════════════════════════
+           RESTOCK ALERT — active products at/below the
+           low-stock threshold (10, shared with the Admin Products
+           grid's amber stock cell), most critical first (out-of-stock
+           leads). Company-wide dashboards only: employees never see
+           stock data anywhere in the app. Hidden entirely when nothing
+           needs restocking — the alert earns its screen space.
+           ════════════════════════════════════════ *@
+        @if (!_stats.IsEmployeeScoped && _stats.LowStockProducts.Count > 0)
+        {
+            <div class="tm-dash-restock" role="status">
+                <div class="tm-dash-restock-head">
+                    <div class="tm-dash-icon-tile tm-dash-icon-warn" aria-hidden="true">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                    <div class="tm-dash-restock-title-wrap">
+                        <p class="tm-dash-restock-title">@Loc["Restock_Title"]</p>
+                        <p class="tm-dash-restock-sub">@Loc["Restock_Sub", FormatDigits(_stats.LowStockProducts.Count)]</p>
+                    </div>
+                    @* "Manage products" link — hidden from ReadOnly users
+                       because /Admin/Products is gated to
+                       Admin/Manager/Employee (same pattern as the Top
+                       Products card's "View All"). The alert itself stays
+                       visible to ReadOnly (stock levels are read-only
+                       insight, not an admin surface). *@
+                    <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
+                        <a href="/Admin/Products" class="tm-dash-restock-link">
+                            @Loc["Restock_Manage"]
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </a>
+                    </AuthorizeView>
+                </div>
+                <div class="tm-dash-restock-chips">
+                    @foreach (var product in _stats.LowStockProducts)
+                    {
+                        <span class="tm-dash-restock-chip @(product.StockQuantity == 0 ? "tm-dash-restock-chip-out" : null)"
+                              title="@(product.StockQuantity == 0
+                                  ? Loc["Restock_OutTooltip"]
+                                  : Loc["Restock_LowTooltip", FormatDigits(product.StockQuantity)])">
+                            <span class="tm-dash-restock-chip-name">@product.Name</span>
+                            <span class="tm-dash-restock-chip-stock">@FormatDigits(product.StockQuantity)</span>
+                        </span>
+                    }
+                </div>
+            </div>
+        }
+
+        @* ════════════════════════════════════════
            CHARTS ROW 1 — Revenue Trend (line, 2/3) + Status Donut (1/3)
            ════════════════════════════════════════ *@
         <div class="tm-dash-chart-row tm-dash-chart-row-2-1">

@@ -39,9 +39,45 @@ public interface IBackupCoordinator
     /// the next scheduled slot).
     /// </summary>
     /// <returns>
-    /// True if the request was accepted; false when a run is already in
-    /// flight or a trigger is already pending (the schedule is disabled
-    /// entirely — <see cref="BackupStatusDto.Enabled"/> = false).
+    /// <see cref="BackupTriggerOutcome.Accepted"/> when the request was
+    /// queued; otherwise the concrete rejection cause so the caller can
+    /// surface an actionable message instead of one generic string.
     /// </returns>
-    bool TryTriggerNow();
+    BackupTriggerOutcome TryTriggerNow();
+}
+
+/// <summary>
+/// Outcome of <see cref="IBackupCoordinator.TryTriggerNow"/>. Replaced the
+/// old boolean contract (QA-5 handover item: per-reason trigger
+/// rejections) so the Settings card's toast can tell the admin WHICH
+/// condition blocked the request instead of a generic "in progress or
+/// disabled". The distinction lives in the Application layer because the
+/// coordinator (Infrastructure) is the only component that can see its own
+/// run state; the messages themselves are mapped in
+/// <c>TriggerBackupNowCommandHandler</c>.
+/// </summary>
+public enum BackupTriggerOutcome
+{
+    /// <summary>
+    /// The manual trigger was queued — the hosted loop wakes immediately,
+    /// runs the backup on its own background execution, and resumes the
+    /// fixed schedule afterwards.
+    /// </summary>
+    Accepted,
+
+    /// <summary>A backup run is currently executing — retry once it finishes.</summary>
+    RejectedInFlight,
+
+    /// <summary>
+    /// A manual trigger was already accepted and is still waiting to be
+    /// picked up by the loop (typically mid-run when it was requested).
+    /// </summary>
+    RejectedPending,
+
+    /// <summary>
+    /// The backup schedule is disabled via configuration
+    /// (<c>DatabaseBackups:Enabled=false</c>) or not yet armed (the brief
+    /// window at host startup before the config block runs).
+    /// </summary>
+    RejectedDisabled
 }

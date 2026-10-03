@@ -549,4 +549,44 @@
   <data name="BackupFilesLedgerLabel" xml:space="preserve">
     <value>فایل‌های پشتیبان روی دیسک</value>
   </data>
+  <data name="BackupRunReportButton" xml:space="preserve">
+    <value>دانلود گزارش اجراها (CSV)</value>
+    <comment>اقدام کارت پشتیبان‌گیری: دفترچهٔ سابقهٔ اجراهای ذخیره‌شده به‌صورت فایل CSV حسابرسی.</comment>
+  </data>
+  <data name="BackupRunReportDone" xml:space="preserve">
+    <value>گزارش اجراهای پشتیبان‌گیری دانلود شد ({0} اجرا)</value>
+    <comment>{0} = تعداد رکوردهای اجرا در گزارش دانلودشده.</comment>
+  </data>
+  <data name="BackupRunReportColStarted" xml:space="preserve">
+    <value>شروع (UTC)</value>
+    <comment>ستون CSV گزارش: زمان شروع اجرا، ISO-8601 UTC.</comment>
+  </data>
+  <data name="BackupRunReportColFinished" xml:space="preserve">
+    <value>پایان (UTC)</value>
+    <comment>ستون CSV گزارش: زمان پایان اجرا، ISO-8601 UTC.</comment>
+  </data>
+  <data name="BackupRunReportColDuration" xml:space="preserve">
+    <value>مدت (ثانیه)</value>
+    <comment>ستون CSV گزارش: مدت خام به ثانیه، یک رقم اعشار.</comment>
+  </data>
+  <data name="BackupRunReportColOutcome" xml:space="preserve">
+    <value>نتیجه</value>
+    <comment>ستون CSV گزارش: برچسب موفق/ناموفق (همان نشان نتیجهٔ کارت).</comment>
+  </data>
+  <data name="BackupRunReportColTrigger" xml:space="preserve">
+    <value>نوع اجرا</value>
+    <comment>ستون CSV گزارش: دستی یا زمان‌بندی‌شده (همان برچسب‌های آیکون‌های دفترچه).</comment>
+  </data>
+  <data name="BackupRunReportColFile" xml:space="preserve">
+    <value>فایل پشتیبان</value>
+    <comment>ستون CSV گزارش: نام فایل ‎.bak (خالی وقتی اجرا پیش از ایجاد فایل شکست خورده).</comment>
+  </data>
+  <data name="BackupRunReportColSize" xml:space="preserve">
+    <value>حجم (بایت)</value>
+    <comment>ستون CSV گزارش: حجم خام فایل به بایت.</comment>
+  </data>
+  <data name="BackupRunReportColError" xml:space="preserve">
+    <value>خطا</value>
+    <comment>ستون CSV گزارش: جزئیات خطا (خالی در موفقیت).</comment>
+  </data>
 </root>

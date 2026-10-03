@@ -545,4 +545,44 @@
   <data name="BackupFilesLedgerLabel" xml:space="preserve">
     <value>Backup files on disk</value>
   </data>
+  <data name="BackupRunReportButton" xml:space="preserve">
+    <value>Download run report (CSV)</value>
+    <comment>Backup card action: downloads the persisted run-history ledger as a CSV audit artifact.</comment>
+  </data>
+  <data name="BackupRunReportDone" xml:space="preserve">
+    <value>Backup run report downloaded ({0} runs)</value>
+    <comment>{0} = number of run records in the downloaded report.</comment>
+  </data>
+  <data name="BackupRunReportColStarted" xml:space="preserve">
+    <value>Started (UTC)</value>
+    <comment>Run-report CSV column: run start, ISO-8601 UTC.</comment>
+  </data>
+  <data name="BackupRunReportColFinished" xml:space="preserve">
+    <value>Finished (UTC)</value>
+    <comment>Run-report CSV column: run end, ISO-8601 UTC.</comment>
+  </data>
+  <data name="BackupRunReportColDuration" xml:space="preserve">
+    <value>Duration (seconds)</value>
+    <comment>Run-report CSV column: raw duration in seconds, one decimal.</comment>
+  </data>
+  <data name="BackupRunReportColOutcome" xml:space="preserve">
+    <value>Outcome</value>
+    <comment>Run-report CSV column: success/failed label (same as the card's outcome badge).</comment>
+  </data>
+  <data name="BackupRunReportColTrigger" xml:space="preserve">
+    <value>Trigger</value>
+    <comment>Run-report CSV column: manual vs scheduled (same labels as the ledger icons).</comment>
+  </data>
+  <data name="BackupRunReportColFile" xml:space="preserve">
+    <value>Backup file</value>
+    <comment>Run-report CSV column: the .bak file name (empty when the run failed before a file landed).</comment>
+  </data>
+  <data name="BackupRunReportColSize" xml:space="preserve">
+    <value>Size (bytes)</value>
+    <comment>Run-report CSV column: raw file size in bytes.</comment>
+  </data>
+  <data name="BackupRunReportColError" xml:space="preserve">
+    <value>Error</value>
+    <comment>Run-report CSV column: failure detail (empty on success).</comment>
+  </data>
 </root>

@@ -239,6 +239,32 @@ public sealed class DashboardStatsDto
 
 
     // ───────────────────────────────────────────────────────────────
+    // RESTOCK ALERT — active products at or below the low-stock
+    // threshold (ProductStockThresholds.LowStock, incl. out-of-stock),
+    // most critical first (stock ascending, then name). Loaded ONLY for
+    // the company-wide scope (Admin/Manager/ReadOnly): employees never
+    // see stock data anywhere else in the app, and their dashboard is a
+    // personal-performance view. Capped at LowStockAlertMaxItems; empty
+    // when nothing needs restocking or the query failed (best-effort —
+    // a stock-query failure must never take the whole dashboard down).
+    // ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// How many low-stock items the alert lists at most (the most
+    /// critical ones). Kept small: the alert is a heads-up, not a
+    /// report — "Manage products" is one click away.
+    /// </summary>
+    public const int LowStockAlertMaxItems = 6;
+
+    /// <summary>
+    /// Active products at or below the low-stock threshold, stock
+    /// ascending. See the section remark above for scope + failure
+    /// semantics. Empty for employee-scoped dashboards.
+    /// </summary>
+    public List<LowStockProductDto> LowStockProducts { get; set; } = new();
+
+
+    // ───────────────────────────────────────────────────────────────
     // GREETING HEADER — time-of-day greeting + user gender
     // ───────────────────────────────────────────────────────────────
 

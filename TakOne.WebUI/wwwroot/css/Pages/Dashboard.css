@@ -241,9 +241,18 @@
     transition: opacity 0.15s ease;
 }
 
+.tm-dash-quick-card:focus-visible,
+.tm-dash-restock-link:focus-visible {
+    outline: 2px solid var(--tm-gold, #D4AF37);
+    outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .tm-dash-period-btn,
-    .tm-dash-kpi-grid--reloading {
+    .tm-dash-kpi-grid--reloading,
+    .tm-dash-quick-card,
+    .tm-dash-restock-link,
+    .tm-dash-restock-chip {
         transition: none;
     }
 }
@@ -426,6 +435,119 @@
     color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
     margin: 0.5rem 0 0 0;
 }
+
+/* =============================================================================
+   2.5 RESTOCK ALERT — low-stock banner (company-wide dashboards only).
+   Warn-tinted strip between the KPI grid and the charts: icon tile +
+   title/subtitle, a "manage products" link, and a wrapping row of product
+   chips (name + remaining stock). Out-of-stock chips switch to the danger
+   tint so the most urgent case reads at a glance.
+   ========================================================================== */
+.tm-dash-restock {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--tm-warning, #E8A14A) 6%, var(--tm-dash-surface, var(--tm-surface, var(--rz-panel-background-color, #152019)))) 0%,
+        var(--tm-dash-surface-2, var(--rz-panel-content-background-color, #1A2820)) 100%);
+    border: 1px solid color-mix(in srgb, var(--tm-warning, #E8A14A) 30%, transparent);
+    border-radius: var(--tm-radius, 0);
+}
+
+    .tm-dash-restock-head {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .tm-dash-restock-title-wrap {
+        flex: 1 1 12rem;
+        min-width: 0;
+    }
+
+    .tm-dash-restock-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--tm-warning, #E8A14A);
+        margin: 0;
+    }
+
+    .tm-dash-restock-sub {
+        font-size: 0.75rem;
+        color: var(--tm-dash-muted, var(--tm-gray, var(--rz-text-secondary-color, #94A3A0)));
+        margin: 0.125rem 0 0 0;
+    }
+
+    .tm-dash-restock-link {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--tm-gold, #D4AF37);
+        text-decoration: none;
+        white-space: nowrap;
+        transition: color 0.2s ease;
+    }
+
+        .tm-dash-restock-link:hover,
+        .tm-dash-restock-link:focus-visible {
+            color: var(--tm-gold-bright, #E8C547);
+            text-decoration: underline;
+        }
+
+    .tm-dash-restock-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .tm-dash-restock-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.7rem;
+        background: color-mix(in srgb, var(--tm-warning, #E8A14A) 10%, transparent);
+        border: 1px solid color-mix(in srgb, var(--tm-warning, #E8A14A) 30%, transparent);
+        border-radius: var(--tm-radius, 0);
+        cursor: default; /* title tooltip carries the per-chip detail */
+        transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+        .tm-dash-restock-chip:hover {
+            background: color-mix(in srgb, var(--tm-warning, #E8A14A) 15%, transparent);
+            border-color: color-mix(in srgb, var(--tm-warning, #E8A14A) 45%, transparent);
+        }
+
+        /* Out-of-stock: danger tint — the most urgent case leads the alert. */
+        .tm-dash-restock-chip-out {
+            background: color-mix(in srgb, #EF6B6B 10%, transparent);
+            border-color: color-mix(in srgb, #EF6B6B 35%, transparent);
+        }
+
+            .tm-dash-restock-chip-out:hover {
+                background: color-mix(in srgb, #EF6B6B 15%, transparent);
+                border-color: color-mix(in srgb, #EF6B6B 50%, transparent);
+            }
+
+    .tm-dash-restock-chip-name {
+        font-size: 0.8125rem;
+        color: var(--tm-dash-text, var(--tm-text, var(--rz-text-color, #fff)));
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 14rem;
+    }
+
+    .tm-dash-restock-chip-stock {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        color: var(--tm-warning, #E8A14A);
+    }
+
+        .tm-dash-restock-chip-out .tm-dash-restock-chip-stock {
+            color: #EF6B6B;
+        }
 
 /* =============================================================================
    3. CHART CARDS — generic card styling for the chart containers

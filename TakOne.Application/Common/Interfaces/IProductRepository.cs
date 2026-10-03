@@ -152,6 +152,23 @@ public interface IProductRepository
     /// </summary>
     Task<int> CountInStockAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the ACTIVE products whose <c>StockQuantity</c> is at or
+    /// below <paramref name="maxStock"/> — the restock-alert set (includes
+    /// out-of-stock, the most urgent case). Ordered most-critical-first:
+    /// stock ascending, then name ascending. Capped at
+    /// <paramref name="take"/> rows (the caller passes the DTO's
+    /// <c>LowStockAlertMaxItems</c>).
+    ///
+    /// USED BY: <c>GetDashboardStatsQueryHandler</c> (company-wide
+    /// dashboards only). Inactive products are excluded — a deactivated
+    /// product can't be bought, so "restock it" would be noise.
+    /// </summary>
+    Task<List<Product>> GetLowStockProductsAsync(
+        int maxStock,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(Product product, CancellationToken cancellationToken = default);
 
     /// <summary>

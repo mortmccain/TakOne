@@ -229,4 +229,103 @@ public class SettingsBackupCardTests
         cut.FindAll(".backup-run-row").Should().BeEmpty();
         cut.Markup.Should().NotContain("BackupRunHistoryLabel");
     }
+
+    [Fact]
+    public async Task Settings_BackupCard_RunReportClick_DownloadsChronologicalCsv()
+    {
+        // Arrange — newest-first history (the DTO contract): a FAILED
+        // SCHEDULED run (newer) + a SUCCESSFUL MANUAL run (older). The
+        // report must reverse that into execution order.
+        var older = new BackupRunRecordDto
+        {
+            StartedUtc = new DateTime(2026, 10, 2, 3, 30, 0, DateTimeKind.Utc),
+            FinishedUtc = new DateTime(2026, 10, 2, 3, 30, 12, 500, DateTimeKind.Utc),
+            Succeeded = true,
+            Error = string.Empty,
+            FileName = "run-a.bak",
+            SizeBytes = 2048,
+            WasManual = true
+        };
+        var newer = new BackupRunRecordDto
+        {
+            StartedUtc = new DateTime(2026, 10, 3, 14, 30, 0, DateTimeKind.Utc),
+            FinishedUtc = new DateTime(2026, 10, 3, 14, 30, 9, DateTimeKind.Utc),
+            Succeeded = false,
+            // CSV-hostile punctuation pins the RFC 4180 quoting.
+            Error = "boom, \"volume\" not mounted",
+            FileName = string.Empty,
+            SizeBytes = 0,
+            WasManual = false
+        };
+        var status = MakeStatus(newer, older);
+        using var ctx = Setup(status);
+        var js = ctx.JSInterop;
+
+        var cut = ctx.RenderComponent<Settings>();
+        cut.WaitForAssertion(
+            () => cut.FindAll(".backup-run-row").Should().HaveCount(2),
+            TimeSpan.FromSeconds(10));
+
+        // The run-report button is present with its label and enabled.
+        var reportButton = cut.FindAll("button")
+            .First(b => b.TextContent.Contains("BackupRunReportButton"));
+        reportButton.HasAttribute("disabled").Should().BeFalse();
+
+        // Act — click download.
+        await cut.InvokeAsync(() => reportButton.Click());
+
+        // Assert — one takDownload.csv invocation (global Loose-mode
+        // dictionary; see ManageGroupsPageExportTests' class remarks).
+        cut.WaitForAssertion(
+            () => js.Invocations["takDownload.csv"].Should().HaveCount(1),
+            TimeSpan.FromSeconds(10));
+
+        var args = js.Invocations["takDownload.csv"][0].Arguments;
+        args.Should().HaveCount(2);
+        args[0].Should().BeOfType<string>().Which
+            .Should().StartWith("takone-backup-runs-").And.EndWith(".csv");
+
+        var csv = args[1].Should().BeOfType<string>().Subject;
+        csv.Should().StartWith(
+            "BackupRunReportColStarted,BackupRunReportColFinished," +
+            "BackupRunReportColDuration,BackupRunReportColOutcome," +
+            "BackupRunReportColTrigger,BackupRunReportColFile," +
+            "BackupRunReportColSize,BackupRunReportColError\r\n");
+
+        // CHRONOLOGICAL order: the older SUCCESS row first (ISO-8601 UTC
+        // timestamps, raw duration seconds incl. the half-second, raw
+        // bytes, localized outcome/trigger labels = keys in the stub).
+        csv.Should().Contain(
+            "2026-10-02 03:30:00Z,2026-10-02 03:30:12Z,12.5," +
+            "BackupOutcomeSuccess,BackupRunManual,run-a.bak,2048,\r\n");
+
+        // Then the newer FAILED row: empty file + 0 bytes, and the
+        // punctuation-laden error quoted per RFC 4180.
+        csv.Should().Contain(
+            "2026-10-03 14:30:00Z,2026-10-03 14:30:09Z,9," +
+            "BackupOutcomeFailed,BackupRunScheduled,,0," +
+            "\"boom, \"\"volume\"\" not mounted\"\r\n");
+
+        // Header + 2 rows = 3 records.
+        csv.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void Settings_BackupCard_NoCompletedRuns_RunReportButtonDisabled()
+    {
+        // Arrange — never ran: nothing to report.
+        var status = MakeStatus();
+        using var ctx = Setup(status);
+
+        var cut = ctx.RenderComponent<Settings>();
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("BackupCardTitle"),
+            TimeSpan.FromSeconds(10));
+
+        // Assert — the button renders (consistent action row) but is
+        // disabled until at least one run has completed.
+        var reportButton = cut.FindAll("button")
+            .First(b => b.TextContent.Contains("BackupRunReportButton"));
+        reportButton.HasAttribute("disabled").Should().BeTrue();
+    }
 }

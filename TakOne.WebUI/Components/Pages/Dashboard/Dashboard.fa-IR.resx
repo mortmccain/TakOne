@@ -480,4 +480,24 @@
     <value>جدید در این ماه</value>
     <comment>دور ۴ — برچسب چیپ وقتی دورهٔ قبل فعالیتی نداشته (درصد تعریف‌شده نیست).</comment>
   </data>
+  <data name="Restock_Title" xml:space="preserve">
+    <value>هشدار اتمام موجودی</value>
+    <comment>بنر کالاهای رو به اتمام (داشبورد سازمانی): کالاهای فعال با موجودی در حد آستانه یا کمتر.</comment>
+  </data>
+  <data name="Restock_Sub" xml:space="preserve">
+    <value>{0} کالا رو به اتمام یا تمام شده — بحرانی‌ترین‌ها در ابتدا</value>
+    <comment>{0} = تعداد کالاهای کم‌موجو (فهرست محدود؛ فهرست کامل در صفحهٔ مدیریت کالاها).</comment>
+  </data>
+  <data name="Restock_Manage" xml:space="preserve">
+    <value>مدیریت کالاها</value>
+    <comment>پیوند به /Admin/Products (برای کاربران فقط‌خواندنی پنهان است — به فهرست کالاهای مدیریتی دسترسی ندارند).</comment>
+  </data>
+  <data name="Restock_OutTooltip" xml:space="preserve">
+    <value>موجودی تمام شده</value>
+    <comment>راهنمای چیپ برای کالای بدون موجودی.</comment>
+  </data>
+  <data name="Restock_LowTooltip" xml:space="preserve">
+    <value>تنها {0} عدد باقی مانده</value>
+    <comment>راهنمای چیپ؛ {0} = تعداد باقی‌ماندهٔ موجودی.</comment>
+  </data>
 </root>

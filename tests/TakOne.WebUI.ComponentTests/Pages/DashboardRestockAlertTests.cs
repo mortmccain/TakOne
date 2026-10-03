@@ -1,0 +1,173 @@
+using Bunit;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
+using NSubstitute;
+using TakOne.Application.Common.Authorization;
+using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Dashboard.DTOs;
+using TakOne.Application.Dashboard.Queries.GetDashboardStats;
+using TakOne.Application.Resources;
+using TakOne.SharedKernel.Common;
+using TakOne.WebUI.Components.Pages.Dashboard;
+using TakOne.WebUI.Services;
+using Wolverine;
+using Xunit;
+
+namespace TakOne.WebUI.ComponentTests.Pages;
+
+/// <summary>
+/// Page-level bUnit test for the Dashboard's restock alert — the
+/// low-stock banner between the KPI grid and the charts.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>WHAT THIS PROVES</b>: a company-wide dashboard renders the banner
+/// from <see cref="DashboardStatsDto.LowStockProducts"/> (one chip per
+/// product, out-of-stock chips carrying the danger modifier + the admin
+/// "manage products" link), an employee-scoped dashboard hides it even
+/// when the DTO carries data (defense-in-depth — the handler skips the
+/// query, the UI independently refuses to render it), and a healthy
+/// catalog shows no banner at all.
+/// </para>
+/// <para>
+/// <b>WIRING</b>: same harness as
+/// <see cref="DashboardPeriodSelectorTests"/> — full page mount with the
+/// fake bus returning a hand-built DTO; the chart JS interop runs under
+/// bUnit's Loose mode.
+/// </para>
+/// </remarks>
+public class DashboardRestockAlertTests
+{
+    private static DashboardStatsDto MakeDto(
+        bool employeeScoped,
+        params LowStockProductDto[] lowStock) => new()
+    {
+        CurrentUserName = "Test User",
+        IsEmployeeScoped = employeeScoped,
+        DisplayCurrency = "تومان",
+        IsToman = true,
+        TodayOrdersCount = 3,
+        ThisWeekRevenue = new List<WeeklyRevenueDto>(),
+        LastWeekRevenue = new List<WeeklyRevenueDto>(),
+        StatusBreakdown = new List<StatusCountDto>(),
+        TopProducts = new List<TopProductDto>(),
+        TopCategories = new List<CategorySalesCountDto>(),
+        TopEmployees = new List<TopEmployeeDto>(),
+        RecentOrders = new List<RecentOrderDto>(),
+        YearlyData = new List<YearlyRevenueDto>(),
+        CurrentYearMonthlyData = new List<MonthlyRevenueDto>(),
+        LowStockProducts = lowStock.ToList()
+    };
+
+    private static (TestContext ctx, IMessageBus bus) Setup(DashboardStatsDto dto)
+    {
+        var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
+        ComponentTestSetup.AddIdentityLocalizer<Dashboard>(ctx);
+
+        var errLoc = Substitute.For<IStringLocalizer<UnexpectedErrorMessages>>();
+        errLoc[Arg.Any<string>()].Returns(ci =>
+            new LocalizedString((string)ci.ArgAt<string>(0), (string)ci.ArgAt<string>(0), false));
+        ctx.Services.AddSingleton(errLoc);
+        ctx.Services.AddSingleton(new ErrorDisplayService(errLoc));
+
+        // Admin user — the full bUnit authorization pipeline (the banner's
+        // "manage products" link sits in an <AuthorizeView>).
+        ComponentTestSetup.AddBunitAuthorizedUser(ctx, "tester", Roles.Admin);
+
+        var currentUser = Substitute.For<ICurrentUserService>();
+        currentUser.IsAuthenticated.Returns(true);
+        currentUser.UserId.Returns(Guid.NewGuid());
+        currentUser.FullName.Returns("Test User");
+        ctx.Services.AddSingleton(currentUser);
+
+        var bus = Substitute.For<IMessageBus>();
+        bus.InvokeAsync<Result<DashboardStatsDto>>(Arg.Any<object>(), Arg.Any<CancellationToken>())
+            .Returns(Result<DashboardStatsDto>.Success(dto));
+        ctx.Services.AddSingleton(bus);
+
+        return (ctx, bus);
+    }
+
+    [Fact]
+    public void Dashboard_CompanyWideWithLowStock_RendersRestockAlert()
+    {
+        // Arrange — most-critical-first DTO (out-of-stock leads).
+        var dto = MakeDto(
+            employeeScoped: false,
+            new LowStockProductDto { Id = Guid.NewGuid(), Name = "Golden Pen", StockQuantity = 0 },
+            new LowStockProductDto { Id = Guid.NewGuid(), Name = "Leather Notebook", StockQuantity = 7 });
+        var (ctx, _) = Setup(dto);
+        using (ctx)
+        {
+            // Act
+            var cut = ctx.RenderComponent<Dashboard>();
+
+            // Assert — the banner renders with its title + the count in
+            // the subtitle, one chip per product (name + stock count).
+            cut.WaitForAssertion(
+                () => cut.FindAll(".tm-dash-restock-chip").Should().HaveCount(2),
+                TimeSpan.FromSeconds(10));
+            cut.Markup.Should().Contain("Restock_Title");
+
+            var chips = cut.FindAll(".tm-dash-restock-chip");
+            chips[0].ClassList.Should().Contain("tm-dash-restock-chip-out",
+                "the out-of-stock chip carries the danger modifier");
+            chips[0].TextContent.Should().Contain("Golden Pen").And.Contain("0");
+            chips[1].ClassList.Should().NotContain("tm-dash-restock-chip-out");
+            chips[1].TextContent.Should().Contain("Leather Notebook").And.Contain("7");
+
+            // The admin sees the "manage products" link (inside the
+            // AuthorizeView; the Admin role passes the gate).
+            cut.Markup.Should().Contain("Restock_Manage");
+            var link = cut.Find(".tm-dash-restock-link");
+            link.GetAttribute("href").Should().Be("/Admin/Products");
+        }
+    }
+
+    [Fact]
+    public void Dashboard_EmployeeScoped_HidesRestockAlertEvenWithData()
+    {
+        // Arrange — the handler never populates LowStockProducts for
+        // employees, but the UI gate is independent (defense-in-depth):
+        // if a future change leaks stock data into an employee DTO, the
+        // banner must STILL not render.
+        var dto = MakeDto(
+            employeeScoped: true,
+            new LowStockProductDto { Id = Guid.NewGuid(), Name = "Golden Pen", StockQuantity = 0 });
+        var (ctx, _) = Setup(dto);
+        using (ctx)
+        {
+            // Act
+            var cut = ctx.RenderComponent<Dashboard>();
+
+            // Assert — the dashboard itself renders (KPI cards settle)
+            // but the restock banner is absent.
+            cut.WaitForAssertion(
+                () => cut.Markup.Should().Contain("Kpi_TodayOrders"),
+                TimeSpan.FromSeconds(10));
+            cut.FindAll(".tm-dash-restock").Should().BeEmpty();
+            cut.FindAll(".tm-dash-restock-chip").Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public void Dashboard_HealthyCatalog_HidesRestockAlert()
+    {
+        // Arrange — company-wide scope, nothing low: no banner (the
+        // alert earns its screen space — silence when all is well).
+        var dto = MakeDto(employeeScoped: false);
+        var (ctx, _) = Setup(dto);
+        using (ctx)
+        {
+            // Act
+            var cut = ctx.RenderComponent<Dashboard>();
+
+            // Assert
+            cut.WaitForAssertion(
+                () => cut.Markup.Should().Contain("Kpi_TodayOrders"),
+                TimeSpan.FromSeconds(10));
+            cut.FindAll(".tm-dash-restock").Should().BeEmpty();
+        }
+    }
+}

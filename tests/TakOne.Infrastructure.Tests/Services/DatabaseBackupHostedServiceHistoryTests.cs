@@ -2,6 +2,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using TakOne.Application.Common.Interfaces;
 using TakOne.Application.Common.Models;
 using TakOne.Infrastructure.Services;
 using Xunit;
@@ -238,9 +239,9 @@ public class DatabaseBackupHostedServiceHistoryTests : IDisposable
         var first = service.TryTriggerNow();
         var second = service.TryTriggerNow();
 
-        // Assert
-        first.Should().BeTrue();
-        second.Should().BeFalse();
+        // Assert — per-reason contract: Accepted, then RejectedPending.
+        first.Should().Be(BackupTriggerOutcome.Accepted);
+        second.Should().Be(BackupTriggerOutcome.RejectedPending);
     }
 
     [Fact]
@@ -278,8 +279,9 @@ public class DatabaseBackupHostedServiceHistoryTests : IDisposable
 
         await service.StopAsync(CancellationToken.None);
 
-        // Act + Assert — not armed; the status reports disabled too.
-        service.TryTriggerNow().Should().BeFalse();
+        // Act + Assert — not armed (per-reason contract: RejectedDisabled);
+        // the status reports disabled too.
+        service.TryTriggerNow().Should().Be(BackupTriggerOutcome.RejectedDisabled);
         service.GetStatus().Enabled.Should().BeFalse();
         service.GetStatus().RunHistory.Should().BeEmpty();
     }

@@ -519,7 +519,16 @@ open `/Settings`:
   `TriggerBackupNowCommand`). The run executes on the backup service's
   own background loop — the card polls the status every 5 s until the
   run finishes. A manual run NEVER shifts the fixed 03:30/14:30 UTC
-  schedule, and a second click while one is running is rejected.
+  schedule, and a second click while one is running is rejected with a
+  per-reason message (in flight vs. already pending vs. schedule
+  disabled — the coordinator reports the concrete cause).
+- **"Download run report (CSV)"** — exports the run-history ledger as a
+  portable CSV audit artifact (`takone-backup-runs-<timestamp>.csv`):
+  one chronological row per completed run with UTC ISO-8601 start/finish
+  timestamps, raw duration seconds, outcome, trigger, file name, size in
+  bytes, and the failure detail. Handy for ops handovers/ticketing where
+  pasting the live card isn't enough. Disabled until the first run
+  completes.
 
 The status reads the same singleton the schedule loop mutates (the
 hosted service is dual-registered as the `IBackupCoordinator` port), so

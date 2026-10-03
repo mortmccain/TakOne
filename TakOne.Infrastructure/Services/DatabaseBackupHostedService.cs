@@ -677,22 +677,36 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     /// <summary>
     /// Accepts ONE pending manual trigger: sets the pending flag and
     /// completes the wake signal the schedule loop races its slot-delay
-    /// against. Rejected (false) when the schedule is disabled, a run is
+    /// against. Rejected with the concrete cause (per-reason contract —
+    /// QA-5 handover item) when the schedule is disabled, a run is
     /// executing, or a trigger is already pending (one queued run at a
     /// time — the admin watches its progress on the status card).
     /// </summary>
-    public bool TryTriggerNow()
+    public BackupTriggerOutcome TryTriggerNow()
     {
         lock (_stateLock)
         {
-            if (!_armed || _isRunning || _pendingTriggers > 0)
+            // Disabled / not-yet-armed is checked FIRST: without a live
+            // schedule loop nothing would ever consume the wake signal,
+            // so "disabled" must win over the transient run states.
+            if (!_armed)
             {
-                return false;
+                return BackupTriggerOutcome.RejectedDisabled;
+            }
+
+            if (_isRunning)
+            {
+                return BackupTriggerOutcome.RejectedInFlight;
+            }
+
+            if (_pendingTriggers > 0)
+            {
+                return BackupTriggerOutcome.RejectedPending;
             }
 
             _pendingTriggers = 1;
             _triggerSignal.TrySetResult(); // wakes the loop (idempotent)
-            return true;
+            return BackupTriggerOutcome.Accepted;
         }
     }
 

@@ -105,6 +105,7 @@
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
+@using TakOne.Application.Common.Models
 @using TakOne.Application.Products.DTOs
 @using TakOne.Application.Products.Queries.GetProductsPaginated
 @using TakOne.Application.Products.Commands.IncreaseProductStock
@@ -1565,8 +1566,11 @@
 
     private static string GetStockClass(int stock)
     {
+        // Amber threshold is the SHARED constant — the same number the
+        // Dashboard's restock alert lists (stock ≤ LowStock incl. 0), so
+        // "amber here" and "on the alert there" can never diverge.
         if (stock == 0) return "stock-cell-out";
-        if (stock <= 10) return "stock-cell-low";
+        if (stock <= ProductStockThresholds.LowStock) return "stock-cell-low";
         return "stock-cell-in";
     }
 
