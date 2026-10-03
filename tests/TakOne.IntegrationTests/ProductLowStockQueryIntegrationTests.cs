@@ -139,4 +139,50 @@ public class ProductLowStockQueryIntegrationTests
         // Assert — empty, not null (the alert renders "all good" = hidden).
         result.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task CountLowStock_MatchesTheListWhereClause_Uncapped()
+    {
+        // Arrange — 8 low-stock ACTIVE products (more than the list's
+        // take cap), 2 healthy, 1 deactivated.
+        var products = Enumerable.Range(1, 8)
+            .Select(i => new ProductBuilder().WithName($"L{i:00}").WithStock(i))
+            .Select(b => b.Build())
+            .ToList();
+        products.Add(new ProductBuilder().WithName("H1").WithStock(42).Build());
+        products.Add(new ProductBuilder().WithName("H2").WithStock(500).Build());
+        var deactivated = new ProductBuilder().WithName("D1").WithStock(20).Build();
+        deactivated.Deactivate(); // zeroes stock + flips IsActive
+        products.Add(deactivated);
+
+        var repo = await CreateSeededAsync(products.ToArray());
+
+        // Act — count with the SAME threshold the dashboard uses.
+        var count = await repo.CountLowStockAsync(
+            ProductStockThresholds.LowStock, CancellationToken.None);
+
+        // Assert — 8 (every low ACTIVE product, NOT capped by take; the
+        // deactivated one's zeroed stock must not sneak it in).
+        count.Should().Be(8);
+
+        // The list with take=6 is a CAPPED subset of exactly that count.
+        var list = await repo.GetLowStockProductsAsync(
+            ProductStockThresholds.LowStock, take: 6, CancellationToken.None);
+        list.Should().HaveCount(6);
+    }
+
+    [Fact]
+    public async Task CountLowStock_NoMatches_ReturnsZero()
+    {
+        // Arrange — everything healthy.
+        var repo = await CreateSeededAsync(
+            new ProductBuilder().WithName("H1").WithStock(42).Build());
+
+        // Act
+        var count = await repo.CountLowStockAsync(
+            ProductStockThresholds.LowStock, CancellationToken.None);
+
+        // Assert
+        count.Should().Be(0);
+    }
 }

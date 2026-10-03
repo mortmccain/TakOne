@@ -1187,12 +1187,19 @@ public class GetDashboardStatsQueryHandlerTests
                 Arg.Any<CancellationToken>())
             .Returns(new List<Product> { outOfStock, lowStock });
 
+        // The UNCAPPED total — larger than the list (the capped case).
+        productRepo.CountLowStockAsync(
+                ProductStockThresholds.LowStock,
+                Arg.Any<CancellationToken>())
+            .Returns(9);
+
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
-        // Assert — mapped 1:1, order preserved (out-of-stock leads).
+        // Assert — mapped 1:1, order preserved (out-of-stock leads), and
+        // the TRUE total rides along (the subtitle's "9 — showing 6").
         result.IsSuccess.Should().BeTrue();
         result.Value.LowStockProducts.Should().HaveCount(2);
         result.Value.LowStockProducts[0].Id.Should().Be(outOfStock.Id);
@@ -1201,6 +1208,7 @@ public class GetDashboardStatsQueryHandlerTests
         result.Value.LowStockProducts[1].Id.Should().Be(lowStock.Id);
         result.Value.LowStockProducts[1].Name.Should().Be("Alpha");
         result.Value.LowStockProducts[1].StockQuantity.Should().Be(4);
+        result.Value.LowStockProductTotalCount.Should().Be(9);
     }
 
     [Fact]

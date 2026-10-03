@@ -587,6 +587,17 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    public async Task<int> CountLowStockAsync(int maxStock, CancellationToken cancellationToken = default)
+    {
+        // SELECT COUNT(*) FROM Products WHERE IsActive = 1 AND StockQuantity <= @maxStock
+        // Same WHERE as GetLowStockProductsAsync minus the TOP/ORDER BY —
+        // CountAsync is a pure SQL COUNT(*), no materialization, no
+        // tracking (same shape as CountInStockAsync).
+        return await _db.Products
+            .CountAsync(p => p.IsActive && p.StockQuantity <= maxStock, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<List<Guid>> GetAllProductIdsAsync(CancellationToken cancellationToken = default)
     {
         // ------------------------------------------------------------------

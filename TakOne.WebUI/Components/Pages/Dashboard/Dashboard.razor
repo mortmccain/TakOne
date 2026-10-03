@@ -46,11 +46,14 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Globalization
+@using System.Text
 @using Wolverine
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Common.Models
 @using TakOne.Application.Dashboard.DTOs
 @using TakOne.Application.Dashboard.Queries.GetDashboardStats
+@using TakOne.Application.Products.Queries.GetProductsPaginated
 @using TakOne.SharedKernel.Common
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
@@ -311,16 +314,35 @@ else if (_stats is not null)
                     </div>
                     <div class="tm-dash-restock-title-wrap">
                         <p class="tm-dash-restock-title">@Loc["Restock_Title"]</p>
-                        <p class="tm-dash-restock-sub">@Loc["Restock_Sub", FormatDigits(_stats.LowStockProducts.Count)]</p>
+                        <p class="tm-dash-restock-sub">
+                            @* The subtitle shows the TRUE total (uncapped count); when
+                               more items exist beyond the 6-chip cap, say so — the old
+                               subtitle showed the capped count, which read as "only 6
+                               need restocking" when it was really 9. The display max
+                               guards a stock movement racing the two queries. *@
+                            @if (RestockTotalCount > _stats.LowStockProducts.Count)
+                            {
+                                @Loc["Restock_SubCapped", FormatDigits(RestockTotalCount), FormatDigits(_stats.LowStockProducts.Count)]
+                            }
+                            else
+                            {
+                                @Loc["Restock_Sub", FormatDigits(_stats.LowStockProducts.Count)]
+                            }
+                        </p>
                     </div>
                     @* "Manage products" link — hidden from ReadOnly users
                        because /Admin/Products is gated to
                        Admin/Manager/Employee (same pattern as the Top
                        Products card's "View All"). The alert itself stays
                        visible to ReadOnly (stock levels are read-only
-                       insight, not an admin surface). *@
+                       insight, not an admin surface).
+                       DEEP LINK: carries the low-stock filter pre-applied
+                       (stockn/stocknop = the URL state contract the
+                       products page restores on mount), so the admin
+                       lands on the grid already narrowed to exactly the
+                       items this banner is about. *@
                     <AuthorizeView Roles="@(Roles.Admin + "," + Roles.Manager + "," + Roles.Employee)">
-                        <a href="/Admin/Products" class="tm-dash-restock-link">
+                        <a href="@LowStockDeepLink" class="tm-dash-restock-link">
                             @Loc["Restock_Manage"]
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -1312,6 +1334,41 @@ else if (_stats is not null)
     {
         var total = TotalOrdersCount;
         return total > 0 ? (int)Math.Round(count * 100.0 / total) : 0;
+    }
+
+    // ── Restock alert helpers ────────────────────────────────────────
+
+    /// <summary>
+    /// The TRUE size of the restock backlog for the banner's subtitle —
+    /// the UNCAPPED count, defensively maxed against the shown list count
+    /// (a stock movement between the handler's two queries can
+    /// momentarily leave total &lt; shown; the display never contradicts
+    /// the chips on screen).
+    /// </summary>
+    private int RestockTotalCount
+        => Math.Max(_stats?.LowStockProductTotalCount ?? 0,
+                    _stats?.LowStockProducts.Count ?? 0);
+
+    /// <summary>
+    /// The "Manage products" deep link — /Admin/Products with the
+    /// low-stock filter PRE-APPLIED through the page's existing URL state
+    /// contract (stockn = threshold, stocknop = LessThanOrEqual; the
+    /// restore path parses it into the Stock column's numeric filter on
+    /// mount, and the page's own state persistence keeps it in the URL
+    /// afterwards). Built with StringBuilder + Uri.EscapeDataString so a
+    /// future change to the threshold never produces a stale literal.
+    /// </summary>
+    private static string LowStockDeepLink
+    {
+        get
+        {
+            var builder = new StringBuilder("/Admin/Products?stockn=")
+                .Append(Uri.EscapeDataString(
+                    ProductStockThresholds.LowStock.ToString(CultureInfo.InvariantCulture)))
+                .Append("&stocknop=")
+                .Append(Uri.EscapeDataString(nameof(ProductsNumberOperator.LessThanOrEqual)));
+            return builder.ToString();
+        }
     }
 
     /// <summary>

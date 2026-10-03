@@ -851,6 +851,15 @@ public sealed class GetDashboardStatsQueryHandler
                         StockQuantity = p.StockQuantity
                     })
                     .ToList();
+
+                // The UNCAPPED total (the list is capped at
+                // LowStockAlertMaxItems) — tells the banner's subtitle
+                // whether more items exist beyond the cap. A stock
+                // movement between the two queries can momentarily make
+                // this smaller than the list count; the UI maxes them.
+                dto.LowStockProductTotalCount = await productRepository.CountLowStockAsync(
+                    ProductStockThresholds.LowStock,
+                    cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

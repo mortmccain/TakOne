@@ -497,4 +497,8 @@
     <value>Only {0} left in stock</value>
     <comment>Chip tooltip; {0} = localized remaining stock count.</comment>
   </data>
+  <data name="Restock_SubCapped" xml:space="preserve">
+    <value>{0} products are low or out of stock — showing the {1} most critical</value>
+    <comment>Capped variant of the restock subtitle; {0} = TRUE (uncapped) total, {1} = how many chips are shown.</comment>
+  </data>
 </root>

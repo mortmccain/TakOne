@@ -41,6 +41,7 @@ public class DashboardRestockAlertTests
 {
     private static DashboardStatsDto MakeDto(
         bool employeeScoped,
+        int lowStockTotalCount = 0,
         params LowStockProductDto[] lowStock) => new()
     {
         CurrentUserName = "Test User",
@@ -57,13 +58,26 @@ public class DashboardRestockAlertTests
         RecentOrders = new List<RecentOrderDto>(),
         YearlyData = new List<YearlyRevenueDto>(),
         CurrentYearMonthlyData = new List<MonthlyRevenueDto>(),
-        LowStockProducts = lowStock.ToList()
+        LowStockProducts = lowStock.ToList(),
+        LowStockProductTotalCount = lowStockTotalCount
     };
 
     private static (TestContext ctx, IMessageBus bus) Setup(DashboardStatsDto dto)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
-        ComponentTestSetup.AddIdentityLocalizer<Dashboard>(ctx);
+
+        // Local twin of ComponentTestSetup.AddIdentityLocalizer that ALSO
+        // stubs the format-args indexer (the restock subtitle uses
+        // Loc["Restock_SubCapped", total, shown] — the shared helper only
+        // stubs the key-only indexer, which renders args-formatted strings
+        // as empty). string.Format with a placeholder-free key returns the
+        // key itself, so the args stub renders just the key.
+        var dashLoc = Substitute.For<IStringLocalizer<Dashboard>>();
+        dashLoc[Arg.Any<string>()].Returns(ci =>
+            new LocalizedString((string)ci.ArgAt<string>(0), (string)ci.ArgAt<string>(0), false));
+        dashLoc[Arg.Any<string>(), Arg.Any<object[]>()].Returns(ci =>
+            new LocalizedString((string)ci.ArgAt<string>(0), (string)ci.ArgAt<string>(0), false));
+        ctx.Services.AddSingleton(dashLoc);
 
         var errLoc = Substitute.For<IStringLocalizer<UnexpectedErrorMessages>>();
         errLoc[Arg.Any<string>()].Returns(ci =>
@@ -92,9 +106,11 @@ public class DashboardRestockAlertTests
     [Fact]
     public void Dashboard_CompanyWideWithLowStock_RendersRestockAlert()
     {
-        // Arrange — most-critical-first DTO (out-of-stock leads).
+        // Arrange — most-critical-first DTO (out-of-stock leads); the
+        // uncapped total EQUALS the shown count (nothing hidden).
         var dto = MakeDto(
             employeeScoped: false,
+            lowStockTotalCount: 2,
             new LowStockProductDto { Id = Guid.NewGuid(), Name = "Golden Pen", StockQuantity = 0 },
             new LowStockProductDto { Id = Guid.NewGuid(), Name = "Leather Notebook", StockQuantity = 7 });
         var (ctx, _) = Setup(dto);
@@ -110,6 +126,11 @@ public class DashboardRestockAlertTests
                 TimeSpan.FromSeconds(10));
             cut.Markup.Should().Contain("Restock_Title");
 
+            // Equal totals render the plain subtitle (NOT the capped
+            // variant) — nothing is hidden beyond the chips.
+            cut.Markup.Should().Contain("Restock_Sub");
+            cut.Markup.Should().NotContain("Restock_SubCapped");
+
             var chips = cut.FindAll(".tm-dash-restock-chip");
             chips[0].ClassList.Should().Contain("tm-dash-restock-chip-out",
                 "the out-of-stock chip carries the danger modifier");
@@ -118,10 +139,48 @@ public class DashboardRestockAlertTests
             chips[1].TextContent.Should().Contain("Leather Notebook").And.Contain("7");
 
             // The admin sees the "manage products" link (inside the
-            // AuthorizeView; the Admin role passes the gate).
+            // AuthorizeView; the Admin role passes the gate) — and it
+            // deep-links with the low-stock filter PRE-APPLIED via the
+            // products page's URL state contract (stockn/stocknop).
             cut.Markup.Should().Contain("Restock_Manage");
             var link = cut.Find(".tm-dash-restock-link");
-            link.GetAttribute("href").Should().Be("/Admin/Products");
+            link.GetAttribute("href").Should().Be(
+                "/Admin/Products?stockn=10&stocknop=LessThanOrEqual");
+        }
+    }
+
+    [Fact]
+    public void Dashboard_MoreLowStockThanChipCap_SubtitleShowsTrueTotal()
+    {
+        // Arrange — 9 low-stock products in reality, 6 shown (the DTO's
+        // cap): the subtitle must say 9 — showing the 6 most critical —
+        // NOT the capped count that reads as "only 6".
+        var shown = Enumerable.Range(1, 6)
+            .Select(i => new LowStockProductDto
+            {
+                Id = Guid.NewGuid(),
+                Name = $"Product {i}",
+                StockQuantity = i
+            })
+            .ToArray();
+        var dto = MakeDto(employeeScoped: false, lowStockTotalCount: 9, shown);
+        var (ctx, _) = Setup(dto);
+        using (ctx)
+        {
+            // Act
+            var cut = ctx.RenderComponent<Dashboard>();
+
+            // Assert — the CAPPED subtitle variant with both numbers:
+            // the stub localizer renders the key + args, so both the
+            // total (9) and the shown count (6) appear in the subtitle.
+            cut.WaitForAssertion(
+                () => cut.FindAll(".tm-dash-restock-chip").Should().HaveCount(6),
+                TimeSpan.FromSeconds(10));
+            var subtitle = cut.Find(".tm-dash-restock-sub");
+            // The stub localizer renders keys verbatim (string.Format on a
+            // placeholder-free key), so the CAPPED variant's key — and
+            // only it — appears in the rendered subtitle.
+            subtitle.TextContent.Should().Contain("Restock_SubCapped");
         }
     }
 
@@ -134,7 +193,7 @@ public class DashboardRestockAlertTests
         // banner must STILL not render.
         var dto = MakeDto(
             employeeScoped: true,
-            new LowStockProductDto { Id = Guid.NewGuid(), Name = "Golden Pen", StockQuantity = 0 });
+            lowStock: new LowStockProductDto { Id = Guid.NewGuid(), Name = "Golden Pen", StockQuantity = 0 });
         var (ctx, _) = Setup(dto);
         using (ctx)
         {

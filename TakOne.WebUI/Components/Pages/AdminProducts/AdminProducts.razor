@@ -258,6 +258,70 @@
                     animation: none;
                 }
             }
+
+            /* ── "Low stock only" quick-filter chip ─────────────────────
+               A FILTER, not an action: toggling it applies/clears the
+               Stock column's numeric filter (≤ the shared low-stock
+               threshold — the same number the Dashboard's restock alert
+               lists and this grid's amber stock cells color by). The
+               active state carries the warn tint; inactive reads as a
+               quiet outline. aria-pressed marks it as a toggle for
+               assistive tech. */
+            .low-stock-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.45rem 0.85rem;
+                font-size: 0.8rem;
+                font-weight: 500;
+                font-family: inherit;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: 9999px;
+                cursor: pointer;
+                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            }
+
+                .low-stock-chip:hover:not(:disabled),
+                .low-stock-chip:focus-visible {
+                    color: var(--rz-warning);
+                    border-color: var(--rz-warning);
+                }
+
+                .low-stock-chip:focus-visible {
+                    outline: 2px solid var(--rz-warning);
+                    outline-offset: 1px;
+                }
+
+                .low-stock-chip:disabled {
+                    opacity: 0.55;
+                    cursor: not-allowed;
+                }
+
+                /* ACTIVE: warn tint fills the chip, matching the amber
+                   stock cells + the dashboard banner's palette. */
+                .low-stock-chip--active {
+                    background: color-mix(in srgb, var(--rz-warning) 14%, transparent);
+                    border-color: color-mix(in srgb, var(--rz-warning) 45%, transparent);
+                    color: var(--rz-warning);
+                    font-weight: 600;
+                }
+
+                    .low-stock-chip--active:hover:not(:disabled) {
+                        background: color-mix(in srgb, var(--rz-warning) 20%, transparent);
+                    }
+
+                .low-stock-chip-icon {
+                    font-size: 1rem;
+                    line-height: 1;
+                }
+
+            @@media (prefers-reduced-motion: reduce) {
+                .low-stock-chip {
+                    transition: none;
+                }
+            }
     </style>
 </HeadContent>
 
@@ -270,6 +334,30 @@
         </RadzenStack>
 
         <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            @* ── "Low stock only" quick-filter chip ──
+               A TOGGLE, not a button-action: ON sets the Stock column's
+               numeric filter to ≤ the shared threshold (the same number
+               the Dashboard's restock alert lists and the amber stock
+               cells color by); OFF clears it. Because it drives the grid
+               through the standard column-filter pipeline, the chip's
+               state is DERIVED from _activeStockFilter (refreshed every
+               load) — the URL restore, manual column-menu changes, and
+               Clear-all keep it honest with zero bookkeeping. The
+               Dashboard's restock banner deep-links here with the filter
+               pre-applied (?stockn=10&stocknop=LessThanOrEqual). *@
+            @* aria-pressed is a LITERAL STRING, not a bool binding: Blazor
+               OMITS attributes whose value is boolean false, and
+               aria-pressed="false" is meaningful ARIA (an unpressed
+               toggle) — the chip must render BOTH states explicitly. *@
+            <button type="button"
+                    class="low-stock-chip @(IsLowStockFilterActive ? "low-stock-chip--active" : null)"
+                    aria-pressed="@(IsLowStockFilterActive ? "true" : "false")"
+                    title="@Loc["LowStockFilterTooltip", ProductStockThresholds.LowStock]"
+                    disabled="@(_isLoading)"
+                    @onclick="ToggleLowStockFilterAsync">
+                <RadzenIcon Icon="warning" Class="low-stock-chip-icon" aria-hidden="true" />
+                <span>@Loc["LowStockFilterChip"]</span>
+            </button>
             @* Export CSV (Round 6) — exports EVERY product matching the active
                filters (all pages, capped at 2,000) with the same filters +
                sort the grid shows. Previously it could only ship the ≤100
@@ -1020,11 +1108,23 @@
     }
 
     /// <summary>
-    /// Sets a numeric column's FilterValue (decimal) + the operator
-    /// mapped from the typed <see cref="ProductsNumberFilter"/>.
+    /// Sets a numeric column's FilterValue + the operator mapped from
+    /// the typed <see cref="ProductsNumberFilter"/>.
     /// requireFilterTemplate=false targets the numeric Stock column (the
     /// status dropdown column shares the same Property — see
     /// ApplyRestoredGridStateAsync).
+    ///
+    /// TYPE BUG FIX (found by the low-stock chip's bUnit test): Radzen's
+    /// built-in numeric filter editor is typed to the COLUMN (Radzen's
+    /// FilterPropertyType — <c>RadzenNumeric&lt;int?&gt;</c> for the int Stock
+    /// column, decimal for Price), and every re-render pushes the boxed
+    /// FilterValue straight into the editor's Value parameter. A boxed
+    /// DECIMAL (what <see cref="ProductsNumberFilter"/> carries) lands in
+    /// <c>RadzenNumeric&lt;int?&gt;</c> as InvalidCastException — the URL
+    /// restore of a stockn=…&amp;stocknop=… link used to crash the render
+    /// this way. Real user input never trips it (the editor itself
+    /// produces the column-typed value); programmatic assignment must
+    /// convert the operand with <see cref="ToColumnNumericType"/> first.
     /// </summary>
     private void SetNumberColumnFilter(string property, ProductsNumberFilter? filter, bool? requireFilterTemplate = null)
     {
@@ -1045,7 +1145,7 @@
             return;
         }
 
-        column.FilterValue = filter.Value;
+        column.FilterValue = ToColumnNumericType(column, filter.Value);
         column.FilterOperator = filter.Operator switch
         {
             ProductsNumberOperator.Equals => FilterOperator.Equals,
@@ -1056,6 +1156,37 @@
             ProductsNumberOperator.LessThanOrEqual => FilterOperator.LessThanOrEquals,
             _ => FilterOperator.Equals
         };
+    }
+
+    /// <summary>
+    /// Converts a numeric filter operand (the typed record's decimal) to
+    /// the COLUMN's native filter property type before boxing it into
+    /// FilterValue — see SetNumberColumnFilter's TYPE BUG FIX remark.
+    /// int/long columns get their exact type back; anything else
+    /// (decimal Price, hypothetical future columns) keeps the decimal.
+    /// </summary>
+    private static object ToColumnNumericType(
+        RadzenDataGridColumn<ProductListItemDto> column,
+        decimal value)
+    {
+        // FilterPropertyType is the property the FILTER editor binds to
+        // (null only for unbound columns, which never carry numeric
+        // filters — guard anyway).
+        var propertyType = column.FilterPropertyType is { } filterPropertyType
+            ? Nullable.GetUnderlyingType(filterPropertyType) ?? filterPropertyType
+            : null;
+
+        if (propertyType == typeof(int))
+        {
+            return (int)value;
+        }
+
+        if (propertyType == typeof(long))
+        {
+            return (long)value;
+        }
+
+        return value; // decimal (Price.Amount) and anything else: as-is
     }
 
     /// <summary>
@@ -1315,6 +1446,74 @@
             {
                 _isLoading = false;
             }
+        }
+    }
+
+    // ── "Low stock only" quick-filter chip ──────────────────────────────
+
+    /// <summary>
+    /// True when the grid's numeric Stock column filter is EXACTLY the
+    /// low-stock quick filter (≤ the shared threshold). DERIVED from
+    /// <see cref="_activeStockFilter"/> — refreshed by every grid load —
+    /// so the URL restore (?stockn=10&amp;stocknop=LessThanOrEqual, the
+    /// Dashboard's restock-banner deep link), manual column-menu changes,
+    /// and Clear-all keep the chip honest with zero bookkeeping. A custom
+    /// filter (e.g. ≤ 5) deliberately reads as OFF — the chip toggles its
+    /// own canonical filter, not "any stock filter".
+    /// </summary>
+    private bool IsLowStockFilterActive => _activeStockFilter is { } stockFilter
+        && stockFilter.Operator == ProductsNumberOperator.LessThanOrEqual
+        && stockFilter.Value == ProductStockThresholds.LowStock;
+
+    /// <summary>
+    /// Toggles the quick filter: ON sets the Stock column's numeric
+    /// FilterValue to the threshold with the ≤ operator (replacing any
+    /// custom stock filter); OFF clears the FilterValue (the proven
+    /// Clear-all mechanism — a null value means no filter regardless of
+    /// the operator). Both paths restart from page 1 via
+    /// <c>grid.FirstPage(true)</c> (a narrower set usually ends before
+    /// the current page), which re-fires LoadData through the standard
+    /// descriptor pipeline — the filter therefore participates in the
+    /// QUERY, the CSV export, and the URL persistence automatically.
+    /// </summary>
+    private async Task ToggleLowStockFilterAsync()
+    {
+        if (grid is null || _isLoading)
+        {
+            return; // nothing mounted / mid-load — the chip is disabled then anyway
+        }
+
+        // The NUMERIC stock column: the status dropdown column shares
+        // Property="StockQuantity" but is the only one with a
+        // FilterTemplate (the same discriminator the restore path uses).
+        var stockColumn = grid.ColumnsCollection.FirstOrDefault(
+            c => c.Property == "StockQuantity" && c.FilterTemplate is null);
+        if (stockColumn is null)
+        {
+            return;
+        }
+
+        if (IsLowStockFilterActive)
+        {
+            stockColumn.FilterValue = null; // null value = no filter (Clear-all precedent)
+        }
+        else
+        {
+            // Column-native int (NOT the record's decimal) — a boxed
+            // decimal crashes Radzen's int-typed filter editor on
+            // re-render (see SetNumberColumnFilter's TYPE BUG FIX).
+            stockColumn.FilterValue = ToColumnNumericType(stockColumn, ProductStockThresholds.LowStock);
+            stockColumn.FilterOperator = FilterOperator.LessThanOrEquals;
+        }
+
+        _isLoading = true;
+        try
+        {
+            await grid.FirstPage(true); // re-fires LoadData with the new filter
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 

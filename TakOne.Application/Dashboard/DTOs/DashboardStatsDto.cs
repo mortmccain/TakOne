@@ -263,6 +263,18 @@ public sealed class DashboardStatsDto
     /// </summary>
     public List<LowStockProductDto> LowStockProducts { get; set; } = new();
 
+    /// <summary>
+    /// The UNCAPPED total of active products at or below the low-stock
+    /// threshold — the true size of the restock backlog. The list is
+    /// capped at <see cref="LowStockAlertMaxItems"/>; this count tells
+    /// the banner's subtitle whether more exist beyond the cap
+    /// ("9 products are low or out of stock — showing the 6 most
+    /// critical"). Defensive display rule: never smaller than the list
+    /// count (a stock movement between the two queries could momentarily
+    /// produce total &lt; shown — the UI maxes them).
+    /// </summary>
+    public int LowStockProductTotalCount { get; set; }
+
 
     // ───────────────────────────────────────────────────────────────
     // GREETING HEADER — time-of-day greeting + user gender

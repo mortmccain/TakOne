@@ -169,6 +169,17 @@ public interface IProductRepository
         int take,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the UNCAPPED count of ACTIVE products at or below
+    /// <paramref name="maxStock"/> — the restock alert's TRUE total. The
+    /// list query is capped at a few rows; this count tells the admin
+    /// whether more exist beyond the cap (e.g. "9 products are low or out
+    /// of stock — showing the 6 most critical"). Single round-trip
+    /// <c>SELECT COUNT(*)</c>, same WHERE as
+    /// <see cref="GetLowStockProductsAsync"/>.
+    /// </summary>
+    Task<int> CountLowStockAsync(int maxStock, CancellationToken cancellationToken = default);
+
     Task AddAsync(Product product, CancellationToken cancellationToken = default);
 
     /// <summary>
