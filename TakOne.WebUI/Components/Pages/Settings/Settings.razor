@@ -846,6 +846,125 @@
                 font-size: 0.72rem;
                 flex: none;
             }
+
+            /* ── Run-history ledger ─────────────────────────────────
+               One row per COMPLETED run (newest first): trigger icon
+               (clock = scheduled slot, hand = manual "Back up now"),
+               Tehran start time + duration, outcome badge, and — when
+               the run failed — the error short-form (full message in
+               the native tooltip via the title attribute). Shares the
+               stored-files ledger's scroll policy + thin themed
+               scrollbar; bounded by the retention window. */
+            .backup-run-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 11rem;
+                overflow-y: auto;
+                margin-top: 0.5rem;
+                padding-inline-end: 0.25rem;
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+            }
+
+                .backup-run-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .backup-run-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .backup-run-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .backup-run-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            .backup-run-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.78rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                transition: background-color 0.1s ease, border-color 0.15s ease;
+                flex-wrap: wrap; /* narrow admin-tools cards wrap instead of overflowing */
+            }
+
+                .backup-run-row:hover {
+                    background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+                }
+
+                /* Failed runs keep a danger border + a faint danger tint
+                   so a bad slot is findable while scrolling without
+                   reading badges. */
+                .backup-run-row.backup-run-failed {
+                    border-color: var(--rz-danger-color, #f44336);
+                    background: color-mix(in srgb, var(--rz-danger-color, #f44336) 5%, var(--rz-secondary-background-color, var(--rz-base-background-color)));
+                }
+
+                    .backup-run-row.backup-run-failed:hover {
+                        background: color-mix(in srgb, var(--rz-danger-color, #f44336) 10%, var(--rz-secondary-background-color, var(--rz-base-background-color)));
+                    }
+
+            .backup-run-icon {
+                font-size: 1rem;
+                flex: none;
+            }
+
+                .backup-run-icon.backup-run-icon-manual {
+                    color: var(--rz-primary);
+                }
+
+                .backup-run-icon.backup-run-icon-scheduled {
+                    color: var(--rz-text-secondary-color);
+                }
+
+            .backup-run-time {
+                flex: none;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .backup-run-duration {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+                white-space: nowrap;
+            }
+
+            .backup-run-name {
+                flex: 1;
+                min-width: 4rem; /* keeps at least a stub of the name visible when wrapped on narrow cards */
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.72rem;
+                color: var(--rz-text-secondary-color);
+                direction: ltr; /* file names are literal LTR text */
+                unicode-bidi: embed;
+            }
+
+            .backup-run-name:empty {
+                display: none; /* failed runs have no file — no empty flex stub */
+            }
+
+            .backup-run-section-label {
+                font-size: 0.7rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: var(--rz-text-secondary-color);
+                margin-top: 0.75rem;
+                display: block;
+            }
     </style>
 </HeadContent>
 
@@ -1549,12 +1668,64 @@
                                              Style="margin-top: 0.5rem;" />
                             }
 
+                            @* ── Run-history ledger (persisted JSONL) — one row
+                               per COMPLETED run, newest first: trigger icon
+                               (clock = scheduled slot, touch = manual "Back
+                               up now"), Tehran start time + duration, and
+                               the outcome badge. The full failure message
+                               rides the row's title tooltip (the latest
+                               failure also gets the alert above). Only
+                               rendered when at least one run is recorded —
+                               the "Last run: never" stat already covers the
+                               fresh-install case. *@
+                            @if (backup.RunHistory is { Count: > 0 })
+                            {
+                                <span class="backup-run-section-label">@Loc["BackupRunHistoryLabel"]</span>
+                                <div class="backup-run-list">
+                                    @foreach (var run in backup.RunHistory)
+                                    {
+                                        var rawSeconds = (decimal)(run.FinishedUtc - run.StartedUtc).TotalSeconds;
+                                        var durationSeconds = rawSeconds >= 0 ? decimal.Round(rawSeconds, 1) : 0m;
+                                        var rowTitle = run.Succeeded
+                                            ? string.Format(CultureInfo.CurrentCulture, Loc["BackupRunTooltip"], run.WasManual ? Loc["BackupRunManual"] : Loc["BackupRunScheduled"])
+                                            : $"{Loc["BackupRunFailed"]}: {run.Error}";
+                                        <div class="backup-run-row @(run.Succeeded ? string.Empty : "backup-run-failed")"
+                                             title="@rowTitle">
+                                            @if (run.WasManual)
+                                            {
+                                                <RadzenIcon Icon="touch_app"
+                                                            Class="backup-run-icon backup-run-icon-manual"
+                                                            title="@Loc["BackupRunManual"]" />
+                                            }
+                                            else
+                                            {
+                                                <RadzenIcon Icon="schedule"
+                                                            Class="backup-run-icon backup-run-icon-scheduled"
+                                                            title="@Loc["BackupRunScheduled"]" />
+                                            }
+                                            <span class="backup-run-time">@CultureFormat.FormatTehranDateTime(run.StartedUtc)</span>
+                                            <span class="backup-run-duration">@Loc["BackupDurationFormat", durationSeconds]</span>
+                                            <span class="backup-run-name">@run.FileName</span>
+                                            @if (run.Succeeded)
+                                            {
+                                                <RadzenBadge Text="@Loc["BackupOutcomeSuccess"]" BadgeStyle="BadgeStyle.Success" IsPill="true" Style="flex: none;" />
+                                            }
+                                            else
+                                            {
+                                                <RadzenBadge Text="@Loc["BackupOutcomeFailed"]" BadgeStyle="BadgeStyle.Danger" IsPill="true" Style="flex: none;" />
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
                             @* Stored files ledger — newest first, mono
                                names (LTR even in fa-IR), size + Tehran
                                time. Scrollable with the thin themed
                                scrollbar. *@
                             @if (backup.Files.Count > 0)
                             {
+                                <span class="backup-run-section-label">@Loc["BackupFilesLedgerLabel"]</span>
                                 <div class="backup-file-list">
                                     @foreach (var file in backup.Files)
                                     {

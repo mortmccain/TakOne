@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- EditGroup.en-US.resx — English strings for EditGroup.razor. -->
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
@@ -220,5 +220,21 @@
   </data>
   <data name="StatusInactiveBadge" xml:space="preserve">
     <value>Inactive</value>
+  </data>
+
+  <!-- CSV export (header button) — exports the groups list narrowed to the active grid filters -->
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} groups exported to CSV</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The CSV export failed. Please try again.</value>
+  </data>
+
+  <!-- CSV export column: ISO currency code of the monthly budget -->
+  <data name="ColCurrency" xml:space="preserve">
+    <value>Currency</value>
   </data>
 </root>

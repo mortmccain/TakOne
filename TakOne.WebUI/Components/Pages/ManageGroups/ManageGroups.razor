@@ -159,12 +159,36 @@
             <RadzenText Text="@Loc["PageHeading"]" TextStyle="TextStyle.H5" Style="font-weight: 600; margin: 0;" />
         </RadzenStack>
 
-        <RadzenButton Text="@Loc["CreateGroupButton"]"
-                      Icon="group_add"
-                      ButtonStyle="ButtonStyle.Primary"
-                      Variant="Variant.Filled"
-                      Visible="@(_isAdmin || _isManagerOnly)"
-                      Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            @* ── Export CSV — every list page can export (AdminUsers /
+               AdminProducts / Sales / shop Products); this completes the
+               set for the groups list. Exports CURRENT data re-queried
+               from GetAllCustomerGroupsQuery (not the page's possibly
+               minutes-old snapshot), narrowed to the grid's ACTIVE
+               client-side filters (Name text filter + Status dropdown) —
+               the same "export what you see" contract as the other
+               pages. Visible to every viewer the page itself admits
+               (Admin/Manager/Employee — read-only data they can already
+               see on screen; no extra gating needed).
+               NOTE (empty-button fix, Task 2 pattern): the label lives in
+               Text + BusyText — NEVER in ChildContent (Radzen renders
+               ChildContent exclusively when set, which made the original
+               export buttons render blank). *@
+            <RadzenButton Text="@Loc["ExportCsvButton"]"
+                          Icon="download"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Disabled="@(_isLoading || _groups.Count == 0)"
+                          IsBusy="@_isExporting"
+                          BusyText="@Loc["ExportCsvButton"]"
+                          Click="@ExportGroupsCsvAsync" />
+            <RadzenButton Text="@Loc["CreateGroupButton"]"
+                          Icon="group_add"
+                          ButtonStyle="ButtonStyle.Primary"
+                          Variant="Variant.Filled"
+                          Visible="@(_isAdmin || _isManagerOnly)"
+                          Click="@(() => Navigation.NavigateTo("/Admin/Groups/Create", forceLoad: false))" />
+        </RadzenStack>
     </div>
 
     @* ── Limit-mode card (admin-only, Step 12-a runtime fix) ──
@@ -746,6 +770,143 @@
         {
             _isLoading = false;
         }
+    }
+
+    // ── CSV export ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Hard cap on exported rows: the groups dataset is tiny (5-15 rows
+    /// expected), but the cap keeps a pathological dataset from building a
+    /// giant string on the Blazor circuit (same value as the other exports).
+    /// </summary>
+    private const int ExportRowCap = 2000;
+
+    /// <summary>True while the CSV export is building — drives the button's IsBusy spinner.</summary>
+    private bool _isExporting;
+
+    /// <summary>
+    /// Builds a CSV of the groups and downloads it via the takDownload
+    /// helper. Unlike the server-driven pages (AdminUsers/Sales re-issue a
+    /// paged query with the active filter descriptors), this grid is
+    /// client-side: the data is re-queried fresh (all groups, incl.
+    /// inactive) and then narrowed by replicating the grid's ACTIVE
+    /// client-side filters — the Name column's FilterValue/FilterOperator
+    /// and the page-tracked Status dropdown — so the file matches what the
+    /// admin currently sees ("export what you see" contract).
+    /// Columns: name, monthly salary (RAW invariant amount — no Persian
+    /// digits, no grouping; the export is for data processing), ISO
+    /// currency code, status label.
+    /// </summary>
+    private async Task ExportGroupsCsvAsync()
+    {
+        if (_isLoading || _groups.Count == 0 || _isExporting)
+        {
+            return; // the button is disabled in these states — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            // Re-query so the export ships CURRENT data, not the page's
+            // possibly minutes-old in-memory snapshot.
+            var result = await MessageBus.InvokeAsync<Result<List<CustomerGroupListItemDto>>>(
+                new GetAllCustomerGroupsQuery { IncludeInactive = true });
+
+            if (!result.IsSuccess)
+            {
+                await Toast.Error(
+                    ErrorDisplay.Localize(result.Error) ?? Loc["ExportCsvError"],
+                    summary: Loc["ErrorTitle"]);
+                return;
+            }
+
+            var rows = ApplyVisibleFilters(result.Value);
+
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColName"],
+                Loc["ColSalary"],
+                Loc["ColCurrency"],
+                Loc["ColStatus"]);
+
+            foreach (var group in rows)
+            {
+                builder.AddRow(
+                    group.Name,
+                    group.Salary.Amount,          // invariant RAW amount (CsvBuilder contract)
+                    group.Salary.Currency,        // ISO code as-is
+                    GetStatusLabel(group.IsActive));
+            }
+
+            var csv = builder.ToString();
+            var fileName = $"takone-groups-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, csv);
+
+            await Toast.Success(Loc["ExportCsvDone", rows.Count], summary: Loc["PageHeading"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same as AdminUsers).
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Narrows the freshly-queried groups to what the grid currently
+    /// SHOWS: the Name column's text filter (FilterValue + the operator
+    /// picked in the filter menu, case-insensitive — the grid's
+    /// FilterCaseSensitivity) and the Status dropdown tracked in
+    /// <see cref="_selectedStatusFilter"/>. Returns the input list (order
+    /// preserved) when no filter is active.
+    /// </summary>
+    private List<CustomerGroupListItemDto> ApplyVisibleFilters(List<CustomerGroupListItemDto> groups)
+    {
+        IEnumerable<CustomerGroupListItemDto> view = groups;
+
+        // Name text filter — read from the live grid column (the same
+        // Radzen programmatic-filter API the status filter uses).
+        var nameColumn = grid?.ColumnsCollection.FirstOrDefault(c => c.Property == "Name");
+        if (nameColumn?.FilterValue is string nameFilter && !string.IsNullOrWhiteSpace(nameFilter))
+        {
+            var filterOperator = nameColumn.FilterOperator;
+            view = view.Where(g => MatchesNameFilter(g.Name, nameFilter, filterOperator));
+        }
+
+        // Status dropdown filter — page-tracked state (null/empty = all).
+        if (!string.IsNullOrEmpty(_selectedStatusFilter))
+        {
+            var activeOnly = _selectedStatusFilter == "Active";
+            view = view.Where(g => g.IsActive == activeOnly);
+        }
+
+        var list = view.ToList();
+        return list.Count > ExportRowCap ? list.Take(ExportRowCap).ToList() : list;
+    }
+
+    /// <summary>
+    /// Replicates Radzen's client-side string filter semantics for the
+    /// operators the SimpleWithMenu filter menu offers for text columns.
+    /// Unknown operators fall back to Contains (the menu's default).
+    /// Case-insensitive to match the grid's FilterCaseSensitivity setting.
+    /// </summary>
+    private static bool MatchesNameFilter(string name, string filter, FilterOperator filterOperator)
+    {
+        const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+
+        return filterOperator switch
+        {
+            FilterOperator.Equals => string.Equals(name, filter, comparison),
+            FilterOperator.NotEquals => !string.Equals(name, filter, comparison),
+            FilterOperator.StartsWith => name.StartsWith(filter, comparison),
+            FilterOperator.EndsWith => name.EndsWith(filter, comparison),
+            FilterOperator.DoesNotContain => !name.Contains(filter, comparison),
+            _ => name.Contains(filter, comparison) // Contains — the menu default
+        };
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────

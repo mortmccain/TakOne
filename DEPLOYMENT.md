@@ -477,6 +477,17 @@ open `/Settings`:
   and the failure message when it failed), the next scheduled slot, the
   retention window, and the full newest-first list of `*.bak` files with
   sizes and Tehran-local timestamps.
+- **Run history** — a newest-first ledger of recently COMPLETED runs
+  (scheduled AND manual), each with its Tehran start time, duration,
+  trigger (clock icon = scheduled slot, hand icon = manual "Back up
+  now"), outcome badge, and — for failed runs — the failure message in
+  the row's hover tooltip. This is persisted across restarts in
+  `backup-history.jsonl` (one JSON line per completed run, written next
+  to the `*.bak` files on the shared volume) and pruned by the same
+  7-day retention sweep, so "did the 03:30 slot actually run last week?"
+  is answerable without grepping container logs. The ledger is
+  best-effort: a failed history write is logged as a warning and never
+  fails the backup itself.
 - **"Back up now"** — triggers an extra backup immediately (admin-only,
   gated server-side by `[RequireRoles(Admin)]` via
   `TriggerBackupNowCommand`). The run executes on the backup service's

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- Settings.en-US.resx — English strings for Settings.razor.
 
      The four <resheader> tags below are REQUIRED by the .resx reader —
@@ -522,5 +522,27 @@
   </data>
   <data name="BackupTriggerError" xml:space="preserve">
     <value>The backup could not be triggered.</value>
+  </data>
+
+  <!-- Backup card: run-history ledger (persisted JSONL) section label — one row per completed run -->
+  <data name="BackupRunHistoryLabel" xml:space="preserve">
+    <value>Recent runs</value>
+  </data>
+  <data name="BackupRunScheduled" xml:space="preserve">
+    <value>Scheduled</value>
+  </data>
+  <data name="BackupRunManual" xml:space="preserve">
+    <value>Manual</value>
+  </data>
+  <data name="BackupRunFailed" xml:space="preserve">
+    <value>Run failed</value>
+  </data>
+  <data name="BackupRunTooltip" xml:space="preserve">
+    <value>{0} backup run — hover for the record.</value>
+  </data>
+
+  <!-- Backup card: stored-files ledger section label (distinct from the summary stat) -->
+  <data name="BackupFilesLedgerLabel" xml:space="preserve">
+    <value>Backup files on disk</value>
   </data>
 </root>

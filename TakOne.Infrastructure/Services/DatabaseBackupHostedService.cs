@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -112,6 +113,18 @@ namespace TakOne.Infrastructure.Services;
 /// sequence allocation.
 /// </para>
 /// <para>
+/// <b>RUN-HISTORY LEDGER</b>: every COMPLETED run (success or failure,
+/// scheduled or manual) is appended as one JSON line to
+/// <c>{backup-directory}/backup-history.jsonl</c> — surviving restarts,
+/// unlike the in-memory last-run snapshot. Records whose finish time
+/// falls outside the retention window are pruned by the same sweep that
+/// deletes the old <c>.bak</c> files (plus a defensive 500-record disk
+/// cap); <see cref="GetStatus"/> returns the newest 50 as
+/// <see cref="BackupStatusDto.RunHistory"/>. The ledger is best-effort:
+/// a failed history write is logged as a warning and NEVER fails an
+/// otherwise-successful backup.
+/// </para>
+/// <para>
 /// <b>MANUAL TRIGGER SEMANTICS</b>: <see cref="TryTriggerNow"/> completes
 /// a <see cref="TaskCompletionSource"/> the schedule loop races its
 /// slot-delay against — the loop wakes, runs the backup on ITS OWN
@@ -131,6 +144,36 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
 
     /// <summary>Default retention window (days) — one week of backups.</summary>
     private const int DefaultRetentionDays = 7;
+
+    /// <summary>
+    /// The run-history ledger file (JSONL, one record per completed run)
+    /// written NEXT TO the <c>.bak</c> files in the backup directory.
+    /// </summary>
+    private const string HistoryFileName = "backup-history.jsonl";
+
+    /// <summary>
+    /// How many run records <see cref="GetStatus"/> returns (newest first)
+    /// — plenty for the Settings card's ledger while keeping the status
+    /// payload tight.
+    /// </summary>
+    private const int MaxHistoryRecordsReturned = 50;
+
+    /// <summary>
+    /// Defensive hard cap on records kept on disk during the prune — the
+    /// retention window bounds scheduled records (2/day × retention) but
+    /// a manual-trigger spree shouldn't grow the file unboundedly.
+    /// </summary>
+    private const int MaxHistoryRecordsOnDisk = 500;
+
+    /// <summary>
+    /// Shared JSON options for the ledger: case-insensitive so a record
+    /// written by a future serialization-naming change still parses
+    /// (unknown members are skipped by default).
+    /// </summary>
+    private static readonly JsonSerializerOptions HistoryJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// Default backup directory when DatabaseBackups:Directory isn't
@@ -266,6 +309,11 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
             var nowUtc = DateTime.UtcNow;
             var nextRun = NextRunUtc(nowUtc);
 
+            // Whether the run about to happen satisfies a manual trigger
+            // (vs. a pure scheduled slot) — captured at wake time and
+            // persisted into the run-history ledger's WasManual field.
+            bool runWasManual;
+
             try
             {
                 var delay = nextRun - nowUtc;
@@ -296,6 +344,12 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                 //    elapsed is satisfied by the run about to happen. ──
                 lock (_stateLock)
                 {
+                    // The run about to execute is MANUAL iff a pending
+                    // trigger is being consumed by this wake: the signal
+                    // won the WhenAny race, or a trigger that arrived
+                    // mid-run survived on the already-completed fresh
+                    // source. A pure slot wake finds the flag at 0.
+                    runWasManual = _pendingTriggers > 0;
                     _pendingTriggers = 0;
                     _triggerSignal = CreateTriggerSource();
                 }
@@ -312,7 +366,7 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
 
             try
             {
-                await RunBackupAsync(connectionString, directory, serverPath, stoppingToken);
+                await RunBackupAsync(connectionString, directory, serverPath, runWasManual, stoppingToken);
             }
             catch (Exception ex) when (ex is InvalidOperationException or SqlException or IOException)
             {
@@ -347,27 +401,41 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     /// <c>BACKUP DATABASE [db] TO DISK = '{serverPath}/{file}' WITH INIT,
     /// CHECKSUM</c>, and verifies the file exists on the web-side path
     /// (shared volume in Docker; same directory on a single machine).
-    /// Also records the run's start/end/outcome into the coordinator
-    /// state (see <see cref="GetStatus"/>).
+    /// Records the run's start/end/outcome into the coordinator state
+    /// (see <see cref="GetStatus"/>) AND appends a record to the
+    /// JSONL run-history ledger (best-effort — see the class remarks).
     /// </summary>
     private async Task RunBackupAsync(
         string connectionString,
         string directory,
         string serverPath,
+        bool wasManual,
         CancellationToken cancellationToken)
     {
+        DateTime startedUtc;
         lock (_stateLock)
         {
             _isRunning = true;
-            _lastRunStartedUtc = DateTime.UtcNow;
+            startedUtc = DateTime.UtcNow;
+            _lastRunStartedUtc = startedUtc;
             _lastRunFinishedUtc = null;
             _lastRunSucceeded = null;
             _lastRunError = string.Empty;
         }
 
+        // Locals for the history record — set on BOTH outcomes so the
+        // finally-block append sees the truth regardless of success.
+        var succeeded = false;
+        var error = string.Empty;
+        var backupFileName = string.Empty;
+        var backupFileSizeBytes = 0L;
+
         try
         {
-            await RunBackupCoreAsync(connectionString, directory, serverPath, cancellationToken);
+            var (localFilePath, sizeBytes) = await RunBackupCoreAsync(connectionString, directory, serverPath, cancellationToken);
+            backupFileName = Path.GetFileName(localFilePath);
+            backupFileSizeBytes = sizeBytes;
+            succeeded = true;
 
             lock (_stateLock)
             {
@@ -376,6 +444,9 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         }
         catch (Exception ex)
         {
+            succeeded = false;
+            error = ex.Message;
+
             lock (_stateLock)
             {
                 _lastRunSucceeded = false;
@@ -385,19 +456,39 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         }
         finally
         {
+            DateTime finishedUtc;
             lock (_stateLock)
             {
                 _isRunning = false;
-                _lastRunFinishedUtc = DateTime.UtcNow;
+                finishedUtc = DateTime.UtcNow;
+                _lastRunFinishedUtc = finishedUtc;
             }
+
+            // Persist the completed run (success OR failure) to the
+            // JSONL ledger. Inside the finally so both outcomes are
+            // recorded; AppendRunHistoryRecordAsync swallows its own
+            // IO failures — history must NEVER fail the run itself (and
+            // a throw here in the finally would mask the original
+            // backup exception).
+            await AppendRunHistoryRecordAsync(directory, new BackupRunRecord
+            {
+                StartedUtc = startedUtc,
+                FinishedUtc = finishedUtc,
+                Succeeded = succeeded,
+                Error = error,
+                FileName = backupFileName,
+                SizeBytes = backupFileSizeBytes,
+                WasManual = wasManual
+            });
         }
     }
 
-    /// <summary>The pre-existing backup body, extracted from
-    /// <see cref="RunBackupAsync"/> so the run-state bookkeeping wraps it
-    /// exactly once (scheduled AND manual runs share the same path).
+    /// <summary>The pre-existing backup body, extracted so the run-state
+    /// bookkeeping wraps it exactly once (scheduled AND manual runs share
+    /// the same path). Returns the local file path + size in bytes for the
+    /// run-history record.
     /// </summary>
-    private async Task RunBackupCoreAsync(
+    private async Task<(string LocalFilePath, long SizeBytes)> RunBackupCoreAsync(
         string connectionString,
         string directory,
         string serverPath,
@@ -452,11 +543,14 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                 "check docker-compose.yml.");
         }
 
-        var sizeMegabytes = new FileInfo(localFilePath).Length / (1024.0 * 1024.0);
+        var sizeBytes = new FileInfo(localFilePath).Length;
+        var sizeMegabytes = sizeBytes / (1024.0 * 1024.0);
 
         _logger.LogInformation(
             "DatabaseBackup: {DatabaseName} backed up to {LocalFilePath} ({SizeMB:0.#} MB, {ElapsedSeconds:0.#}s).",
             databaseName, localFilePath, sizeMegabytes, stopwatch.Elapsed.TotalSeconds);
+
+        return (localFilePath, sizeBytes);
     }
 
     // ── IBackupCoordinator (see the class remarks for the dual role) ──
@@ -465,8 +559,10 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     /// Snapshot of the backup subsystem: cached config (enabled/
     /// directory/retention), the guarded run-state fields, the next
     /// scheduled slot (recomputed from now — the fixed slots never shift),
-    /// and a NEWEST-FIRST listing of the <c>*.bak</c> files in the backup
-    /// directory. NEVER returns null (see the interface's remarks).
+    /// a NEWEST-FIRST listing of the <c>*.bak</c> files in the backup
+    /// directory, and the persisted run-history ledger (newest first,
+    /// capped at <see cref="MaxHistoryRecordsReturned"/>). NEVER returns
+    /// null (see the interface's remarks).
     /// </summary>
     public BackupStatusDto GetStatus()
     {
@@ -507,6 +603,24 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
 
             files.Sort((a, b) => b.LastWriteUtc.CompareTo(a.LastWriteUtc));
 
+            // Run-history ledger — best-effort read; a missing file (no
+            // run has completed since the ledger shipped) or a torn tail
+            // line (a concurrent append) yields whatever parses.
+            var runHistory = ReadRunHistory(directory)
+                .OrderByDescending(r => r.FinishedUtc)
+                .Take(MaxHistoryRecordsReturned)
+                .Select(r => new BackupRunRecordDto
+                {
+                    StartedUtc = r.StartedUtc,
+                    FinishedUtc = r.FinishedUtc,
+                    Succeeded = r.Succeeded,
+                    Error = r.Error,
+                    FileName = r.FileName,
+                    SizeBytes = r.SizeBytes,
+                    WasManual = r.WasManual
+                })
+                .ToList();
+
             return new BackupStatusDto
             {
                 Enabled = enabled,
@@ -518,7 +632,8 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                 NextScheduledRunUtc = enabled ? NextRunUtc(DateTime.UtcNow) : null,
                 RetentionDays = _retentionDays,
                 Files = files,
-                TotalSizeBytes = totalBytes
+                TotalSizeBytes = totalBytes,
+                RunHistory = runHistory
             };
         }
     }
@@ -634,11 +749,160 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         return true;
     }
 
+    // ── Run-history ledger (JSONL — see the class remarks) ──────────────
+
+    /// <summary>
+    /// One persisted run record — the on-disk shape. Mirrors the
+    /// Application-layer <see cref="BackupRunRecordDto"/> (kept separate
+    /// on purpose: the Infrastructure's storage format must be free to
+    /// evolve without the DTO — and vice versa).
+    /// </summary>
+    private sealed record BackupRunRecord
+    {
+        public DateTime StartedUtc { get; init; }
+        public DateTime FinishedUtc { get; init; }
+        public bool Succeeded { get; init; }
+        public string Error { get; init; } = string.Empty;
+        public string FileName { get; init; } = string.Empty;
+        public long SizeBytes { get; init; }
+        public bool WasManual { get; init; }
+    }
+
+    /// <summary>
+    /// Appends one completed-run record as a single JSON line to the
+    /// ledger. NEVER throws: history persistence is best-effort — a
+    /// failed write (locked file, full disk, missing directory) is logged
+    /// as a warning and the backup run's own outcome stands. Callers run
+    /// this in a <c>finally</c>, where a throw would mask the original
+    /// run outcome.
+    /// </summary>
+    private async Task AppendRunHistoryRecordAsync(string directory, BackupRunRecord record)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, HistoryFileName);
+            var line = JsonSerializer.Serialize(record, HistoryJsonOptions) + Environment.NewLine;
+            await File.AppendAllTextAsync(path, line);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Only IO failures are swallowed — anything else (a
+            // serialization bug) should surface in the logs loud and clear.
+            _logger.LogWarning(
+                "DatabaseBackup: could not append run record to {HistoryFile}: {Exception}",
+                HistoryFileName, ex);
+        }
+    }
+
+    /// <summary>
+    /// Parses the ledger into records, in FILE ORDER (oldest first —
+    /// appends only). Best-effort: a missing file, an unreadable
+    /// directory, or a malformed/torn line (e.g. a concurrent append
+    /// mid-write) yields fewer-or-zero records — never a throw. The
+    /// caller sorts + caps.
+    /// </summary>
+    private static List<BackupRunRecord> ReadRunHistory(string directory)
+    {
+        var records = new List<BackupRunRecord>();
+
+        try
+        {
+            var path = Path.Combine(directory, HistoryFileName);
+            if (!File.Exists(path))
+            {
+                return records; // no completed run has been recorded yet
+            }
+
+            // FileShare.ReadWrite: tolerate the loop's appender holding
+            // the file open — a torn tail line simply fails to parse and
+            // is skipped; the next line boundary resyncs.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new System.IO.StreamReader(stream);
+
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (JsonSerializer.Deserialize<BackupRunRecord>(line, HistoryJsonOptions) is { } record)
+                    {
+                        records.Add(record);
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Torn/partial tail line or legacy junk — skip.
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Reads happen on coordinator threads while the loop may be
+            // rewriting the file (prune) — treat any failure as "no
+            // history available this poll"; the next read catches up.
+            return new List<BackupRunRecord>();
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    /// Rewrites the ledger keeping only records that finished INSIDE the
+    /// retention window (plus the defensive disk cap), oldest-first on
+    /// disk. Atomic via temp-file + move-over so a concurrent reader sees
+    /// either the old or the new file — never a half-written one. Called
+    /// from the retention sweep on the loop thread; best-effort (a failed
+    /// prune logs a warning and retries on the next sweep).
+    /// </summary>
+    private void PruneRunHistory(string directory, DateTime cutoffUtc)
+    {
+        try
+        {
+            var path = Path.Combine(directory, HistoryFileName);
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            var kept = ReadRunHistory(directory)
+                .Where(r => r.FinishedUtc >= cutoffUtc)
+                .OrderByDescending(r => r.FinishedUtc)
+                .Take(MaxHistoryRecordsOnDisk)
+                .ToList();
+
+            var tempPath = path + ".tmp";
+            using (var writer = new System.IO.StreamWriter(tempPath, append: false))
+            {
+                // Reverse back to oldest-first: the file is append-only,
+                // so its natural order is chronological.
+                for (var i = kept.Count - 1; i >= 0; i--)
+                {
+                    writer.WriteLine(JsonSerializer.Serialize(kept[i], HistoryJsonOptions));
+                }
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(
+                "DatabaseBackup: history prune failed for {HistoryFile}: {Exception}",
+                HistoryFileName, ex);
+        }
+    }
+
     /// <summary>
     /// Deletes every <c>*.bak</c> in the backup directory older than the
     /// retention window (by last-write UTC). Runs on the web-side path —
     /// the same physical directory the database container wrote to via
-    /// the shared volume.
+    /// the shared volume. Also prunes the run-history ledger to the same
+    /// window (see <see cref="PruneRunHistory"/>).
     /// </summary>
     private void RunRetentionSweep(string directory, int retentionDays)
     {
@@ -672,6 +936,9 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                     file, ex);
             }
         }
+
+        // History records live exactly as long as the files they describe.
+        PruneRunHistory(directory, cutoffUtc);
 
         if (deleted > 0)
         {

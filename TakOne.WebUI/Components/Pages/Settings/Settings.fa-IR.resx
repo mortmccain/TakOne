@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- Settings.fa-IR.resx — Persian (Farsi) strings for Settings.razor.
 
      Persian text is RTL; the layout direction is handled at the <html dir>
@@ -526,5 +526,27 @@
   </data>
   <data name="BackupTriggerError" xml:space="preserve">
     <value>شروع پشتیبان‌گیری ممکن نشد.</value>
+  </data>
+
+  <!-- Backup card: run-history ledger (persisted JSONL) section label — one row per completed run -->
+  <data name="BackupRunHistoryLabel" xml:space="preserve">
+    <value>اجراهای اخیر</value>
+  </data>
+  <data name="BackupRunScheduled" xml:space="preserve">
+    <value>زمان‌بندی‌شده</value>
+  </data>
+  <data name="BackupRunManual" xml:space="preserve">
+    <value>دستی</value>
+  </data>
+  <data name="BackupRunFailed" xml:space="preserve">
+    <value>اجرای ناموفق</value>
+  </data>
+  <data name="BackupRunTooltip" xml:space="preserve">
+    <value>اجرای {0} پشتیبان‌گیری</value>
+  </data>
+
+  <!-- Backup card: stored-files ledger section label (distinct from the summary stat) -->
+  <data name="BackupFilesLedgerLabel" xml:space="preserve">
+    <value>فایل‌های پشتیبان روی دیسک</value>
   </data>
 </root>

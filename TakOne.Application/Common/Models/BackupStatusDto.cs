@@ -58,6 +58,51 @@ public sealed record BackupStatusDto
 
     /// <summary>Sum of <see cref="BackupFileInfoDto.SizeBytes"/> across <see cref="Files"/>.</summary>
     public long TotalSizeBytes { get; init; }
+
+    /// <summary>
+    /// Recently COMPLETED backup runs (successes AND failures), NEWEST
+    /// FIRST, persisted across restarts in a JSONL ledger next to the
+    /// <c>.bak</c> files. Gives the admin a real audit trail ("did the
+    /// 03:30 slot actually run last week?") instead of the in-memory
+    /// last-run-only snapshot. Bounded by the retention window and capped
+    /// at <c>50</c> entries — empty when no run has completed yet.
+    /// </summary>
+    public IReadOnlyList<BackupRunRecordDto> RunHistory { get; init; }
+        = Array.Empty<BackupRunRecordDto>();
+}
+
+/// <summary>
+/// One COMPLETED backup run (scheduled or manually triggered), persisted
+/// in the run-history ledger (see <see cref="BackupStatusDto.RunHistory"/>).
+/// </summary>
+public sealed record BackupRunRecordDto
+{
+    /// <summary>UTC start of the run.</summary>
+    public DateTime StartedUtc { get; init; }
+
+    /// <summary>UTC end of the run.</summary>
+    public DateTime FinishedUtc { get; init; }
+
+    /// <summary>True when the backup file was written and verified; false = the run failed.</summary>
+    public bool Succeeded { get; init; }
+
+    /// <summary>Failure detail (empty on success) — the same message the run logged.</summary>
+    public string Error { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The backup file's name (empty when the run failed before a file
+    /// landed). File name only — paths are deployment internals.
+    /// </summary>
+    public string FileName { get; init; } = string.Empty;
+
+    /// <summary>The backup file's size in bytes (0 when no file was produced).</summary>
+    public long SizeBytes { get; init; }
+
+    /// <summary>
+    /// True when the run was triggered from the admin UI ("Back up now");
+    /// false when it fired on the fixed 03:30/14:30 UTC schedule.
+    /// </summary>
+    public bool WasManual { get; init; }
 }
 
 /// <summary>
