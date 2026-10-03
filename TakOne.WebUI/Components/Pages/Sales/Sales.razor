@@ -240,6 +240,79 @@
                     background: var(--rz-secondary-background-color, transparent);
                 }
 
+                /* Focus ring for the chip's × button — keyboard parity with
+                   the hover state (hover alone leaves keyboard users with
+                   no visible affordance). */
+                .sales-datefilter-chip-x:focus-visible {
+                    outline: 2px solid var(--rz-primary);
+                    outline-offset: 1px;
+                }
+
+            /* ── "Pending only" quick-filter chip ─────────────────────
+               A FILTER, not an action: toggling it applies/clears the
+               Status column's Pending filter (the approver's queue —
+               the same thing the Dashboard's Pending-Approvals KPI card
+               deep-links here for). The active state carries the warn
+               tint — the SAME amber the Pending badge uses in the Status
+               column, so "what this chip selects" is already a color the
+               user has learned. Inactive reads as a quiet outline pill.
+               aria-pressed marks it as a toggle for assistive tech. */
+            .sales-pending-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.45rem 0.85rem;
+                font-size: 0.8rem;
+                font-weight: 500;
+                font-family: inherit;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: 9999px;
+                cursor: pointer;
+                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            }
+
+                .sales-pending-chip:hover:not(:disabled),
+                .sales-pending-chip:focus-visible {
+                    color: var(--rz-warning);
+                    border-color: var(--rz-warning);
+                }
+
+                .sales-pending-chip:focus-visible {
+                    outline: 2px solid var(--rz-warning);
+                    outline-offset: 1px;
+                }
+
+                .sales-pending-chip:disabled {
+                    opacity: 0.55;
+                    cursor: not-allowed;
+                }
+
+                /* ACTIVE: warn tint fills the chip, matching the Pending
+                   badge's amber + the Dashboard KPI card's warn palette. */
+                .sales-pending-chip--active {
+                    background: color-mix(in srgb, var(--rz-warning) 14%, transparent);
+                    border-color: color-mix(in srgb, var(--rz-warning) 45%, transparent);
+                    color: var(--rz-warning);
+                    font-weight: 600;
+                }
+
+                    .sales-pending-chip--active:hover:not(:disabled) {
+                        background: color-mix(in srgb, var(--rz-warning) 20%, transparent);
+                    }
+
+                .sales-pending-chip-icon {
+                    font-size: 1rem;
+                    line-height: 1;
+                }
+
+            @@media (prefers-reduced-motion: reduce) {
+                .sales-pending-chip {
+                    transition: none;
+                }
+            }
+
             /* ── Loading veil (Round 4 — server-driven loads) ──────────
                The grid card is wrapped in a relative container; while a
                server round trip is in flight, an absolute veil covers it
@@ -395,6 +468,35 @@
                         </button>
                     </span>
                 }
+
+                @* ── "Pending only" quick-filter chip ──
+                   A TOGGLE, not an action: ON sets the Status column's
+                   filter to Pending (the approver's queue — the same thing
+                   the Dashboard's Pending-Approvals KPI card deep-links
+                   here for via ?status=Pending); OFF clears it. Because it
+                   drives the grid through the standard column-filter
+                   pipeline, the chip's state is DERIVED from
+                   _activeStatus (refreshed every load) — the URL restore,
+                   the status dropdown itself, manual column-menu changes,
+                   and Clear-all keep it honest with zero bookkeeping.
+                   Filter for a DIFFERENT status (e.g. Draft) deliberately
+                   reads as OFF: the chip toggles its own canonical filter.
+                   The bound dropdown field (_selectedStatusFilter) is kept
+                   in sync so the column's FilterTemplate dropdown renders
+                   the same selection the chip applied.
+                   aria-pressed is a LITERAL STRING, not a bool binding:
+                   Blazor OMITS attributes whose value is boolean false,
+                   and aria-pressed="false" is meaningful ARIA (an
+                   unpressed toggle) — both states must render explicitly. *@
+                <button type="button"
+                        class="sales-pending-chip @(IsPendingFilterActive ? "sales-pending-chip--active" : null)"
+                        aria-pressed="@(IsPendingFilterActive ? "true" : "false")"
+                        title="@Loc["PendingFilterTooltip"]"
+                        disabled="@(_isLoading)"
+                        @onclick="TogglePendingFilterAsync">
+                    <RadzenIcon Icon="schedule" Class="sales-pending-chip-icon" aria-hidden="true" />
+                    <span>@Loc["PendingFilterChip"]</span>
+                </button>
 
                 @* Export CSV (Round 4) — exports every row matching the
                    active filters (date range + column filters + scoping:
@@ -1449,6 +1551,73 @@
         if (grid is not null)
         {
             await grid.FirstPage(true);
+        }
+    }
+
+    // ── "Pending only" quick-filter chip ───────────────────────────────
+
+    /// <summary>
+    /// True when the grid's Status column filter is EXACTLY Pending (the
+    /// approver's queue). DERIVED from <see cref="_activeStatus"/> —
+    /// refreshed by every grid load — so the URL restore
+    /// (?status=Pending, the Dashboard's Pending-Approvals KPI deep
+    /// link), the status dropdown itself, manual column-menu changes,
+    /// and Clear-all keep the chip honest with zero bookkeeping. A
+    /// DIFFERENT status filter (e.g. Draft) deliberately reads as OFF —
+    /// the chip toggles its own canonical filter, not "any status
+    /// filter".
+    /// </summary>
+    private bool IsPendingFilterActive => _activeStatus == SaleStatus.Pending;
+
+    /// <summary>
+    /// Toggles the quick filter: ON sets the Status column's FilterValue
+    /// to the culture-neutral "Pending" key (exactly what the status
+    /// dropdown handler sets — the translator parses it back to the
+    /// enum); OFF clears the FilterValue (the proven Clear-all mechanism
+    /// — a null value means no filter regardless of the operator). The
+    /// bound dropdown field is kept in sync so the column's FilterTemplate
+    /// dropdown renders the same selection the chip applied. Both paths
+    /// restart from page 1 via <c>grid.FirstPage(true)</c> (a narrowed
+    /// set usually ends before the current page), which re-fires
+    /// LoadData through the standard descriptor pipeline — the filter
+    /// therefore participates in the QUERY, the CSV export, and the URL
+    /// persistence automatically.
+    /// </summary>
+    private async Task TogglePendingFilterAsync()
+    {
+        if (grid is null || _isLoading)
+        {
+            return; // nothing mounted / mid-load — the chip is disabled then anyway
+        }
+
+        var statusColumn = grid.ColumnsCollection.FirstOrDefault(c => c.Property == "Status");
+        if (statusColumn is null)
+        {
+            return;
+        }
+
+        if (IsPendingFilterActive)
+        {
+            statusColumn.FilterValue = null; // null value = no filter (Clear-all precedent)
+            _selectedStatusFilter = null; // keep the FilterTemplate dropdown in sync
+        }
+        else
+        {
+            // Culture-neutral string key — exactly what the dropdown
+            // handler sets (the translator parses it back to the enum).
+            statusColumn.FilterValue = nameof(SaleStatus.Pending);
+            statusColumn.FilterOperator = FilterOperator.Equals;
+            _selectedStatusFilter = nameof(SaleStatus.Pending);
+        }
+
+        _isLoading = true;
+        try
+        {
+            await grid.FirstPage(true); // re-fires LoadData with the new filter
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 

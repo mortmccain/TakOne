@@ -704,6 +704,14 @@ public class GetDashboardStatsQueryHandlerTests
         // "C0" and "C1" (the two oldest) must be absent.
         result.Value.RecentOrders.Select(o => o.CustomerName).Should()
             .NotContain(new[] { "C0", "C1" });
+        // Each row maps ITS sale's Id — the dashboard's clickable Recent
+        // Orders rows navigate to /Sales/{SaleId}, so the mapping must
+        // stay 1:1 with the sale (never a default/empty Guid).
+        result.Value.RecentOrders.First().SaleId.Should().Be(sales[7].Id,
+            "the most-recent row carries its own sale's Id for the deep link");
+        result.Value.RecentOrders.Select(o => o.SaleId).Should()
+            .BeEquivalentTo(sales.Skip(2).Select(s => s.Id),
+                "every row maps its own sale's Id");
     }
 
     // ── Round 4: fixed-anchor KPI trend-delta computations ──────────

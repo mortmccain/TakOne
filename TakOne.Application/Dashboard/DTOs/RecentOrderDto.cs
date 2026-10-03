@@ -7,6 +7,14 @@
 public sealed class RecentOrderDto
 {
     /// <summary>
+    /// The sale's persistent id — the dashboard's Recent Orders rows deep-link
+    /// to the sale detail page (<c>/Sales/{SaleId}</c>) with this. Recent
+    /// orders exclude Drafts (which have no permanent number), so every row
+    /// always has a real detail page to open.
+    /// </summary>
+    public Guid SaleId { get; set; }
+
+    /// <summary>
     /// Human-readable sale number (e.g. "TM-2389"). Snapshot from
     /// <c>Sale.SaleNumber</c>.
     /// </summary>

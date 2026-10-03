@@ -157,6 +157,12 @@
   <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve">
     <value>No pending approvals</value>
   </data>
+  <!-- Whole-card deep link: screen-reader-only purpose text appended to
+       the Pending-Approvals KPI card's accessible name (the card's visible
+       text is the metric; this tells assistive tech where the link goes). -->
+  <data name="Kpi_PendingApprovalsLink" xml:space="preserve">
+    <value>View the pending approval queue</value>
+  </data>
   <data name="Kpi_MonthlyApprovedSales" xml:space="preserve">
     <value>Approved sales this month</value>
   </data>
@@ -312,6 +318,11 @@
   </data>
   <data name="Orders_Recent_Sub" xml:space="preserve">
     <value>Last 6 orders in the system</value>
+  </data>
+  <!-- Clickable Recent Orders rows: tooltip announcing the destination
+       (the row opens the sale's detail page). -->
+  <data name="Orders_RowViewTitle" xml:space="preserve">
+    <value>View order details</value>
   </data>
   <data name="Orders_Col_Number" xml:space="preserve">
     <value>Order #</value>
