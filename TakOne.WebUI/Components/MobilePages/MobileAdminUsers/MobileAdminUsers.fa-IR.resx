@@ -58,4 +58,10 @@
   <data name="ActivateSuccessTitle" xml:space="preserve"><value>فعال شد</value></data>
   <data name="ActionError" xml:space="preserve"><value>عملیات ناموفق بود.</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="ShowingCount" xml:space="preserve"><value>نمایش {0} تا {1} از {2}</value></data>
+  <data name="LoadMore" xml:space="preserve"><value>نمایش بیشتر</value></data>
+  <data name="LoadingMore" xml:space="preserve"><value>در حال بارگذاری…</value></data>
+  <data name="NoMatchesMessage" xml:space="preserve"><value>کاربری با فیلترهای فعلی مطابقت ندارد.</value></data>
+  <data name="NoMatchesMoreHint" xml:space="preserve"><value>کاربران بیشتری هنوز بارگذاری نشده‌اند — می‌توانید در پایین صفحه بیشتر بارگذاری کنید.</value></data>
+  <data name="ClearFiltersButton" xml:space="preserve"><value>پاک کردن فیلترها</value></data>
 </root>

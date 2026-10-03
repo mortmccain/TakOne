@@ -642,6 +642,9 @@ else
     /// "Load more" (QA-11): appends the NEXT page to the list — the
     /// append-style mobile pagination the broadcasts page uses. Guarded
     /// against double-taps; a no-op when the last page is already loaded.
+    /// On failure the page counter rolls back so the next tap retries the
+    /// SAME page instead of silently skipping it (aligned with the QA-12
+    /// ports of this idiom).
     /// </summary>
     private async Task LoadMoreAsync()
     {
@@ -653,6 +656,10 @@ else
         {
             _pageNumber++;
             await LoadProductsAsync(append: true);
+        }
+        catch
+        {
+            _pageNumber--; // failed append: retry must re-fetch THIS page
         }
         finally
         {

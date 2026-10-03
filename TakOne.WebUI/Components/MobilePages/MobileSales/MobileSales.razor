@@ -19,6 +19,13 @@
        role server-side: customers see only their own sales, staff see all.
      - PageSize=100 (the backend cap) so the list has enough rows for
        client-side filtering to be meaningful.
+     - LOAD MORE (QA-12): when TotalCount exceeds the loaded window, a
+       count line ("Showing 1–100 of 250") + a full-width Load-more
+       button appends the next page — the QA-11 idiom. The old page loaded
+       one silent 100-row page, so a customer with 250 orders could never
+       reach order #101+ on mobile (no hint more existed). Sales are
+       newest-first by default, so appended rows are strictly OLDER —
+       safe to append at the bottom of the list.
 
    TIMEZONE: CreatedAtUtc is a UTC DateTimeOffset; FormatTehran adds the
    fixed +3:30 offset (Tehran abolished DST in 2022) and formats culture-aware.
@@ -32,12 +39,13 @@
    columns are noise for them.
 
    NAVIGATION: tapping the DisplayNumber title or the eye-icon action button
-   navigates to the DESKTOP SaleDetail page at /Sales/{Id}. There is no mobile
-   SaleDetail page (per the spec) — the desktop detail page is responsive
-   enough for a mobile viewport.
+   navigates to the mobile SaleDetail page at /m/Sales/{Id}.
 
-   NO TOASTS: this page is read-only (no mutations), so no ToastService inject
-   is needed. Errors surface inline via the m-error-box retry block.
+   TOASTS: the page's data surface is read-only (list errors surface
+   inline via the m-error-box retry block), but the CSV EXPORT round
+   trip reports its outcome via toasts (JS interop can fail after a
+   circuit reconnect — a visible toast beats a silently dead button,
+   the same policy as every other export button in the app).
 *@
 
 @page "/m/Sales"
@@ -57,6 +65,8 @@
 @inject NavigationManager Navigation
 @inject IStringLocalizer<MobileSales> Loc
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ToastService Toast
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -173,21 +183,67 @@ else
                    @bind="_searchTerm"
                    @bind:event="oninput" />
         </div>
+        @* ORDER-HISTORY CSV EXPORT (QA-12): the mobile twin of the desktop
+           Sales export. Ships the FULL server-scoped history (all pages,
+           up to the shared 2,000-row cap) — NOT just the loaded window,
+           so a customer with 250 orders exports all 250 even though only
+           100 are loaded on screen. Server-side scoping applies as always:
+           a customer exports their own sales, staff export the audit view. *@
+        <button type="button"
+                class="m-export-btn"
+                title="@Loc["ExportCsvTooltip"]"
+                aria-label="@Loc["ExportCsvTooltip"]"
+                disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                @onclick="ExportSalesCsvAsync">
+            @if (_isExporting)
+            {
+                <span class="m-export-spin" aria-hidden="true"></span>
+            }
+            else
+            {
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+            }
+            <span>@(_isExporting ? Loc["ExportCsvWorking"] : Loc["ExportCsvButton"])</span>
+        </button>
     </div>
 
     @* ── 4. Sales list — one .m-list-item per sale (filtered by status +
            search client-side via FilteredSales). Each item shows:
-             - Title: DisplayNumber (clickable → /Sales/{Id})
+             - Title: DisplayNumber (clickable)
              - Subtitle: Tehran-formatted CreatedAtUtc
              - (Staff only) extra subtitle: CustomerName + CreatedByName
              - Meta row: colored status badge + Total (FormatMoney → Toman)
-             - Action: eye-icon .m-icon-btn-sm → /Sales/{Id}
-           No mobile SaleDetail page exists yet — both clicks go to the
-           desktop detail page, which is responsive enough for mobile. *@
+             - Action: eye-icon .m-icon-btn-sm
+           Both the title and the eye-icon navigate to the mobile sale
+           detail page at /m/Sales/{Id}. *@
     <div class="m-list">
         @if (FilteredSales.Count == 0)
         {
-            <p class="m-empty">@Loc["EmptyMessage"]</p>
+            @* Filters matched zero rows while the underlying list is NOT
+               empty (the page-level empty CTA above only renders when the
+               backend returned zero sales TOTAL). Different situation →
+               different message (the old EmptyMessage copy — "Your order
+               history will appear here" — was factually wrong here) + a
+               one-tap escape hatch. When older pages exist but are not
+               loaded yet, a hint points at Load-more below: the match
+               may live outside the loaded window. *@
+            <div class="m-empty">
+                <p>@Loc["NoMatchesMessage"]</p>
+                @if (_sales.Count < _totalCount)
+                {
+                    <p class="m-no-match-hint">@Loc["NoMatchesMoreHint"]</p>
+                }
+                <button type="button"
+                        class="m-clear-filters-btn"
+                        @onclick="ClearAllFilters">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    <span>@Loc["ClearFiltersButton"]</span>
+                </button>
+            </div>
         }
         else
         {
@@ -229,6 +285,45 @@ else
         }
     </div>
 
+    @* ── 4b. Loaded-window count + Load more (QA-12 — the QA-11 idiom).
+           The count line reflects the loaded window (what the filters
+           operate on and what Load-more extends); it hides on a
+           single-page history. The no-matches block above can still point
+           at the button when a match may live in unloaded pages. *@
+    @if (_totalCount > 0 && _sales.Count > 0)
+    {
+        <div class="m-list-meta">
+            <span class="m-list-count">
+                @Loc["ShowingCount",
+                    CultureFormat.FormatDigits(1),
+                    CultureFormat.FormatDigits(Math.Min(_sales.Count, _totalCount)),
+                    CultureFormat.FormatDigits(_totalCount)]
+            </span>
+        </div>
+        @if (_sales.Count < _totalCount)
+        {
+            <div class="m-load-more">
+                <button type="button"
+                        class="m-load-more-btn"
+                        disabled="@_isLoadingMore"
+                        @onclick="LoadMoreAsync">
+                    @if (_isLoadingMore)
+                    {
+                        <span class="m-export-spin" aria-hidden="true"></span>
+                        <span>@Loc["LoadingMore"]</span>
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75" />
+                        </svg>
+                        <span>@Loc["LoadMore"]</span>
+                    }
+                </button>
+            </div>
+        }
+    }
+
     @* ── 5. Footer — version string *@
     <div class="m-footer">
         @Loc["Version"]
@@ -238,11 +333,32 @@ else
 @code {
     // ── State ────────────────────────────────────────────────────────────
 
+    /// <summary>Append-pagination page size (the backend MaxPageSize cap).</summary>
+    private const int SalesPageSize = 100;
+
     /// <summary>
-    /// The full list of sales returned by the backend (PageSize=100, the cap).
+    /// The loaded window of sales (grows via <see cref="LoadMoreAsync"/>).
     /// Filtering by status + search happens client-side in <see cref="FilteredSales"/>.
     /// </summary>
     private List<SaleListItemDto> _sales = new();
+
+    /// <summary>
+    /// Total matching rows server-side (drives the count line + the
+    /// Load-more button's visibility). Refreshed on every successful load.
+    /// </summary>
+    private int _totalCount;
+
+    /// <summary>Current page of the loaded window (append pagination).</summary>
+    private int _pageNumber = 1;
+
+    /// <summary>True while a Load-more round-trip is in flight.</summary>
+    private bool _isLoadingMore;
+
+    /// <summary>True while the CSV export loop is running.</summary>
+    private bool _isExporting;
+
+    /// <summary>Shared export ceiling (every list export in the app).</summary>
+    private const int ExportRowCap = 2000;
 
     /// <summary>
     /// Loading/error state machine (loading → error → empty → content).
@@ -324,20 +440,23 @@ else
 
         try
         {
-            // Load up to 100 sales (the backend cap) so the list has enough
-            // rows for client-side filtering to be meaningful. SearchTerm
-            // and Status are null: filtering happens client-side via the
-            // search box + status tabs above.
+            // Load the first page of the loaded window (PageSize = the
+            // backend cap) so the list has enough rows for client-side
+            // filtering to be meaningful. SearchTerm and Status are null:
+            // filtering happens client-side via the search box + status
+            // tabs above; deeper history arrives via LoadMoreAsync.
             var query = new GetSalesPaginatedQuery
             {
                 PageNumber = 1,
-                PageSize = 100,
+                PageSize = SalesPageSize,
                 SearchTerm = null,
                 Status = null
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
             _sales = result.Items.ToList();
+            _totalCount = result.TotalCount;
+            _pageNumber = 1;
         }
         catch
         {
@@ -345,11 +464,191 @@ else
         }
     }
 
+    /// <summary>
+    /// "Load more" (QA-12): appends the NEXT page to the loaded window —
+    /// the append-style mobile pagination the shop + broadcasts pages use.
+    /// Sales are newest-first, so appended rows are strictly OLDER (safe to
+    /// append at the bottom). On failure the page counter rolls back so the
+    /// next tap retries the SAME page instead of silently skipping it.
+    /// </summary>
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoadingMore) return;
+        if (_sales.Count >= _totalCount) return;
+
+        _isLoadingMore = true;
+        try
+        {
+            _pageNumber++;
+            var query = new GetSalesPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = SalesPageSize,
+                SearchTerm = null,
+                Status = null
+            };
+            var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(query);
+            _sales.AddRange(result.Items);
+            _totalCount = result.TotalCount; // keep fresh — new sales may exist meanwhile
+        }
+        catch
+        {
+            _pageNumber--; // failed append: retry must re-fetch THIS page
+        }
+        finally
+        {
+            _isLoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Resets the client-side search box + status tab (the
+    /// filtered-to-zero escape hatch). Pure view state — no reload needed
+    /// (<see cref="FilteredSales"/> recomputes over the loaded window).
+    /// </summary>
+    private void ClearAllFilters()
+    {
+        _searchTerm = string.Empty;
+        _statusFilter = null;
+    }
+
+    /// <summary>
+    /// ORDER-HISTORY CSV EXPORT (QA-12): builds a CSV of the FULL
+    /// server-scoped history — all pages via the loop, capped at
+    /// <see cref="ExportRowCap"/> — NOT just the loaded window, so a
+    /// customer with 250 orders exports all 250 even though only 100
+    /// are on screen. Column shape mirrors the desktop Sales export
+    /// (number, status, total, currency, staff-only customer + creator
+    /// audit columns, timestamp). Server-side scoping applies as always:
+    /// a customer exports their own sales, staff export the audit view.
+    /// CsvBuilder (RFC 4180 + invariant numbers) + takDownload.csv
+    /// (UTF-8 + BOM) — the shared export machinery every other page uses.
+    /// </summary>
+    private async Task ExportSalesCsvAsync()
+    {
+        if (_isExporting || _totalCount == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(BuildCsvHeader().ToArray());
+
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
+            {
+                var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
+                    new GetSalesPaginatedQuery
+                    {
+                        PageNumber = pageNumber,
+                        PageSize = exportPageSize,
+                        SearchTerm = null,
+                        Status = null
+                    });
+
+                foreach (var sale in result.Items)
+                {
+                    if (exported >= ExportRowCap)
+                    {
+                        break;
+                    }
+
+                    builder.AddRow(BuildCsvRow(sale).ToArray());
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize)
+                {
+                    break;
+                }
+
+                pageNumber++;
+            }
+
+            var fileName = $"takone-sales-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(
+                Loc["ExportCsvDone", exported],
+                summary: Loc["PageTitle"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same policy as every
+            // other export button in the app).
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["PageTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    /// <summary>
+    /// CSV header captions — mirrors the desktop Sales export column
+    /// shape (staff viewers get the two extra audit columns).
+    /// </summary>
+    private List<string> BuildCsvHeader()
+    {
+        var header = new List<string>
+        {
+            Loc["ColSaleNumber"], Loc["ColStatus"], Loc["ColTotal"], Loc["ColCurrency"]
+        };
+        if (_isStaff)
+        {
+            header.Add(Loc["ColCustomer"]);
+            header.Add(Loc["ColCreatedBy"]);
+        }
+        header.Add(Loc["ColCreatedAt"]);
+        return header;
+    }
+
+    /// <summary>
+    /// One CSV row. Money exports the RAW amount + currency code and
+    /// timestamps export ISO-8601 (data-processing friendly — the same
+    /// convention as every other export in the app).
+    /// </summary>
+    private List<object?> BuildCsvRow(SaleListItemDto sale)
+    {
+        var row = new List<object?>
+        {
+            sale.DisplayNumber,
+            GetStatusLabel(sale.Status),
+            sale.Total?.Amount,
+            sale.Total?.Currency,
+        };
+        if (_isStaff)
+        {
+            row.Add(sale.CustomerName);
+            row.Add(sale.CreatedByName);
+        }
+        row.Add(sale.CreatedAtUtc);
+        return row;
+    }
+
+    /// <summary>
+    /// Localized status label ("Status" + key resx convention — the same
+    /// labels the list badges show, so an fa-IR user gets a Persian-headed
+    /// spreadsheet).
+    /// </summary>
+    private string GetStatusLabel(string status)
+        => Loc["Status" + status];
+
     // ── Computed view model ──────────────────────────────────────────────
 
     /// <summary>
     /// Sales filtered by the currently-selected status tab + search term.
-    /// Recomputed on every render (cheap — list is at most 100 items).
+    /// Recomputed on every render (cheap — the loaded window, which grows
+    /// via Load-more in 100-row pages).
     /// </summary>
     private List<SaleListItemDto> FilteredSales
     {

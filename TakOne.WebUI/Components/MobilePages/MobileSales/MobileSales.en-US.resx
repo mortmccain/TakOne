@@ -51,4 +51,22 @@
   <data name="ActionViewDetail" xml:space="preserve"><value>View detail</value></data>
   <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
+  <data name="ShowingCount" xml:space="preserve"><value>Showing {0}–{1} of {2}</value></data>
+  <data name="LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="LoadingMore" xml:space="preserve"><value>Loading…</value></data>
+  <data name="NoMatchesMessage" xml:space="preserve"><value>No orders match your filters.</value></data>
+  <data name="NoMatchesMoreHint" xml:space="preserve"><value>Older orders may not be loaded yet — load more below.</value></data>
+  <data name="ClearFiltersButton" xml:space="preserve"><value>Clear filters</value></data>
+  <data name="ExportCsvButton" xml:space="preserve"><value>CSV</value></data>
+  <data name="ExportCsvWorking" xml:space="preserve"><value>Exporting…</value></data>
+  <data name="ExportCsvTooltip" xml:space="preserve"><value>Download order history as CSV</value></data>
+  <data name="ExportCsvDone" xml:space="preserve"><value>{0} sales exported to CSV</value></data>
+  <data name="ExportCsvError" xml:space="preserve"><value>The CSV export failed. Please try again.</value></data>
+  <data name="ColSaleNumber" xml:space="preserve"><value>Sale number</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>Status</value></data>
+  <data name="ColTotal" xml:space="preserve"><value>Total</value></data>
+  <data name="ColCurrency" xml:space="preserve"><value>Currency</value></data>
+  <data name="ColCustomer" xml:space="preserve"><value>Customer</value></data>
+  <data name="ColCreatedBy" xml:space="preserve"><value>Created by</value></data>
+  <data name="ColCreatedAt" xml:space="preserve"><value>Created at (UTC)</value></data>
 </root>

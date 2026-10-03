@@ -51,4 +51,22 @@
   <data name="ActionViewDetail" xml:space="preserve"><value>مشاهده جزئیات</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
+  <data name="ShowingCount" xml:space="preserve"><value>نمایش {0} تا {1} از {2}</value></data>
+  <data name="LoadMore" xml:space="preserve"><value>نمایش بیشتر</value></data>
+  <data name="LoadingMore" xml:space="preserve"><value>در حال بارگذاری…</value></data>
+  <data name="NoMatchesMessage" xml:space="preserve"><value>سفارشی با فیلترهای فعلی مطابقت ندارد.</value></data>
+  <data name="NoMatchesMoreHint" xml:space="preserve"><value>سفارش‌های قدیمی‌تر هنوز بارگذاری نشده‌اند — می‌توانید در پایین صفحه بیشتر بارگذاری کنید.</value></data>
+  <data name="ClearFiltersButton" xml:space="preserve"><value>پاک کردن فیلترها</value></data>
+  <data name="ExportCsvButton" xml:space="preserve"><value>CSV</value></data>
+  <data name="ExportCsvWorking" xml:space="preserve"><value>در حال خروجی…</value></data>
+  <data name="ExportCsvTooltip" xml:space="preserve"><value>دانلود تاریخچه سفارش‌ها به صورت CSV</value></data>
+  <data name="ExportCsvDone" xml:space="preserve"><value>{0} فروش به CSV صادر شد</value></data>
+  <data name="ExportCsvError" xml:space="preserve"><value>خروجی CSV با خطا مواجه شد. لطفاً دوباره تلاش کنید.</value></data>
+  <data name="ColSaleNumber" xml:space="preserve"><value>شماره فروش</value></data>
+  <data name="ColStatus" xml:space="preserve"><value>وضعیت</value></data>
+  <data name="ColTotal" xml:space="preserve"><value>مبلغ کل</value></data>
+  <data name="ColCurrency" xml:space="preserve"><value>ارز</value></data>
+  <data name="ColCustomer" xml:space="preserve"><value>مشتری</value></data>
+  <data name="ColCreatedBy" xml:space="preserve"><value>ایجادکننده</value></data>
+  <data name="ColCreatedAt" xml:space="preserve"><value>تاریخ ثبت (UTC)</value></data>
 </root>

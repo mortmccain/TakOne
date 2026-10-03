@@ -1295,6 +1295,11 @@
 .m-filter-bar {
     display: flex;
     align-items: center;
+    /* Wrap (QA-12): pages that pair the search box with an export button
+       (mobile order history) wrap gracefully on 320px screens instead of
+       squeezing the search box to a sliver; single-child bars are
+       unaffected — wrapping only happens when content overflows. */
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0 1rem 0.5rem;
 }
@@ -4608,14 +4613,19 @@ button.m-notif-card.m-notif-unread {
     }
 }
 
-/* ── Count line + "Load more" (QA-11 — append pagination) ─────────── */
-.m-products-meta {
+/* ── Count line + "Load more" (QA-11 — append pagination) ───────────
+   .m-list-meta/.m-list-count are the generic aliases used by the
+   QA-12 load-more ports (Sales / Admin Users / Admin Products) —
+   comma-joined here so every page's count line stays pixel-identical. */
+.m-products-meta,
+.m-list-meta {
     display: flex;
     justify-content: center;
     padding: 0.5rem 1rem 0;
 }
 
-.m-products-count {
+.m-products-count,
+.m-list-count {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--m-text-secondary, var(--tm-gray, #6b7280));
@@ -4679,6 +4689,72 @@ button.m-notif-card.m-notif-unread {
     border-color: var(--m-border, #374151);
 }
 
+/* ── "Clear filters" (QA-12 — filtered-to-zero escape hatch) ──────
+   Shown inside the .m-empty block when a client-side filter/search
+   matched zero rows but the underlying list is NOT empty (a completely
+   different situation from the true empty state, which keeps its own
+   CTA). Ghost pill: small, quiet, obviously secondary to the message
+   itself — the message says what happened, this says how to undo it. */
+.m-clear-filters-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px; /* comfortable touch target without shouting */
+    margin-top: 0.75rem;
+    padding: 8px 18px;
+    border: 1px solid var(--m-border, var(--tm-gray-light, #eceff3));
+    border-radius: 999px;
+    background-color: var(--m-surface, #fff);
+    color: var(--m-text-secondary, var(--tm-gray, #6b7280));
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, color 0.15s ease,
+                background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+    /* The ✕ glyph mirrors in RTL automatically (inline-flex gap keeps
+       its slot); stroke inherits the currentColor. */
+    .m-clear-filters-btn svg {
+        flex: none;
+    }
+
+.m-clear-filters-btn:hover:not(:disabled) {
+    border-color: var(--m-primary, #b45309);
+    color: var(--m-primary, #b45309);
+    background: color-mix(in srgb, var(--m-primary, #b45309) 6%, var(--m-surface, #fff));
+}
+
+.m-clear-filters-btn:focus-visible {
+    outline: none;
+    border-color: var(--m-primary, #b45309);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-primary, #b45309) 18%, transparent);
+}
+
+.m-clear-filters-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.tak-theme-dark .m-clear-filters-btn {
+    background-color: var(--m-surface, #1f2937);
+    border-color: var(--m-border, #374151);
+}
+
+/* The secondary line inside the no-matches block — only rendered when
+   more unload pages exist (the match may live outside the loaded
+   window). Smaller + softer than the primary message so the two read
+   as message → context, not two equal messages. */
+.m-no-match-hint {
+    margin: 0.375rem 0 0;
+    font-size: 0.78rem;
+    color: var(--m-text-secondary, var(--tm-gray, #6b7280));
+    opacity: 0.85;
+}
+
 /* ── Sold-out card treatment (QA-11 — desktop parity) ──────────────
    When the staff chip includes zero-stock products, the card itself
    communicates non-buyability at a glance: the photo desaturates and
@@ -4711,8 +4787,12 @@ button.m-notif-card.m-notif-unread {
 @media (prefers-reduced-motion: reduce) {
     .m-oos-chip,
     .m-export-btn,
-    .m-load-more-btn {
+    .m-load-more-btn,
+    .m-clear-filters-btn {
         transition: none;
+    }
+    .m-clear-filters-btn:active {
+        transform: none;
     }
 }
 
