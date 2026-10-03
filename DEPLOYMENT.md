@@ -448,14 +448,32 @@ database wrote, and the retention sweep (7 days) runs from the app side.
 **Differences vs a non-Docker (dev) deployment**, for the record:
 
 1. **Paths.** In dev (Kestrel + local SQL Server on one machine) the
-   backup goes to `backups/` under the app's content root — the app and
-   SQL Server share a filesystem, so `DatabaseBackups:Directory` and
-   `DatabaseBackups:ServerPath` are the same value (the default). In
-   Docker they MUST be the two volume mount points above.
+   backup goes to `backups/` under the app's working directory — the
+   app and SQL Server share a filesystem, so `DatabaseBackups:Directory`
+   and `DatabaseBackups:ServerPath` are the same value (the default:
+   an unset `ServerPath` follows `Directory`). Relative values are
+   resolved to **absolute** before the `BACKUP` command runs, because
+   SQL Server interprets a relative `TO DISK` path against **its own
+   instance backup folder** (`C:\Program Files\Microsoft SQL
+   Server\MSSQL17.<INSTANCE>\MSSQL\Backup\`) — never the app's
+   working directory — so a raw relative path fails with `Operating
+   system error 3 (The system cannot find the path specified)`. In
+   Docker the two values MUST be the volume mount points above.
 2. **Permissions.** In dev, your Windows/SQL login needs
    `db_backupoperator` on the database (a sysadmin login has it
    implicitly). In Docker the app connects as `sa`, which has it
-   implicitly.
+   implicitly. On a single-machine **Windows** install the SQL Server
+   *service account* also needs write access to the backup folder — it
+   performs the file write, not the app. The smoothest setup is a
+   dedicated folder outside the app tree (set it via
+   `DatabaseBackups:Directory`) granted once:
+
+   ```bat
+   icacls "C:\TakOneBackups" /grant "NT SERVICE\MSSQL$HANZ:(OI)(CI)M"
+   ```
+
+   (substitute your instance name; for the default instance use
+   `NT SERVICE\MSSQLSERVER`)
 3. **Timezone.** The schedule is pinned to **UTC** (03:30 and 14:30)
    regardless of the container's `TZ` (the web container runs
    `Asia/Tehran` for the UI greeting). 03:30 UTC = 07:00 and 14:30 UTC =
@@ -463,6 +481,14 @@ database wrote, and the retention sweep (7 days) runs from the app side.
 4. **Missed slots are skipped, not replayed.** If the server was down at
    03:30, that backup simply doesn't happen — the next one is at most 11
    hours away.
+5. **Remote SQL Server.** When the app and SQL Server run on
+   **different machines**, `DatabaseBackups:ServerPath` must be set
+   explicitly to a path that exists on the *database server's*
+   filesystem — a Windows drive-letter path (`C:\…`) passes through
+   verbatim even when the app itself runs on Linux. The app-side
+   `Directory` must then also see those same files (e.g. an SMB share
+   mounted at both ends) or the post-backup verification + the 7-day
+   retention sweep cannot find them.
 
 You can turn the whole thing off with `DatabaseBackups__Enabled=false`
 in the environment, or take a manual backup any time with the `sqlcmd`

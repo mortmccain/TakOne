@@ -91,7 +91,18 @@ namespace TakOne.Infrastructure.Services;
 ///   <item><c>DatabaseBackups:ServerPath</c> — the DB-SERVER-side path
 ///   used inside the BACKUP command. Defaults to the same value as
 ///   <c>Directory</c> (correct for single-machine setups); the Docker
-///   deployment sets <c>/var/opt/mssql/backup</c>.</item>
+///   deployment sets <c>/var/opt/mssql/backup</c>. RELATIVE values are
+///   resolved to ABSOLUTE against the app's working directory before
+///   the command runs (see <see cref="ResolveServerPath"/>) — SQL
+///   Server resolves a relative <c>TO DISK</c> path against ITS OWN
+///   instance backup folder (e.g. <c>C:\Program Files\Microsoft SQL
+///   Server\MSSQL17.&lt;INSTANCE&gt;\MSSQL\Backup\</c>), which is never
+///   where the app created its <c>backups/</c> folder, so a raw
+///   relative path makes every single-machine run fail with
+///   "Operating system error 3". Windows drive-letter paths
+///   (<c>C:\…</c>) and native absolute paths pass through verbatim,
+///   so a Linux app pointing at a remote Windows SQL Server still
+///   works.</item>
 ///   <item><c>DatabaseBackups:RetentionDays</c> — default <c>7</c>.</item>
 /// </list>
 /// </para>
@@ -291,12 +302,14 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         // web-side directory (correct wherever the app and SQL Server share
         // a filesystem; overridden by the Docker deployment, where the
         // shared volume is mounted at different paths in the two
-        // containers).
-        var serverPath = _configuration.GetValue<string>("DatabaseBackups:ServerPath");
-        if (string.IsNullOrWhiteSpace(serverPath))
-        {
-            serverPath = directory;
-        }
+        // containers). RELATIVE values are resolved to ABSOLUTE first —
+        // see ResolveServerPath: SQL Server resolves a relative TO DISK
+        // path against its OWN instance backup folder, never the app's
+        // working directory, which made the old relative default
+        // ("backups") fail every single-machine run with "Operating
+        // system error 3 (The system cannot find the path specified)".
+        var configuredServerPath = _configuration.GetValue<string>("DatabaseBackups:ServerPath");
+        var serverPath = ResolveServerPath(configuredServerPath, directory);
 
         _logger.LogInformation(
             "DatabaseBackup: schedule armed — slots 03:30 + 14:30 UTC, directory {Directory}, server path {ServerPath}, retention {RetentionDays} days.",
@@ -523,7 +536,30 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         command.CommandTimeout = 0; // a large database's backup can exceed the 30s default
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqlException ex) when (ex.Message.Contains("Cannot open backup device", StringComparison.Ordinal))
+        {
+            // SQL Server could not open the target file: the path does not
+            // exist ON THE DB SERVER's filesystem, or its service account
+            // cannot write there. Re-throw with the actionable diagnosis —
+            // the raw engine message alone ("Operating system error 3")
+            // gives the admin no hint about WHICH machine's filesystem is
+            // at fault, and this message is what the Settings backup card
+            // + run-history ledger surface.
+            throw new InvalidOperationException(
+                $"DatabaseBackup: SQL Server could not open the backup device '{serverFilePath}' " +
+                $"({ex.Message}) The path must exist ON THE MACHINE RUNNING SQL SERVER and be writable by its " +
+                "service account. Single-machine/dev: point DatabaseBackups:Directory at a folder the SQL Server " +
+                "service account can write to (e.g. icacls \"C:\\TakOneBackups\" /grant " +
+                "\"NT SERVICE\\MSSQL$INSTANCE:(OI)(CI)M\"), or set DatabaseBackups:ServerPath explicitly. " +
+                "Docker: check the takone_backups volume is mounted at both DatabaseBackups:Directory (web) " +
+                "and DatabaseBackups:ServerPath (db) — see DEPLOYMENT.md.",
+                ex);
+        }
+
         stopwatch.Stop();
 
         // Verify the file landed on the web-side mount. In Docker this is
@@ -661,18 +697,69 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     }
 
     /// <summary>
+    /// Resolves the DB-SERVER-side backup path used inside the BACKUP
+    /// command. A RELATIVE value (the shipped default is
+    /// <c>backups</c>) is anchored at the app's working directory — the
+    /// SAME base <see cref="Directory.CreateDirectory(string)"/> uses
+    /// for the web-side directory — so on a single-machine deployment
+    /// the app and SQL Server address ONE physical folder.
+    ///
+    /// WHY ABSOLUTE IS REQUIRED: SQL Server resolves a relative
+    /// <c>TO DISK</c> path against ITS OWN instance default backup
+    /// folder (e.g. <c>C:\Program Files\Microsoft SQL Server\MSSQL17.HANZ\MSSQL\Backup\</c>),
+    /// never the client's working directory — a relative
+    /// <c>backups/…</c> therefore makes SQL Server look for
+    /// <c>…\MSSQL\Backup\backups\…</c>, which does not exist, and
+    /// every run fails with "Operating system error 3 (The system
+    /// cannot find the path specified)".
+    ///
+    /// VERBATIM PASSTHROUGH: native absolute paths (rooted on this OS)
+    /// and Windows drive-letter paths (<c>C:\…</c> — absolute on the
+    /// DB server's filesystem even when the app itself runs on Linux
+    /// against a remote Windows SQL Server) are returned unchanged;
+    /// explicit absolute configuration always wins.
+    /// INTERNAL for unit tests (DatabaseBackupServerPathTests).
+    /// </summary>
+    internal static string ResolveServerPath(string? configuredServerPath, string directory)
+    {
+        var serverPath = string.IsNullOrWhiteSpace(configuredServerPath)
+            ? directory
+            : configuredServerPath;
+
+        if (IsWindowsDrivePath(serverPath) || Path.IsPathRooted(serverPath))
+        {
+            return serverPath;
+        }
+
+        return Path.GetFullPath(serverPath);
+    }
+
+    /// <summary>
+    /// True for Windows drive-letter paths (<c>C:\backups</c> or
+    /// <c>C:/backups</c>) — absolute on the DB server's filesystem even
+    /// when the app itself runs on a different OS, so they must never
+    /// be re-anchored by <see cref="Path.GetFullPath"/>.
+    /// </summary>
+    private static bool IsWindowsDrivePath(string value)
+        => value.Length > 2
+           && char.IsAsciiLetter(value[0])
+           && value[1] == ':'
+           && (value[2] == '\\' || value[2] == '/');
+
+    /// <summary>
     /// Builds the BACKUP command. The database name and the disk path
     /// cannot be SQL parameters (they're identifiers/paths, not values),
     /// so they're embedded after <see cref="IsValidSqlIdentifier"/>
     /// validation — a strict allowlist that rules out injection through
     /// either the connection string's Initial Catalog or the configured
-    /// server path.
+    /// server path. INTERNAL (not private) so the unit tests can
+    /// exercise this security-relevant boundary directly.
     /// </summary>
     [SuppressMessage(
         "Microsoft.Security",
         "CA2100:Review SQL queries for security vulnerabilities",
         Justification = "The database name and backup path are CONFIGURATION-sourced (connection string Initial Catalog + DatabaseBackups:ServerPath), not user input, and both are validated against strict allowlists (IsValidSqlIdentifier / IsValidBackupPath) before interpolation. BACKUP DATABASE's TO DISK argument cannot be a SQL parameter — it is a server-side file path, and parameterization of identifiers/paths is not supported by T-SQL. The allowlist validation is the security boundary here.")]
-    private static string BuildBackupCommandText(string databaseName, string serverFilePath)
+    internal static string BuildBackupCommandText(string databaseName, string serverFilePath)
     {
         if (!IsValidSqlIdentifier(databaseName))
         {
@@ -725,21 +812,32 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     /// digits, underscore, dash, dot, and the two path separators. The
     /// single quote — the only character that could break out of the
     /// N'…' literal — is NOT allowed.
+    ///
+    /// The COLON is allowed ONLY as a Windows drive-letter separator
+    /// (second character, ASCII letter first — <c>C:\backups</c>). A
+    /// colon cannot break out of the N'…' literal, but restricting it
+    /// to the drive position keeps the allowlist tight now that
+    /// absolute Windows paths reach the command (see
+    /// <see cref="ResolveServerPath"/>). INTERNAL for unit tests.
     /// </summary>
-    private static bool IsValidBackupPath(string value)
+    internal static bool IsValidBackupPath(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return false;
         }
 
-        foreach (var ch in value)
+        for (var index = 0; index < value.Length; index++)
         {
+            var ch = value[index];
             var ok = (ch >= 'a' && ch <= 'z')
                      || (ch >= 'A' && ch <= 'Z')
                      || (ch >= '0' && ch <= '9')
                      || ch == '_' || ch == '-' || ch == '.'
-                     || ch == '/' || ch == '\\';
+                     || ch == '/' || ch == '\\'
+                     // Windows drive-letter colon ("C:\…") — legal only
+                     // at position 1, with an ASCII letter before it.
+                     || (ch == ':' && index == 1 && char.IsAsciiLetter(value[0]));
             if (!ok)
             {
                 return false;
