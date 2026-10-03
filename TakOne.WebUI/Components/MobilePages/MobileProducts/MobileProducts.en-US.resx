@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -91,5 +91,73 @@
   <data name="SortPriceHighToLow" xml:space="preserve">
     <value>Price: high to low</value>
     <comment>Round 4 — most-expensive-first sort option.</comment>
+  </data>
+  <data name="ShowStockOutChip" xml:space="preserve">
+    <value>Include out of stock</value>
+    <comment>QA-11 — staff (admin/manager) toggle chip in the shop toolbar: includes zero-stock products in the catalog list.</comment>
+  </data>
+  <data name="ShowStockOutTooltip" xml:space="preserve">
+    <value>Show out-of-stock products in the catalog (admin/manager view)</value>
+    <comment>QA-11 — tooltip for the include-out-of-stock toggle chip.</comment>
+  </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+    <comment>QA-11 — catalog take-away: exports the currently filtered product list as a CSV download (same filters + sort as the list).</comment>
+  </data>
+  <data name="ExportCsvWorking" xml:space="preserve">
+    <value>Exporting…</value>
+    <comment>QA-11 — label shown on the export button while the multi-page fetch loop runs.</comment>
+  </data>
+  <data name="ExportCsvTooltip" xml:space="preserve">
+    <value>Download the visible catalog as a CSV file</value>
+    <comment>QA-11 — tooltip/aria-label for the export button.</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} product(s) exported.</value>
+    <comment>QA-11 — success toast after the CSV download starts. {0} = exported row count.</comment>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The export failed. Please try again.</value>
+    <comment>QA-11 — failure toast when the export loop or the download fails.</comment>
+  </data>
+  <data name="ColName" xml:space="preserve">
+    <value>Name</value>
+    <comment>QA-11 — CSV export column header: product name.</comment>
+  </data>
+  <data name="ColCategory" xml:space="preserve">
+    <value>Category</value>
+    <comment>QA-11 — CSV export column header: top-level category.</comment>
+  </data>
+  <data name="ColSubCategory" xml:space="preserve">
+    <value>Sub-category</value>
+    <comment>QA-11 — CSV export column header: sub-category.</comment>
+  </data>
+  <data name="ColSubSubCategory" xml:space="preserve">
+    <value>Sub-sub-category</value>
+    <comment>QA-11 — CSV export column header: sub-sub-category.</comment>
+  </data>
+  <data name="ColPrice" xml:space="preserve">
+    <value>Price</value>
+    <comment>QA-11 — CSV export column header: price amount.</comment>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>Currency</value>
+    <comment>QA-11 — CSV export column header: currency code.</comment>
+  </data>
+  <data name="ColAvailability" xml:space="preserve">
+    <value>Availability</value>
+    <comment>QA-11 — CSV export column header: in-stock/out-of-stock label (matches the card badge).</comment>
+  </data>
+  <data name="LoadMore" xml:space="preserve">
+    <value>Load more</value>
+    <comment>QA-11 — append-style pagination button under the product list.</comment>
+  </data>
+  <data name="LoadingMore" xml:space="preserve">
+    <value>Loading more…</value>
+    <comment>QA-11 — load-more button label while the next page fetches.</comment>
+  </data>
+  <data name="ShowingCount" xml:space="preserve">
+    <value>Showing {0}–{1} of {2}</value>
+    <comment>QA-11 — count line under the product list. {0}/{1} = first/last visible row numbers, {2} = total matching rows.</comment>
   </data>
 </root>

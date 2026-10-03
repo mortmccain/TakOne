@@ -419,11 +419,28 @@
     border-radius: 0.375rem;
     cursor: pointer;
     color: var(--tm-green);
+    /* QA-11 a11y polish — the hover tint existed but keyboard users had
+       NO visible affordance (the desktop Sales date-filter chip's × got
+       the same fix in QA-8). Outline, not box-shadow: transparent bg +
+       border:none leave nothing else to key off. */
+    transition: background-color 0.15s ease;
 }
 
     .m-search-chip-clear:hover {
         background: rgba(0,0,0,0.06);
     }
+
+    .m-search-chip-clear:focus-visible {
+        outline: 2px solid var(--tm-green);
+        outline-offset: 1px;
+        border-radius: 0.375rem; /* ring hugs the round-cornered target */
+    }
+
+@media (prefers-reduced-motion: reduce) {
+    .m-search-chip-clear {
+        transition: none;
+    }
+}
 
 .m-loading {
     display: flex;
@@ -4423,14 +4440,284 @@ button.m-notif-card.m-notif-unread {
 }
 
 
-/* ── Sort row (Round 4 — shop sorting on mobile) ─────────────────── */
-.m-sort-row {
+/* ── Shop toolbar (Round 4 sort, restructured QA-11) ────────────────
+   Replaces the old .m-sort-row (label+select only, right-aligned):
+   the mobile shop toolbar now hosts the QA-11 desktop-parity pieces —
+   the staff "include out of stock" chip, the sort group, and the
+   catalog CSV export button. flex-wrap keeps 360px screens sane: the
+   chip wraps to its own line first, the export button second, and the
+   sort group stays last (the most-used control stays bottom-right in
+   RTL reading order). */
+.m-shop-toolbar {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 0 16px 4px 16px;
 }
+
+/* The label+select pair reads as ONE control inside the toolbar. */
+.m-sort-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ── "Include out of stock" staff chip (QA-11 — desktop parity) ──────
+   Pill button mirroring the desktop .tm-oos-chip contract, scaled to
+   the m-* family: INACTIVE = neutral surface + secondary text with an
+   eye-slash glyph (visibility OFF); ACTIVE = danger tint — the same
+   red family the .m-stock-out badge uses — with the eye glyph, so the
+   state difference is color + icon, never color alone (a11y). 36px
+   min-height = the sort select's touch target. */
+.m-oos-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    min-height: 36px;
+    border: 1px solid var(--m-border, var(--tm-gray-light, #eceff3));
+    border-radius: 999px;
+    background-color: var(--m-surface, #fff);
+    color: var(--m-text-secondary, var(--tm-gray, #6b7280));
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+                color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.m-oos-chip svg {
+    flex: none;
+}
+
+.m-oos-chip:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--rz-danger, #DC2626) 40%, transparent);
+    color: var(--rz-danger, #DC2626);
+}
+
+.m-oos-chip:focus-visible {
+    outline: 2px solid var(--rz-danger, #DC2626);
+    outline-offset: 2px;
+}
+
+.m-oos-chip:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.m-oos-chip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ACTIVE — danger tint (color-mix keeps light + dark themes correct;
+   browsers without support drop these declarations and keep the neutral
+   base, where the eye glyph + aria-pressed still carry the state). */
+.m-oos-chip--active {
+    background: color-mix(in srgb, var(--rz-danger, #DC2626) 10%, var(--m-surface, #fff));
+    border-color: color-mix(in srgb, var(--rz-danger, #DC2626) 38%, transparent);
+    color: var(--rz-danger, #DC2626);
+}
+
+    .m-oos-chip--active:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--rz-danger, #DC2626) 16%, var(--m-surface, #fff));
+    }
+
+.tak-theme-dark .m-oos-chip {
+    background-color: var(--m-surface, #1f2937);
+    border-color: var(--m-border, #374151);
+}
+
+/* ── Catalog CSV export button (QA-11 — desktop parity) ────────────
+   Mirrors the desktop .tm-export-btn: quiet outline pill with the
+   primary-tinted download glyph; hover/focus ring in the same primary
+   family as the sort select. Sits in the toolbar after the sort group. */
+.m-export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    min-height: 36px;
+    border: 1px solid var(--m-border, var(--tm-gray-light, #eceff3));
+    border-radius: 999px;
+    background-color: var(--m-surface, #fff);
+    color: inherit;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease,
+                box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.m-export-btn svg {
+    color: var(--m-primary, #b45309);
+    flex: none;
+}
+
+.m-export-btn:hover:not(:disabled) {
+    border-color: var(--m-primary, #b45309);
+    background: color-mix(in srgb, var(--m-primary, #b45309) 8%, transparent);
+}
+
+.m-export-btn:focus-visible {
+    outline: none;
+    border-color: var(--m-primary, #b45309);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-primary, #b45309) 18%, transparent);
+}
+
+.m-export-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.m-export-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.tak-theme-dark .m-export-btn {
+    background-color: var(--m-surface, #1f2937);
+    border-color: var(--m-border, #374151);
+}
+
+/* Mini spinner shown in place of the download glyph while the export's
+   multi-page fetch loop runs (and inside the load-more button while the
+   next page fetches) — same size as the glyph it replaces. */
+.m-export-spin {
+    width: 14px;
+    height: 14px;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: m-export-rotate 0.7s linear infinite;
+    flex: none;
+}
+
+@keyframes m-export-rotate {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Count line + "Load more" (QA-11 — append pagination) ─────────── */
+.m-products-meta {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 1rem 0;
+}
+
+.m-products-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--m-text-secondary, var(--tm-gray, #6b7280));
+    font-variant-numeric: tabular-nums; /* no jitter as counts change */
+}
+
+.m-load-more {
+    padding: 0.625rem 1rem 0;
+}
+
+.m-load-more-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px; /* full touch target — the primary "keep browsing" action */
+    padding: 10px 16px;
+    border: 1px solid var(--m-border, var(--tm-gray-light, #eceff3));
+    border-radius: 0.75rem;
+    background-color: var(--m-surface, #fff);
+    color: var(--m-primary, #b45309);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease,
+                box-shadow 0.15s ease;
+}
+
+    /* A plain down-arrow glyph — the universal "more content below"
+       convention; direction-neutral, no mirroring needed. */
+    .m-load-more-btn svg {
+        flex: none;
+    }
+
+.m-load-more-btn:hover:not(:disabled) {
+    border-color: var(--m-primary, #b45309);
+    background: color-mix(in srgb, var(--m-primary, #b45309) 7%, var(--m-surface, #fff));
+}
+
+.m-load-more-btn:focus-visible {
+    outline: none;
+    border-color: var(--m-primary, #b45309);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-primary, #b45309) 18%, transparent);
+}
+
+.m-load-more-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.m-load-more-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.tak-theme-dark .m-load-more-btn {
+    background-color: var(--m-surface, #1f2937);
+    border-color: var(--m-border, #374151);
+}
+
+/* ── Sold-out card treatment (QA-11 — desktop parity) ──────────────
+   When the staff chip includes zero-stock products, the card itself
+   communicates non-buyability at a glance: the photo desaturates and
+   fades slightly, the name drops to the secondary text color, the
+   placeholder icon dims, the price softens (still readable — what it
+   WOULD cost when restocked; the disabled Add button carries the dead
+   state). The red "Out of stock" badge stays fully saturated — the one
+   loud signal per card. Only ever applies to zero-stock rows, which
+   non-staff users never receive from the handler. */
+.m-product-card--out .m-product-image img {
+    filter: grayscale(0.65);
+    opacity: 0.75;
+}
+
+.m-product-card--out .m-product-name {
+    color: var(--m-text-secondary, var(--tm-gray, #6b7280));
+}
+
+.m-product-card--out .m-product-image svg {
+    opacity: 0.4;
+}
+
+.m-product-card--out .m-product-price {
+    opacity: 0.85;
+}
+
+/* QA-11 a11y — the chip/export/load-more color transitions are
+   decorative motion; reduced-motion users get instant state changes.
+   The card grayscale treatment is a filter (not motion) and stays. */
+@media (prefers-reduced-motion: reduce) {
+    .m-oos-chip,
+    .m-export-btn,
+    .m-load-more-btn {
+        transition: none;
+    }
+}
+
+/* ── (legacy .m-sort-row rules removed QA-11 — the shop toolbar
+      .m-shop-toolbar replaces the single-purpose sort row) ───────── */
 
 .m-sort-label {
     font-size: 0.78rem;

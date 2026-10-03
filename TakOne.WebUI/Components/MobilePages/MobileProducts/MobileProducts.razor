@@ -38,6 +38,7 @@
 @inject IStringLocalizer<MobileProducts> Loc
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
+@inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -156,23 +157,85 @@ else
         </div>
     </div>
 
-    @* ── 2b. Sort control (Round 4 — shop sorting) ──
-       Same server-side orders as the desktop shop (name / price asc /
-       price desc); a compact native select styled to the m-* family.
-       Sorting is SERVER-side, so the whole 50-row page re-orders (not
-       just the rendered cards) and the order survives category + search
-       filters. *@
-    <div class="m-sort-row">
-        <label class="m-sort-label" for="m-products-sort">@Loc["SortLabel"]</label>
-        <select id="m-products-sort"
-                class="m-sort-select"
-                value="@_sortBy.ToString()"
-                @onchange="OnSortChanged"
-                disabled="@_isLoading">
-            <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
-            <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
-            <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
-        </select>
+    @* ── 2b. Shop toolbar (Round 4 sort + QA-11 parity) ──
+       Wraps the Round-4 sort control with the two QA-10 desktop-parity
+       affordances: the staff "include out of stock" chip (Admin/Manager)
+       and the catalog CSV export button. flex-wrap keeps the row sane on
+       360px screens (chip wraps to its own line before the sort group
+       does). The sort select keeps its Round-4 semantics: SERVER-side
+       ordering, so the whole loaded list re-orders (not just the rendered
+       cards) and the order survives category + search filters. *@
+    <div class="m-shop-toolbar">
+        @* STAFF VIEW MODE (QA-11 — desktop-parity port): Admin/Manager
+           only. Same contract as the desktop chip: the flag rides the
+           SAME GetProductsPaginatedQuery the list AND the CSV export
+           issue, and the handler CLAMPS IncludeInactive to false for
+           every other role SERVER-side — this gate is convenience, not
+           authorization. Persists as oos=1 in the URL (only ever written
+           for staff) so it survives the add-to-cart forceLoad reload.
+           aria-pressed is a LITERAL STRING — Blazor omits boolean-false
+           attributes, and aria-pressed="false" is meaningful ARIA (the
+           same workaround the desktop chip uses). *@
+        @if (_canSeeInactive)
+        {
+            <button type="button"
+                    class="m-oos-chip @(_includeInactive ? "m-oos-chip--active" : "")"
+                    title="@Loc["ShowStockOutTooltip"]"
+                    aria-pressed="@(_includeInactive ? "true" : "false")"
+                    disabled="@_isLoading"
+                    @onclick="ToggleIncludeInactiveAsync">
+                @if (_includeInactive)
+                {
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                }
+                else
+                {
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                }
+                <span>@Loc["ShowStockOutChip"]</span>
+            </button>
+        }
+        <div class="m-sort-group">
+            <label class="m-sort-label" for="m-products-sort">@Loc["SortLabel"]</label>
+            <select id="m-products-sort"
+                    class="m-sort-select"
+                    value="@_sortBy.ToString()"
+                    @onchange="OnSortChanged"
+                    disabled="@_isLoading">
+                <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
+                <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
+                <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
+            </select>
+        </div>
+        @* CATALOG CSV EXPORT (QA-11 — desktop-parity port): the SAME
+           customer-safe 7-column download the desktop shop ships (name,
+           category path, price, currency, availability label — no stock
+           quantities, no picture columns). Exports parity with the list:
+           current search/category/sort AND the staff out-of-stock view
+           mode. Disabled while any load runs or the list is empty. *@
+        <button type="button"
+                class="m-export-btn"
+                title="@Loc["ExportCsvTooltip"]"
+                aria-label="@Loc["ExportCsvTooltip"]"
+                disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                @onclick="ExportProductsCsvAsync">
+            @if (_isExporting)
+            {
+                <span class="m-export-spin" aria-hidden="true"></span>
+            }
+            else
+            {
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+            }
+            <span>@(_isExporting ? Loc["ExportCsvWorking"] : Loc["ExportCsvButton"])</span>
+        </button>
     </div>
 
     @* ── 3. Hero banner ── *@
@@ -212,7 +275,7 @@ else
                     && (qty * unitPrice) > budget.Remaining;
                 var disabled = limitReached || stockOut || salaryReached || _isAddingAny;
 
-                <div class="m-product-card">
+                <div class="m-product-card @(stockOut ? "m-product-card--out" : "")">
                     <div class="m-product-image" @onclick="() => GoToProduct(product.Id)">
                         @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
                         {
@@ -308,6 +371,47 @@ else
         }
     </div>
 
+    @* ── 4b. Count + Load more (QA-11) ──
+       The old mobile page requested one silent 50-row page and never
+       hinted that more existed. Now: a count line ("Showing 1–24 of 87",
+       tabular digits so the number doesn't jitter between reloads) and
+       a full-width "Load more" button WHILE more pages remain — the
+       append-style mobile pagination the broadcasts page already uses.
+       Both hide on a single-page catalog (no noise for small shops). *@
+    @if (_totalCount > 0 && _products.Count > 0)
+    {
+        <div class="m-products-meta">
+            <span class="m-products-count">
+                @Loc["ShowingCount",
+                    CultureFormat.FormatDigits(1),
+                    CultureFormat.FormatDigits(Math.Min(_products.Count, _totalCount)),
+                    CultureFormat.FormatDigits(_totalCount)]
+            </span>
+        </div>
+        @if (_products.Count < _totalCount)
+        {
+            <div class="m-load-more">
+                <button type="button"
+                        class="m-load-more-btn"
+                        disabled="@(_isLoadingMore || _isExporting)"
+                        @onclick="LoadMoreAsync">
+                    @if (_isLoadingMore)
+                    {
+                        <span class="m-export-spin" aria-hidden="true"></span>
+                        <span>@Loc["LoadingMore"]</span>
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75" />
+                        </svg>
+                        <span>@Loc["LoadMore"]</span>
+                    }
+                </button>
+            </div>
+        }
+    }
+
     @* ── 5. Quick reorder button ── *@
     <div class="m-reorder-section">
         <button class="m-reorder-btn" disabled="@(_isReordering || _isReadOnly)" @onclick="QuickReorderAsync">
@@ -350,6 +454,28 @@ else
     private List<CategoryDto> _categories = new();
     private Guid? _selectedCategoryId;
     private string _searchTerm = string.Empty;
+
+    // ── Pagination (QA-11 — append-style "load more") ──
+    // The old mobile page fetched ONE silent 50-row page and never
+    // hinted that more existed. 24 rows per page (≈ 3 screens of cards)
+    // keeps payloads light; LoadMoreAsync appends the next page.
+    private const int MobilePageSize = 24;
+    private int _pageNumber = 1;
+    private int _totalCount;
+    private bool _isLoadingMore;
+
+    // ── Staff view mode (QA-11 — desktop-parity port) ──
+    // Admin/Manager only; the handler CLAMPS IncludeInactive to false
+    // for every other role SERVER-side, so these are UX gates, not
+    // authorization. oos=1 in the URL restores the mode (staff only).
+    private bool _canSeeInactive;
+    private bool _includeInactive;
+
+    // ── CSV export (QA-11 — desktop-parity port) ──
+    private bool _isExporting;
+
+    /// <summary> Row cap for the CSV export loop (same as the desktop shop). </summary>
+    private const int ExportRowCap = 2000;
 
     /// <summary>
     /// The active catalog sort (Round 4) — same orders as the desktop
@@ -399,6 +525,10 @@ else
             _searchTerm = newSearch;
             _isLoading = true;
             StateHasChanged();
+            // Search change = new result set: restart from page 1 with a
+            // FRESH list (not append — the old rows belong to the old
+            // search term).
+            _pageNumber = 1;
             await LoadProductsAsync();
             _isLoading = false;
             StateHasChanged();
@@ -412,6 +542,19 @@ else
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("search", out var searchValue))
         {
             _searchTerm = searchValue.ToString();
+        }
+
+        // STAFF VIEW MODE (QA-11): resolve the role gate BEFORE the URL
+        // restore parses ?oos=1 — a customer opening a staff-shared link
+        // keeps the in-stock view locally (mirroring the handler's
+        // server-side clamp; the ignored flag is harmless).
+        _canSeeInactive = CurrentUser.IsInRole(Roles.Admin)
+                       || CurrentUser.IsInRole(Roles.Manager);
+        if (_canSeeInactive
+            && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("oos", out var oosValue)
+            && oosValue.ToString() == "1")
+        {
+            _includeInactive = true;
         }
 
         // Determine if user is read-only (same logic as PC Products page)
@@ -437,30 +580,53 @@ else
     /// <summary>
     /// The sort control's change handler: parse the picked key and
     /// reload (the sort rides in SQL with the category/search filters).
+    /// A sort change re-orders the WHOLE result set, so paging restarts
+    /// at page 1 with a fresh list (never an append).
     /// </summary>
     private async Task OnSortChanged(ChangeEventArgs e)
     {
         if (Enum.TryParse<ProductSortBy>(e.Value?.ToString(), ignoreCase: false, out var sortBy))
         {
             _sortBy = sortBy;
+            _pageNumber = 1;
             await LoadProductsAsync();
         }
     }
 
-    private async Task LoadProductsAsync()
+    /// <summary>
+    /// Loads one page of the catalog at <see cref="_pageNumber"/>.
+    /// <paramref name="append"/> (load-more) ADDS rows to the existing
+    /// list; every filter/sort/view-mode change calls it with
+    /// <paramref name="append"/> = false (a fresh result set replaces
+    /// the old rows). Always passes <see cref="_includeInactive"/> — the
+    /// handler clamps it for non-staff roles server-side.
+    /// </summary>
+    private async Task LoadProductsAsync(bool append = false)
     {
         try
         {
             var query = new GetProductsPaginatedQuery
             {
-                PageNumber = 1,
-                PageSize = 50,
+                PageNumber = _pageNumber,
+                PageSize = MobilePageSize,
                 SortBy = _sortBy,
                 SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
-                CategoryId = _selectedCategoryId
+                CategoryId = _selectedCategoryId,
+                // Staff view mode (QA-11): include zero-stock products
+                // for Admin/Manager. Safe to pass unconditionally — the
+                // handler clamps this to false for every other role.
+                IncludeInactive = _includeInactive
             };
             var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
-            _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+            if (append)
+            {
+                _products.AddRange(result.Items);
+            }
+            else
+            {
+                _products = result.Items.ToList();
+            }
 
             // Initialize qty selectors to 1 for new products
             foreach (var p in _products)
@@ -470,6 +636,96 @@ else
             }
         }
         catch { }
+    }
+
+    /// <summary>
+    /// "Load more" (QA-11): appends the NEXT page to the list — the
+    /// append-style mobile pagination the broadcasts page uses. Guarded
+    /// against double-taps; a no-op when the last page is already loaded.
+    /// </summary>
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoadingMore || _isExporting) return;
+        if (_products.Count >= _totalCount) return;
+
+        _isLoadingMore = true;
+        try
+        {
+            _pageNumber++;
+            await LoadProductsAsync(append: true);
+        }
+        finally
+        {
+            _isLoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Toggles the staff "include out of stock" view mode (QA-11 —
+    /// desktop-parity port) and reloads from page 1: the result set
+    /// changes wholesale when zero-stock cards join the list, so page 3
+    /// of the in-stock list means something different after the flip.
+    ///
+    /// Export parity is automatic: the list load AND the CSV loop pass
+    /// <c>IncludeInactive</c> to the SAME query.
+    ///
+    /// The flag persists as <see cref="UpdateOosUrl"/> (replace, not
+    /// push — no history spam) so it survives the add-to-cart full-page
+    /// reload and a manual refresh. Deliberately NOT reset by search /
+    /// category changes — it is a role-gated VIEW MODE whose own chip is
+    /// the single, always-visible way back.
+    /// </summary>
+    private async Task ToggleIncludeInactiveAsync()
+    {
+        _includeInactive = !_includeInactive;
+        _pageNumber = 1;
+        UpdateOosUrl();
+        await LoadProductsAsync();
+    }
+
+    /// <summary>
+    /// Mirrors the staff view mode into the URL as oos=1 (or removes it)
+    /// WITHOUT touching any other query parameter (the header search
+    /// bar's ?search= survives). Replace-not-push: toggling is not
+    /// navigation. Only ever CALLED from the chip's event handler, so it
+    /// can never run during the static prerender pass (NavigateTo
+    /// throws there) — the same reason the desktop shop's URL mirror
+    /// needs an interactive guard but this one does not.
+    /// </summary>
+    private void UpdateOosUrl()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        string? oosValue = _includeInactive ? "1" : null;
+        string? existing = query.TryGetValue("oos", out var v) ? v.ToString() : null;
+        if (string.Equals(existing, oosValue, StringComparison.Ordinal))
+        {
+            return; // unchanged — skip the navigation entirely
+        }
+
+        // Rebuild the query WITHOUT oos, then re-add it only when on —
+        // preserves every other parameter (search, future contracts).
+        var parameters = new Dictionary<string, string?>();
+        foreach (var (key, value) in query)
+        {
+            if (!string.Equals(key, "oos", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters[key] = value.ToString();
+            }
+        }
+        if (_includeInactive)
+        {
+            parameters["oos"] = "1";
+        }
+
+        // GetLeftPart(Path) = the URI without query/fragment — the clean
+        // base AddQueryString re-attaches the surviving parameters to.
+        var basePath = uri.GetLeftPart(UriPartial.Path);
+        var relative = parameters.Count == 0
+            ? basePath
+            : Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(basePath, parameters);
+        Navigation.NavigateTo(relative, forceLoad: false, replace: true);
     }
 
     private async Task LoadCategoriesAsync()
@@ -521,6 +777,7 @@ else
     private async Task SelectCategory(Guid? categoryId)
     {
         _selectedCategoryId = categoryId;
+        _pageNumber = 1; // new filter = new result set: fresh page 1
         _isLoading = true;
         StateHasChanged();
         await LoadProductsAsync();
@@ -530,8 +787,17 @@ else
 
     private void ClearSearch()
     {
-        _searchTerm = string.Empty;
-        Navigation.NavigateTo("/m/Products", forceLoad: false);
+        // Do NOT pre-clear _searchTerm here: OnParametersSetAsync's
+        // change detection (newSearch != _searchTerm) must SEE the
+        // transition foo→"" to trigger the reload. Pre-clearing made the
+        // comparison always equal — the list kept the STALE search
+        // results while the chip vanished (pre-existing bug, found and
+        // fixed in the QA-11 round; pinned by a bUnit test).
+        // The staff view mode IS preserved across the clear: the page
+        // state keeps _includeInactive (a view mode, not a search
+        // filter), so the URL keeps mirroring it.
+        var target = _includeInactive ? "/m/Products?oos=1" : "/m/Products";
+        Navigation.NavigateTo(target, forceLoad: false);
     }
 
     // ── Qty selector helpers (ported from PC Products page) ──
@@ -700,6 +966,100 @@ else
 
     private void GoToMyOrders()
         => Navigation.NavigateTo("/Sales", forceLoad: false);
+
+    // ── CSV export (QA-11 — desktop-parity port) ──
+
+    /// <summary>
+    /// Exports the CURRENT filtered catalog as a CSV download — the
+    /// mobile twin of the desktop shop's export (identical file: the
+    /// SAME customer-safe columns, the SAME filters + sort + staff
+    /// out-of-stock view mode, because both pages issue the SAME
+    /// GetProductsPaginatedQuery whose handler enforces per-role
+    /// visibility server-side). 100 rows per page until the 2,000-row
+    /// cap; CsvBuilder (RFC 4180 + invariant numbers) + takDownload.csv
+    /// (UTF-8 + BOM) — the shared export machinery every other page
+    /// uses, so the file opens cleanly in Excel under either culture.
+    /// </summary>
+    private async Task ExportProductsCsvAsync()
+    {
+        if (_isExporting || _totalCount == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColName"],
+                Loc["ColCategory"],
+                Loc["ColSubCategory"],
+                Loc["ColSubSubCategory"],
+                Loc["ColPrice"],
+                Loc["ColCurrency"],
+                Loc["ColAvailability"]);
+
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
+            {
+                var query = new GetProductsPaginatedQuery
+                {
+                    PageNumber = pageNumber,
+                    PageSize = exportPageSize,
+                    SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                    CategoryId = _selectedCategoryId,
+                    SortBy = _sortBy,
+                    // Export parity with the list: the download always
+                    // ships exactly what the list shows (the chip's view
+                    // mode included). The handler clamps this for
+                    // non-staff roles server-side, exactly as for loads.
+                    IncludeInactive = _includeInactive
+                };
+
+                var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+                foreach (var product in result.Items)
+                {
+                    if (exported >= ExportRowCap) break;
+
+                    builder.AddRow(
+                        product.Name,
+                        product.CategoryName,
+                        product.SubCategoryName,
+                        product.SubSubCategoryName,
+                        product.Price?.Amount,
+                        product.Price?.Currency,
+                        product.StockQuantity > 0 ? Loc["StockIn"] : Loc["StockOut"]);
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize) break;
+                pageNumber++;
+            }
+
+            var fileName = $"takone-catalog-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageTitle"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same policy as every
+            // other export button in the app).
+            await Toast.Error(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
 
     // ── Formatting ──
 
