@@ -452,4 +452,79 @@
   <data name="PictureRemoveFile" xml:space="preserve">
     <value>حذف {0} از انتخاب</value>
   </data>
+  <data name="BackupCardTitle" xml:space="preserve">
+    <value>پشتیبان‌گیری پایگاه داده</value>
+  </data>
+  <data name="BackupCardHint" xml:space="preserve">
+    <value>پشتیبان‌گیری کامل به‌صورت خودکار ساعت ۰۳:۳۰ و ۱۴:۳۰ UTC اجرا می‌شود؛ فایل‌های قدیمی‌تر از دورهٔ نگهداری پس از هر اجرا حذف می‌شوند. از این‌جا می‌توانید یک پشتیبان اضافه گرفت یا فایل‌های ذخیره‌شده را بررسی کنید.</value>
+  </data>
+  <data name="BackupLoading" xml:space="preserve">
+    <value>در حال بارگذاری وضعیت پشتیبان…</value>
+  </data>
+  <data name="BackupRetryButton" xml:space="preserve">
+    <value>تلاش دوباره</value>
+  </data>
+  <data name="BackupLoadError" xml:space="preserve">
+    <value>بارگذاری وضعیت پشتیبان ممکن نشد.</value>
+  </data>
+  <data name="BackupDisabledNotice" xml:space="preserve">
+    <value>پشتیبان‌گیری خودکار در تنظیمات غیرفعال است. برای فعال‌سازی:</value>
+  </data>
+  <data name="BackupLastRunLabel" xml:space="preserve">
+    <value>آخرین اجرا</value>
+  </data>
+  <data name="BackupRunning" xml:space="preserve">
+    <value>پشتیبان‌گیری در حال اجراست…</value>
+  </data>
+  <data name="BackupNeverRun" xml:space="preserve">
+    <value>هنوز پشتیبانی گرفته نشده است</value>
+  </data>
+  <data name="BackupDurationFormat" xml:space="preserve">
+    <value>{0} ثانیه طول کشید</value>
+  </data>
+  <data name="BackupOutcomeSuccess" xml:space="preserve">
+    <value>موفق</value>
+  </data>
+  <data name="BackupOutcomeFailed" xml:space="preserve">
+    <value>ناموفق</value>
+  </data>
+  <data name="BackupNextRunLabel" xml:space="preserve">
+    <value>اجرای بعدی برنامهٔ زمانی</value>
+  </data>
+  <data name="BackupScheduleSlots" xml:space="preserve">
+    <value>۰۳:۳۰ + ۱۴:۳۰ UTC، دو بار در روز</value>
+  </data>
+  <data name="BackupRetentionLabel" xml:space="preserve">
+    <value>دورهٔ نگهداری</value>
+  </data>
+  <data name="BackupRetentionValue" xml:space="preserve">
+    <value>{0} روز</value>
+  </data>
+  <data name="BackupFilesLabel" xml:space="preserve">
+    <value>فایل‌های ذخیره‌شده</value>
+  </data>
+  <data name="BackupFilesSummary" xml:space="preserve">
+    <value>{0} فایل • {1}</value>
+  </data>
+  <data name="BackupFailedAlertTitle" xml:space="preserve">
+    <value>آخرین پشتیبان‌گیری ناموفق بود</value>
+  </data>
+  <data name="BackupNoFiles" xml:space="preserve">
+    <value>هنوز فایل پشتیبانی ذخیره نشده است — نخستین اجرای برنامه‌ریزی‌شده (یا اجرای دستی) یکی می‌سازد.</value>
+  </data>
+  <data name="BackupTriggerButton" xml:space="preserve">
+    <value>پشتیبان‌گیری فوری</value>
+  </data>
+  <data name="BackupTriggering" xml:space="preserve">
+    <value>در حال شروع…</value>
+  </data>
+  <data name="BackupRefreshButton" xml:space="preserve">
+    <value>بازخوانی</value>
+  </data>
+  <data name="BackupTriggered" xml:space="preserve">
+    <value>پشتیبان‌گیری شروع شد — وضعیت را زیر دنبال کنید.</value>
+  </data>
+  <data name="BackupTriggerError" xml:space="preserve">
+    <value>شروع پشتیبان‌گیری ممکن نشد.</value>
+  </data>
 </root>

@@ -669,12 +669,22 @@ public static class ServiceCollectionExtensions
         //        /var/opt/mssql/backup — DatabaseBackups:ServerPath). See
         //        DatabaseBackupHostedService's class docs + DEPLOYMENT.md.
         //
-        //        Registered as a Singleton IHostedService; no Scoped
-        //        dependencies (reads the connection string from
+        //        DUAL ROLE: the SAME singleton instance is registered as
+        //        the IHostedService (the schedule loop) AND as the
+        //        Application-layer IBackupCoordinator port (status
+        //        snapshot + manual trigger, consumed by the Settings
+        //        page's admin backup card via GetBackupStatusQuery /
+        //        TriggerBackupNowCommand). One instance guarantees the
+        //        status the admin sees is the state the loop actually
+        //        mutates.
+        //
+        //        No Scoped dependencies (reads the connection string from
         //        IConfiguration — the same TakOne:Database section the
         //        DbContext options bind from).
         // ------------------------------------------------------------------
-        services.AddHostedService<DatabaseBackupHostedService>();
+        services.AddSingleton<DatabaseBackupHostedService>();
+        services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupHostedService>());
+        services.AddSingleton<IBackupCoordinator>(sp => sp.GetRequiredService<DatabaseBackupHostedService>());
 
         // ------------------------------------------------------------------
         // 5b-3. Notification repository — Scoped (shares the scoped

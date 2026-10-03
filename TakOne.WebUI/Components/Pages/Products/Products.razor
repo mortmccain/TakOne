@@ -531,20 +531,51 @@
                    the page's chip aesthetic. Changing the sort restarts
                    at page 1 (page 5 of a differently-sorted list means
                    something else entirely). *@
-                <div class="tm-sort-control">
-                    <svg class="tm-sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h10M3 10h7M3 15h4M17 4v16m0 0l-4-4m4 4l4-4" />
-                    </svg>
-                    <label class="tm-sort-label" for="tm-products-sort">@Loc["SortLabel"]</label>
-                    <select id="tm-products-sort"
-                            class="tm-sort-select"
-                            value="@_sortBy.ToString()"
-                            @onchange="OnSortChanged"
-                            disabled="@_isLoading">
-                        <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
-                        <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
-                        <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
-                    </select>
+                @* TOOLS ROW (sort + CSV export)
+                   The export button sits next to the sort control — both
+                   are "view-shaping" actions over the CURRENT filtered
+                   catalog. The export ships EXACTLY what the grid shows
+                   (same search term, category, sort, visibility — the
+                   same GetProductsPaginatedQuery the grid loads from),
+                   capped at 2,000 rows like the admin exports. Customer-
+                   facing columns only: name, category path, price,
+                   currency, availability — no stock quantities, no
+                   picture paths (those belong to the admin restore
+                   workflow's export). *@
+                <div class="tm-products-tools">
+                    <div class="tm-sort-control">
+                        <svg class="tm-sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h10M3 10h7M3 15h4M17 4v16m0 0l-4-4m4 4l4-4" />
+                        </svg>
+                        <label class="tm-sort-label" for="tm-products-sort">@Loc["SortLabel"]</label>
+                        <select id="tm-products-sort"
+                                class="tm-sort-select"
+                                value="@_sortBy.ToString()"
+                                @onchange="OnSortChanged"
+                                disabled="@_isLoading">
+                            <option value="@nameof(ProductSortBy.Name)">@Loc["SortByName"]</option>
+                            <option value="@nameof(ProductSortBy.PriceLowToHigh)">@Loc["SortPriceLowToHigh"]</option>
+                            <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
+                        </select>
+                    </div>
+                    <button type="button"
+                            class="tm-export-btn"
+                            title="@Loc["ExportCsvTooltip"]"
+                            aria-label="@Loc["ExportCsvTooltip"]"
+                            disabled="@(_isLoading || _isExporting || _totalCount == 0)"
+                            @onclick="ExportProductsCsvAsync">
+                        @if (_isExporting)
+                        {
+                            <span class="tm-export-spin" aria-hidden="true"></span>
+                        }
+                        else
+                        {
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                        }
+                        <span>@(_isExporting ? Loc["ExportCsvWorking"] : Loc["ExportCsvButton"])</span>
+                    </button>
                 </div>
             </div>
 
@@ -931,6 +962,20 @@
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
+    /// <summary>
+    /// True while the CSV export's multi-page fetch loop is running —
+    /// disables the export button (double-click guard) and swaps its
+    /// label to a spinner (same pattern as the admin grids' exports).
+    /// </summary>
+    private bool _isExporting;
+
+    /// <summary>
+    /// Hard cap on exported rows — the SAME 2,000-row ceiling the admin
+    /// exports use. Keeps the export loop bounded on the interactive
+    /// circuit no matter how large the filtered catalog is.
+    /// </summary>
+    private const int ExportRowCap = 2000;
+
     // Cart state — loaded in parallel with products on init, reloaded after
     // any mutation (add, qty update, submit, quick reorder).
     private CartDto? _cart;
@@ -1252,6 +1297,101 @@
         {
             // Non-fatal: an empty mini-cart is shown.
             _cart = null;
+        }
+    }
+
+    /// <summary>
+    /// Exports the CURRENT filtered catalog as a CSV download — the shop
+    /// counterpart of the admin grids' export buttons. The loop re-issues
+    /// the SAME GetProductsPaginatedQuery the grid loads from (search
+    /// term, category, sort — and the same per-role visibility rules, since
+    /// the query's handler enforces them server-side), 100 rows per page,
+    /// until the 2,000-row cap.
+    ///
+    /// CUSTOMER-FACING COLUMNS ONLY (deliberate difference from the
+    /// AdminProducts export): name, category path, price, currency, and
+    /// the in-stock/out-of-stock AVAILABILITY label the card badge shows —
+    /// no raw stock quantities, no picture directory/file columns (those
+    /// exist for the admin CSV→pictures→import restore workflow and are
+    /// meaningless, and mildly leaky, for a customer take-away).
+    ///
+    /// Shares the admin export machinery: CsvBuilder (RFC 4180 + invariant
+    /// numbers) + takDownload.csv (UTF-8 + BOM), so the file opens cleanly
+    /// in Excel under either culture.
+    /// </summary>
+    private async Task ExportProductsCsvAsync()
+    {
+        if (_isExporting || _totalCount == 0)
+        {
+            return; // the button is disabled for empty lists — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColName"],
+                Loc["ColCategory"],
+                Loc["ColSubCategory"],
+                Loc["ColSubSubCategory"],
+                Loc["ColPrice"],
+                Loc["ColCurrency"],
+                Loc["ColAvailability"]);
+
+            var exported = 0;
+            var pageNumber = 1;
+            const int exportPageSize = 100; // the backend's MaxPageSize cap
+
+            while (exported < ExportRowCap)
+            {
+                var query = new GetProductsPaginatedQuery
+                {
+                    PageNumber = pageNumber,
+                    PageSize = exportPageSize,
+                    SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
+                    CategoryId = _selectedCategoryId,
+                    SortBy = _sortBy
+                };
+
+                var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+
+                foreach (var product in result.Items)
+                {
+                    if (exported >= ExportRowCap) break;
+
+                    builder.AddRow(
+                        product.Name,
+                        product.CategoryName,
+                        product.SubCategoryName,
+                        product.SubSubCategoryName,
+                        product.Price?.Amount,
+                        product.Price?.Currency,
+                        product.StockQuantity > 0 ? Loc["StockIn"] : Loc["StockOut"]);
+                    exported++;
+                }
+
+                // Last page reached when the server returns fewer rows
+                // than requested.
+                if (result.Items.Count < exportPageSize) break;
+                pageNumber++;
+            }
+
+            var fileName = $"takone-catalog-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageTitle"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same policy as the admin
+            // export buttons).
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["LoadErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
         }
     }
 

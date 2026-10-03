@@ -448,4 +448,79 @@
   <data name="PictureRemoveFile" xml:space="preserve">
     <value>Remove {0} from the selection</value>
   </data>
+  <data name="BackupCardTitle" xml:space="preserve">
+    <value>Database backups</value>
+  </data>
+  <data name="BackupCardHint" xml:space="preserve">
+    <value>Automatic full backups run at 03:30 and 14:30 UTC; files older than the retention window are removed after every run. Trigger an extra backup or inspect the stored files here.</value>
+  </data>
+  <data name="BackupLoading" xml:space="preserve">
+    <value>Loading backup status…</value>
+  </data>
+  <data name="BackupRetryButton" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="BackupLoadError" xml:space="preserve">
+    <value>The backup status could not be loaded.</value>
+  </data>
+  <data name="BackupDisabledNotice" xml:space="preserve">
+    <value>Automatic backups are disabled in the configuration. Enable them with</value>
+  </data>
+  <data name="BackupLastRunLabel" xml:space="preserve">
+    <value>Last run</value>
+  </data>
+  <data name="BackupRunning" xml:space="preserve">
+    <value>Backup in progress…</value>
+  </data>
+  <data name="BackupNeverRun" xml:space="preserve">
+    <value>No backup has run yet</value>
+  </data>
+  <data name="BackupDurationFormat" xml:space="preserve">
+    <value>took {0} s</value>
+  </data>
+  <data name="BackupOutcomeSuccess" xml:space="preserve">
+    <value>Succeeded</value>
+  </data>
+  <data name="BackupOutcomeFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="BackupNextRunLabel" xml:space="preserve">
+    <value>Next scheduled run</value>
+  </data>
+  <data name="BackupScheduleSlots" xml:space="preserve">
+    <value>03:30 + 14:30 UTC, twice daily</value>
+  </data>
+  <data name="BackupRetentionLabel" xml:space="preserve">
+    <value>Retention</value>
+  </data>
+  <data name="BackupRetentionValue" xml:space="preserve">
+    <value>{0} day(s)</value>
+  </data>
+  <data name="BackupFilesLabel" xml:space="preserve">
+    <value>Stored files</value>
+  </data>
+  <data name="BackupFilesSummary" xml:space="preserve">
+    <value>{0} file(s) • {1}</value>
+  </data>
+  <data name="BackupFailedAlertTitle" xml:space="preserve">
+    <value>Last backup failed</value>
+  </data>
+  <data name="BackupNoFiles" xml:space="preserve">
+    <value>No backup files stored yet — the first scheduled run (or a manual run) will create one.</value>
+  </data>
+  <data name="BackupTriggerButton" xml:space="preserve">
+    <value>Back up now</value>
+  </data>
+  <data name="BackupTriggering" xml:space="preserve">
+    <value>Starting…</value>
+  </data>
+  <data name="BackupRefreshButton" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="BackupTriggered" xml:space="preserve">
+    <value>Backup started — watch the status below.</value>
+  </data>
+  <data name="BackupTriggerError" xml:space="preserve">
+    <value>The backup could not be triggered.</value>
+  </data>
 </root>

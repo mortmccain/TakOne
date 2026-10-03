@@ -469,6 +469,25 @@ in the environment, or take a manual backup any time with the `sqlcmd`
 one-liner from the start of this section (just write it into
 `/var/opt/mssql/backup/` so the retention sweep manages it too).
 
+**Admin UI (Settings → Admin tools → "Database backups"):** the backup
+subsystem also has a first-class admin surface — sign in as an Admin and
+open `/Settings`:
+
+- **Status card** — last run (time, duration, succeeded/failed badge,
+  and the failure message when it failed), the next scheduled slot, the
+  retention window, and the full newest-first list of `*.bak` files with
+  sizes and Tehran-local timestamps.
+- **"Back up now"** — triggers an extra backup immediately (admin-only,
+  gated server-side by `[RequireRoles(Admin)]` via
+  `TriggerBackupNowCommand`). The run executes on the backup service's
+  own background loop — the card polls the status every 5 s until the
+  run finishes. A manual run NEVER shifts the fixed 03:30/14:30 UTC
+  schedule, and a second click while one is running is rejected.
+
+The status reads the same singleton the schedule loop mutates (the
+hosted service is dual-registered as the `IBackupCoordinator` port), so
+what the card shows is always the loop's actual state.
+
 ### "Can I use a real domain name instead of the IP?"
 
 Yes, but that's step 2. For now, get it working on the IP. Once you

@@ -3,6 +3,8 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Common.Models;
 
 namespace TakOne.Infrastructure.Services;
 
@@ -13,6 +15,15 @@ namespace TakOne.Infrastructure.Services;
 /// after every run).
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>DUAL ROLE — HOSTED SERVICE + IBackupCoordinator</b>: this singleton
+/// is registered BOTH as the IHostedService (the schedule loop) and as the
+/// Application-layer <see cref="IBackupCoordinator"/> port (status
+/// snapshot + manual trigger for the Settings page's admin backup card).
+/// The run-state fields below are guarded by <see cref="_stateLock"/>
+/// because the coordinator is invoked from Wolverine handler threads while
+/// the loop mutates the same state.
+/// </para>
 /// <para>
 /// <b>WHY A HOSTED SERVICE (not SQL Agent / cron)</b>: the same rationale
 /// as <see cref="NotificationRetentionCleanupHostedService"/> — the
@@ -100,8 +111,17 @@ namespace TakOne.Infrastructure.Services;
 /// <see cref="SaleNumberGenerator"/> uses for its out-of-transaction
 /// sequence allocation.
 /// </para>
+/// <para>
+/// <b>MANUAL TRIGGER SEMANTICS</b>: <see cref="TryTriggerNow"/> completes
+/// a <see cref="TaskCompletionSource"/> the schedule loop races its
+/// slot-delay against — the loop wakes, runs the backup on ITS OWN
+/// background execution (the caller never awaits the backup itself), then
+/// recomputes the next fixed slot. A manual run therefore never shifts the
+/// schedule, and at most ONE run executes at a time by construction (the
+/// loop is the only runner).
+/// </para>
 /// </remarks>
-public sealed class DatabaseBackupHostedService : BackgroundService
+public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoordinator
 {
     /// <summary>First daily backup slot — 03:30 UTC.</summary>
     private static readonly TimeSpan MorningSlotUtc = new(3, 30, 0);
@@ -124,6 +144,56 @@ public sealed class DatabaseBackupHostedService : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly ILogger<DatabaseBackupHostedService> _logger;
 
+    // ── Coordinator state (guarded by _stateLock — see class remarks) ──
+
+    /// <summary>Guards every coordinator-state read/write below.</summary>
+    private readonly object _stateLock = new();
+
+    /// <summary>True once ExecuteAsync resolved a usable configuration (enabled + connection string) — the single source of truth GetStatus reports as Enabled.</summary>
+    private bool _armed;
+
+    /// <summary>Cache of the web-side backup directory (retention + verification + status listing).</summary>
+    private string _directory = DefaultBackupDirectory;
+
+    /// <summary>Cache of the retention window (days).</summary>
+    private int _retentionDays = DefaultRetentionDays;
+
+    /// <summary>True while a scheduled or manual run is executing.</summary>
+    private bool _isRunning;
+
+    /// <summary>UTC start of the most recent run (null = never ran).</summary>
+    private DateTime? _lastRunStartedUtc;
+
+    /// <summary>UTC end of the most recent run (null = never finished).</summary>
+    private DateTime? _lastRunFinishedUtc;
+
+    /// <summary>Outcome of the most recent run (null = none completed yet).</summary>
+    private bool? _lastRunSucceeded;
+
+    /// <summary>Failure detail for the most recent run (empty unless it failed).</summary>
+    private string _lastRunError = string.Empty;
+
+    /// <summary>
+    /// The manual-trigger wake signal + its pending flag. <see cref="TryTriggerNow"/>
+    /// sets <c>_pendingTriggers</c> and completes the current source; the
+    /// schedule loop races its slot-delay against the source and CONSUMES
+    /// it at wake time (clearing the flag + swapping in a fresh source)
+    /// before running. The consume-at-wake (not consume-at-trigger)
+    /// placement is what makes a trigger that arrives while the loop is
+    /// BUSY — mid-run, mid-sweep — survive: the flag stays set, the fresh
+    /// source the loop reads next is already completed, and the next wait
+    /// wakes immediately. <c>RunContinuationsAsynchronously</c> so a
+    /// trigger from a Wolverine handler thread never runs the loop's
+    /// continuation inline on the caller.
+    /// </summary>
+    private volatile TaskCompletionSource _triggerSignal = CreateTriggerSource();
+
+    /// <summary>1 while a manual trigger has been accepted but not yet run (guarded by <see cref="_stateLock"/>).</summary>
+    private int _pendingTriggers;
+
+    private static TaskCompletionSource CreateTriggerSource()
+        => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public DatabaseBackupHostedService(
         IConfiguration configuration,
         ILogger<DatabaseBackupHostedService> logger)
@@ -134,18 +204,44 @@ public sealed class DatabaseBackupHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // ── Config resolution (once, at startup). ──
-        if (!(_configuration.GetValue<bool?>("DatabaseBackups:Enabled") ?? true))
+        // ── Config resolution (once, at startup). The resolved values are
+        //    cached into the coordinator state so GetStatus can report them
+        //    without re-reading configuration on every request. ──
+        var enabled = _configuration.GetValue<bool?>("DatabaseBackups:Enabled") ?? true;
+
+        var directory = _configuration.GetValue<string>("DatabaseBackups:Directory");
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            directory = DefaultBackupDirectory;
+        }
+
+        var retentionDays = _configuration.GetValue<int?>("DatabaseBackups:RetentionDays")
+            ?? DefaultRetentionDays;
+
+        var connectionString = _configuration.GetValue<string>("TakOne:Database:ConnectionString");
+
+        lock (_stateLock)
+        {
+            _directory = directory;
+            _retentionDays = retentionDays;
+            // Armed only when the schedule will actually run — a disabled
+            // or unconnectable configuration still serves GetStatus with
+            // Enabled=false instead of throwing.
+            _armed = enabled && !string.IsNullOrWhiteSpace(connectionString);
+        }
+
+        if (!enabled)
         {
             _logger.LogInformation(
                 "DatabaseBackup: disabled via configuration (DatabaseBackups:Enabled=false) — no backups will be taken.");
             return;
         }
 
-        var directory = _configuration.GetValue<string>("DatabaseBackups:Directory");
-        if (string.IsNullOrWhiteSpace(directory))
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
-            directory = DefaultBackupDirectory;
+            _logger.LogError(
+                "DatabaseBackup: no connection string configured (TakOne:Database:ConnectionString) — the backup schedule is disabled until one is provided.");
+            return;
         }
 
         // The DB-SERVER-side path for the BACKUP command — defaults to the
@@ -159,22 +255,12 @@ public sealed class DatabaseBackupHostedService : BackgroundService
             serverPath = directory;
         }
 
-        var retentionDays = _configuration.GetValue<int?>("DatabaseBackups:RetentionDays")
-            ?? DefaultRetentionDays;
-
-        var connectionString = _configuration.GetValue<string>("TakOne:Database:ConnectionString");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            _logger.LogError(
-                "DatabaseBackup: no connection string configured (TakOne:Database:ConnectionString) — the backup schedule is disabled until one is provided.");
-            return;
-        }
-
         _logger.LogInformation(
             "DatabaseBackup: schedule armed — slots 03:30 + 14:30 UTC, directory {Directory}, server path {ServerPath}, retention {RetentionDays} days.",
             directory, serverPath, retentionDays);
 
-        // ── The scheduling loop: sleep until the next slot, run, repeat. ──
+        // ── The scheduling loop: sleep until the next slot (OR until a
+        //    manual trigger fires), run, repeat. ──
         while (!stoppingToken.IsCancellationRequested)
         {
             var nowUtc = DateTime.UtcNow;
@@ -185,7 +271,33 @@ public sealed class DatabaseBackupHostedService : BackgroundService
                 var delay = nextRun - nowUtc;
                 if (delay > TimeSpan.Zero)
                 {
-                    await Task.Delay(delay, stoppingToken);
+                    // Race the slot-delay against the manual-trigger signal:
+                    // whichever completes first wakes the loop.
+                    using var wakeCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    var delayTask = Task.Delay(delay, wakeCts.Token);
+                    var triggerTask = _triggerSignal.Task;
+
+                    var winner = await Task.WhenAny(delayTask, triggerTask);
+
+                    // If the trigger won, cancel the pending delay so its
+                    // timer doesn't linger (best-effort — the loop is about
+                    // to run anyway).
+                    if (winner != delayTask)
+                    {
+                        wakeCts.Cancel();
+                    }
+                }
+
+                // ── Consume the trigger at WAKE time: clear the pending
+                //    flag and swap in a fresh source BEFORE running, so a
+                //    trigger that arrives DURING the run lands on the new
+                //    source and wakes the NEXT wait (see the field's
+                //    remarks). A trigger that fired just as the slot delay
+                //    elapsed is satisfied by the run about to happen. ──
+                lock (_stateLock)
+                {
+                    _pendingTriggers = 0;
+                    _triggerSignal = CreateTriggerSource();
                 }
             }
             catch (TaskCanceledException)
@@ -207,9 +319,11 @@ public sealed class DatabaseBackupHostedService : BackgroundService
                 // Non-fatal (see class remarks): log and wait for the next
                 // slot. "Exception" phrasing keeps the
                 // ForbiddenLoggingAnalyzer's banned-token check happy.
+                // (Covers scheduled AND manually-triggered runs — both
+                // execute here on the loop.)
                 _logger.LogError(
-                    "DatabaseBackup: scheduled run at {RunAtUtc:u} failed: {Exception}",
-                    DateTime.UtcNow, ex);
+                    "DatabaseBackup: backup run failed: {Exception}",
+                    ex);
             }
 
             // Retention sweep — best-effort, its own failure boundary, and
@@ -233,8 +347,57 @@ public sealed class DatabaseBackupHostedService : BackgroundService
     /// <c>BACKUP DATABASE [db] TO DISK = '{serverPath}/{file}' WITH INIT,
     /// CHECKSUM</c>, and verifies the file exists on the web-side path
     /// (shared volume in Docker; same directory on a single machine).
+    /// Also records the run's start/end/outcome into the coordinator
+    /// state (see <see cref="GetStatus"/>).
     /// </summary>
     private async Task RunBackupAsync(
+        string connectionString,
+        string directory,
+        string serverPath,
+        CancellationToken cancellationToken)
+    {
+        lock (_stateLock)
+        {
+            _isRunning = true;
+            _lastRunStartedUtc = DateTime.UtcNow;
+            _lastRunFinishedUtc = null;
+            _lastRunSucceeded = null;
+            _lastRunError = string.Empty;
+        }
+
+        try
+        {
+            await RunBackupCoreAsync(connectionString, directory, serverPath, cancellationToken);
+
+            lock (_stateLock)
+            {
+                _lastRunSucceeded = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_stateLock)
+            {
+                _lastRunSucceeded = false;
+                _lastRunError = ex.Message;
+            }
+            throw; // the loop's catch logs it; the state is for the status card
+        }
+        finally
+        {
+            lock (_stateLock)
+            {
+                _isRunning = false;
+                _lastRunFinishedUtc = DateTime.UtcNow;
+            }
+        }
+    }
+
+    /// <summary>The pre-existing backup body, extracted from
+    /// <see cref="RunBackupAsync"/> so the run-state bookkeeping wraps it
+    /// exactly once (scheduled AND manual runs share the same path).
+    /// </summary>
+    private async Task RunBackupCoreAsync(
         string connectionString,
         string directory,
         string serverPath,
@@ -278,13 +441,15 @@ public sealed class DatabaseBackupHostedService : BackgroundService
         // admin needs to know NOW, not at restore time.
         if (!File.Exists(localFilePath))
         {
-            _logger.LogError(
-                "DatabaseBackup: BACKUP DATABASE reported success, but the file was not found at {LocalFilePath} " +
+            // Thrown (not logged+returned) so the run-state bookkeeping in
+            // RunBackupAsync records it as a FAILED run — the status card
+            // must show a wiring failure, not a green checkmark. The
+            // loop's catch still logs it non-fatally.
+            throw new InvalidOperationException(
+                $"DatabaseBackup: BACKUP DATABASE reported success, but the file was not found at {localFilePath} " +
                 "after the run. In the Docker deployment this means the takone_backups volume is not mounted at both " +
                 "DatabaseBackups:Directory (web container) and DatabaseBackups:ServerPath (database container) — " +
-                "check docker-compose.yml.",
-                localFilePath);
-            return;
+                "check docker-compose.yml.");
         }
 
         var sizeMegabytes = new FileInfo(localFilePath).Length / (1024.0 * 1024.0);
@@ -292,6 +457,92 @@ public sealed class DatabaseBackupHostedService : BackgroundService
         _logger.LogInformation(
             "DatabaseBackup: {DatabaseName} backed up to {LocalFilePath} ({SizeMB:0.#} MB, {ElapsedSeconds:0.#}s).",
             databaseName, localFilePath, sizeMegabytes, stopwatch.Elapsed.TotalSeconds);
+    }
+
+    // ── IBackupCoordinator (see the class remarks for the dual role) ──
+
+    /// <summary>
+    /// Snapshot of the backup subsystem: cached config (enabled/
+    /// directory/retention), the guarded run-state fields, the next
+    /// scheduled slot (recomputed from now — the fixed slots never shift),
+    /// and a NEWEST-FIRST listing of the <c>*.bak</c> files in the backup
+    /// directory. NEVER returns null (see the interface's remarks).
+    /// </summary>
+    public BackupStatusDto GetStatus()
+    {
+        lock (_stateLock)
+        {
+            var directory = _directory;
+            var enabled = _armed;
+
+            // File listing — best-effort: an unreadable/missing directory
+            // simply reports no files (the empty card state), never throws
+            // into the query handler.
+            var files = new List<BackupFileInfoDto>();
+            long totalBytes = 0;
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    foreach (var file in Directory.EnumerateFiles(directory, "*.bak"))
+                    {
+                        var info = new FileInfo(file);
+                        files.Add(new BackupFileInfoDto
+                        {
+                            FileName = info.Name,
+                            SizeBytes = info.Length,
+                            LastWriteUtc = info.LastWriteTimeUtc
+                        });
+                        totalBytes += info.Length;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Status must be resilient — a locked directory shows an
+                // empty file list rather than a failed query.
+                files = new List<BackupFileInfoDto>();
+                totalBytes = 0;
+            }
+
+            files.Sort((a, b) => b.LastWriteUtc.CompareTo(a.LastWriteUtc));
+
+            return new BackupStatusDto
+            {
+                Enabled = enabled,
+                IsRunning = _isRunning,
+                LastRunStartedUtc = _lastRunStartedUtc,
+                LastRunFinishedUtc = _lastRunFinishedUtc,
+                LastRunSucceeded = _lastRunSucceeded,
+                LastRunError = _lastRunError,
+                NextScheduledRunUtc = enabled ? NextRunUtc(DateTime.UtcNow) : null,
+                RetentionDays = _retentionDays,
+                Files = files,
+                TotalSizeBytes = totalBytes
+            };
+        }
+    }
+
+    /// <summary>
+    /// Accepts ONE pending manual trigger: sets the pending flag and
+    /// completes the wake signal the schedule loop races its slot-delay
+    /// against. Rejected (false) when the schedule is disabled, a run is
+    /// executing, or a trigger is already pending (one queued run at a
+    /// time — the admin watches its progress on the status card).
+    /// </summary>
+    public bool TryTriggerNow()
+    {
+        lock (_stateLock)
+        {
+            if (!_armed || _isRunning || _pendingTriggers > 0)
+            {
+                return false;
+            }
+
+            _pendingTriggers = 1;
+            _triggerSignal.TrySetResult(); // wakes the loop (idempotent)
+            return true;
+        }
     }
 
     /// <summary>

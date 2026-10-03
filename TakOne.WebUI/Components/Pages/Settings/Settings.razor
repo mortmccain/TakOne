@@ -118,6 +118,9 @@
 @using TakOne.Application.Notifications.DTOs
 @using TakOne.Application.Notifications.Queries.GetNotificationPreferences
 @using TakOne.Application.Notifications.Commands.SetNotificationMuted
+@using TakOne.Application.Settings.Queries.GetBackupStatus
+@using TakOne.Application.Settings.Commands.TriggerBackupNow
+@using TakOne.Application.Common.Models
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
@@ -721,6 +724,128 @@
                     direction: ltr; /* the formula + example are literal LTR text */
                     unicode-bidi: embed;
                 }
+
+            /* ── Backup status card ─────────────────────────────────
+               2×2 health-stat grid (last run / next slot / retention /
+               files): muted small-caps-ish label on top, strong value
+               below, optional sub-line (duration, schedule note) and an
+               outcome badge. Collapses to a single column on narrow
+               cards (the admin-tools grid reflows at 300px). */
+            .backup-stats-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.75rem 1rem;
+                margin-bottom: 0.75rem;
+            }
+
+            @@media (max-width: 420px) {
+                .backup-stats-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            .backup-stat {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.15rem;
+                min-width: 0;
+            }
+
+            .backup-stat-label {
+                font-size: 0.7rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: var(--rz-text-secondary-color);
+            }
+
+            .backup-stat-value {
+                font-size: 0.92rem;
+                font-weight: 600;
+                color: var(--rz-text-color);
+                line-height: 1.35;
+                overflow-wrap: anywhere;
+            }
+
+            .backup-stat-sub {
+                font-size: 0.74rem;
+                color: var(--rz-text-secondary-color);
+                font-weight: 400;
+            }
+
+            /* Stored-files ledger — one row per *.bak: save icon, mono
+               LTR file name (flexes + ellipsizes), size, Tehran time.
+               Same scroll policy + thin themed scrollbar as the import
+               ledgers; capped at 14 files by the retention sweep. */
+            .backup-file-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 14rem;
+                overflow-y: auto;
+                margin-top: 0.5rem;
+                padding-inline-end: 0.25rem;
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+            }
+
+                .backup-file-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .backup-file-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .backup-file-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .backup-file-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            .backup-file-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.78rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                transition: background-color 0.1s ease;
+            }
+
+                .backup-file-row:hover {
+                    background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+                }
+
+            .backup-file-name {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.74rem;
+                direction: ltr; /* file names are literal LTR text */
+                unicode-bidi: embed;
+            }
+
+            .backup-file-size {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
+
+            .backup-file-date {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
     </style>
 </HeadContent>
 
@@ -966,7 +1091,7 @@
         </div>
 
         @* ── Admin tools section (admin-only) ──
-           Three bulk tools, each a self-contained card:
+           Four tools, each a self-contained card:
              1. Product CSV import  — the round-trip partner of the
                 AdminProducts export (which now carries each product's
                 picture directory + file name).
@@ -979,6 +1104,11 @@
                 manage-users export; new users get the default password
                 "@" + reversed worker id + "Temp" and a forced one-time
                 password change.
+             4. Database backups    — read-side status of the scheduled
+                backup service (last run + outcome, next slot, stored
+                files, retention) + a "Back up now" trigger. Runs on the
+                server's own background execution — the card follows the
+                progress by polling.
 
            GATED: the cards render only for Admins (role resolved via the
            AuthenticationStateProvider — see _isAdmin). Every command is
@@ -1290,6 +1420,179 @@
                             </div>
                         }
                     </RadzenCard>
+                    @* ── Card 4: database backup status ──
+                       NOT numbered like cards 1-3: those form the CSV
+                       restore workflow; this is a separate operations
+                       card. Shows the scheduled-backup service's health
+                       (last run + outcome, next 03:30/14:30-UTC slot,
+                       stored files, retention) and offers a manual
+                       "Back up now" trigger. The trigger returns as soon
+                       as the run is ACCEPTED — the backup executes on the
+                       hosted service's own background loop, and the card
+                       follows it by polling every few seconds until it
+                       finishes. *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <RadzenIcon Icon="backup" Style="color: var(--rz-primary);" />
+                            <span>@Loc["BackupCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["BackupCardHint"]
+                        </RadzenText>
+
+                        @if (_isBackupLoading)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["BackupLoading"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else if (!string.IsNullOrEmpty(_backupLoadError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_backupLoadError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["BackupRetryButton"]"
+                                              Icon="refresh"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Click="@(() => LoadBackupStatusAsync())" />
+                            </div>
+                        }
+                        else if (_backupStatus is { Enabled: false })
+                        {
+                            @* Not an error — an externally-managed backup
+                               regime (or a dev box without a DB). The
+                               notice tells the admin which knob to flip. *@
+                            <div class="admin-info-callout" role="note">
+                                <RadzenIcon Icon="pause_circle" Class="admin-info-icon" />
+                                <div class="admin-info-body">
+                                    <span>@Loc["BackupDisabledNotice"]</span>
+                                    <code class="admin-info-code">DatabaseBackups:Enabled</code>
+                                </div>
+                            </div>
+                        }
+                        else if (_backupStatus is { } backup)
+                        {
+                            @* ── Health snapshot: last run / next slot /
+                                   retention / files. 2×2 stat grid; each
+                                   cell = muted label + strong value. *@
+                            <div class="backup-stats-grid">
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupLastRunLabel"]</span>
+                                    <span class="backup-stat-value">
+                                        @if (backup.IsRunning)
+                                        {
+                                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.4rem">
+                                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" />
+                                                <span>@Loc["BackupRunning"]</span>
+                                            </RadzenStack>
+                                        }
+                                        else if (backup.LastRunFinishedUtc is { } finishedUtc)
+                                        {
+                                            @CultureFormat.FormatTehranDateTime(finishedUtc)
+                                            @if (GetBackupRunDuration(backup) is { } durationSeconds)
+                                            {
+                                                <span class="backup-stat-sub">@Loc["BackupDurationFormat", durationSeconds]</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="backup-stat-sub">@Loc["BackupNeverRun"]</span>
+                                        }
+                                    </span>
+                                    @if (backup.LastRunSucceeded is false && !backup.IsRunning)
+                                    {
+                                        <RadzenBadge Text="@Loc["BackupOutcomeFailed"]" BadgeStyle="BadgeStyle.Danger" IsPill="true" Style="align-self: flex-start;" />
+                                    }
+                                    else if (backup.LastRunSucceeded is true)
+                                    {
+                                        <RadzenBadge Text="@Loc["BackupOutcomeSuccess"]" BadgeStyle="BadgeStyle.Success" IsPill="true" Style="align-self: flex-start;" />
+                                    }
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupNextRunLabel"]</span>
+                                    <span class="backup-stat-value">
+                                        @(backup.NextScheduledRunUtc is { } next ? CultureFormat.FormatTehranDateTime(next) : "—")
+                                    </span>
+                                    <span class="backup-stat-sub">@Loc["BackupScheduleSlots"]</span>
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupRetentionLabel"]</span>
+                                    <span class="backup-stat-value">@Loc["BackupRetentionValue", backup.RetentionDays]</span>
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupFilesLabel"]</span>
+                                    <span class="backup-stat-value">@Loc["BackupFilesSummary", backup.Files.Count, FormatFileSize(backup.TotalSizeBytes)]</span>
+                                </div>
+                            </div>
+
+                            @* Failure detail from the last run — the same
+                               message the service logged (e.g. the Docker
+                               volume-wiring hint), surfaced so the admin
+                               can act without grepping container logs. *@
+                            @if (backup.LastRunSucceeded is false && !backup.IsRunning && !string.IsNullOrEmpty(backup.LastRunError))
+                            {
+                                <RadzenAlert Title="@Loc["BackupFailedAlertTitle"]"
+                                             Text="@backup.LastRunError"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Outlined"
+                                             ShowIcon="true"
+                                             Style="margin-top: 0.5rem;" />
+                            }
+
+                            @* Stored files ledger — newest first, mono
+                               names (LTR even in fa-IR), size + Tehran
+                               time. Scrollable with the thin themed
+                               scrollbar. *@
+                            @if (backup.Files.Count > 0)
+                            {
+                                <div class="backup-file-list">
+                                    @foreach (var file in backup.Files)
+                                    {
+                                        <div class="backup-file-row">
+                                            <RadzenIcon Icon="save" Style="font-size: 1rem; color: var(--rz-primary); flex: none;" />
+                                            <span class="backup-file-name">@file.FileName</span>
+                                            <span class="backup-file-size">@FormatFileSize(file.SizeBytes)</span>
+                                            <span class="backup-file-date">@CultureFormat.FormatTehranDateTime(file.LastWriteUtc)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <RadzenText TextStyle="TextStyle.Body2"
+                                            Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;">
+                                    @Loc["BackupNoFiles"]
+                                </RadzenText>
+                            }
+
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["BackupTriggerButton"]"
+                                              Icon="play_arrow"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(backup.IsRunning || _isTriggeringBackup)"
+                                              IsBusy="@_isTriggeringBackup"
+                                              BusyText="@Loc["BackupTriggering"]"
+                                              Click="@TriggerBackupNowAsync" />
+                                <RadzenButton Text="@Loc["BackupRefreshButton"]"
+                                              Icon="refresh"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(_isTriggeringBackup)"
+                                              Click="@(() => LoadBackupStatusAsync())" />
+                            </div>
+                        }
+                    </RadzenCard>
                 </div>
             </div>
         }
@@ -1493,6 +1796,14 @@
             // it. The query resolves the CURRENT user server-side (no
             // client-supplied Id — anti-CSRF). ──
             await LoadNotificationPreferencesAsync();
+
+            // ── Backup status (admin-only card) — loaded independently for
+            // the same reason: a failed status load only affects its own
+            // card (inline alert + Retry there). ──
+            if (_isAdmin)
+            {
+                await LoadBackupStatusAsync();
+            }
         }
         catch
         {
@@ -1912,6 +2223,158 @@
     private int _userImportCreated;
     private int _userImportSkipped;
     private int _userImportFailed;
+
+    // ── Backup status card state (admin-only) ──────────────────────────
+
+    /// <summary>True while the GetBackupStatusQuery is in flight. Initialized TRUE so the admin card's first frame shows the loading spinner (not an empty body) until the initial load resolves; polls pass showLoadingState:false so refreshes never blink the card.</summary>
+    private bool _isBackupLoading = true;
+
+    /// <summary>The latest backup-subsystem snapshot; null until the first load completes.</summary>
+    private BackupStatusDto? _backupStatus;
+
+    /// <summary>Non-null when the status query failed — the card shows an inline alert + Retry.</summary>
+    private string? _backupLoadError;
+
+    /// <summary>True while the TriggerBackupNowCommand is in flight (the "Back up now" button's busy state).</summary>
+    private bool _isTriggeringBackup;
+
+    /// <summary>
+    /// Loads (or refreshes) the backup status snapshot. Non-fatal: a
+    /// failed load only takes down the backup card (inline alert + Retry),
+    /// never the rest of the Settings page.
+    /// </summary>
+    /// <param name="showLoadingState">
+    /// True (default) for user-initiated loads — the card body swaps to a
+    /// spinner. False for background POLLS — the last snapshot stays on
+    /// screen so a 5-second poll never blinks the card.
+    /// </param>
+    private async Task LoadBackupStatusAsync(bool showLoadingState = true)
+    {
+        if (showLoadingState)
+        {
+            _isBackupLoading = true;
+        }
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<BackupStatusDto>>(
+                new GetBackupStatusQuery());
+
+            if (result.IsSuccess)
+            {
+                _backupStatus = result.Value;
+                _backupLoadError = null;
+            }
+            else
+            {
+                _backupLoadError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _backupLoadError = Loc["BackupLoadError"];
+        }
+        finally
+        {
+            if (showLoadingState)
+            {
+                _isBackupLoading = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// "Back up now": dispatches TriggerBackupNowCommand and — once the
+    /// run is accepted — follows its progress by polling the status every
+    /// few seconds until the run finishes (bounded at 10 minutes; the
+    /// scheduled slots are unaffected by manual runs). The backup itself
+    /// executes on the hosted service's own background loop; this handler
+    /// only waits for the ACCEPT + polls.
+    /// </summary>
+    private async Task TriggerBackupNowAsync()
+    {
+        if (_isTriggeringBackup || _backupStatus is { IsRunning: true })
+        {
+            return; // a run is already starting/executing — nothing to do
+        }
+
+        _isTriggeringBackup = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(new TriggerBackupNowCommand());
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["BackupTriggered"], summary: Loc["PageHeading"]);
+
+                // Immediate refresh (picks up IsRunning=true) + follow the
+                // run until it completes.
+                await LoadBackupStatusAsync();
+                await PollBackupStatusWhileRunningAsync();
+            }
+            else
+            {
+                // Rejected server-side: a run already in flight / pending,
+                // or the schedule is disabled. Refresh so the card shows
+                // which, then surface the rejection.
+                await LoadBackupStatusAsync();
+                await Toast.Warning(result.Error, summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["BackupTriggerError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isTriggeringBackup = false;
+        }
+    }
+
+    /// <summary>
+    /// Polls the backup status every few seconds while a run is executing,
+    /// so the card's "Backup in progress…" turns into the outcome badge
+    /// without the admin hammering Refresh. Bounded (10 minutes) and
+    /// best-effort — a dropped circuit simply stops the polling.
+    /// </summary>
+    private async Task PollBackupStatusWhileRunningAsync()
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddMinutes(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                await LoadBackupStatusAsync(showLoadingState: false);
+                StateHasChanged(); // intermediate updates — the handler is long-running
+
+                if (_backupStatus is not { IsRunning: true })
+                {
+                    break;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Polling is cosmetic — swallow and leave the last snapshot.
+        }
+    }
+
+    /// <summary>
+    /// Duration (seconds, one decimal) of the last COMPLETED backup run,
+    /// or null when the run never finished / never happened. Derived from
+    /// the status DTO's start+finish timestamps.
+    /// </summary>
+    private static decimal? GetBackupRunDuration(BackupStatusDto backup)
+    {
+        if (backup.LastRunStartedUtc is not { } started || backup.LastRunFinishedUtc is not { } finished)
+        {
+            return null;
+        }
+
+        var seconds = (decimal)(finished - started).TotalSeconds;
+        return seconds >= 0 ? decimal.Round(seconds, 1) : null;
+    }
 
     /// <summary>
     /// Reads an InputFile's text content as UTF-8 (BOM-tolerant — the
