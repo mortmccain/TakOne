@@ -418,4 +418,34 @@
   <data name="PictureUploadErrorStorage" xml:space="preserve">
     <value>Storing the file failed.</value>
   </data>
+  <data name="DownloadTemplateButton" xml:space="preserve">
+    <value>Download sample CSV</value>
+  </data>
+  <data name="DownloadReportButton" xml:space="preserve">
+    <value>Download report</value>
+  </data>
+  <data name="ImportOutcomeFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="DownloadError" xml:space="preserve">
+    <value>The file could not be downloaded. Please try again.</value>
+  </data>
+  <data name="ColReportRow" xml:space="preserve">
+    <value>Row</value>
+  </data>
+  <data name="ColReportOutcome" xml:space="preserve">
+    <value>Outcome</value>
+  </data>
+  <data name="ColReportMessage" xml:space="preserve">
+    <value>Message</value>
+  </data>
+  <data name="UserImportPasswordHint" xml:space="preserve">
+    <value>Default password for new users: "@" + reversed worker ID + "Temp" — users must change it at first sign-in.</value>
+  </data>
+  <data name="UserImportPasswordExample" xml:space="preserve">
+    <value>12345 → @54321Temp</value>
+  </data>
+  <data name="PictureRemoveFile" xml:space="preserve">
+    <value>Remove {0} from the selection</value>
+  </data>
 </root>

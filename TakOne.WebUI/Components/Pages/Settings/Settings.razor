@@ -122,10 +122,19 @@
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.Pages.AdminProducts
+@using TakOne.WebUI.Components.Pages.AdminUsers
 @inject IMessageBus MessageBus
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Settings> Loc
+@* The two page localizers below are used ONLY by the admin-tools CSV
+   template builder: the sample files must carry the SAME localized column
+   headers the AdminProducts/AdminUsers exports write (those resx keys
+   already live in the respective page resources — reusing the localizers
+   instead of duplicating the keys keeps the round-trip format in sync). *@
+@inject IStringLocalizer<AdminProducts> ProductsLoc
+@inject IStringLocalizer<AdminUsers> UsersLoc
 @inject ToastService Toast
 @inject IJSRuntime JS
 @inject IFileStorage FileStorage
@@ -514,6 +523,204 @@
                 font-size: 0.74rem;
                 overflow-wrap: anywhere;
             }
+
+            /* ── Admin tools polish (template/report downloads, steps) ── */
+
+            /* Numbered step badge on each admin card title — gives the
+               three tools a stable 1-2-3 order so the intended workflow
+               (upload pictures → import products / import users) reads
+               at a glance. Primary-filled circle, contrast text. */
+            .admin-step-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.5rem;
+                height: 1.5rem;
+                border-radius: 50%;
+                background: var(--rz-primary);
+                color: var(--rz-primary-contrast-color, #fff);
+                font-size: 0.78rem;
+                font-weight: 700;
+                flex: none;
+                direction: ltr; /* digits stay LTR in fa-IR/RTL */
+            }
+
+            /* Inline text-style action (template + report downloads).
+               Rendered as a small primary-colored link-button so it reads
+               as a secondary affordance next to the primary Upload/Import
+               actions — NOT another filled button competing for attention. */
+            .admin-inline-action {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                padding: 0.25rem 0.1rem;
+                margin-top: 0.35rem;
+                border: none;
+                background: none;
+                color: var(--rz-primary);
+                font-size: 0.82rem;
+                font-weight: 500;
+                cursor: pointer;
+                border-radius: 6px;
+                transition: color 0.15s ease;
+            }
+
+                .admin-inline-action:hover {
+                    color: var(--rz-primary-dark, var(--rz-primary));
+                    text-decoration: underline;
+                    text-underline-offset: 3px;
+                }
+
+                .admin-inline-action:focus-visible {
+                    outline: 2px solid var(--rz-primary);
+                    outline-offset: 2px;
+                }
+
+                .admin-inline-action[disabled] {
+                    color: var(--rz-text-disabled-color, var(--rz-text-secondary-color));
+                    cursor: not-allowed;
+                    text-decoration: none;
+                }
+
+            /* Dropzone icon — the cloud_upload glyph inside a soft primary
+               circle (same visual family as .notif-pref-icon). Gives the
+               dropzone a proper visual anchor instead of a bare glyph. */
+            .import-dropzone-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 50%;
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.1));
+                color: var(--rz-primary);
+                transition: transform 0.15s ease;
+            }
+
+            /* Dropzone affordance: gentle lift on hover, press-down on
+               click — the standard "this whole thing is clickable" cues. */
+            .import-dropzone:hover .import-dropzone-icon {
+                transform: translateY(-2px) scale(1.05);
+            }
+
+            .import-dropzone:active {
+                transform: translateY(1px);
+            }
+
+            /* Focus ring for keyboard users tabbing into the picker. */
+            .import-dropzone:focus-within {
+                box-shadow: 0 0 0 3px var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.25));
+            }
+
+            /* Thin themed scrollbars for the two scrollable ledgers (pending
+               files + per-row results) — the default browser scrollbar is
+               visually heavy inside the compact cards. Firefox + WebKit. */
+            .import-file-list,
+            .import-results-list {
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+                padding-inline-end: 0.25rem;
+            }
+
+                .import-file-list::-webkit-scrollbar,
+                .import-results-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .import-file-list::-webkit-scrollbar-thumb,
+                .import-results-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .import-file-list::-webkit-scrollbar-thumb:hover,
+                    .import-results-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .import-file-list::-webkit-scrollbar-track,
+                .import-results-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            /* Pending-file chip: per-file remove button (✕) — lets the
+               admin drop a wrongly-picked file without clearing the whole
+               selection. Bare icon button; danger-tinted on hover. */
+            .import-file-remove {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.4rem;
+                height: 1.4rem;
+                margin-inline-start: auto;
+                border: none;
+                border-radius: 50%;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                flex: none;
+                transition: background-color 0.15s ease, color 0.15s ease;
+            }
+
+                .import-file-remove:hover {
+                    background: var(--rz-danger-light, rgba(220, 53, 69, 0.12));
+                    color: var(--rz-danger, #dc3545);
+                }
+
+                .import-file-remove:focus-visible {
+                    outline: 2px solid var(--rz-danger, #dc3545);
+                    outline-offset: 1px;
+                }
+
+            /* Per-row result rows: hover highlight so the eye can track a
+               row across the ledger's full width while auditing failures. */
+            .import-result-row {
+                border-radius: 6px;
+                transition: background-color 0.1s ease;
+            }
+
+                .import-result-row:hover {
+                    background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                }
+
+            /* Info callout — the default-password formula notice on the
+               user-import card. Primary-tinted panel with a key icon; the
+               formula example renders as LTR monospace (it's literal
+               password text, never localized). */
+            .admin-info-callout {
+                display: flex;
+                align-items: flex-start;
+                gap: 0.6rem;
+                padding: 0.6rem 0.75rem;
+                margin: 0.25rem 0 0.75rem 0;
+                border-radius: 8px;
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.08));
+                border: 1px solid var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.2));
+                font-size: 0.8rem;
+                line-height: 1.45;
+            }
+
+                .admin-info-callout .admin-info-icon {
+                    color: var(--rz-primary);
+                    flex: none;
+                    font-size: 1.1rem;
+                }
+
+                .admin-info-callout .admin-info-body {
+                    min-width: 0;
+                }
+
+                .admin-info-callout .admin-info-code {
+                    display: inline-block;
+                    margin-top: 0.2rem;
+                    padding: 0.15rem 0.45rem;
+                    border-radius: 6px;
+                    background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                    font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                    font-size: 0.78rem;
+                    direction: ltr; /* the formula + example are literal LTR text */
+                    unicode-bidi: embed;
+                }
     </style>
 </HeadContent>
 
@@ -791,6 +998,7 @@
                     @* ── Card 1: product CSV import ── *@
                     <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
                         <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">1</span>
                             <RadzenIcon Icon="upload_file" Style="color: var(--rz-primary);" />
                             <span>@Loc["ProductImportCardTitle"]</span>
                         </div>
@@ -798,6 +1006,16 @@
                                     Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
                             @Loc["ProductImportCardHint"]
                         </RadzenText>
+
+                        @* Sample file with the EXACT positional format (same
+                           headers + column order as the AdminProducts export,
+                           including the two picture columns) — one click beats
+                           a manual 10-column reconstruction from the hint text. *@
+                        <button type="button" class="admin-inline-action"
+                                @onclick="DownloadProductCsvTemplateAsync">
+                            <RadzenIcon Icon="description" Style="font-size: 1rem;" />
+                            <span>@Loc["DownloadTemplateButton"]</span>
+                        </button>
 
                         @if (_isImportingProducts)
                         {
@@ -812,7 +1030,9 @@
                                 <InputFile OnChange="@OnProductCsvSelectedAsync"
                                            accept=".csv,text/csv"
                                            class="import-dropzone-input" />
-                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
                                 <span class="import-dropzone-title">@Loc["ProductImportPickTitle"]</span>
                                 <span class="import-dropzone-hint">@Loc["ProductImportPickHint"]</span>
                             </label>
@@ -838,6 +1058,15 @@
                                                  BadgeStyle="BadgeStyle.Info" IsPill="true" />
                                     <RadzenBadge Text="@Loc["ImportFailedCount", _productImportFailed]"
                                                  BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                    @* Audit trail: the same per-row ledger
+                                       rendered below, exported as CSV so the
+                                       import run can be filed / diffed. *@
+                                    <button type="button" class="admin-inline-action"
+                                            style="margin-top: 0; margin-inline-start: auto;"
+                                            @onclick="DownloadProductImportReportAsync">
+                                        <RadzenIcon Icon="sim_card_download" Style="font-size: 1rem;" />
+                                        <span>@Loc["DownloadReportButton"]</span>
+                                    </button>
                                 </div>
                                 <div class="import-results-list">
                                     @foreach (var rowResult in _productImportRows)
@@ -867,6 +1096,7 @@
                     @* ── Card 2: bulk picture upload ── *@
                     <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
                         <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">2</span>
                             <RadzenIcon Icon="photo_library" Style="color: var(--rz-primary);" />
                             <span>@Loc["PictureUploadCardTitle"]</span>
                         </div>
@@ -889,7 +1119,9 @@
                                            accept="image/jpeg,image/png,image/webp"
                                            multiple
                                            class="import-dropzone-input" />
-                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
                                 <span class="import-dropzone-title">@Loc["PictureUploadPickTitle"]</span>
                                 <span class="import-dropzone-hint">@Loc["PictureUploadPickHint"]</span>
                             </label>
@@ -904,6 +1136,15 @@
                                         <RadzenIcon Icon="image" Style="font-size: 1rem; color: var(--rz-primary);" />
                                         <span class="import-file-name">@pending.FileName</span>
                                         <span class="import-file-size">@FormatFileSize(pending.Bytes.Length)</span>
+                                        @* Per-file remove — a wrongly-picked file
+                                           can be dropped without losing the rest
+                                           of the selection. *@
+                                        <button type="button" class="import-file-remove"
+                                                title="@Loc["PictureRemoveFile"]"
+                                                aria-label="@Loc["PictureRemoveFile", pending.FileName]"
+                                                @onclick="() => RemovePendingPicture(pending)">
+                                            <RadzenIcon Icon="close" Style="font-size: 0.9rem;" />
+                                        </button>
                                     </div>
                                 }
                             </div>
@@ -946,6 +1187,7 @@
                     @* ── Card 3: user CSV import ── *@
                     <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
                         <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">3</span>
                             <RadzenIcon Icon="group_add" Style="color: var(--rz-primary);" />
                             <span>@Loc["UserImportCardTitle"]</span>
                         </div>
@@ -953,6 +1195,26 @@
                                     Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
                             @Loc["UserImportCardHint"]
                         </RadzenText>
+
+                        @* Default-password formula — the admin handing out
+                           first-login credentials needs the exact rule; showing
+                           it (with a worked example) next to the import beats
+                           a support round-trip later. *@
+                        <div class="admin-info-callout" role="note">
+                            <RadzenIcon Icon="key" Class="admin-info-icon" />
+                            <div class="admin-info-body">
+                                <span>@Loc["UserImportPasswordHint"]</span>
+                                <code class="admin-info-code">@Loc["UserImportPasswordExample"]</code>
+                            </div>
+                        </div>
+
+                        @* Sample file with the EXACT positional format (same
+                           headers + column order as the manage-users export). *@
+                        <button type="button" class="admin-inline-action"
+                                @onclick="DownloadUserCsvTemplateAsync">
+                            <RadzenIcon Icon="description" Style="font-size: 1rem;" />
+                            <span>@Loc["DownloadTemplateButton"]</span>
+                        </button>
 
                         @if (_isImportingUsers)
                         {
@@ -967,7 +1229,9 @@
                                 <InputFile OnChange="@OnUserCsvSelectedAsync"
                                            accept=".csv,text/csv"
                                            class="import-dropzone-input" />
-                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
                                 <span class="import-dropzone-title">@Loc["UserImportPickTitle"]</span>
                                 <span class="import-dropzone-hint">@Loc["UserImportPickHint"]</span>
                             </label>
@@ -993,6 +1257,14 @@
                                                  BadgeStyle="BadgeStyle.Light" IsPill="true" />
                                     <RadzenBadge Text="@Loc["ImportFailedCount", _userImportFailed]"
                                                  BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                    @* Audit trail: the same per-row ledger
+                                       rendered below, exported as CSV. *@
+                                    <button type="button" class="admin-inline-action"
+                                            style="margin-top: 0; margin-inline-start: auto;"
+                                            @onclick="DownloadUserImportReportAsync">
+                                        <RadzenIcon Icon="sim_card_download" Style="font-size: 1rem;" />
+                                        <span>@Loc["DownloadReportButton"]</span>
+                                    </button>
                                 </div>
                                 <div class="import-results-list">
                                     @foreach (var rowResult in _userImportRows)
@@ -1926,6 +2198,215 @@
         _picturesUploaded = 0;
         _pictureUploadDone = 0;
     }
+
+    /// <summary>
+    /// Drops ONE buffered picture from the pending batch (the chip's ✕
+    /// button) — a wrongly-picked file can be removed without losing the
+    /// rest of the selection.
+    /// </summary>
+    private void RemovePendingPicture(PendingPicture picture)
+    {
+        _pendingPictures.Remove(picture);
+    }
+
+    // ── CSV template + import-report downloads (admin-only) ────────────
+    //
+    // Both builders reuse the shared CsvBuilder (RFC 4180 escaping +
+    // invariant numbers) and the takDownload.csv JS helper (UTF-8 + BOM)
+    // — the exact same write-side machinery the grid exports use, so the
+    // templates round-trip through CsvParser byte-for-byte.
+
+    /// <summary>
+    /// Builds and downloads a sample product-import CSV: the EXACT
+    /// positional 10-column format the import expects — the same
+    /// localized headers AND column order the AdminProducts export writes
+    /// (reused from that page's localizer, so the two can never drift) —
+    /// plus two example rows, including one WITHOUT a picture (empty
+    /// directory + file-name cells) to show the columns are optional.
+    /// </summary>
+    private async Task DownloadProductCsvTemplateAsync()
+    {
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                ProductsLoc["ColName"],
+                ProductsLoc["ColCategory"],
+                ProductsLoc["ColSubCategory"],
+                ProductsLoc["ColSubSubCategory"],
+                ProductsLoc["ColPrice"],
+                ProductsLoc["ColCurrency"],
+                ProductsLoc["ColStock"],
+                ProductsLoc["ColStatus"],
+                ProductsLoc["ColPictureDirectory"],
+                ProductsLoc["ColPictureFileName"]);
+
+            // Sample rows. Values are deliberately obvious placeholders so
+            // an accidentally-imported template is instantly recognizable
+            // (and deletable) in the products grid. Status mirrors what the
+            // export writes (localized in-stock/out-of-stock label); the
+            // import reads but ignores it (stock status is derived from
+            // the stock quantity).
+            builder.AddRow(
+                "Example Product A", "Example Category", "Example Sub-Category", "Example Sub-Sub-Category",
+                100.5m, "IRR", 10, ProductsLoc["StatusInStockBadge"],
+                "uploads/products", "example-product-a.jpg");
+            builder.AddRow(
+                "Example Product B", "Example Category", "Example Sub-Category", string.Empty,
+                250m, "IRR", 0, ProductsLoc["StatusOutOfStockBadge"],
+                string.Empty, string.Empty);
+
+            await JS.InvokeVoidAsync("takDownload.csv", "takone-products-import-template.csv", builder.ToString());
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — same policy
+            // as the grid exports: a visible toast beats a dead button.
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Builds and downloads a sample user-import CSV: the EXACT positional
+    /// 6-column format the import expects — the same localized headers AND
+    /// column order the manage-users export writes (reused from that
+    /// page's localizer) — plus two example rows.
+    /// NOTE: the Roles column must carry the SEEDED ENGLISH role names
+    /// ("Admin"/"Manager"/"Employee"/"ReadOnly"/"Customer" — the handler
+    /// validates them Ordinal-exact against the seeded set); the gender +
+    /// status cells use the CURRENT culture's labels, which the import's
+    /// normalizer maps back to the enum/bool.
+    /// </summary>
+    private async Task DownloadUserCsvTemplateAsync()
+    {
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                UsersLoc["ColWorkerId"],
+                UsersLoc["ColFullName"],
+                UsersLoc["ColGender"],
+                UsersLoc["ColGroup"],
+                UsersLoc["ColRoles"],
+                UsersLoc["ColStatus"]);
+
+            // Sample rows — recognizable placeholders (see the product
+            // template's remark). Worker IDs 10001/10002 import cleanly
+            // once and are then skipped on re-import (idempotent).
+            builder.AddRow("10001", "Example Employee", UsersLoc["GenderMale"], string.Empty,
+                "Employee", UsersLoc["StatusActive"]);
+            builder.AddRow("10002", "Example Customer", UsersLoc["GenderFemale"], "Example Group",
+                "Customer", UsersLoc["StatusActive"]);
+
+            await JS.InvokeVoidAsync("takDownload.csv", "takone-users-import-template.csv", builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Exports the LAST product-import run's per-row ledger as a CSV (row
+    /// number, product name, outcome, failure message) — the audit trail
+    /// counterpart of the on-screen report, so an import run can be filed
+    /// or diffed later.
+    /// </summary>
+    private async Task DownloadProductImportReportAsync()
+    {
+        if (_productImportRows is not { Count: > 0 })
+        {
+            return; // nothing to report — the button isn't rendered anyway
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColReportRow"],
+                ProductsLoc["ColName"],
+                Loc["ColReportOutcome"],
+                Loc["ColReportMessage"]);
+
+            foreach (var row in _productImportRows)
+            {
+                builder.AddRow(
+                    row.RowNumber,
+                    row.Name,
+                    GetProductImportOutcomeLabel(row.Outcome),
+                    row.Message);
+            }
+
+            var fileName = $"takone-product-import-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Exports the LAST user-import run's per-row ledger as a CSV (row
+    /// number, worker ID, outcome, failure message). Mirrors the product
+    /// report so both cards behave alike.
+    /// </summary>
+    private async Task DownloadUserImportReportAsync()
+    {
+        if (_userImportRows is not { Count: > 0 })
+        {
+            return;
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColReportRow"],
+                UsersLoc["ColWorkerId"],
+                Loc["ColReportOutcome"],
+                Loc["ColReportMessage"]);
+
+            foreach (var row in _userImportRows)
+            {
+                builder.AddRow(
+                    row.RowNumber,
+                    row.WorkerId,
+                    GetUserImportOutcomeLabel(row.Outcome),
+                    row.Message);
+            }
+
+            var fileName = $"takone-user-import-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Localized outcome label for the product-import report CSV — the
+    /// same strings the on-screen badges use, so the file and the page
+    /// tell one story.
+    /// </summary>
+    private string GetProductImportOutcomeLabel(ProductImportRowOutcome outcome) => outcome switch
+    {
+        ProductImportRowOutcome.Created => Loc["ImportOutcomeCreated"],
+        ProductImportRowOutcome.Updated => Loc["ImportOutcomeUpdated"],
+        _ => Loc["ImportOutcomeFailed"]
+    };
+
+    /// <summary>
+    /// Localized outcome label for the user-import report CSV (see the
+    /// product variant's remark).
+    /// </summary>
+    private string GetUserImportOutcomeLabel(UserImportRowOutcome outcome) => outcome switch
+    {
+        UserImportRowOutcome.Created => Loc["ImportOutcomeCreated"],
+        UserImportRowOutcome.Skipped => Loc["ImportOutcomeSkipped"],
+        _ => Loc["ImportOutcomeFailed"]
+    };
 
     /// <summary>
     /// Formats a byte count as a compact human size ("4.2 MB") — the

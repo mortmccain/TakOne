@@ -422,4 +422,34 @@
   <data name="PictureUploadErrorStorage" xml:space="preserve">
     <value>ذخیرهٔ فایل ناموفق بود.</value>
   </data>
+  <data name="DownloadTemplateButton" xml:space="preserve">
+    <value>دانلود نمونهٔ CSV</value>
+  </data>
+  <data name="DownloadReportButton" xml:space="preserve">
+    <value>دانلود گزارش</value>
+  </data>
+  <data name="ImportOutcomeFailed" xml:space="preserve">
+    <value>ناموفق</value>
+  </data>
+  <data name="DownloadError" xml:space="preserve">
+    <value>دانلود فایل ممکن نشد. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="ColReportRow" xml:space="preserve">
+    <value>سطر</value>
+  </data>
+  <data name="ColReportOutcome" xml:space="preserve">
+    <value>نتیجه</value>
+  </data>
+  <data name="ColReportMessage" xml:space="preserve">
+    <value>پیام</value>
+  </data>
+  <data name="UserImportPasswordHint" xml:space="preserve">
+    <value>رمز پیش‌فرض کاربران جدید: "@" + شمارهٔ کارمندی وارونه + "Temp" — کاربر باید آن را در اولین ورود تغییر دهد.</value>
+  </data>
+  <data name="UserImportPasswordExample" xml:space="preserve">
+    <value>12345 → @54321Temp</value>
+  </data>
+  <data name="PictureRemoveFile" xml:space="preserve">
+    <value>حذف {0} از انتخاب</value>
+  </data>
 </root>
