@@ -4,16 +4,20 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Common.Models;
+using TakOne.Application.Dashboard.DTOs;
 using TakOne.Application.Dashboard.Queries.GetDashboardStats;
 using TakOne.Application.Dashboard.Specifications;
 using TakOne.Application.Sales.Specifications;
 using TakOne.Domain.Categories.Entities;
+using TakOne.Domain.Products.Entities;
 using TakOne.Domain.Sales.Entities;
 using TakOne.Domain.Sales.Enums;
 using TakOne.Domain.Sales.ValueObjects;
 using TakOne.SharedKernel.Common;
 using TakOne.SharedKernel.ValueObjects;
 using TakOne.Testing;
+using TakOne.Testing.Builders;
 using Xunit;
 
 namespace TakOne.Application.Tests.Dashboard.Queries;
@@ -80,6 +84,7 @@ public class GetDashboardStatsQueryHandlerTests
         FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IProductRepository productRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
         BuildMocks(bool authenticated, params string[] roles)
         => BuildMocksCore(authenticated, userId: null, fullName: "Test User", roles);
@@ -89,6 +94,7 @@ public class GetDashboardStatsQueryHandlerTests
         FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IProductRepository productRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
         BuildMocks(bool authenticated, Guid? userId, params string[] roles)
         => BuildMocksCore(authenticated, userId, fullName: "Test User", roles);
@@ -98,6 +104,7 @@ public class GetDashboardStatsQueryHandlerTests
         FakeSaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IProductRepository productRepository,
         ILogger<GetDashboardStatsQueryHandler> logger)
         BuildMocksCore(bool authenticated, Guid? userId, string fullName, string[] roles)
     {
@@ -123,9 +130,17 @@ public class GetDashboardStatsQueryHandlerTests
         userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
             .Returns(0);
 
+        // Default: no low-stock products. Individual tests override via
+        // productRepo.GetLowStockProductsAsync(...).Returns(...) to seed
+        // the restock alert (see the LowStock tests below).
+        var productRepo = Substitute.For<IProductRepository>();
+        productRepo.GetLowStockProductsAsync(
+                Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<Domain.Products.Entities.Product>());
+
         var logger = Substitute.For<ILogger<GetDashboardStatsQueryHandler>>();
 
-        return (currentUser, saleRepo, categoryRepo, userRepo, logger);
+        return (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger);
     }
 
     // Builds a query. The query carries NO caller-identity fields — the
@@ -215,13 +230,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUnauthenticated_ReturnsAuthenticationRequired()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: false, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -238,13 +253,13 @@ public class GetDashboardStatsQueryHandlerTests
         // Arrange
         // IsAuthenticated=true but UserId=Guid.Empty — the second branch of
         // the auth check rejects it (defense-in-depth).
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, userId: Guid.Empty, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -256,13 +271,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUnauthenticated_LogsWarning()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: false, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -286,13 +301,13 @@ public class GetDashboardStatsQueryHandlerTests
         // roles return false. This is the exact shape a spoofing
         // attacker would NOT be able to produce (they can't set server
         // claims), proving the spoofing hole is closed.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Customer);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -310,13 +325,13 @@ public class GetDashboardStatsQueryHandlerTests
         // An Employee (no Admin/Manager) sees only sales they approved.
         // Round 6: the handler passes the SAME scope spec to EVERY
         // aggregation method — the fake records them all.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Employee);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert — every recorded spec is the approver scope.
@@ -329,13 +344,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUserIsEmployee_SetsIsEmployeeScopedTrue()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Employee);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -350,13 +365,13 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // Admin → company-wide overview, no approver filter.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -369,13 +384,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUserIsAdmin_SetsIsEmployeeScopedFalse()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -389,13 +404,13 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithNoSales_AllKpisAreZero()
     {
         // Arrange — an unseeded fake (no sales anywhere).
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -420,7 +435,7 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithIrrSale_SetsIsTomanTrueAndDisplayCurrencyToToman()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         // A pending sale in IRR currency — the handler detects the
         // display currency from the recent-sales slice (Round 6) and
@@ -430,7 +445,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -446,14 +461,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithUsdSale_SetsIsTomanFalseAndDisplayCurrencyToUsd()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         saleRepo.Seed(BuildPendingSale(new Money(100m, USD)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -469,14 +484,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithPendingSale_IncludesInTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         saleRepo.Seed(BuildPendingSale(new Money(2000m, IRR))); // 200 Toman after ÷10.
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -491,14 +506,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithDraftSale_ExcludesFromTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         saleRepo.Seed(BuildDraftSale(new Money(2000m, IRR)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -518,14 +533,14 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WithCancelledSale_ExcludesFromTotalRevenue()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         saleRepo.Seed(BuildCancelledSale(new Money(2000m, IRR)));
         var query = BuildQuery();
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -542,7 +557,7 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_StatusBreakdown_IncludesInvoicedAndOrdersDescending()
     {
         // Arrange — 2 pending, 1 approved, 3 invoiced, 1 cancelled.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
 
         Sale MakeInvoiced(decimal amount)
@@ -566,7 +581,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert — one row per present status, Invoiced INCLUDED (the
@@ -593,7 +608,7 @@ public class GetDashboardStatsQueryHandlerTests
         // Build 8 pending sales, each with ONE line item for a distinct
         // product name. The handler's TopProducts takes the SQL GROUP
         // BY's top 7 by amount. The 8th product must be absent.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
@@ -620,7 +635,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -650,7 +665,7 @@ public class GetDashboardStatsQueryHandlerTests
         // comes straight from the (fake) repo's TOP 6 — the handler
         // just projects it; the fake computes the same TOP 6 the SQL
         // ORDER BY ... DESC LIMIT 6 produces.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         var sales = new List<Sale>();
         for (var i = 0; i < 8; i++)
@@ -675,7 +690,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -698,7 +713,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange — sales at three well-separated instants: today,
         // yesterday, and five days into last month.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var today = DateTime.UtcNow.Date;
@@ -722,7 +737,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert — today vs yesterday (counts, status-filtered).
@@ -755,12 +770,12 @@ public class GetDashboardStatsQueryHandlerTests
         // behavior — every Period* field stays zero and IsPeriodScoped is
         // false. This is the back-compat contract for every existing
         // caller.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
         saleRepo.Seed(BuildPendingSale(new Money(100m, "IRR")));
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeFalse();
@@ -787,7 +802,7 @@ public class GetDashboardStatsQueryHandlerTests
         // Window [now-10d, now); previous window [now-20d, now-10d). Seeded
         // sales: two in the window, one in the previous window, one far
         // outside both. Also verifies the window echo fields.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -807,7 +822,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeTrue();
@@ -829,7 +844,7 @@ public class GetDashboardStatsQueryHandlerTests
         // The period KPIs apply the SAME status filters as their
         // fixed-anchor counterparts: orders/purchase exclude Cancelled;
         // approved/invoiced cards count only their own statuses.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -854,7 +869,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.PeriodOrdersCount.Should().Be(2,
@@ -870,7 +885,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // FromUtc set + ToUtc null → the window is [from, now): a sale
         // submitted an hour ago counts, one before the bound doesn't.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -885,7 +900,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.IsPeriodScoped.Should().BeTrue();
@@ -900,7 +915,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Degenerate/inverted windows never throw — same semantics as the
         // sales list's date filter.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -908,7 +923,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var act = () => GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = now.AddDays(-1), ToUtc = now.AddDays(-7) },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         var result = await act();
@@ -930,7 +945,7 @@ public class GetDashboardStatsQueryHandlerTests
         // A 3-day Tehran-aligned window (the shape every razor preset
         // sends): the chart series must carry one point per Tehran DAY
         // of the window, plus the equal-length preceding window.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -960,7 +975,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // The period series has one point per Tehran day (3), each
@@ -993,7 +1008,7 @@ public class GetDashboardStatsQueryHandlerTests
         // In period mode the top-products card drops sales outside the
         // window (the fixed-mode card would use last-30-days), and the
         // top-employees card re-anchors from "this month" to the window.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var now = DateTime.UtcNow;
@@ -1020,7 +1035,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
             new GetDashboardStatsQuery { FromUtc = from, ToUtc = to },
-            currentUser, saleRepo, categoryRepo, userRepo, logger,
+            currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         var product = result.Value.TopProducts.Should().ContainSingle().Which;
@@ -1039,7 +1054,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Fixed mode (no window): the card covers the current month; the
         // ranks follow the amount ordering.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var carolId = Guid.Parse("feedfeed-feed-feed-feed-feedfeedfeed");
@@ -1066,7 +1081,7 @@ public class GetDashboardStatsQueryHandlerTests
         saleRepo.Seed(new List<Sale> { aliceSale, bobSale, carolSale });
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.TopEmployees.Select(e => (e.FullName, e.Rank)).Should()
@@ -1080,7 +1095,7 @@ public class GetDashboardStatsQueryHandlerTests
     [Fact]
     public async Task HandleAsync_OldestPendingSaleAge_ReflectsTheOldestPendingAnchor()
     {
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger) =
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger) =
             BuildMocks(authenticated: true, Roles.Admin);
 
         var oldest = BuildPendingSale(new Money(10m, IRR));
@@ -1091,7 +1106,7 @@ public class GetDashboardStatsQueryHandlerTests
         saleRepo.Seed(new List<Sale> { oldest, newest });
 
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, logger,
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         result.Value.OldestPendingSaleAgeMinutes.Should().BeGreaterThan(170)
@@ -1110,7 +1125,7 @@ public class GetDashboardStatsQueryHandlerTests
     {
         // Arrange
         // userRepo throws — handler catches and defaults ActiveCustomersCount to 0.
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
@@ -1118,7 +1133,7 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         var result = await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
@@ -1132,7 +1147,7 @@ public class GetDashboardStatsQueryHandlerTests
     public async Task HandleAsync_WhenUserRepoThrows_LogsWarning()
     {
         // Arrange
-        var (currentUser, saleRepo, categoryRepo, userRepo, logger)
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
             = BuildMocks(authenticated: true, Roles.Admin);
         userRepo.GetActiveCustomerCountAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<int>(new InvalidOperationException("DB down")));
@@ -1140,11 +1155,107 @@ public class GetDashboardStatsQueryHandlerTests
 
         // Act
         await GetDashboardStatsQueryHandler.HandleAsync(
-            query, currentUser, saleRepo, categoryRepo, userRepo, logger,
+            query, currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
             CancellationToken.None);
 
         // Assert
         // The handler should log a warning (with the exception attached).
+        logger.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<Arg.AnyType>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<Arg.AnyType, Exception?, string>>());
+    }
+
+    // ── Restock alert (low-stock products) ───────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_AdminWithLowStockProducts_PopulatesRestockAlert()
+    {
+        // Arrange — the repo returns the most-critical items first (the
+        // stock-ascending ORDER BY is the repo's contract, pinned by the
+        // integration suite); the handler only maps 1:1 into the DTO.
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Admin);
+
+        var outOfStock = new ProductBuilder().WithName("Gamma").WithStock(0).Build();
+        var lowStock = new ProductBuilder().WithName("Alpha").WithStock(4).Build();
+        productRepo.GetLowStockProductsAsync(
+                ProductStockThresholds.LowStock,
+                DashboardStatsDto.LowStockAlertMaxItems,
+                Arg.Any<CancellationToken>())
+            .Returns(new List<Product> { outOfStock, lowStock });
+
+        // The UNCAPPED total — larger than the list (the capped case).
+        productRepo.CountLowStockAsync(
+                ProductStockThresholds.LowStock,
+                Arg.Any<CancellationToken>())
+            .Returns(9);
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
+            CancellationToken.None);
+
+        // Assert — mapped 1:1, order preserved (out-of-stock leads), and
+        // the TRUE total rides along (the subtitle's "9 — showing 6").
+        result.IsSuccess.Should().BeTrue();
+        result.Value.LowStockProducts.Should().HaveCount(2);
+        result.Value.LowStockProducts[0].Id.Should().Be(outOfStock.Id);
+        result.Value.LowStockProducts[0].Name.Should().Be("Gamma");
+        result.Value.LowStockProducts[0].StockQuantity.Should().Be(0);
+        result.Value.LowStockProducts[1].Id.Should().Be(lowStock.Id);
+        result.Value.LowStockProducts[1].Name.Should().Be("Alpha");
+        result.Value.LowStockProducts[1].StockQuantity.Should().Be(4);
+        result.Value.LowStockProductTotalCount.Should().Be(9);
+    }
+
+    [Fact]
+    public async Task HandleAsync_EmployeeScoped_DoesNotQueryLowStock()
+    {
+        // Arrange — an Employee (no Admin/Manager role) gets the
+        // personal-performance dashboard: stock data is invisible to
+        // employees everywhere in the app, so the restock alert must not
+        // even be QUERIED (not just hidden).
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Employee);
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
+            CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsEmployeeScoped.Should().BeTrue();
+        result.Value.LowStockProducts.Should().BeEmpty();
+        await productRepo.DidNotReceiveWithAnyArgs().GetLowStockProductsAsync(
+            default, default, default);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LowStockQueryFails_ReturnsEmptyAlertWithWarning()
+    {
+        // Arrange — a stock-query failure must NEVER take the dashboard
+        // down: success result, empty alert, one warning log entry (the
+        // same best-effort contract as the active-customer count).
+        var (currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger)
+            = BuildMocks(authenticated: true, Roles.Manager);
+
+        productRepo.GetLowStockProductsAsync(
+                Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<List<Product>>(
+                new InvalidOperationException("stock query blew up")));
+
+        // Act
+        var result = await GetDashboardStatsQueryHandler.HandleAsync(
+            BuildQuery(), currentUser, saleRepo, categoryRepo, userRepo, productRepo, logger,
+            CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.LowStockProducts.Should().BeEmpty();
         logger.Received(1).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),

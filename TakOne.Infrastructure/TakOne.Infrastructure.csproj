@@ -35,6 +35,21 @@
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
   </ItemGroup>
 
+  <!--
+    Test seam for the backup service's path/command-text helpers.
+
+    DatabaseBackupHostedService.BuildBackupCommandText / IsValidBackupPath /
+    ResolveServerPath are the SECURITY-RELEVANT boundary between
+    configuration and the interpolated BACKUP DATABASE command text (see the
+    CA2100 suppression on BuildBackupCommandText). They are unit-tested by
+    TakOne.Infrastructure.Tests (DatabaseBackupServerPathTests) — internal
+    (not private) + this InternalsVisibleTo entry is the minimal surface
+    exposed for that; everything else on the service stays private.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="TakOne.Infrastructure.Tests" />
+  </ItemGroup>
+
         
         
         <!--

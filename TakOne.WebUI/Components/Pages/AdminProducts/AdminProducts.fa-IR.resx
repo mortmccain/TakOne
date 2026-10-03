@@ -231,4 +231,12 @@
     <value>ردیف در صفحه</value>
   </data>
 
+  <data name="LowStockFilterChip" xml:space="preserve">
+    <value>فقط کم‌موجوها</value>
+    <comment>چیپ تغییر وضعیتِ پالایش سریع در سربرگ صفحه: پالایش ستون موجودی (در حد آستانهٔ مشترک یا کمتر) را اعمال می‌کند.</comment>
+  </data>
+  <data name="LowStockFilterTooltip" xml:space="preserve">
+    <value>نمایش کالاهایی با {0} عدد یا کمتر موجودی</value>
+    <comment>راهنمای چیپ؛ {0} = آستانهٔ کم‌موجویی بومی‌شده.</comment>
+  </data>
 </root>

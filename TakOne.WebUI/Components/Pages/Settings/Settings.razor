@@ -1761,6 +1761,16 @@
                                               Variant="Variant.Outlined"
                                               Disabled="@(_isTriggeringBackup)"
                                               Click="@(() => LoadBackupStatusAsync())" />
+                                @* Run-report CSV — the persisted audit ledger
+                                   as a file (QA-4 handover item). Disabled when
+                                   no run has completed yet; the data is the
+                                   ALREADY-LOADED snapshot, so no extra query. *@
+                                <RadzenButton Text="@Loc["BackupRunReportButton"]"
+                                              Icon="download"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(backup.RunHistory is not { Count: > 0 })"
+                                              Click="@DownloadBackupRunReportAsync" />
                             </div>
                         }
                     </RadzenCard>
@@ -2528,6 +2538,68 @@
         catch (Exception)
         {
             // Polling is cosmetic — swallow and leave the last snapshot.
+        }
+    }
+
+    /// <summary>
+    /// Builds and downloads the backup run-history report as CSV (the
+    /// persisted JSONL ledger in file form — a portable audit artifact
+    /// for ticketing/ops handovers). Columns are machine-friendly:
+    /// UTC ISO-8601 timestamps, raw duration seconds, invariant size
+    /// bytes; the outcome + trigger cells reuse the card's localized
+    /// labels (same convention as the grid exports' status columns).
+    /// Data source is the ALREADY-LOADED status snapshot — the ledger
+    /// is append-only and this page is its only reader, so a re-query
+    /// would only race a run in progress for zero benefit.
+    /// </summary>
+    private async Task DownloadBackupRunReportAsync()
+    {
+        if (_backupStatus?.RunHistory is not { Count: > 0 } runs)
+        {
+            return; // the button is disabled in this state — belt + braces
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["BackupRunReportColStarted"],
+                Loc["BackupRunReportColFinished"],
+                Loc["BackupRunReportColDuration"],
+                Loc["BackupRunReportColOutcome"],
+                Loc["BackupRunReportColTrigger"],
+                Loc["BackupRunReportColFile"],
+                Loc["BackupRunReportColSize"],
+                Loc["BackupRunReportColError"]);
+
+            // Runs are stored newest-first; the REPORT reads chronologically
+            // (oldest→newest) so the audit trail unfolds in execution order.
+            foreach (var run in runs.Reverse())
+            {
+                var rawSeconds = (decimal)(run.FinishedUtc - run.StartedUtc).TotalSeconds;
+                var durationSeconds = rawSeconds >= 0 ? decimal.Round(rawSeconds, 1) : 0m;
+
+                builder.AddRow(
+                    run.StartedUtc.ToString("u", CultureInfo.InvariantCulture),
+                    run.FinishedUtc.ToString("u", CultureInfo.InvariantCulture),
+                    durationSeconds,                     // invariant RAW seconds (CsvBuilder contract)
+                    run.Succeeded ? Loc["BackupOutcomeSuccess"] : Loc["BackupOutcomeFailed"],
+                    run.WasManual ? Loc["BackupRunManual"] : Loc["BackupRunScheduled"],
+                    run.FileName,                        // may be empty on pre-file failures
+                    run.SizeBytes,                       // invariant RAW bytes
+                    run.Error);                          // empty on success
+            }
+
+            var fileName = $"takone-backup-runs-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(Loc["BackupRunReportDone", runs.Count], summary: Loc["PageHeading"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — same policy
+            // as every other download on this page.
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
         }
     }
 

@@ -230,4 +230,12 @@
     <value>rows per page</value>
   </data>
 
+  <data name="LowStockFilterChip" xml:space="preserve">
+    <value>Low stock only</value>
+    <comment>"Quick-filter toggle chip in the page header: applies the Stock column filter (at/below the shared low-stock threshold).</comment>
+  </data>
+  <data name="LowStockFilterTooltip" xml:space="preserve">
+    <value>Show products with {0} or fewer items in stock</value>
+    <comment>Chip hover tooltip; {0} = the localized low-stock threshold.</comment>
+  </data>
 </root>

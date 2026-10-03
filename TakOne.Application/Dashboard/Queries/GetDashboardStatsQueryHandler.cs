@@ -3,6 +3,7 @@ using Ardalis.Specification;
 using Microsoft.Extensions.Logging;
 using TakOne.Application.Common.Authorization;
 using TakOne.Application.Common.Interfaces;
+using TakOne.Application.Common.Models;
 using TakOne.Application.Dashboard.DTOs;
 using TakOne.Application.Dashboard.Specifications;
 using TakOne.Application.Sales.Specifications;
@@ -102,6 +103,7 @@ public sealed class GetDashboardStatsQueryHandler
         ISaleRepository saleRepository,
         ICategoryRepository categoryRepository,
         IUserRepository userRepository,
+        IProductRepository productRepository,
         ILogger<GetDashboardStatsQueryHandler> logger,
         CancellationToken cancellationToken
         )
@@ -820,6 +822,52 @@ public sealed class GetDashboardStatsQueryHandler
                 (ex, "GetDashboardStats: failed to load active customer count. Defaulting to 0.");
 
             dto.ActiveCustomersCount = 0;
+        }
+
+        // ------------------------------------------------------------------
+        // 19. Restock alert (company-wide scope only). Active products at
+        //     or below ProductStockThresholds.LowStock, stock-ascending,
+        //     capped at the DTO's LowStockAlertMaxItems. Loaded here (last,
+        //     best-effort) for the same reason as the customer count: a
+        //     stock-query failure must never take the whole dashboard
+        //     down. Employee-scoped dashboards skip the query entirely —
+        //     employees never see stock data anywhere in the app, and
+        //     their dashboard is a personal-performance view.
+        // ------------------------------------------------------------------
+        if (!isEmployee)
+        {
+            try
+            {
+                var lowStockProducts = await productRepository.GetLowStockProductsAsync(
+                    ProductStockThresholds.LowStock,
+                    DashboardStatsDto.LowStockAlertMaxItems,
+                    cancellationToken);
+
+                dto.LowStockProducts = lowStockProducts
+                    .Select(p => new LowStockProductDto
+                    {
+                        Id = p.Id,
+                        Name = p.Name,
+                        StockQuantity = p.StockQuantity
+                    })
+                    .ToList();
+
+                // The UNCAPPED total (the list is capped at
+                // LowStockAlertMaxItems) — tells the banner's subtitle
+                // whether more items exist beyond the cap. A stock
+                // movement between the two queries can momentarily make
+                // this smaller than the list count; the UI maxes them.
+                dto.LowStockProductTotalCount = await productRepository.CountLowStockAsync(
+                    ProductStockThresholds.LowStock,
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Log and surface an empty alert — the KPI cards and
+                // charts (the dashboard's core value) still render.
+                logger.LogWarning
+                    (ex, "GetDashboardStats: failed to load low-stock products. Defaulting to an empty alert.");
+            }
         }
 
         return Result<DashboardStatsDto>.Success(dto);
