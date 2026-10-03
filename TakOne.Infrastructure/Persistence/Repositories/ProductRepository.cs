@@ -521,6 +521,19 @@ public sealed class ProductRepository : IProductRepository
     }
 
     /// <inheritdoc />
+    public async Task<Product?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        // Name-keyed lookup for the CSV import's upsert-by-name. TRACKED
+        // (same policy as GetByIdAsync) — the import mutates the returned
+        // aggregate (price/stock/category/picture). Price + PurchaseLimits
+        // auto-load (owned). FirstOrDefault, not SingleOrDefault: product
+        // names are unique by database index, but FirstOrDefault keeps a
+        // legacy duplicate (pre-index data) from crashing the import — the
+        // first match wins, mirroring the upsert's "at most one" contract.
+        return await _db.Products.FirstOrDefaultAsync(p => p.Name == name, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task AddAsync(Product product, CancellationToken cancellationToken = default)
     {
         // AddAsync queues the entity for INSERT on the next SaveChangesAsync.

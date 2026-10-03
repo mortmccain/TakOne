@@ -272,6 +272,191 @@ internal sealed class LocalFileStorage : IFileStorage
     }
 
     /// <summary>
+    /// Name-preserving bulk-restore variant of <see cref="SaveAsync"/> — see
+    /// <see cref="IFileStorage.SaveWithOriginalNameAsync"/> for the full
+    /// contract and the WHY-PRESERVE-THE-NAME rationale.
+    ///
+    /// IMPLEMENTATION: reuses <see cref="SaveAsync"/>'s entire validation
+    /// pipeline verbatim (magic-byte sniff, declared-vs-sniffed match,
+    /// extension forcing, size limit, temp-then-rename atomicity). The only
+    /// difference is the final file name: instead of a fresh random hex
+    /// string, the SANITIZED caller-supplied base name + the sniffed
+    /// canonical extension, and the rename uses overwrite:true so a
+    /// re-uploaded restore file replaces its own earlier copy.
+    /// </summary>
+    public async Task<string> SaveWithOriginalNameAsync(
+        Stream content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("fileName is required.", nameof(fileName));
+
+        // ── Step 1+2: identical sniff/verify/extension-forcing pipeline as
+        // SaveAsync (shared code path for the security-critical parts).
+        var sniffBuffer = new byte[MagicByteSniffLength];
+        var sniffedBytesRead = await content.ReadAsync(
+            sniffBuffer.AsMemory(0, MagicByteSniffLength),
+            cancellationToken);
+        var sniffedContentType = SniffContentType(sniffBuffer, sniffedBytesRead);
+
+        if (sniffedContentType is null)
+        {
+            _logger.LogWarning(
+                "SaveWithOriginalName: rejecting upload — unrecognized magic bytes. File name: {FileName}",
+                fileName);
+            throw new InvalidDataException("Unrecognized file type.");
+        }
+
+        if (!string.Equals(sniffedContentType, contentType, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "SaveWithOriginalName: rejecting upload — content-type mismatch. Declared={Declared}, Sniffed={Sniffed}. File name: {FileName}",
+                contentType, sniffedContentType, fileName);
+            throw new InvalidDataException(
+                $"Declared content type '{contentType}' does not match the actual file content '{sniffedContentType}'.");
+        }
+
+        // The on-disk EXTENSION always comes from the sniffed type — the
+        // caller cannot smuggle a double extension or an executable
+        // extension past the sniffing gate ("evil.jpg.html" lands as
+        // "evil.jpg" + forced ".html"→".jpg" replacement, see below).
+        var extension = SanitizeExtension(sniffedContentType);
+
+        // ── Step 3: sanitize the NAME (base part only — the extension is
+        // forced from the sniffed type, so strip any client-side
+        // extension first, then rebuild as {sanitizedBase}.{extension}).
+        var finalFileName = SanitizePreservedFileName(fileName, extension);
+
+        // ── Step 4: ensure the target directory exists (idempotent).
+        Directory.CreateDirectory(_productImagesPath);
+
+        var finalFilePath = Path.Combine(_productImagesPath, finalFileName);
+        var tempFilePath = finalFilePath + ".tmp";
+
+        // ── Step 5: stream the bytes through the same bounded copier as
+        // SaveAsync (sniffed prefix + BoundedStream remainder, enforcing
+        // the max size as we go).
+        try
+        {
+            await using (var fileStream = new FileStream(
+                             tempFilePath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             CopyBufferSize,
+                             useAsync: true))
+            {
+                await fileStream.WriteAsync(
+                    sniffBuffer.AsMemory(0, sniffedBytesRead),
+                    cancellationToken);
+
+                if (sniffedBytesRead > _maxImageSizeBytes)
+                {
+                    throw new InvalidDataException(
+                        $"File exceeds the maximum allowed size of {_maxImageSizeBytes} bytes.");
+                }
+
+                var remainingStream = new BoundedStream(content, _maxImageSizeBytes - sniffedBytesRead);
+                await remainingStream.CopyToAsync(fileStream, CopyBufferSize, cancellationToken);
+            }
+
+            // ── Step 6: atomic rename WITH OVERWRITE. A file with the same
+            // name is replaced (bulk-restore idempotency — see the interface
+            // doc). File.Move(src, dst, overwrite) is not atomic on all
+            // platforms, but the temp-then-move pattern still guarantees no
+            // HALF-WRITTEN file is ever visible under the original name.
+            File.Move(tempFilePath, finalFilePath, overwrite: true);
+
+            _logger.LogInformation(
+                "Saved name-preserving upload to {Path} ({ContentType}, requested name: {FileName})",
+                finalFilePath, sniffedContentType, fileName);
+
+            // ── Step 7: same public URL shape as SaveAsync.
+            return $"/uploads/products/{finalFileName}";
+        }
+        catch
+        {
+            try { if (File.Exists(tempFilePath)) File.Delete(tempFilePath); }
+            catch { /* swallowed — original exception is more important */ }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Sanitizes a caller-supplied file name for
+    /// <see cref="SaveWithOriginalNameAsync"/>: strips every character
+    /// outside <c>[A-Za-z0-9._-]</c> from the BASE name (everything up to
+    /// the final dot), removes any client-side extension, then rebuilds the
+    /// name as <c>{sanitizedBase}.{forcedExtension}</c>.
+    ///
+    /// REJECTION (not truncation/repair) when:
+    ///   - the sanitized base is empty (e.g. "(((.jpg" or "…/evil.jpg"),
+    ///   - the final name exceeds the 128-character cap (see the
+    ///     <c>MaxPreservedFileNameLength</c> constant inside) — a silent
+    ///     truncation could collide two files.
+    ///
+    /// WHY STRIP RATHER THAN ENCODE: the names that matter here are
+    /// SaveAsync's own 32-hex-char outputs (pure [0-9a-f]), which pass
+    /// through untouched. Anything exotic from a hand-picked upload set
+    /// degrades to its safe subset — "My Photo (1)!.jpg" → "MyPhoto1.jpg" —
+    /// which keeps the API total (never throws for weird-but-harmless
+    /// names) while remaining collision-auditable by the caller.
+    /// </summary>
+    /// <param name="fileName">The raw caller-supplied file name.</param>
+    /// <param name="forcedExtension">
+    /// The canonical extension for the SNIFFED content type (jpg/png/webp)
+    /// — always wins over any client-side extension.
+    /// </param>
+    private static string SanitizePreservedFileName(string fileName, string forcedExtension)
+    {
+        const int MaxPreservedFileNameLength = 128;
+
+        // Take the base name: strip everything from the LAST dot on. If
+        // there's no dot, the whole string is the base. Path separators
+        // are stripped by the allowlist below, so a "dir/evil.jpg" input
+        // degrades to "direvil" + forced extension — it can never escape
+        // the products directory.
+        var lastDot = fileName.LastIndexOf('.');
+        var baseName = lastDot > 0 ? fileName[..lastDot] : fileName;
+
+        // Allowlist pass: keep only ASCII letters, digits, dots, dashes,
+        // underscores. This removes separators, whitespace, Unicode
+        // bi-di tricks, control chars, and everything else dangerous.
+        var sb = new System.Text.StringBuilder(baseName.Length);
+        foreach (var ch in baseName)
+        {
+            if ((ch >= 'a' && ch <= 'z')
+                || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9')
+                || ch == '.' || ch == '-' || ch == '_')
+            {
+                sb.Append(ch);
+            }
+        }
+
+        var sanitizedBase = sb.ToString().Trim('.');
+
+        if (sanitizedBase.Length == 0)
+        {
+            throw new InvalidDataException(
+                $"The file name '{fileName}' has no usable base name after sanitization.");
+        }
+
+        var finalName = $"{sanitizedBase}.{forcedExtension}";
+
+        if (finalName.Length > MaxPreservedFileNameLength)
+        {
+            throw new InvalidDataException(
+                $"The file name '{fileName}' exceeds the {MaxPreservedFileNameLength}-character limit after sanitization.");
+        }
+
+        return finalName;
+    }
+
+    /// <summary>
     /// Hard-deletes a previously-stored file by its public URL. See
     /// <see cref="IFileStorage.DeleteAsync"/> for the contract.
     ///

@@ -124,6 +124,12 @@
   <data name="ColStatus" xml:space="preserve">
     <value>Status</value>
   </data>
+  <data name="ColPictureDirectory" xml:space="preserve">
+    <value>Picture directory</value>
+  </data>
+  <data name="ColPictureFileName" xml:space="preserve">
+    <value>Picture file name</value>
+  </data>
   <data name="ColActions" xml:space="preserve">
     <value>Actions</value>
   </data>

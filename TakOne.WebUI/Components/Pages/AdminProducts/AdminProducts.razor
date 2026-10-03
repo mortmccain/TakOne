@@ -273,18 +273,21 @@
                filters (all pages, capped at 2,000) with the same filters +
                sort the grid shows. Previously it could only ship the ≤100
                loaded rows. Admin-only page ⇒ no extra authorization needed
-               beyond the page's [Authorize]. *@
+               beyond the page's [Authorize].
+               NOTE (empty-button fix): RadzenButton renders ChildContent
+               EXCLUSIVELY when set — the old `@if (_isExporting)` child
+               block always produced a non-null (empty) RenderFragment,
+               so the Text + Icon never rendered and the button looked
+               blank. The built-in IsBusy/BusyText parameters now provide
+               the exporting spinner without ChildContent. *@
             <RadzenButton Text="@Loc["ExportCsvButton"]"
                           Icon="download"
                           ButtonStyle="ButtonStyle.Secondary"
                           Variant="Variant.Outlined"
-                          Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
-                          Click="@ExportProductsCsvAsync">
-                @if (_isExporting)
-                {
-                    <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
-                }
-            </RadzenButton>
+                          Disabled="@(_isLoading || _totalCount == 0)"
+                          IsBusy="@_isExporting"
+                          BusyText="@Loc["ExportCsvButton"]"
+                          Click="@ExportProductsCsvAsync" />
             <RadzenButton Text="@Loc["CreateProductButton"]"
                           Icon="add"
                           ButtonStyle="ButtonStyle.Primary"
@@ -313,54 +316,6 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state (no products at all, or none matching the filters) ──
-       _totalCount is the SERVER-side count of every row matching the
-       active filters — zero here means "no products exist for this filter
-       combination". When NO filter is active and the count is zero, this
-       is a fresh install with no products yet — the "create the first
-       product" state. When a filter IS active and matches zero rows, a
-       targeted message (plus the Clear button) beats a bare "no products
-       found". *@
-    else if (_totalCount == 0 && !_isLoading)
-    {
-        @if (HasActiveFilters)
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="filter_alt_off"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
-                                  Icon="restart_alt"
-                                  ButtonStyle="ButtonStyle.Secondary"
-                                  Variant="Variant.Outlined"
-                                  Click="@ClearAllFiltersAsync" />
-                </RadzenStack>
-            </RadzenCard>
-        }
-        else
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="inventory_2"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitle"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessage"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenButton Text="@Loc["CreateFirstProductButton"]"
-                                  Icon="add"
-                                  ButtonStyle="ButtonStyle.Primary"
-                                  Variant="Variant.Filled"
-                                  Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
-                </RadzenStack>
-            </RadzenCard>
-        }
-    }
-
     @* ── Product table (Round 6 — Radzen LoadData, server-driven) ──
        Data + Count + LoadData: the grid fires LoadData on mount, on pager
        clicks, on sort-header clicks, and on filter changes; the page
@@ -374,7 +329,15 @@
        (defense against stale persisted reorder state from a prior session).
        IMPORTANT: do NOT wrap any <RadzenDataGridColumn> in <AuthorizeView> —
        that re-orders columns at render time. See Sales.razor's comment for
-       the full root-cause explanation. *@
+       the full root-cause explanation.
+
+       EMPTY RESULTS (filtered to nothing): the grid stays mounted and
+       renders its header + FILTER ROW + EmptyText — the search inputs
+       stay visible and editable so the user can fix the over-narrow
+       filter in place — and the empty-state message card + Clear-filters
+       button render BELOW the grid (see the block after the veil). The
+       pre-Task-7 behavior unmounted the grid entirely, which threw away
+       both the table shell and the search bar — disorienting. *@
     else
     {
         <div class="admin-products-grid-wrap">
@@ -707,6 +670,56 @@
                 }
             }
         </div>
+
+        @* ── Empty state (BELOW the grid — Task 7) ──
+           _totalCount is the SERVER-side count of every row matching the
+           active filters — zero here means "no products exist for this
+           filter combination" (and _products not null means a load
+           actually completed; null = never loaded / retry remount, where
+           the veil is still up). The grid above stays mounted with its
+           filter row visible, so this card explains the emptiness and
+           offers the one-click escape hatch without taking the search
+           bar away. When NO filter is active and the count is zero, this
+           is a fresh install — the "create the first product" state. *@
+        @if (_totalCount == 0 && !_isLoading && _products is not null)
+        {
+            @if (HasActiveFilters)
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="filter_alt_off"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                      Icon="restart_alt"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Click="@ClearAllFiltersAsync" />
+                    </RadzenStack>
+                </RadzenCard>
+            }
+            else
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="inventory_2"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitle"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessage"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        <RadzenButton Text="@Loc["CreateFirstProductButton"]"
+                                      Icon="add"
+                                      ButtonStyle="ButtonStyle.Primary"
+                                      Variant="Variant.Filled"
+                                      Click="@(() => Navigation.NavigateTo("/Admin/Products/Create", forceLoad: false))" />
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        }
     }
 </RadzenStack>
 
@@ -809,13 +822,350 @@
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
-    // No OnInitializedAsync: there is no pre-grid work to do (the status
-    // filter options are static, and no lookup lists need loading — the
-    // category-name filters resolve server-side against the handler's own
-    // category-tree load). The data load is NOT kicked off here either —
-    // the grid mounts in the first render and fires its LoadData-on-init,
-    // which drives LoadGridDataAsync. Kicking a manual load here too would
-    // double the initial query.
+    protected override async Task OnInitializedAsync()
+    {
+        // URL-restored grid state (search terms / status selection /
+        // numeric filters / page + page size): parsed BEFORE the grid
+        // mounts; the column FilterValues are applied in
+        // OnAfterRenderAsync once the grid reference exists.
+        //
+        // The rest of the page needs no pre-grid work (the status filter
+        // options are static, and no lookup lists need loading — the
+        // category-name filters resolve server-side against the handler's
+        // own category-tree load). The data load is NOT kicked off here
+        // either — the grid mounts in the first render and fires its
+        // LoadData-on-init, which drives LoadGridDataAsync.
+        await Task.CompletedTask;
+        RestoreGridStateFromUrl();
+    }
+
+    /// <summary>
+    /// One-shot grid-state restore: runs on the FIRST render where the
+    /// grid is mounted (the ref is set).
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_hasRestoredGridState && grid is not null)
+        {
+            _hasRestoredGridState = false; // one-shot — never re-apply
+            await ApplyRestoredGridStateAsync();
+        }
+    }
+
+    // ── URL-restored grid state (search/selection/page persistence) ─────
+    //
+    // Parsed from the query string in OnInitializedAsync, applied to the
+    // grid's columns in OnAfterRenderAsync, and mirrored BACK to the URL
+    // by PersistGridStateToUrl after every successful load. See
+    // GridUrlState's class docs for the why-the-URL rationale.
+
+    /// <summary>The grid's default page size — the value the markup's PageSize parameter binds.</summary>
+    private const int DefaultGridPageSize = 20;
+
+    private ProductsTextFilter? _restoredNameFilter;
+    private ProductsTextFilter? _restoredCategoryFilter;
+    private ProductsTextFilter? _restoredSubCategoryFilter;
+    private ProductsTextFilter? _restoredSubSubCategoryFilter;
+    private ProductStockStatus? _restoredStockStatus;
+    private ProductsNumberFilter? _restoredPriceFilter;
+    private ProductsNumberFilter? _restoredStockFilter;
+    private int _restoredPage = 1;
+    private int _restoredPageSize = DefaultGridPageSize;
+
+    /// <summary>True when the URL carried ANY grid-state parameter (gates the one-shot apply).</summary>
+    private bool _hasRestoredGridState;
+
+    /// <summary>
+    /// Parses the URL query into the restored-state fields. PARAMETER
+    /// KEYS: name/nameop + cat/catop + sub/subop + ssub/ssubop (text
+    /// searches; the *op keys are optional — absent = Contains), status
+    /// (instock/outofstock), price/priceop + stockn/stocknop (invariant
+    /// decimal + operator name), page (persisted only when > 1), size
+    /// (persisted only when ≠ the 20 default).
+    /// </summary>
+    private void RestoreGridStateFromUrl()
+    {
+        var query = GridUrlState.CurrentQuery(Navigation);
+
+        _restoredNameFilter = ParseTextFilter(query, "name", "nameop");
+        _restoredCategoryFilter = ParseTextFilter(query, "cat", "catop");
+        _restoredSubCategoryFilter = ParseTextFilter(query, "sub", "subop");
+        _restoredSubSubCategoryFilter = ParseTextFilter(query, "ssub", "ssubop");
+
+        if (query.TryGetValue("status", out var status))
+        {
+            if (string.Equals(status, "instock", StringComparison.OrdinalIgnoreCase))
+            {
+                _restoredStockStatus = ProductStockStatus.InStock;
+            }
+            else if (string.Equals(status, "outofstock", StringComparison.OrdinalIgnoreCase))
+            {
+                _restoredStockStatus = ProductStockStatus.OutOfStock;
+            }
+        }
+
+        _restoredPriceFilter = ParseNumberFilter(query, "price", "priceop");
+        _restoredStockFilter = ParseNumberFilter(query, "stockn", "stocknop");
+
+        if (query.TryGetValue("page", out var page)
+            && int.TryParse(page, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPage)
+            && parsedPage > 1)
+        {
+            _restoredPage = parsedPage;
+        }
+
+        if (query.TryGetValue("size", out var size)
+            && int.TryParse(size, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSize)
+            && parsedSize > 0)
+        {
+            _restoredPageSize = parsedSize;
+        }
+
+        _hasRestoredGridState =
+            _restoredNameFilter is not null ||
+            _restoredCategoryFilter is not null ||
+            _restoredSubCategoryFilter is not null ||
+            _restoredSubSubCategoryFilter is not null ||
+            _restoredStockStatus is not null ||
+            _restoredPriceFilter is not null ||
+            _restoredStockFilter is not null ||
+            _restoredPage > 1 ||
+            _restoredPageSize != DefaultGridPageSize;
+
+        // Dropdown field — so the status FilterTemplate dropdown renders
+        // the restored selection immediately.
+        _selectedStatusFilter = _restoredStockStatus switch
+        {
+            ProductStockStatus.InStock => "InStock",
+            ProductStockStatus.OutOfStock => "OutOfStock",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Applies the restored state to the grid's columns (same
+    /// programmatic-filter API the status dropdown handler uses) and
+    /// drives the grid to the restored page.
+    /// </summary>
+    private async Task ApplyRestoredGridStateAsync()
+    {
+        SetTextColumnFilter("Name", _restoredNameFilter);
+        SetTextColumnFilter("CategoryName", _restoredCategoryFilter);
+        SetTextColumnFilter("SubCategoryName", _restoredSubCategoryFilter);
+        SetTextColumnFilter("SubSubCategoryName", _restoredSubSubCategoryFilter);
+
+        // The status dropdown column shares Property="StockQuantity" with
+        // the numeric Stock column — they're told apart by their
+        // FilterTemplate (only the status column has one), mirroring how
+        // the translator tells their descriptors apart by payload shape.
+        if (_restoredStockStatus is { } stockStatus)
+        {
+            var statusColumn = grid.ColumnsCollection.FirstOrDefault(
+                c => c.Property == "StockQuantity" && c.FilterTemplate is not null);
+            if (statusColumn is not null)
+            {
+                // Culture-neutral string key — exactly what the dropdown
+                // handler sets (the translator maps it back).
+                statusColumn.FilterValue = stockStatus == ProductStockStatus.InStock ? "InStock" : "OutOfStock";
+                statusColumn.FilterOperator = FilterOperator.Equals;
+            }
+        }
+
+        SetNumberColumnFilter("Price.Amount", _restoredPriceFilter);
+        SetNumberColumnFilter("StockQuantity", _restoredStockFilter, requireFilterTemplate: false);
+
+        if (_restoredPageSize != DefaultGridPageSize)
+        {
+            grid.PageSize = _restoredPageSize;
+        }
+
+        if (_restoredPage > 1)
+        {
+            await grid.GoToPage(_restoredPage - 1, forceReload: true);
+        }
+        else
+        {
+            await grid.Reload();
+        }
+    }
+
+    /// <summary>
+    /// Sets a text column's FilterValue + the operator mapped from the
+    /// typed <see cref="ProductsTextFilter"/>.
+    /// </summary>
+    private void SetTextColumnFilter(string property, ProductsTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        var column = grid.ColumnsCollection.FirstOrDefault(c => c.Property == property);
+        if (column is null)
+        {
+            return;
+        }
+
+        column.FilterValue = filter.Value;
+        column.FilterOperator = filter.Operator switch
+        {
+            ProductsTextOperator.NotContains => FilterOperator.DoesNotContain,
+            ProductsTextOperator.Equals => FilterOperator.Equals,
+            ProductsTextOperator.NotEquals => FilterOperator.NotEquals,
+            ProductsTextOperator.StartsWith => FilterOperator.StartsWith,
+            ProductsTextOperator.EndsWith => FilterOperator.EndsWith,
+            _ => FilterOperator.Contains
+        };
+    }
+
+    /// <summary>
+    /// Sets a numeric column's FilterValue (decimal) + the operator
+    /// mapped from the typed <see cref="ProductsNumberFilter"/>.
+    /// requireFilterTemplate=false targets the numeric Stock column (the
+    /// status dropdown column shares the same Property — see
+    /// ApplyRestoredGridStateAsync).
+    /// </summary>
+    private void SetNumberColumnFilter(string property, ProductsNumberFilter? filter, bool? requireFilterTemplate = null)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        var candidates = grid.ColumnsCollection.Where(c => c.Property == property);
+        if (requireFilterTemplate.HasValue)
+        {
+            candidates = candidates.Where(c => (c.FilterTemplate is not null) == requireFilterTemplate.Value);
+        }
+
+        var column = candidates.FirstOrDefault();
+        if (column is null)
+        {
+            return;
+        }
+
+        column.FilterValue = filter.Value;
+        column.FilterOperator = filter.Operator switch
+        {
+            ProductsNumberOperator.Equals => FilterOperator.Equals,
+            ProductsNumberOperator.NotEquals => FilterOperator.NotEquals,
+            ProductsNumberOperator.GreaterThan => FilterOperator.GreaterThan,
+            ProductsNumberOperator.GreaterThanOrEqual => FilterOperator.GreaterThanOrEquals,
+            ProductsNumberOperator.LessThan => FilterOperator.LessThan,
+            ProductsNumberOperator.LessThanOrEqual => FilterOperator.LessThanOrEquals,
+            _ => FilterOperator.Equals
+        };
+    }
+
+    /// <summary>
+    /// Parses a text filter (value + optional operator name) from the
+    /// query dictionary.
+    /// </summary>
+    private static ProductsTextFilter? ParseTextFilter(Dictionary<string, string> query, string valueKey, string operatorKey)
+    {
+        if (!query.TryGetValue(valueKey, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var op = Enum.TryParse<ProductsTextOperator>(query.GetValueOrDefault(operatorKey), ignoreCase: true, out var parsedOp)
+            ? parsedOp
+            : ProductsTextOperator.Contains;
+
+        return new ProductsTextFilter(value.Trim(), op);
+    }
+
+    /// <summary>
+    /// Parses a numeric filter (invariant decimal + operator name) from
+    /// the query dictionary.
+    /// </summary>
+    private static ProductsNumberFilter? ParseNumberFilter(Dictionary<string, string> query, string valueKey, string operatorKey)
+    {
+        if (!query.TryGetValue(valueKey, out var value)
+            || !decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            return null;
+        }
+
+        var op = Enum.TryParse<ProductsNumberOperator>(query.GetValueOrDefault(operatorKey), ignoreCase: true, out var parsedOp)
+            ? parsedOp
+            : ProductsNumberOperator.Equals;
+
+        return new ProductsNumberFilter(op, parsedValue);
+    }
+
+    /// <summary>
+    /// Mirrors the active filter/page state into the URL (replace, no
+    /// history entry) after every successful load. Only NON-DEFAULT
+    /// state is written — see GridUrlState's class docs.
+    /// </summary>
+    private void PersistGridStateToUrl(int pageNumber, int pageSize)
+    {
+        var parameters = new List<KeyValuePair<string, string?>>();
+
+        AppendTextFilter(parameters, "name", "nameop", _activeNameFilter);
+        AppendTextFilter(parameters, "cat", "catop", _activeCategoryNameFilter);
+        AppendTextFilter(parameters, "sub", "subop", _activeSubCategoryNameFilter);
+        AppendTextFilter(parameters, "ssub", "ssubop", _activeSubSubCategoryNameFilter);
+
+        if (_activeStockStatus is { } stockStatus)
+        {
+            parameters.Add(new("status", stockStatus == ProductStockStatus.InStock ? "instock" : "outofstock"));
+        }
+
+        AppendNumberFilter(parameters, "price", "priceop", _activePriceFilter);
+        AppendNumberFilter(parameters, "stockn", "stocknop", _activeStockFilter);
+
+        if (pageSize != DefaultGridPageSize)
+        {
+            parameters.Add(new("size", pageSize.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (pageNumber > 1)
+        {
+            parameters.Add(new("page", pageNumber.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        GridUrlState.ReplaceIfChanged(
+            Navigation,
+            GridUrlState.BuildRelative(Navigation, parameters));
+    }
+
+    /// <summary>Appends a text filter's value (+ non-default operator) to the parameter list.</summary>
+    private static void AppendTextFilter(
+        List<KeyValuePair<string, string?>> parameters,
+        string valueKey,
+        string operatorKey,
+        ProductsTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        parameters.Add(new(valueKey, filter.Value));
+
+        if (filter.Operator != ProductsTextOperator.Contains)
+        {
+            parameters.Add(new(operatorKey, filter.Operator.ToString()));
+        }
+    }
+
+    /// <summary>Appends a numeric filter's invariant value + operator to the parameter list.</summary>
+    private static void AppendNumberFilter(
+        List<KeyValuePair<string, string?>> parameters,
+        string valueKey,
+        string operatorKey,
+        ProductsNumberFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        parameters.Add(new(valueKey, filter.Value.ToString(CultureInfo.InvariantCulture)));
+        parameters.Add(new(operatorKey, filter.Operator.ToString()));
+    }
 
     // ── Data loading (Radzen LoadData — Round 6) ────────────────────────
 
@@ -876,6 +1226,11 @@
                     _healingPage = false;
                 }
             }
+
+            // URL mirror (NOT on the heal path — its early return above
+            // hands state ownership to the re-fired page-1 load, which
+            // persists its own state when it completes).
+            PersistGridStateToUrl(pageNumber, pageSize);
         }
         catch (Exception)
         {
@@ -929,26 +1284,37 @@
     }
 
     /// <summary>
-    /// Clears EVERY column filter, then reloads. The filtered-empty
-    /// state's one-click escape hatch. This button only renders when the
-    /// grid is UNMOUNTED (the empty state replaced it), so the reload
-    /// happens via REMOUNT: the grid mounts with Data=null and fires its
-    /// LoadData-on-init with every filter naturally reset (fresh column
-    /// instances carry no filter values). Do NOT call grid.FirstPage(true)
-    /// here — the disposed grid's methods must not be touched.
+    /// Clears EVERY column filter, then reloads from page 1. The filtered-
+    /// empty state's one-click escape hatch.
+    ///
+    /// TASK-7 UPDATE: the grid now stays MOUNTED when a filter matches
+    /// nothing (the empty card renders BELOW it), so this runs against a
+    /// LIVE grid: reset the status dropdown field, clear every column's
+    /// FilterValue, and re-fire the load via FirstPage(true). (The old
+    /// remount-based implementation relied on the grid being unmounted by
+    /// the empty state, which no longer happens.)
     /// </summary>
     private async Task ClearAllFiltersAsync()
     {
         _selectedStatusFilter = null;
 
-        // REMOUNT TRIGGER: _products=null makes the grid mount with Data=null
-        // (which fires LoadData — the pinned Radzen contract), and
-        // _isLoading=true keeps the grid branch rendered (instead of
-        // flashing the empty state) until the fresh load completes.
-        _products = null;
-        _isLoading = true;
+        if (grid is not null)
+        {
+            foreach (var column in grid.ColumnsCollection)
+            {
+                column.FilterValue = null;
+            }
 
-        await Task.CompletedTask;
+            _isLoading = true;
+            try
+            {
+                await grid.FirstPage(true); // re-fires LoadData with no filters
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────
@@ -1250,6 +1616,15 @@
     /// price (+currency as its own column), stock, and in/out-of-stock
     /// status. See Sales.razor's ExportSalesCsvAsync for the format
     /// rationale (RFC 4180 + invariant numbers + BOM-at-save).
+    ///
+    /// PICTURE COLUMNS: the export also ships each product's picture
+    /// DIRECTORY + FILE NAME (derived from <c>ProductListItemDto.PictureUrl</c>,
+    /// e.g. <c>/uploads/products/ab12….jpg</c> → dir <c>uploads/products</c>,
+    /// name <c>ab12….jpg</c>). Together with the picture FILES themselves this
+    /// makes the CSV a complete catalog backup: the Settings page's product
+    /// import can rebuild every product AND re-link each one to its picture
+    /// by file name, with no conventional database backup involved. Empty
+    /// cells = the product has no picture.
     /// </summary>
     private async Task ExportProductsCsvAsync()
     {
@@ -1270,7 +1645,9 @@
                 Loc["ColPrice"],
                 Loc["ColCurrency"],
                 Loc["ColStock"],
-                Loc["ColStatus"]);
+                Loc["ColStatus"],
+                Loc["ColPictureDirectory"],
+                Loc["ColPictureFileName"]);
 
             var exported = 0;
             var pageNumber = 1;
@@ -1285,6 +1662,12 @@
                 {
                     if (exported >= ExportRowCap) break;
 
+                    // Picture location split (see PICTURE COLUMNS remark on
+                    // ExportProductsCsvAsync): the URL is exported as its
+                    // directory part + file name so the CSV + the picture
+                    // files alone can rebuild the catalog's picture links.
+                    var (pictureDirectory, pictureFileName) = SplitPictureUrl(product.PictureUrl);
+
                     builder.AddRow(
                         product.Name,
                         AppendDeactivated(product.CategoryName, product.CategoryIsActive),
@@ -1293,7 +1676,9 @@
                         product.Price?.Amount,
                         product.Price?.Currency,
                         product.StockQuantity,
-                        GetStatusLabel(product.StockQuantity > 0));
+                        GetStatusLabel(product.StockQuantity > 0),
+                        pictureDirectory,
+                        pictureFileName);
                     exported++;
                 }
 
@@ -1327,4 +1712,40 @@
     /// </summary>
     private string AppendDeactivated(string name, bool isActive)
         => isActive || string.IsNullOrEmpty(name) ? name : $"{name} ({Loc["DeactivatedSuffix"]})";
+
+    /// <summary>
+    /// Splits a product picture URL into its (directory, file name) parts
+    /// for the CSV export's picture columns — the two halves the Settings
+    /// page's product import glues back together (and the picture bulk
+    /// upload relies on when it stores files under their ORIGINAL names).
+    ///
+    /// EXAMPLES:
+    ///   "/uploads/products/ab12cd34.jpg" → ("uploads/products", "ab12cd34.jpg")
+    ///   null / "" / " "                  → ("", "")  — no picture
+    ///
+    /// The leading slash is trimmed so the directory is a plain relative
+    /// path ("uploads/products"), not a URL path. Values with no slash at
+    /// all (defensive — PictureUrl is always root-relative today) fall
+    /// back to ("", name) so the file name still round-trips. External
+    /// http(s) URLs split on their last segment too — their directory
+    /// part will not match the local uploads folder, but the file name
+    /// still identifies the asset.
+    /// </summary>
+    private static (string Directory, string FileName) SplitPictureUrl(string? pictureUrl)
+    {
+        if (string.IsNullOrWhiteSpace(pictureUrl))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var lastSlash = pictureUrl.LastIndexOf('/');
+        if (lastSlash < 0)
+        {
+            return (string.Empty, pictureUrl.Trim());
+        }
+
+        var directory = pictureUrl[..lastSlash].Trim().TrimStart('/');
+        var fileName = pictureUrl[(lastSlash + 1)..].Trim();
+        return (directory, fileName);
+    }
 }

@@ -127,6 +127,25 @@ public interface IProductRepository
     Task<bool> NameExistsAsync(string name, Guid? excludeId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads the (single) product with the given catalog name — the
+    /// name-keyed counterpart of <see cref="GetByIdAsync"/>.
+    ///
+    /// USED BY the product CSV import, which upserts BY NAME: a row whose
+    /// name matches an existing product updates it (price, stock, category
+    /// path, picture), while a row with an unknown name creates a new
+    /// product. NameExistsAsync alone can't answer that question — the
+    /// import needs the TRACKED aggregate to mutate it, and fetching by
+    /// Id afterwards would require a second round-trip for every row.
+    ///
+    /// Returns null when no product carries the name (the caller's "create"
+    /// branch). Product names are enforced unique at the database level
+    /// (unique index — see <c>CreateProductCommandHandler</c>'s remarks),
+    /// so at most one match can exist; the method simply returns the first
+    /// row should that invariant ever be violated.
+    /// </summary>
+    Task<Product?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the count of products with <c>StockQuantity &gt; 0</c>.
     /// Used by the shop page's "تعداد اجناس موجود" (in-stock product count)
     /// stat card. Single round-trip <c>SELECT COUNT(*) WHERE StockQuantity &gt; 0</c>.

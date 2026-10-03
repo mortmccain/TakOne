@@ -1013,6 +1013,11 @@
                       || CurrentUser.IsInRole(Roles.Admin);
         _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly) && !canShop;
 
+        // URL-restored state (search term / category / page / sort): parsed
+        // BEFORE the initial loads so the first query already reflects it.
+        // See PersistStateToUrl for the parameter keys.
+        RestoreStateFromUrl();
+
         try
         {
             await Task.WhenAll(
@@ -1029,6 +1034,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Interactive-render marker (Task 6): the URL mirror must NEVER
+        // run during the static prerender pass (NavigationManager.NavigateTo
+        // throws while prerendering) — OnAfterRender only ever runs on the
+        // interactive circuit, so this is the reliable switch.
+        if (firstRender)
+        {
+            _isInteractive = true;
+        }
+
         // On the very first render, read the saved theme from localStorage
         // (via window.takTheme.get — same API the layouts use) so the sun/moon
         // icon reflects what theme.js has actually applied. Without this, the
@@ -1052,6 +1066,88 @@
             // still works — it just may not reflect the actual active theme
             // until the page is reloaded.
         }
+    }
+
+    // ── URL state persistence (search / category / page / sort) ─────────
+
+    /// <summary>True once the component has rendered on the INTERACTIVE circuit (guards the URL mirror against the prerender pass).</summary>
+    private bool _isInteractive;
+
+    /// <summary>
+    /// Parses the URL query into the shop state BEFORE the initial loads.
+    /// PARAMETER KEYS: q (search term), cat (category Guid), page
+    /// (1-based; persisted only when > 1), sort (ProductSortBy name;
+    /// persisted only when ≠ the Name default).
+    /// </summary>
+    private void RestoreStateFromUrl()
+    {
+        var query = GridUrlState.CurrentQuery(Navigation);
+
+        if (query.TryGetValue("q", out var q))
+        {
+            _searchTerm = q;
+        }
+
+        if (query.TryGetValue("cat", out var cat) && Guid.TryParse(cat, out var categoryId))
+        {
+            _selectedCategoryId = categoryId;
+        }
+
+        if (query.TryGetValue("page", out var page)
+            && int.TryParse(page, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedPage)
+            && parsedPage > 1)
+        {
+            _pageNumber = parsedPage;
+        }
+
+        if (query.TryGetValue("sort", out var sort)
+            && Enum.TryParse<ProductSortBy>(sort, ignoreCase: false, out var parsedSort))
+        {
+            _sortBy = parsedSort;
+        }
+    }
+
+    /// <summary>
+    /// Mirrors the current shop state into the URL (replace, no history
+    /// entry) after every successful product load. Only NON-DEFAULT state
+    /// is written (empty search / no category / page 1 / Name sort → bare
+    /// path) — see GridUrlState's class docs. Guarded by _isInteractive:
+    /// the initial load runs during the static prerender pass, where
+    /// NavigateTo is illegal (and unnecessary — the restored state already
+    /// IS the URL).
+    /// </summary>
+    private void PersistStateToUrl()
+    {
+        if (!_isInteractive)
+        {
+            return;
+        }
+
+        var parameters = new List<KeyValuePair<string, string?>>();
+
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            parameters.Add(new("q", _searchTerm));
+        }
+
+        if (_selectedCategoryId is { } categoryId)
+        {
+            parameters.Add(new("cat", categoryId.ToString()));
+        }
+
+        if (_pageNumber > 1)
+        {
+            parameters.Add(new("page", _pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        if (_sortBy != ProductSortBy.Name)
+        {
+            parameters.Add(new("sort", _sortBy.ToString()));
+        }
+
+        GridUrlState.ReplaceIfChanged(
+            Navigation,
+            GridUrlState.BuildRelative(Navigation, parameters));
     }
 
     // ── Data loading ────────────────────────────────────────────────────
@@ -1127,6 +1223,11 @@
                 await LoadProductsAsync();
                 return;
             }
+
+            // URL mirror — only on the interactive circuit (see
+            // PersistStateToUrl), and not on the retry path above (its
+            // recursive load persists the corrected page-1 state itself).
+            PersistStateToUrl();
         }
         catch (Exception)
         {

@@ -286,4 +286,136 @@
   <data name="AboutCardTitle" xml:space="preserve">
     <value>About</value>
   </data>
+
+  <!-- Admin tools section (product import, bulk picture upload, user import) -->
+  <data name="AdminSectionTitle" xml:space="preserve">
+    <value>Admin tools</value>
+  </data>
+  <data name="AdminSectionSubtitle" xml:space="preserve">
+    <value>Bulk operations for catalog and account administration. Visible to administrators only.</value>
+  </data>
+  <data name="ProductImportCardTitle" xml:space="preserve">
+    <value>Import products from CSV</value>
+  </data>
+  <data name="ProductImportCardHint" xml:space="preserve">
+    <value>Imports a CSV exported from the products page. Rows are matched by name: unknown names are created, existing names are updated (price, stock, category, picture).</value>
+  </data>
+  <data name="ProductImportPickTitle" xml:space="preserve">
+    <value>Choose a products CSV file</value>
+  </data>
+  <data name="ProductImportPickHint" xml:space="preserve">
+    <value>Column order: name, category, sub-category, sub-sub-category, price, currency, stock, status, picture directory, picture file name.</value>
+  </data>
+  <data name="PictureUploadCardTitle" xml:space="preserve">
+    <value>Bulk picture upload</value>
+  </data>
+  <data name="PictureUploadCardHint" xml:space="preserve">
+    <value>Uploads multiple product pictures at once. Files keep their original names, so a restored CSV re-links each product to its picture automatically. JPEG, PNG or WebP, up to 5 MB each.</value>
+  </data>
+  <data name="PictureUploadPickTitle" xml:space="preserve">
+    <value>Choose picture files</value>
+  </data>
+  <data name="PictureUploadPickHint" xml:space="preserve">
+    <value>You can select several files at once (up to 50 per batch).</value>
+  </data>
+  <data name="PictureUploadButton" xml:space="preserve">
+    <value>Upload {0} picture(s)</value>
+  </data>
+  <data name="PictureUploadClearButton" xml:space="preserve">
+    <value>Clear selection</value>
+  </data>
+  <data name="UserImportCardTitle" xml:space="preserve">
+    <value>Import users from CSV</value>
+  </data>
+  <data name="UserImportCardHint" xml:space="preserve">
+    <value>Imports a CSV exported from the manage-users page. Existing worker IDs are skipped; new users receive the default password and must change it on first login.</value>
+  </data>
+  <data name="UserImportPickTitle" xml:space="preserve">
+    <value>Choose a users CSV file</value>
+  </data>
+  <data name="UserImportPickHint" xml:space="preserve">
+    <value>Column order: worker ID, full name, gender, group, roles, status.</value>
+  </data>
+  <data name="ImportWorking" xml:space="preserve">
+    <value>Importing…</value>
+  </data>
+  <data name="UploadWorking" xml:space="preserve">
+    <value>Uploading {0} of {1}…</value>
+  </data>
+  <data name="ImportCreatedCount" xml:space="preserve">
+    <value>Created: {0}</value>
+  </data>
+  <data name="ImportUpdatedCount" xml:space="preserve">
+    <value>Updated: {0}</value>
+  </data>
+  <data name="UserImportSkippedCount" xml:space="preserve">
+    <value>Already existed: {0}</value>
+  </data>
+  <data name="ImportFailedCount" xml:space="preserve">
+    <value>Failed: {0}</value>
+  </data>
+  <data name="ImportRowLabel" xml:space="preserve">
+    <value>Row {0}</value>
+  </data>
+  <data name="ImportOutcomeCreated" xml:space="preserve">
+    <value>Created</value>
+  </data>
+  <data name="ImportOutcomeUpdated" xml:space="preserve">
+    <value>Updated</value>
+  </data>
+  <data name="ImportOutcomeSkipped" xml:space="preserve">
+    <value>Already existed</value>
+  </data>
+  <data name="ImportErrorNoDataRows" xml:space="preserve">
+    <value>The file contains no data rows.</value>
+  </data>
+  <data name="ImportErrorShortRow" xml:space="preserve">
+    <value>The row has fewer columns than the expected format.</value>
+  </data>
+  <data name="ImportErrorBadNumber" xml:space="preserve">
+    <value>Price or stock is not a valid number.</value>
+  </data>
+  <data name="ImportErrorBadGender" xml:space="preserve">
+    <value>Gender is not recognized.</value>
+  </data>
+  <data name="ImportErrorReadFailed" xml:space="preserve">
+    <value>The file could not be read: {0}</value>
+  </data>
+  <data name="ImportErrorGeneric" xml:space="preserve">
+    <value>The import failed. Please try again.</value>
+  </data>
+  <data name="ProductImportDone" xml:space="preserve">
+    <value>Product import finished: {0} created, {1} updated, {2} failed.</value>
+  </data>
+  <data name="UserImportDone" xml:space="preserve">
+    <value>User import finished: {0} created, {1} already existed, {2} failed.</value>
+  </data>
+  <data name="PictureUploadSomeRejected" xml:space="preserve">
+    <value>{0} file(s) were rejected before upload (unsupported type or too large).</value>
+  </data>
+  <data name="PictureUploadDone" xml:space="preserve">
+    <value>{0} picture(s) uploaded.</value>
+  </data>
+  <data name="PictureUploadDoneWithFailures" xml:space="preserve">
+    <value>{0} picture(s) uploaded, {1} failed.</value>
+  </data>
+  <data name="UploadSucceededCount" xml:space="preserve">
+    <value>Uploaded: {0}</value>
+  </data>
+  <data name="UploadFailedCount" xml:space="preserve">
+    <value>Failed: {0}</value>
+  </data>
+
+  <data name="PictureUploadErrorType" xml:space="preserve">
+    <value>Unsupported file type (JPEG, PNG or WebP only).</value>
+  </data>
+  <data name="PictureUploadErrorSize" xml:space="preserve">
+    <value>File exceeds the 5 MB limit.</value>
+  </data>
+  <data name="PictureUploadErrorRead" xml:space="preserve">
+    <value>The file could not be read.</value>
+  </data>
+  <data name="PictureUploadErrorStorage" xml:space="preserve">
+    <value>Storing the file failed.</value>
+  </data>
 </root>

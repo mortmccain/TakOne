@@ -109,7 +109,11 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.Commands.ImportProducts
 @using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Commands.ImportUsers
 @using TakOne.Application.Users.Queries.GetUserById
 @using TakOne.Application.Notifications.DTOs
 @using TakOne.Application.Notifications.Queries.GetNotificationPreferences
@@ -124,6 +128,7 @@
 @inject IStringLocalizer<Settings> Loc
 @inject ToastService Toast
 @inject IJSRuntime JS
+@inject IFileStorage FileStorage
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -345,6 +350,170 @@
 
             /* Loading + error + not-found states reuse Radzen's alert
                                        components — same pattern as ProductDetail.razor. */
+
+            /* ── Admin tools section ────────────────────────────────
+               Full-width section below the 2-col settings grid. One
+               card per bulk tool; the cards wrap on a responsive
+               auto-fill grid (3-up on desktop, 1-up on mobile). */
+            .admin-tools-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 1rem;
+                align-items: start;
+            }
+
+            /* Section heading for the admin area — same visual family
+               as .settings-header but smaller. */
+            .admin-section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 1.15rem;
+                font-weight: 700;
+                margin: 0 0 0.25rem 0;
+            }
+
+            .admin-section-subtitle {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.85rem;
+                margin: 0 0 0.75rem 0;
+            }
+
+            /* Dropzone-style file pickers — visually consistent with
+               CreateProduct.razor's .picture-dropzone (re-declared here
+               because that page's styles are scoped to its own file). */
+            .import-dropzone {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.35rem;
+                padding: 1.25rem 1rem;
+                border: 2px dashed var(--rz-border-color);
+                border-radius: 10px;
+                cursor: pointer;
+                text-align: center;
+                transition: border-color 0.15s ease, background-color 0.15s ease;
+            }
+
+            .import-dropzone:hover,
+            .import-dropzone:focus-within {
+                border-color: var(--rz-primary);
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+            }
+
+            .import-dropzone-input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                opacity: 0;
+                overflow: hidden;
+                clip: rect(0 0 0 0);
+            }
+
+            .import-dropzone-title {
+                font-weight: 600;
+                font-size: 0.9rem;
+            }
+
+            .import-dropzone-hint {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.78rem;
+                line-height: 1.4;
+            }
+
+            /* Selected-file chips (bulk picture picker shows one chip per
+               buffered image). */
+            .import-file-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+                margin-top: 0.6rem;
+                /* Long lists scroll INSIDE the card instead of stretching
+                   the page — same policy as the notification list. */
+                max-height: 15rem;
+                overflow-y: auto;
+            }
+
+            .import-file-chip {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.35rem 0.6rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.8rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+            }
+
+            .import-file-chip .import-file-name {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                direction: ltr; /* hex file names stay LTR even in fa-IR/RTL */
+            }
+
+            .import-file-chip .import-file-size {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
+
+            /* Per-row import results — a compact scrollable ledger. */
+            .import-results {
+                margin-top: 0.75rem;
+            }
+
+            .import-results-summary {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .import-results-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 15rem;
+                overflow-y: auto;
+                font-size: 0.8rem;
+            }
+
+            .import-result-row {
+                display: flex;
+                align-items: baseline;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border-bottom: 1px solid var(--rz-border-color);
+            }
+
+            .import-result-row:last-child {
+                border-bottom: none;
+            }
+
+            .import-result-line {
+                color: var(--rz-text-secondary-color);
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.72rem;
+                flex: none;
+                direction: ltr;
+            }
+
+            .import-result-name {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+
+            .import-result-msg {
+                color: var(--rz-danger, #dc3545);
+                font-size: 0.74rem;
+                overflow-wrap: anywhere;
+            }
     </style>
 </HeadContent>
 
@@ -588,6 +757,270 @@
                 </RadzenCard>
             </RadzenStack>
         </div>
+
+        @* ── Admin tools section (admin-only) ──
+           Three bulk tools, each a self-contained card:
+             1. Product CSV import  — the round-trip partner of the
+                AdminProducts export (which now carries each product's
+                picture directory + file name).
+             2. Bulk picture upload — same upload mechanism as the
+                CreateProduct page (InputFile → IFileStorage), but with
+                MULTI-file selection and ORIGINAL file names preserved, so
+                a restore re-lands every picture under the exact name the
+                CSV references.
+             3. User CSV import     — the round-trip partner of the
+                manage-users export; new users get the default password
+                "@" + reversed worker id + "Temp" and a forced one-time
+                password change.
+
+           GATED: the cards render only for Admins (role resolved via the
+           AuthenticationStateProvider — see _isAdmin). Every command is
+           ALSO admin-gated server-side via [RequireRoles]; the UI gate is
+           UX, the command gate is security. *@
+        @if (_isAdmin)
+        {
+            <div class="admin-section">
+                <h2 class="admin-section-title">
+                    <RadzenIcon Icon="admin_panel_settings" Style="color: var(--rz-primary);" />
+                    @Loc["AdminSectionTitle"]
+                </h2>
+                <p class="admin-section-subtitle">@Loc["AdminSectionSubtitle"]</p>
+
+                <div class="admin-tools-grid">
+
+                    @* ── Card 1: product CSV import ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <RadzenIcon Icon="upload_file" Style="color: var(--rz-primary);" />
+                            <span>@Loc["ProductImportCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["ProductImportCardHint"]
+                        </RadzenText>
+
+                        @if (_isImportingProducts)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["ImportWorking"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnProductCsvSelectedAsync"
+                                           accept=".csv,text/csv"
+                                           class="import-dropzone-input" />
+                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-title">@Loc["ProductImportPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["ProductImportPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_productImportError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_productImportError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                        }
+
+                        @if (_productImportRows is { Count: > 0 })
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["ImportCreatedCount", _productImportCreated]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportUpdatedCount", _productImportUpdated]"
+                                                 BadgeStyle="BadgeStyle.Info" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportFailedCount", _productImportFailed]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var rowResult in _productImportRows)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-line">@Loc["ImportRowLabel", rowResult.RowNumber]</span>
+                                            <span class="import-result-name">@rowResult.Name</span>
+                                            @if (rowResult.Outcome == ProductImportRowOutcome.Created)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeCreated"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                            }
+                                            else if (rowResult.Outcome == ProductImportRowOutcome.Updated)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeUpdated"]" BadgeStyle="BadgeStyle.Info" IsPill="true" />
+                                            }
+                                            else
+                                            {
+                                                <span class="import-result-msg">@rowResult.Message</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+
+                    @* ── Card 2: bulk picture upload ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <RadzenIcon Icon="photo_library" Style="color: var(--rz-primary);" />
+                            <span>@Loc["PictureUploadCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["PictureUploadCardHint"]
+                        </RadzenText>
+
+                        @if (_isUploadingPictures)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["UploadWorking", _pictureUploadDone, _pendingPictures.Count + _pictureUploadDone]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnPicturesSelectedAsync"
+                                           accept="image/jpeg,image/png,image/webp"
+                                           multiple
+                                           class="import-dropzone-input" />
+                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-title">@Loc["PictureUploadPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["PictureUploadPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (_pendingPictures.Count > 0 && !_isUploadingPictures)
+                        {
+                            <div class="import-file-list">
+                                @foreach (var pending in _pendingPictures)
+                                {
+                                    <div class="import-file-chip">
+                                        <RadzenIcon Icon="image" Style="font-size: 1rem; color: var(--rz-primary);" />
+                                        <span class="import-file-name">@pending.FileName</span>
+                                        <span class="import-file-size">@FormatFileSize(pending.Bytes.Length)</span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["PictureUploadButton", _pendingPictures.Count]"
+                                              Icon="cloud_done"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Click="@UploadPendingPicturesAsync" />
+                                <RadzenButton Text="@Loc["PictureUploadClearButton"]"
+                                              Icon="close"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Click="@ClearPendingPictures" />
+                            </div>
+                        }
+
+                        @if (_pictureUploadFailures.Count > 0)
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["UploadSucceededCount", _picturesUploaded]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["UploadFailedCount", _pictureUploadFailures.Count]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var failure in _pictureUploadFailures)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-name">@failure.FileName</span>
+                                            <span class="import-result-msg">@failure.Message</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+
+                    @* ── Card 3: user CSV import ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <RadzenIcon Icon="group_add" Style="color: var(--rz-primary);" />
+                            <span>@Loc["UserImportCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["UserImportCardHint"]
+                        </RadzenText>
+
+                        @if (_isImportingUsers)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["ImportWorking"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnUserCsvSelectedAsync"
+                                           accept=".csv,text/csv"
+                                           class="import-dropzone-input" />
+                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem; color: var(--rz-primary);" />
+                                <span class="import-dropzone-title">@Loc["UserImportPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["UserImportPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_userImportError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_userImportError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                        }
+
+                        @if (_userImportRows is { Count: > 0 })
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["ImportCreatedCount", _userImportCreated]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["UserImportSkippedCount", _userImportSkipped]"
+                                                 BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportFailedCount", _userImportFailed]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var rowResult in _userImportRows)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-line">@Loc["ImportRowLabel", rowResult.RowNumber]</span>
+                                            <span class="import-result-name">@rowResult.WorkerId</span>
+                                            @if (rowResult.Outcome == UserImportRowOutcome.Created)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeCreated"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                            }
+                                            else if (rowResult.Outcome == UserImportRowOutcome.Skipped)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeSkipped"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                            }
+                                            else
+                                            {
+                                                <span class="import-result-msg">@rowResult.Message</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+                </div>
+            </div>
+        }
     }
 </RadzenStack>
 
@@ -749,6 +1182,12 @@
                 _loadError = Loc["Error_NotAuthenticated"];
                 return;
             }
+
+            // Admin role for the admin-tools section — resolved via the
+            // auth state (NOT ICurrentUserService.IsInRole, which reads
+            // HttpContext and returns false for everyone over the SignalR
+            // circuit). Same pattern as ManageGroups.razor's _isAdmin.
+            _isAdmin = user.IsInRole(Roles.Admin);
 
             // The UserId claim is set by our custom IClaimsPrincipalFactory
             // in Infrastructure — it's the Domain User's Guid Id. Fallback
@@ -1099,5 +1538,600 @@
         Gender.Female => Loc["GenderFemale"],
         _ => gender.ToString()
     };
+
+    // ── Admin tools (admin-only) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Whether the current user is in the Admin role — gates the
+    /// admin-tools section (product import, bulk picture upload, user
+    /// import). Resolved in OnInitializedAsync from the Blazor auth
+    /// state; the commands are ALSO [RequireRoles(Admin)]-gated
+    /// server-side, so this is UX gating, not the security boundary.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// Hard cap on CSV import-file size: 5 MB is ~50k rows of either
+    /// export format — far beyond the 2,000-row command cap, so the cap
+    /// (not the file size) is always the binding limit.
+    /// </summary>
+    private const int MaxCsvFileSizeBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// Hard cap on ONE bulk picture upload batch. Keeps the circuit's
+    /// buffered memory bounded (50 × 5 MB worst case) and forces very
+    /// large restores to arrive in reviewable chunks.
+    /// </summary>
+    private const int MaxPicturesPerBatch = 50;
+
+    /// <summary>
+    /// Max size of ONE uploaded picture — mirrors the backend's
+    /// FileStorage:MaxImageSizeBytes default (5 MB). The backend
+    /// re-validates (magic bytes + bounded stream); this is the
+    /// client-side pre-filter so obviously-oversized files are rejected
+    /// without buffering them.
+    /// </summary>
+    private const int MaxPictureFileSizeBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// Content types the picture bulk-upload accepts — the SAME allowlist
+    /// LocalFileStorage sniffs for (JPEG / PNG / WebP). Declared here for
+    /// the client-side pre-filter; the backend's magic-byte sniff remains
+    /// the authority.
+    /// </summary>
+    private static readonly HashSet<string> AllowedPictureContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    };
+
+    // ── Product CSV import state ───────────────────────────────────────────
+
+    /// <summary>True while the product import command is in flight.</summary>
+    private bool _isImportingProducts;
+
+    /// <summary>Non-null when the product import failed before any row was processed (unreadable file, no data rows, dispatch failure).</summary>
+    private string? _productImportError;
+
+    /// <summary>Per-row product-import report (handler results + any local parse failures), in file order.</summary>
+    private List<ProductImportRowResultDto>? _productImportRows;
+
+    /// <summary>Tallies for the product import result badges.</summary>
+    private int _productImportCreated;
+    private int _productImportUpdated;
+    private int _productImportFailed;
+
+    // ── Bulk picture upload state ──────────────────────────────────────────
+
+    /// <summary>One buffered picture awaiting the explicit Upload click.</summary>
+    private sealed record PendingPicture(string FileName, string ContentType, byte[] Bytes);
+
+    /// <summary>One rejected/failed picture from a batch, with a human-readable reason.</summary>
+    private sealed record PictureUploadFailure(string FileName, string Message);
+
+    /// <summary>Pictures selected but not yet uploaded (buffered immediately — the IBrowserFile streams die with the JS registry; same lesson as CreateProduct.razor).</summary>
+    private List<PendingPicture> _pendingPictures = new();
+
+    /// <summary>True while the batch is streaming to storage.</summary>
+    private bool _isUploadingPictures;
+
+    /// <summary>Pictures uploaded successfully in the last batch.</summary>
+    private int _picturesUploaded;
+
+    /// <summary>Progress counter during an upload (done / total).</summary>
+    private int _pictureUploadDone;
+
+    /// <summary>Per-file failures from the last batch (invalid content, oversize, storage error).</summary>
+    private List<PictureUploadFailure> _pictureUploadFailures = new();
+
+    // ── User CSV import state ───────────────────────────────────────────
+
+    /// <summary>True while the user import command is in flight.</summary>
+    private bool _isImportingUsers;
+
+    /// <summary>Non-null when the user import failed before any row was processed.</summary>
+    private string? _userImportError;
+
+    /// <summary>Per-row user-import report (handler results + local parse failures), in file order.</summary>
+    private List<UserImportRowResultDto>? _userImportRows;
+
+    /// <summary>Tallies for the user import result badges.</summary>
+    private int _userImportCreated;
+    private int _userImportSkipped;
+    private int _userImportFailed;
+
+    /// <summary>
+    /// Reads an InputFile's text content as UTF-8 (BOM-tolerant — the
+    /// export's download helper prepends one; CsvParser strips it).
+    /// Shared by both CSV import pickers.
+    /// </summary>
+    private static async Task<string> ReadTextFileAsync(IBrowserFile file, int maxBytes)
+    {
+        await using var stream = file.OpenReadStream(maxAllowedSize: maxBytes);
+        using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+        return await reader.ReadToEndAsync();
+    }
+
+    /// <summary>
+    /// Product-CSV picker: parse + normalize the file, dispatch
+    /// ImportProductsCommand, and merge the handler's per-row report
+    /// with any local parse failures.
+    ///
+    /// COLUMN ORDER (positional — must mirror the AdminProducts export):
+    /// Name, Category, SubCategory, SubSubCategory, Price, Currency,
+    /// Stock, Status, Picture directory, Picture file name. The Status
+    /// and Picture-directory columns are read but ignored (stock status
+    /// is derived from stock; the URL is rebuilt from the file name).
+    /// </summary>
+    private async Task OnProductCsvSelectedAsync(InputFileChangeEventArgs e)
+    {
+        // Reset the previous run's UI state.
+        _productImportError = null;
+        _productImportRows = null;
+        _productImportCreated = _productImportUpdated = _productImportFailed = 0;
+
+        if (e.FileCount == 0)
+        {
+            return; // picker cancelled — keep the previous state
+        }
+
+        var file = e.File;
+        var rows = new List<ProductImportRowDto>();
+        var localFailures = new List<ProductImportRowResultDto>();
+
+        try
+        {
+            var csv = await ReadTextFileAsync(file, MaxCsvFileSizeBytes);
+            var records = CsvParser.Parse(csv);
+
+            // Row 0 is the header; every record after it is a data row.
+            if (records.Count < 2)
+            {
+                _productImportError = Loc["ImportErrorNoDataRows"];
+                return;
+            }
+
+            for (var i = 1; i < records.Count; i++)
+            {
+                var fields = records[i];
+                var rowNumber = i; // 1-based DATA-row number (header = 0)
+
+                // Guard the positional contract: the export always writes
+                // 10 columns; a short row means a broken/edited file — the
+                // row is reported, not silently mis-mapped.
+                if (fields.Length < 10)
+                {
+                    localFailures.Add(new ProductImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        Name = fields.Length > 0 ? fields[0] : string.Empty,
+                        Outcome = ProductImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorShortRow"]
+                    });
+                    continue;
+                }
+
+                if (!CsvParser.TryParseInvariantDecimal(fields[4], out var price)
+                    || !CsvParser.TryParseInvariantInt(fields[6], out var stock))
+                {
+                    localFailures.Add(new ProductImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        Name = fields[0],
+                        Outcome = ProductImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorBadNumber"]
+                    });
+                    continue;
+                }
+
+                rows.Add(new ProductImportRowDto
+                {
+                    Name = fields[0],
+                    CategoryName = fields[1],
+                    SubCategoryName = fields[2],
+                    SubSubCategoryName = fields[3],
+                    PriceAmount = price,
+                    Currency = fields[5],
+                    StockQuantity = stock,
+                    PictureFileName = fields[9],
+                    RowNumber = rowNumber
+                });
+            }
+        }
+        catch (System.IO.IOException ex)
+        {
+            _productImportError = Loc["ImportErrorReadFailed", ex.Message];
+            return;
+        }
+
+        // All rows failed local parsing — nothing to dispatch.
+        if (rows.Count == 0)
+        {
+            _productImportRows = localFailures;
+            _productImportFailed = localFailures.Count;
+            return;
+        }
+
+        _isImportingProducts = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<ProductImportResultDto>>(new ImportProductsCommand(rows));
+
+            if (result.IsSuccess)
+            {
+                var report = result.Value;
+                _productImportCreated = report.CreatedCount;
+                _productImportUpdated = report.UpdatedCount;
+                _productImportFailed = report.FailedCount + localFailures.Count;
+
+                // Handler rows first (file order), then local failures —
+                // both are already ordered by row number within themselves.
+                _productImportRows = report.RowResults.Concat(localFailures).ToList();
+
+                await Toast.Success(Loc["ProductImportDone", report.CreatedCount, report.UpdatedCount, report.FailedCount + localFailures.Count], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                _productImportError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _productImportError = Loc["ImportErrorGeneric"];
+        }
+        finally
+        {
+            _isImportingProducts = false;
+        }
+    }
+
+    /// <summary>
+    /// Bulk-picture picker: buffer every selected image immediately (the
+    /// IBrowserFile streams die with the JS registry — same lesson as
+    /// CreateProduct.razor), pre-filter content type + size, and hand the
+    /// batch to the explicit Upload button.
+    /// </summary>
+    private async Task OnPicturesSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _pictureUploadFailures = new List<PictureUploadFailure>();
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+
+        if (e.FileCount == 0)
+        {
+            return; // picker cancelled — keep the previous batch
+        }
+
+        var accepted = new List<PendingPicture>(e.FileCount);
+        var rejected = new List<PictureUploadFailure>();
+
+        foreach (var file in e.GetMultipleFiles(MaxPicturesPerBatch))
+        {
+            // ── Pre-filter: content type + size (client-side mirror of the
+            //    backend's checks — the backend's magic-byte sniff stays
+            //    the authority). Rejected files become per-file failure
+            //    entries in the results list, not silent drops.
+            if (!AllowedPictureContentTypes.Contains(file.ContentType))
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
+                continue;
+            }
+
+            if (file.Size > MaxPictureFileSizeBytes)
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                continue;
+            }
+
+            try
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
+                accepted.Add(new PendingPicture(file.Name, file.ContentType, ms.ToArray()));
+            }
+            catch (System.IO.IOException)
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+            }
+        }
+
+        _pendingPictures = accepted;
+
+        if (rejected.Count > 0)
+        {
+            // Surface the pre-filter rejections in the results ledger
+            // (same shape as upload failures — file name + reason).
+            _pictureUploadFailures = rejected;
+            await Toast.Warning(Loc["PictureUploadSomeRejected", rejected.Count], summary: Loc["PageHeading"]);
+        }
+    }
+
+    /// <summary>
+    /// Uploads the buffered batch: one SaveWithOriginalNameAsync per file
+    /// (name-preserving — the restore contract), collecting per-file
+    /// failures instead of aborting the batch.
+    /// </summary>
+    private async Task UploadPendingPicturesAsync()
+    {
+        if (_pendingPictures.Count == 0 || _isUploadingPictures)
+        {
+            return;
+        }
+
+        _isUploadingPictures = true;
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+        var failures = new List<PictureUploadFailure>();
+
+        try
+        {
+            var batch = _pendingPictures;
+            foreach (var picture in batch)
+            {
+                try
+                {
+                    using var stream = new System.IO.MemoryStream(picture.Bytes, writable: false);
+                    await FileStorage.SaveWithOriginalNameAsync(
+                        stream, picture.FileName, picture.ContentType, CancellationToken.None);
+                    _picturesUploaded++;
+                }
+                catch (System.IO.InvalidDataException ex)
+                {
+                    // Backend rejected the file (bad magic bytes, type
+                    // mismatch, oversize, unusable name). The pre-filter
+                    // already catches most of these — this is the
+                    // server-side backstop.
+                    failures.Add(new PictureUploadFailure(picture.FileName, ex.Message));
+                }
+                catch (Exception)
+                {
+                    // Storage I/O failure — also per-file, not fatal.
+                    failures.Add(new PictureUploadFailure(picture.FileName, Loc["PictureUploadErrorStorage"]));
+                }
+                finally
+                {
+                    _pictureUploadDone++;
+                    StateHasChanged(); // progress text updates per file
+                }
+            }
+
+            _pictureUploadFailures = failures;
+            _pendingPictures = new List<PendingPicture>();
+
+            if (failures.Count == 0)
+            {
+                await Toast.Success(Loc["PictureUploadDone", _picturesUploaded], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                await Toast.Warning(Loc["PictureUploadDoneWithFailures", _picturesUploaded, failures.Count], summary: Loc["PageHeading"]);
+            }
+        }
+        finally
+        {
+            _isUploadingPictures = false;
+        }
+    }
+
+    /// <summary>
+    /// Discards the buffered batch without uploading (the picker's Clear
+    /// button).
+    /// </summary>
+    private void ClearPendingPictures()
+    {
+        _pendingPictures = new List<PendingPicture>();
+        _pictureUploadFailures = new List<PictureUploadFailure>();
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+    }
+
+    /// <summary>
+    /// Formats a byte count as a compact human size ("4.2 MB") — the
+    /// pending-picture chips. Invariant digits: file sizes are data, not
+    /// localized UI text.
+    /// </summary>
+    private static string FormatFileSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        var size = (double)bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.#} {units[unit]}";
+    }
+
+    /// <summary>
+    /// User-CSV picker: parse + NORMALIZE the file (the export writes
+    /// LOCALIZED gender and status labels — map them back to the neutral
+    /// enum/bool here, where the localizer lives), dispatch
+    /// ImportUsersCommand, and merge the handler's per-row report with
+    /// local parse failures.
+    ///
+    /// COLUMN ORDER (positional — must mirror the manage-users export):
+    /// Worker ID, Full name, Gender, Group, Roles (semicolon-joined),
+    /// Status.
+    /// </summary>
+    private async Task OnUserCsvSelectedAsync(InputFileChangeEventArgs e)
+    {
+        // Reset the previous run's UI state.
+        _userImportError = null;
+        _userImportRows = null;
+        _userImportCreated = _userImportSkipped = _userImportFailed = 0;
+
+        if (e.FileCount == 0)
+        {
+            return;
+        }
+
+        var file = e.File;
+        var rows = new List<UserImportRowDto>();
+        var localFailures = new List<UserImportRowResultDto>();
+
+        try
+        {
+            var csv = await ReadTextFileAsync(file, MaxCsvFileSizeBytes);
+            var records = CsvParser.Parse(csv);
+
+            if (records.Count < 2)
+            {
+                _userImportError = Loc["ImportErrorNoDataRows"];
+                return;
+            }
+
+            for (var i = 1; i < records.Count; i++)
+            {
+                var fields = records[i];
+                var rowNumber = i;
+
+                if (fields.Length < 6)
+                {
+                    localFailures.Add(new UserImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        WorkerId = fields.Length > 0 ? fields[0] : string.Empty,
+                        Outcome = UserImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorShortRow"]
+                    });
+                    continue;
+                }
+
+                // ── Normalize the LOCALIZED cells (gender + status) into
+                //    neutral values. Accepts the canonical English keys,
+                //    the CURRENT culture's labels, and the known fa-IR
+                //    labels — covering same-deployment round-trips and
+                //    cross-culture imports alike.
+                if (!TryNormalizeGender(fields[2], out var gender))
+                {
+                    localFailures.Add(new UserImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        WorkerId = fields[0],
+                        Outcome = UserImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorBadGender"]
+                    });
+                    continue;
+                }
+
+                // Status: empty cell defaults to Active (an export always
+                // writes it, but hand-made files may not).
+                var isActive = NormalizeStatus(fields[5]);
+
+                // Roles: semicolon-joined inside one cell ("Employee;
+                // Customer") → trimmed, non-empty list.
+                var roles = fields[4]
+                    .Split(';', System.StringSplitOptions.TrimEntries | System.StringSplitOptions.RemoveEmptyEntries)
+                    .ToList();
+
+                rows.Add(new UserImportRowDto
+                {
+                    WorkerId = fields[0],
+                    FullName = fields[1],
+                    Gender = gender,
+                    GroupName = fields[3],
+                    Roles = roles,
+                    IsActive = isActive,
+                    RowNumber = rowNumber
+                });
+            }
+        }
+        catch (System.IO.IOException ex)
+        {
+            _userImportError = Loc["ImportErrorReadFailed", ex.Message];
+            return;
+        }
+
+        if (rows.Count == 0)
+        {
+            _userImportRows = localFailures;
+            _userImportFailed = localFailures.Count;
+            return;
+        }
+
+        _isImportingUsers = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<UserImportResultDto>>(new ImportUsersCommand(rows));
+
+            if (result.IsSuccess)
+            {
+                var report = result.Value;
+                _userImportCreated = report.CreatedCount;
+                _userImportSkipped = report.SkippedCount;
+                _userImportFailed = report.FailedCount + localFailures.Count;
+
+                _userImportRows = report.RowResults.Concat(localFailures).ToList();
+
+                await Toast.Success(Loc["UserImportDone", report.CreatedCount, report.SkippedCount, report.FailedCount + localFailures.Count], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                _userImportError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _userImportError = Loc["ImportErrorGeneric"];
+        }
+        finally
+        {
+            _isImportingUsers = false;
+        }
+    }
+
+    /// <summary>
+    /// Maps a CSV gender cell back to the Gender enum. Accepts the
+    /// canonical English keys ("Male"/"Female"), the current culture's
+    /// localized labels (via the localizer — the common same-deployment
+    /// round-trip), and the known fa-IR label values (so an fa-IR export
+    /// imports cleanly even under an en-US UI). Values must stay in sync
+    /// with AdminUsers.en-US.resx / AdminUsers.fa-IR.resx
+    /// (GenderMale/GenderFemale).
+    /// </summary>
+    private bool TryNormalizeGender(string cell, out Gender gender)
+    {
+        var value = cell?.Trim() ?? string.Empty;
+
+        if (string.Equals(value, "Male", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, Loc["GenderMale"], StringComparison.Ordinal)
+            || value == "مرد")
+        {
+            gender = Gender.Male;
+            return true;
+        }
+
+        if (string.Equals(value, "Female", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, Loc["GenderFemale"], StringComparison.Ordinal)
+            || value == "زن")
+        {
+            gender = Gender.Female;
+            return true;
+        }
+
+        gender = Gender.Male;
+        return false;
+    }
+
+    /// <summary>
+    /// Maps a CSV status cell to the active flag. Active/فعال (either
+    /// case) → true; Inactive/غیرفعال → false; anything else (including
+    /// empty) → true (new accounts default to active). Values in sync with
+    /// AdminUsers.resx (StatusActive/StatusInactive).
+    /// </summary>
+    private static bool NormalizeStatus(string cell)
+    {
+        var value = cell?.Trim() ?? string.Empty;
+
+        if (string.Equals(value, "Inactive", StringComparison.OrdinalIgnoreCase) || value == "غیرفعال")
+        {
+            return false;
+        }
+
+        return true;
+    }
 
 }

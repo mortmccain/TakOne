@@ -655,6 +655,28 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<NotificationRetentionCleanupHostedService>();
 
         // ------------------------------------------------------------------
+        // 5b-2d. Scheduled database backup hosted service.
+        //
+        //        Runs BACKUP DATABASE twice a day — at 03:30 UTC and
+        //        14:30 UTC — into the configured backup directory, and
+        //        deletes backup files older than the retention window
+        //        (default 7 days) after every run.
+        //
+        //        DOCKER NOTE: BACKUP DATABASE writes on the DATABASE
+        //        server's filesystem, so the Docker deployment mounts the
+        //        takone_backups volume into BOTH containers (web:
+        //        /var/lib/takone/backups — DatabaseBackups:Directory; db:
+        //        /var/opt/mssql/backup — DatabaseBackups:ServerPath). See
+        //        DatabaseBackupHostedService's class docs + DEPLOYMENT.md.
+        //
+        //        Registered as a Singleton IHostedService; no Scoped
+        //        dependencies (reads the connection string from
+        //        IConfiguration — the same TakOne:Database section the
+        //        DbContext options bind from).
+        // ------------------------------------------------------------------
+        services.AddHostedService<DatabaseBackupHostedService>();
+
+        // ------------------------------------------------------------------
         // 5b-3. Notification repository — Scoped (shares the scoped
         //       ApplicationDbContext). Used by the sale-lifecycle event
         //       handlers (NotifyOnSaleSubmittedEventHandler etc.) which

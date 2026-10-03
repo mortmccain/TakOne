@@ -95,6 +95,80 @@ public interface IFileStorage
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Persists a binary upload UNDER ITS (SANITIZED) ORIGINAL FILE NAME and
+    /// returns the public URL — the name-preserving counterpart of
+    /// <see cref="SaveAsync"/>, used by the Settings page's bulk picture
+    /// upload.
+    ///
+    /// WHY PRESERVE THE NAME (when SaveAsync deliberately randomizes it):
+    /// the product CSV export records each product's picture FILE NAME, and
+    /// the product import re-links products to pictures by that name. A
+    /// restore therefore needs the files to land on disk under EXACTLY the
+    /// names the CSV references — randomizing would break every link. For
+    /// ordinary single-product uploads (CreateProduct / picture replace)
+    /// the randomized <see cref="SaveAsync"/> remains the right choice.
+    ///
+    /// SAFETY (same defense-in-depth as SaveAsync, adapted to fixed names):
+    ///   - <b>Content sniffing</b> — the magic bytes decide the TRUE
+    ///     content type and the declared type must agree; unknown types are
+    ///     rejected.
+    ///   - <b>Extension forcing</b> — the on-disk EXTENSION is always the
+    ///     sniffed type's canonical extension (jpg/png/webp), never the
+    ///     client-supplied one. Only the BASE name is preserved.
+    ///   - <b>Path-traversal-proof sanitization</b> — the name is stripped
+    ///     to <c>[A-Za-z0-9._-]</c>; path separators, Unicode tricks, and
+    ///     control characters are removed, so the final path can never
+    ///     escape the products directory. A name that sanitizes to nothing
+    ///     (or nothing but its extension) is rejected.
+    ///   - <b>Length cap</b> — the sanitized name (including extension) is
+    ///     capped; longer names are rejected (not truncated — a silent
+    ///     truncation could collide two different files).
+    ///   - <b>Size limit</b> — same configurable max as <see cref="SaveAsync"/>.
+    ///   - <b>Atomic write</b> — temp file + rename (overwrite: true), so a
+    ///     crash never leaves a half-written file under the original name.
+    ///
+    /// OVERWRITE SEMANTICS: if a file with the same (sanitized) name
+    /// already exists it is REPLACED — re-running a bulk restore is
+    /// idempotent, and the admin performing the restore wants the uploaded
+    /// bytes to win. (With SaveAsync-randomized 128-bit names a genuine
+    /// collision is practically impossible; a same-name upload is virtually
+    /// always the same file coming back.)
+    /// </summary>
+    /// <param name="content">
+    /// The binary content to store. The implementation does NOT take
+    /// ownership of the stream's lifetime — caller disposes it.
+    /// </param>
+    /// <param name="fileName">
+    /// The file name to preserve (e.g. <c>ab12cd34.jpg</c> — the name the
+    /// product CSV export recorded, or any caller-chosen name). Sanitized
+    /// as described above; never used verbatim on disk.
+    /// </param>
+    /// <param name="contentType">
+    /// The MIME type as declared by the client (e.g. <c>image/jpeg</c>).
+    /// Advisory only — the implementation verifies the actual content via
+    /// magic-byte sniffing and rejects mismatches.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token. Cancellation aborts the write and
+    /// cleans up any temp file.
+    /// </param>
+    /// <returns>
+    /// The public URL the file can be retrieved from — always
+    /// <c>/uploads/products/{sanitizedFileName}</c> in the current
+    /// implementation.
+    /// </returns>
+    /// <exception cref="System.IO.InvalidDataException">
+    /// Thrown when the content type is unrecognized, the declared type
+    /// doesn't match the sniffed type, the sanitized name is empty/over
+    /// the length cap, or the content exceeds the configured maximum size.
+    /// </exception>
+    Task<string> SaveWithOriginalNameAsync(
+        Stream content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Hard-deletes a previously-stored file by its public URL.
     ///
     /// Used when a product picture is being REPLACED — the old file at

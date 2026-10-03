@@ -375,18 +375,21 @@
                filters (all pages, capped at 2,000) with the same filters +
                sort the grid shows. Previously it could only ship the ≤100
                loaded rows. Admin/Manager-only page ⇒ no extra authorization
-               needed beyond the page's [Authorize]. *@
+               needed beyond the page's [Authorize].
+               NOTE (empty-button fix): RadzenButton renders ChildContent
+               EXCLUSIVELY when set — the old `@if (_isExporting)` child
+               block always produced a non-null (empty) RenderFragment,
+               so the Text + Icon never rendered and the button looked
+               blank. The built-in IsBusy/BusyText parameters now provide
+               the exporting spinner without ChildContent. *@
             <RadzenButton Text="@Loc["ExportCsvButton"]"
                           Icon="download"
                           ButtonStyle="ButtonStyle.Secondary"
                           Variant="Variant.Outlined"
-                          Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
-                          Click="@ExportUsersCsvAsync">
-                @if (_isExporting)
-                {
-                    <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
-                }
-            </RadzenButton>
+                          Disabled="@(_isLoading || _totalCount == 0)"
+                          IsBusy="@_isExporting"
+                          BusyText="@Loc["ExportCsvButton"]"
+                          Click="@ExportUsersCsvAsync" />
             <RadzenButton Text="@Loc["CreateUserButton"]"
                           Icon="person_add"
                           ButtonStyle="ButtonStyle.Primary"
@@ -416,56 +419,6 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state (no users at all, or none matching the filters) ──
-       _totalCount is the SERVER-side count of every row matching the
-       active filters — zero here means "no users exist for this filter
-       combination". When NO filter is active and the count is zero, this
-       is a fresh install with no users yet (or an Employee viewer with a
-       stripped view) — the "create the first user" state. When a filter
-       IS active and matches zero rows, a targeted message (plus the
-       Clear button) beats a bare "no users found". *@
-    else if (_totalCount == 0 && !_isLoading)
-    {
-        @if (HasActiveFilters)
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="filter_alt_off"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
-                                  Icon="restart_alt"
-                                  ButtonStyle="ButtonStyle.Secondary"
-                                  Variant="Variant.Outlined"
-                                  Click="@ClearAllFiltersAsync" />
-                </RadzenStack>
-            </RadzenCard>
-        }
-        else
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="group_off"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitle"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessage"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    @if (_isAdmin || _isManagerOnly)
-                    {
-                        <RadzenButton Text="@Loc["CreateUserButton"]"
-                                      Icon="person_add"
-                                      ButtonStyle="ButtonStyle.Primary"
-                                      Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
-                    }
-                </RadzenStack>
-            </RadzenCard>
-        }
-    }
-
     @* ── User table (Round 5 — Radzen LoadData, server-driven) ──
        Data + Count + LoadData: the grid fires LoadData on mount, on pager
        clicks, on sort-header clicks, and on filter changes; the page
@@ -476,7 +429,15 @@
        Worker ID and Full Name use Radzen's default text filter, now
        translated server-side. The Group column is deliberately NOT
        sortable (the group name lives on another aggregate — see the
-       UsersSortBy doc). *@
+       UsersSortBy doc).
+
+       EMPTY RESULTS (filtered to nothing): the grid stays mounted and
+       renders its header + FILTER ROW + EmptyText — the search inputs
+       stay visible and editable so the user can fix the over-narrow
+       filter in place — and the empty-state message card + Clear-filters
+       button render BELOW the grid (see the block after the veil). The
+       pre-Task-7 behavior unmounted the grid entirely, which threw away
+       both the table shell and the search bar — disorienting. *@
     else
     {
         <div class="admin-users-grid-wrap">
@@ -817,6 +778,61 @@
                 }
             }
         </div>
+
+        @* ── Empty state (BELOW the grid — Task 7) ──
+           _totalCount is the SERVER-side count of every row matching the
+           active filters — zero here means "no users exist for this
+           filter combination" (and _users not null means a load actually
+           completed; null = never loaded / retry remount, where the veil
+           is still up). The grid above stays mounted with its filter row
+           visible, so this card explains the emptiness and offers the
+           one-click escape hatch without taking the search bar away.
+           When NO filter is active and the count is zero, this is a
+           fresh install with no users yet (or an Employee viewer with a
+           stripped view) — the "create the first user" state. When a
+           filter IS active and matches zero rows, a targeted message
+           plus the Clear button. *@
+        @if (_totalCount == 0 && !_isLoading && _users is not null)
+        {
+            @if (HasActiveFilters)
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="filter_alt_off"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                      Icon="restart_alt"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Click="@ClearAllFiltersAsync" />
+                    </RadzenStack>
+                </RadzenCard>
+            }
+            else
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="group_off"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitle"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessage"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        @if (_isAdmin || _isManagerOnly)
+                        {
+                            <RadzenButton Text="@Loc["CreateUserButton"]"
+                                          Icon="person_add"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Click="@(() => Navigation.NavigateTo("/Admin/Users/Create", forceLoad: false))" />
+                        }
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        }
     }
 
     @* ── Reset Password modal ──
@@ -1018,6 +1034,46 @@
     /// </summary>
     private bool _healingPage;
 
+    // ── URL-restored grid state (search/selection/page persistence) ─────
+    //
+    // Parsed from the query string in OnInitializedAsync (BEFORE the grid
+    // mounts), applied to the grid's columns in OnAfterRenderAsync once
+    // the grid reference exists, and continuously mirrored BACK to the URL
+    // by PersistGridStateToUrl after every successful load. See
+    // GridUrlState's class docs for the why-the-URL rationale.
+
+    /// <summary>The grid's default page size — the value the markup's PageSize parameter binds.</summary>
+    private const int DefaultGridPageSize = 20;
+
+    private UsersTextFilter? _restoredWorkerIdFilter;
+    private UsersTextFilter? _restoredFullNameFilter;
+    private Domain.Users.Gender? _restoredGender;
+    private Guid? _restoredGroupId;
+    private bool? _restoredIsActive;
+    private int _restoredPage = 1;
+    private int _restoredPageSize = DefaultGridPageSize;
+
+    /// <summary>
+    /// True when the URL carried ANY grid-state parameter — gates the
+    /// one-shot apply in OnAfterRenderAsync. Cleared once applied (or when
+    /// there was nothing to apply) so ordinary re-renders never re-run it.
+    /// </summary>
+    private bool _hasRestoredGridState;
+
+    /// <summary>
+    /// One-shot grid-state restore: runs on the FIRST render where the
+    /// grid is mounted (the ref is set), because the grid only mounts
+    /// after OnInitializedAsync completes and the loading veil lifts.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_hasRestoredGridState && grid is not null)
+        {
+            _hasRestoredGridState = false; // one-shot — never re-apply
+            await ApplyRestoredGridStateAsync();
+        }
+    }
+
     /// <summary>
     /// The Id of the user whose action button is currently in flight.
     /// Null when no action is pending. Used to disable that row's action
@@ -1162,10 +1218,265 @@
             Logger.LogWarning("AdminUsers: failed to load groups for the filter dropdown: {Exception}", ex);
         }
 
+        // URL-restored grid state (search terms / dropdown selections /
+        // page + page size): parsed BEFORE the grid mounts so the dropdown
+        // fields carry their restored values into the first render. The
+        // column FilterValues are applied in OnAfterRenderAsync (see
+        // ApplyRestoredGridStateAsync).
+        RestoreGridStateFromUrl();
+
         // NOTE: the data load is NOT kicked off here — the grid mounts in
         // the same render and fires its LoadData-on-init, which drives
         // LoadGridDataAsync. Kicking a manual load here too would double
         // the initial query.
+    }
+
+    /// <summary>
+    /// One-shot apply of URL-restored grid state: sets each column's
+    /// FilterValue/FilterOperator (the same programmatic-filter API the
+    /// dropdown handlers use) and drives the grid to the restored page.
+    /// Runs from <see cref="OnAfterRenderAsync"/> on the FIRST render
+    /// where the grid reference exists (the grid mounts only after the
+    /// loading veil lifts).
+    /// </summary>
+    private async Task ApplyRestoredGridStateAsync()
+    {
+        SetTextColumnFilter("WorkerId", _restoredWorkerIdFilter);
+        SetTextColumnFilter("FullName", _restoredFullNameFilter);
+
+        if (_restoredGender is { } gender)
+        {
+            SetColumnFilter("Gender", gender, FilterOperator.Equals);
+        }
+
+        if (_restoredGroupId is { } groupId)
+        {
+            SetColumnFilter("GroupName", groupId, FilterOperator.Equals);
+        }
+
+        if (_restoredIsActive is { } isActive)
+        {
+            SetColumnFilter("IsActive", isActive, FilterOperator.Equals);
+        }
+
+        if (_restoredPageSize != DefaultGridPageSize)
+        {
+            grid.PageSize = _restoredPageSize;
+        }
+
+        // GoToPage computes Skip = page × PageSize internally and re-fires
+        // LoadData (forceReload) with the just-set column filters — the
+        // same contract as the heal's FirstPage(true). Page 1 needs no
+        // navigation: a plain Reload() re-fires the load with the filters.
+        if (_restoredPage > 1)
+        {
+            await grid.GoToPage(_restoredPage - 1, forceReload: true);
+        }
+        else
+        {
+            await grid.Reload();
+        }
+    }
+
+    /// <summary>
+    /// Sets one column's FilterValue + FilterOperator by Property name —
+    /// the programmatic-filter API the dropdown handlers use (same
+    /// BL0005-suppressed Radzen contract).
+    /// </summary>
+    private void SetColumnFilter(string property, object? value, FilterOperator op)
+    {
+        var column = grid.ColumnsCollection.FirstOrDefault(c => c.Property == property);
+        if (column is null)
+        {
+            return; // column not mounted (shouldn't happen post-render)
+        }
+
+        column.FilterValue = value;
+        column.FilterOperator = op;
+    }
+
+    /// <summary>
+    /// Sets a text column's FilterValue + the operator mapped from the
+    /// typed <see cref="UsersTextFilter"/> (the URL round-tripped the
+    /// operator, so an "equals" search restores as "equals", not the
+    /// filter menu's default "contains").
+    /// </summary>
+    private void SetTextColumnFilter(string property, UsersTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        var op = filter.Operator switch
+        {
+            UsersTextOperator.Contains => FilterOperator.Contains,
+            UsersTextOperator.NotContains => FilterOperator.DoesNotContain,
+            UsersTextOperator.Equals => FilterOperator.Equals,
+            UsersTextOperator.NotEquals => FilterOperator.NotEquals,
+            UsersTextOperator.StartsWith => FilterOperator.StartsWith,
+            UsersTextOperator.EndsWith => FilterOperator.EndsWith,
+            _ => FilterOperator.Contains
+        };
+
+        SetColumnFilter(property, filter.Value, op);
+    }
+
+    /// <summary>
+    /// Parses the URL query into the restored-grid-state fields. Also
+    /// seeds the dropdown fields (_selected*Filter) so the FilterTemplate
+    /// dropdowns RENDER the restored selection on first paint.
+    ///
+    /// PARAMETER KEYS: wid/widop + name/nameop (text searches, operator
+    /// name optional — absent = Contains), gender (Male/Female), group
+    /// (group Guid), status (active/inactive), page (1-based, persisted
+    /// only when > 1), size (persisted only when ≠ the 20 default).
+    /// </summary>
+    private void RestoreGridStateFromUrl()
+    {
+        var query = GridUrlState.CurrentQuery(Navigation);
+
+        if (query.TryGetValue("wid", out var wid) && !string.IsNullOrWhiteSpace(wid))
+        {
+            _restoredWorkerIdFilter = new UsersTextFilter(wid.Trim(), ParseTextOperator(query.GetValueOrDefault("widop")));
+        }
+
+        if (query.TryGetValue("name", out var name) && !string.IsNullOrWhiteSpace(name))
+        {
+            _restoredFullNameFilter = new UsersTextFilter(name.Trim(), ParseTextOperator(query.GetValueOrDefault("nameop")));
+        }
+
+        if (query.TryGetValue("gender", out var gender)
+            && Enum.TryParse<Domain.Users.Gender>(gender, ignoreCase: true, out var parsedGender))
+        {
+            _restoredGender = parsedGender;
+        }
+
+        if (query.TryGetValue("group", out var group) && Guid.TryParse(group, out var parsedGroup))
+        {
+            _restoredGroupId = parsedGroup;
+        }
+
+        if (query.TryGetValue("status", out var status))
+        {
+            if (string.Equals(status, "active", StringComparison.OrdinalIgnoreCase))
+            {
+                _restoredIsActive = true;
+            }
+            else if (string.Equals(status, "inactive", StringComparison.OrdinalIgnoreCase))
+            {
+                _restoredIsActive = false;
+            }
+        }
+
+        if (query.TryGetValue("page", out var page)
+            && int.TryParse(page, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPage)
+            && parsedPage > 1)
+        {
+            _restoredPage = parsedPage;
+        }
+
+        if (query.TryGetValue("size", out var size)
+            && int.TryParse(size, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSize)
+            && parsedSize > 0)
+        {
+            _restoredPageSize = parsedSize;
+        }
+
+        _hasRestoredGridState =
+            _restoredWorkerIdFilter is not null ||
+            _restoredFullNameFilter is not null ||
+            _restoredGender is not null ||
+            _restoredGroupId is not null ||
+            _restoredIsActive is not null ||
+            _restoredPage > 1 ||
+            _restoredPageSize != DefaultGridPageSize;
+
+        // Dropdown fields — so the FilterTemplate dropdowns render the
+        // restored selection immediately (the column FilterValue alone
+        // drives the QUERY, not the dropdown's visible value).
+        _selectedGenderFilter = _restoredGender?.ToString();
+        _selectedStatusFilter = _restoredIsActive switch
+        {
+            null => null,
+            true => "Active",
+            false => "Inactive"
+        };
+        _selectedGroupFilter = _restoredGroupId;
+    }
+
+    /// <summary>
+    /// Parses a text-operator name from the URL ("Equals", "StartsWith",
+    /// …). Absent/unknown → Contains (the filter menu's default).
+    /// </summary>
+    private static UsersTextOperator ParseTextOperator(string? value)
+        => Enum.TryParse<UsersTextOperator>(value, ignoreCase: true, out var op) ? op : UsersTextOperator.Contains;
+
+    /// <summary>
+    /// Mirrors the active filter/page state into the URL (replace, no
+    /// history entry) — called after every successful grid load, so the
+    /// URL always describes what the user sees. Only NON-DEFAULT state is
+    /// written (empty filters / page 1 / size 20 → bare path), which also
+    /// keeps the default-load path from churning the address bar.
+    /// </summary>
+    private void PersistGridStateToUrl(int pageNumber, int pageSize)
+    {
+        var parameters = new List<KeyValuePair<string, string?>>();
+
+        AppendTextFilter(parameters, "wid", "widop", _activeWorkerIdFilter);
+        AppendTextFilter(parameters, "name", "nameop", _activeFullNameFilter);
+
+        if (_activeGender is { } gender)
+        {
+            parameters.Add(new("gender", gender.ToString()));
+        }
+
+        if (_activeGroupId is { } groupId)
+        {
+            parameters.Add(new("group", groupId.ToString()));
+        }
+
+        if (_activeIsActive is { } isActive)
+        {
+            parameters.Add(new("status", isActive ? "active" : "inactive"));
+        }
+
+        if (pageSize != DefaultGridPageSize)
+        {
+            parameters.Add(new("size", pageSize.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (pageNumber > 1)
+        {
+            parameters.Add(new("page", pageNumber.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        GridUrlState.ReplaceIfChanged(
+            Navigation,
+            GridUrlState.BuildRelative(Navigation, parameters));
+    }
+
+    /// <summary>
+    /// Appends a text filter's value (+ operator, when it isn't the
+    /// default Contains) to the parameter list.
+    /// </summary>
+    private static void AppendTextFilter(
+        List<KeyValuePair<string, string?>> parameters,
+        string valueKey,
+        string operatorKey,
+        UsersTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        parameters.Add(new(valueKey, filter.Value));
+
+        if (filter.Operator != UsersTextOperator.Contains)
+        {
+            parameters.Add(new(operatorKey, filter.Operator.ToString()));
+        }
     }
 
     // ── Data loading (Radzen LoadData — Round 5) ────────────────────────
@@ -1225,6 +1536,11 @@
                     _healingPage = false;
                 }
             }
+
+            // URL mirror (NOT on the heal path — its early return above
+            // hands state ownership to the re-fired page-1 load, which
+            // persists its own state when it completes).
+            PersistGridStateToUrl(pageNumber, pageSize);
         }
         catch (Exception)
         {
@@ -1274,13 +1590,16 @@
     }
 
     /// <summary>
-    /// Clears EVERY column filter, then reloads. The filtered-empty
-    /// state's one-click escape hatch. This button only renders when the
-    /// grid is UNMOUNTED (the empty state replaced it), so the reload
-    /// happens via REMOUNT: the grid mounts with Data=null and fires its
-    /// LoadData-on-init with every filter naturally reset (fresh column
-    /// instances carry no filter values). Do NOT call grid.FirstPage(true)
-    /// here — the disposed grid's methods must not be touched.
+    /// Clears EVERY column filter, then reloads from page 1. The filtered-
+    /// empty state's one-click escape hatch.
+    ///
+    /// TASK-7 UPDATE: the grid now stays MOUNTED when a filter matches
+    /// nothing (the empty card renders BELOW it), so this runs against a
+    /// LIVE grid: reset the page-level dropdown fields, clear every
+    /// column's FilterValue, and re-fire the load via FirstPage(true) —
+    /// the same API the individual filter handlers use. (The old
+    /// remount-based implementation relied on the grid being unmounted by
+    /// the empty state, which no longer happens.)
     /// </summary>
     private async Task ClearAllFiltersAsync()
     {
@@ -1288,14 +1607,23 @@
         _selectedGenderFilter = null;
         _selectedGroupFilter = null;
 
-        // REMOUNT TRIGGER: _users=null makes the grid mount with Data=null
-        // (which fires LoadData — the pinned Radzen contract), and
-        // _isLoading=true keeps the grid branch rendered (instead of
-        // flashing the empty state) until the fresh load completes.
-        _users = null;
-        _isLoading = true;
+        if (grid is not null)
+        {
+            foreach (var column in grid.ColumnsCollection)
+            {
+                column.FilterValue = null;
+            }
 
-        await Task.CompletedTask;
+            _isLoading = true;
+            try
+            {
+                await grid.FirstPage(true); // re-fires LoadData with no filters
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
     }
 
     // ── Filter handlers ─────────────────────────────────────────────────

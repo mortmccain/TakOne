@@ -290,4 +290,136 @@
   <data name="AboutCardTitle" xml:space="preserve">
     <value>درباره</value>
   </data>
+
+  <!-- Admin tools section (product import, bulk picture upload, user import) -->
+  <data name="AdminSectionTitle" xml:space="preserve">
+    <value>ابزارهای مدیر</value>
+  </data>
+  <data name="AdminSectionSubtitle" xml:space="preserve">
+    <value>عملیات گروهی برای مدیریت کالاها و حساب‌ها. فقط برای مدیران نمایش داده می‌شود.</value>
+  </data>
+  <data name="ProductImportCardTitle" xml:space="preserve">
+    <value>ورود کالاها از فایل CSV</value>
+  </data>
+  <data name="ProductImportCardHint" xml:space="preserve">
+    <value>فایل CSV خروجی صفحهٔ کالاها را وارد می‌کند. سطرها بر اساس نام تطبیق داده می‌شوند: نام جدید ایجاد می‌شود و نام موجود به‌روزرسانی (قیمت، موجودی، دسته، تصویر).</value>
+  </data>
+  <data name="ProductImportPickTitle" xml:space="preserve">
+    <value>انتخاب فایل CSV کالاها</value>
+  </data>
+  <data name="ProductImportPickHint" xml:space="preserve">
+    <value>ترتیب ستون‌ها: نام، دسته، زیر‌دسته، زیر-زیر‌دسته، قیمت، واحد پول، موجودی، وضعیت، پوشهٔ تصویر، نام فایل تصویر.</value>
+  </data>
+  <data name="PictureUploadCardTitle" xml:space="preserve">
+    <value>بارگذاری گروهی تصاویر</value>
+  </data>
+  <data name="PictureUploadCardHint" xml:space="preserve">
+    <value>چندین تصویر کالا را یک‌جا بارگذاری می‌کند. فایل‌ها با نام اصلی خود ذخیره می‌شوند تا CSV بازیابی‌شده هر کالا را به‌طور خودکار به تصویرش متصل کند. JPEG ، PNG یا WebP، حداکثر ۵ مگابایت برای هر فایل.</value>
+  </data>
+  <data name="PictureUploadPickTitle" xml:space="preserve">
+    <value>انتخاب فایل‌های تصویر</value>
+  </data>
+  <data name="PictureUploadPickHint" xml:space="preserve">
+    <value>می‌توانید چند فایل را هم‌زمان انتخاب کنید (حداکثر ۵۰ فایل در هر دسته).</value>
+  </data>
+  <data name="PictureUploadButton" xml:space="preserve">
+    <value>بارگذاری {0} تصویر</value>
+  </data>
+  <data name="PictureUploadClearButton" xml:space="preserve">
+    <value>پاک کردن انتخاب</value>
+  </data>
+  <data name="UserImportCardTitle" xml:space="preserve">
+    <value>ورود کاربران از فایل CSV</value>
+  </data>
+  <data name="UserImportCardHint" xml:space="preserve">
+    <value>فایل CSV خروجی صفحهٔ مدیریت کاربران را وارد می‌کند. شناسه‌های کاربری موجود رد می‌شوند؛ کاربران جدید رمز پیش‌فرض می‌گیرند و باید در اولین ورود آن را عوض کنند.</value>
+  </data>
+  <data name="UserImportPickTitle" xml:space="preserve">
+    <value>انتخاب فایل CSV کاربران</value>
+  </data>
+  <data name="UserImportPickHint" xml:space="preserve">
+    <value>ترتیب ستون‌ها: شناسه کاربری، نام کامل، جنسیت، گروه، نقش‌ها، وضعیت.</value>
+  </data>
+  <data name="ImportWorking" xml:space="preserve">
+    <value>در حال ورود اطلاعات…</value>
+  </data>
+  <data name="UploadWorking" xml:space="preserve">
+    <value>بارگذاری {0} از {1}…</value>
+  </data>
+  <data name="ImportCreatedCount" xml:space="preserve">
+    <value>ایجادشده: {0}</value>
+  </data>
+  <data name="ImportUpdatedCount" xml:space="preserve">
+    <value>به‌روزرسانی‌شده: {0}</value>
+  </data>
+  <data name="UserImportSkippedCount" xml:space="preserve">
+    <value>از قبل موجود: {0}</value>
+  </data>
+  <data name="ImportFailedCount" xml:space="preserve">
+    <value>ناموفق: {0}</value>
+  </data>
+  <data name="ImportRowLabel" xml:space="preserve">
+    <value>سطر {0}</value>
+  </data>
+  <data name="ImportOutcomeCreated" xml:space="preserve">
+    <value>ایجاد شد</value>
+  </data>
+  <data name="ImportOutcomeUpdated" xml:space="preserve">
+    <value>به‌روزرسانی شد</value>
+  </data>
+  <data name="ImportOutcomeSkipped" xml:space="preserve">
+    <value>از قبل موجود بود</value>
+  </data>
+  <data name="ImportErrorNoDataRows" xml:space="preserve">
+    <value>فایل هیچ سطر داده‌ای ندارد.</value>
+  </data>
+  <data name="ImportErrorShortRow" xml:space="preserve">
+    <value>این سطر ستون‌های کمتری نسبت به قالب مورد انتظار دارد.</value>
+  </data>
+  <data name="ImportErrorBadNumber" xml:space="preserve">
+    <value>قیمت یا موجودی عدد معتبری نیست.</value>
+  </data>
+  <data name="ImportErrorBadGender" xml:space="preserve">
+    <value>جنسیت شناسایی نشد.</value>
+  </data>
+  <data name="ImportErrorReadFailed" xml:space="preserve">
+    <value>خواندن فایل ممکن نشد: {0}</value>
+  </data>
+  <data name="ImportErrorGeneric" xml:space="preserve">
+    <value>ورود اطلاعات ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+  <data name="ProductImportDone" xml:space="preserve">
+    <value>ورود کالاها تمام شد: {0} ایجاد، {1} به‌روزرسانی، {2} ناموفق.</value>
+  </data>
+  <data name="UserImportDone" xml:space="preserve">
+    <value>ورود کاربران تمام شد: {0} ایجاد، {1} از قبل موجود، {2} ناموفق.</value>
+  </data>
+  <data name="PictureUploadSomeRejected" xml:space="preserve">
+    <value>{0} فایل قبل از بارگذاری رد شد (نوع پشتیبانی‌نشده یا حجم زیاد).</value>
+  </data>
+  <data name="PictureUploadDone" xml:space="preserve">
+    <value>{0} تصویر بارگذاری شد.</value>
+  </data>
+  <data name="PictureUploadDoneWithFailures" xml:space="preserve">
+    <value>{0} تصویر بارگذاری شد، {1} ناموفق.</value>
+  </data>
+  <data name="UploadSucceededCount" xml:space="preserve">
+    <value>بارگذاری‌شده: {0}</value>
+  </data>
+  <data name="UploadFailedCount" xml:space="preserve">
+    <value>ناموفق: {0}</value>
+  </data>
+
+  <data name="PictureUploadErrorType" xml:space="preserve">
+    <value>نوع فایل پشتیبانی نمی‌شود (فقط JPEG ، PNG یا WebP).</value>
+  </data>
+  <data name="PictureUploadErrorSize" xml:space="preserve">
+    <value>حجم فایل بیش از حد مجاز ۵ مگابایت است.</value>
+  </data>
+  <data name="PictureUploadErrorRead" xml:space="preserve">
+    <value>خواندن فایل ممکن نشد.</value>
+  </data>
+  <data name="PictureUploadErrorStorage" xml:space="preserve">
+    <value>ذخیرهٔ فایل ناموفق بود.</value>
+  </data>
 </root>
