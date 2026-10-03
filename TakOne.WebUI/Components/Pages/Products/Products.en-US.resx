@@ -457,4 +457,16 @@
     <value>Availability</value>
     <comment>CSV export column header — in-stock/out-of-stock label (matches the card badge).</comment>
   </data>
+  <data name="ShowStockOutChip" xml:space="preserve">
+    <value>Include out of stock</value>
+    <comment>QA-10 — staff (admin/manager) toggle chip in the products tools row: includes zero-stock products in the catalog grid.</comment>
+  </data>
+  <data name="ShowStockOutTooltip" xml:space="preserve">
+    <value>Show out-of-stock products in the catalog (admin/manager view)</value>
+    <comment>QA-10 — tooltip for the include-out-of-stock toggle chip.</comment>
+  </data>
+  <data name="PagerPerPage" xml:space="preserve">
+    <value>Per page</value>
+    <comment>QA-10 — label for the pager row's page-size selector (12/24/48 cards per page).</comment>
+  </data>
 </root>

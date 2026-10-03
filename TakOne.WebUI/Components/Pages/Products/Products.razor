@@ -543,6 +543,49 @@
                    picture paths (those belong to the admin restore
                    workflow's export). *@
                 <div class="tm-products-tools">
+                    @* OUT-OF-STOCK TOGGLE (staff chip — QA-10)
+                       Admin/Manager only: includes zero-stock ("inactive")
+                       products in the grid so gaps in the catalog are
+                       visible from the shop itself (the AdminProducts grid
+                       already shows them, but the shop is where a manager
+                       browses the catalog like a customer).
+                       GetProductsPaginatedQueryHandler enforces the role
+                       SERVER-SIDE (silently clamps IncludeInactive for
+                       every other caller), so this UI gate is convenience,
+                       not authorization. The state persists as oos=1 in
+                       the URL (only ever written for staff) and rides the
+                       SAME query the grid AND the CSV export issue — the
+                       toggle applies to both automatically. Active state
+                       uses the danger tint the out-of-stock card badges
+                       share. aria-pressed is a LITERAL STRING — Blazor
+                       omits boolean-false attributes, and
+                       aria-pressed="false" is meaningful ARIA (the same
+                       workaround the AdminProducts low-stock chip and the
+                       Sales pending chip use). *@
+                    @if (_canSeeInactive)
+                    {
+                        <button type="button"
+                                class="tm-oos-chip @(_includeInactive ? "tm-oos-chip--active" : "")"
+                                title="@Loc["ShowStockOutTooltip"]"
+                                aria-pressed="@(_includeInactive ? "true" : "false")"
+                                disabled="@_isLoading"
+                                @onclick="ToggleIncludeInactiveAsync">
+                            @if (_includeInactive)
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                                </svg>
+                            }
+                            <span>@Loc["ShowStockOutChip"]</span>
+                        </button>
+                    }
                     <div class="tm-sort-control">
                         <svg class="tm-sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h10M3 10h7M3 15h4M17 4v16m0 0l-4-4m4 4l4-4" />
@@ -644,7 +687,7 @@
                         var salaryReached = budget is not null
                             && (qty * unitPrice) > budget.Remaining;
                         var disabled = limitReached || stockOut || salaryReached || _isAddingAny;
-                        <div class="tm-product-card">
+                        <div class="tm-product-card @(stockOut ? "tm-product-card--out" : "")">
                             <div class="tm-product-image">
                                 @if (!string.IsNullOrWhiteSpace(product.PictureUrl))
                                 {
@@ -798,6 +841,32 @@
                         <span class="tm-pager-info tm-persian-num">
                             @string.Format(Loc["PagerInfo"], ToPersian(_pageNumber), ToPersian(totalPages), ToPersian(_totalCount))
                         </span>
+
+                        @* PAGE-SIZE SELECTOR (QA-10)
+                           Sits at the end of the pager row: a compact
+                           native select offering the three design-checked
+                           sizes (12/24/48). Native select = free keyboard
+                           + screen-reader + mobile-picker support; the
+                           styling matches the page's pill aesthetic (the
+                           sort select's caret technique, but bordered so
+                           it reads as a pager control, not a bare
+                           dropdown). Changing the size restarts at page 1
+                           and persists as size=N in the URL (only when
+                           ≠ the 12 default) — the same task-6 state
+                           contract the admin grids use. *@
+                        <label class="tm-page-size-label" for="tm-products-page-size">@Loc["PagerPerPage"]</label>
+                        <select id="tm-products-page-size"
+                                class="tm-page-size-select"
+                                value="@_pageSize.ToString(CultureInfo.InvariantCulture)"
+                                @onchange="OnPageSizeChanged"
+                                disabled="@_isLoading">
+                            @foreach (var size in PageSizeChoices)
+                            {
+                                <option value="@size.ToString(CultureInfo.InvariantCulture)">
+                                    @ToPersian(size)
+                                </option>
+                            }
+                        </select>
                     </div>
                 }
             }
@@ -955,7 +1024,26 @@
     // light), anything else → show moon (click → dark).
     private string _currentTheme = "tak-light";
 
-    private const int _pageSize = 12;
+    private const int DefaultPageSize = 12;
+
+    /// <summary>
+    /// Grid page size (QA-10). 12 is the design default (3-col card grid
+    /// × 4 rows on the 7/12 center column). The pager row's selector
+    /// offers <see cref="PageSizeChoices"/>; the URL state contract
+    /// persists the pick as size=N (only when ≠ the default, like every
+    /// other non-default parameter).
+    /// </summary>
+    private int _pageSize = DefaultPageSize;
+
+    /// <summary>
+    /// The page sizes the pager's selector offers — design-checked
+    /// against the 3-col card grid (12/24/48 stay multiples of the row
+    /// count so the last row is never a lonely card). Anything outside
+    /// this set is ignored by both the URL restore and the change
+    /// handler — the page never dispatches an arbitrary DOM value.
+    /// </summary>
+    private static readonly int[] PageSizeChoices = { 12, 24, 48 };
+
     private int _pageNumber = 1;
     private int _totalCount;
 
@@ -1044,6 +1132,30 @@
     // CurrentUser.IsInRole on every render).
     private bool _isReadOnly;
 
+    // ── Out-of-stock visibility (Admin/Manager — QA-10) ──────────────────
+
+    /// <summary>
+    /// Admin/Manager view mode: includes out-of-stock ("inactive")
+    /// products in the shop catalog grid. Backed by
+    /// <see cref="GetProductsPaginatedQuery.IncludeInactive"/> — the
+    /// handler enforces the role SERVER-SIDE (silently clamping the
+    /// flag for every other caller), so this UI state is convenience,
+    /// not authorization. Persisted in the URL as oos=1 (only ever
+    /// written when <see cref="_canSeeInactive"/> — a customer opening
+    /// a staff-shared link keeps the default in-stock view, matching
+    /// the server's own clamp).
+    /// </summary>
+    private bool _includeInactive;
+
+    /// <summary>
+    /// True when the signed-in user holds Admin or Manager — the only
+    /// roles <c>GetProductsPaginatedQueryHandler</c> lets see inactive
+    /// (zero-stock) products. Resolved once in OnInitializedAsync
+    /// BEFORE the URL restore parses <c>?oos=1</c>, so a non-staff user
+    /// opening a shared link never even enters the staff view locally.
+    /// </summary>
+    private bool _canSeeInactive;
+
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
@@ -1057,6 +1169,14 @@
                       || CurrentUser.IsInRole(Roles.Manager)
                       || CurrentUser.IsInRole(Roles.Admin);
         _isReadOnly = CurrentUser.IsInRole(Roles.ReadOnly) && !canShop;
+
+        // Out-of-stock visibility is offered only to the roles the
+        // query's handler actually honors (Admin/Manager — see the
+        // handler's authorization-override block). Everything else
+        // never sees the chip, and a hand-crafted ?oos=1 URL is
+        // ignored by the restore below.
+        _canSeeInactive = CurrentUser.IsInRole(Roles.Admin)
+                          || CurrentUser.IsInRole(Roles.Manager);
 
         // URL-restored state (search term / category / page / sort): parsed
         // BEFORE the initial loads so the first query already reflects it.
@@ -1122,7 +1242,10 @@
     /// Parses the URL query into the shop state BEFORE the initial loads.
     /// PARAMETER KEYS: q (search term), cat (category Guid), page
     /// (1-based; persisted only when > 1), sort (ProductSortBy name;
-    /// persisted only when ≠ the Name default).
+    /// persisted only when ≠ the Name default), oos ("1" = include
+    /// out-of-stock products; STAFF ONLY — parsed solely when
+    /// <see cref="_canSeeInactive"/> so a customer opening a shared
+    /// staff link keeps the in-stock view).
     /// </summary>
     private void RestoreStateFromUrl()
     {
@@ -1149,6 +1272,29 @@
             && Enum.TryParse<ProductSortBy>(sort, ignoreCase: false, out var parsedSort))
         {
             _sortBy = parsedSort;
+        }
+
+        // Page size — accepted ONLY from the three design-checked choices
+        // (anything else — a stale shared link, a hand-edited value — keeps
+        // the default). The handler clamps the server side anyway (≤100,
+        // ≥1), but accepting unknown values locally would render a pager
+        // whose button count disagrees with the grid.
+        if (query.TryGetValue("size", out var size)
+            && int.TryParse(size, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedSize)
+            && PageSizeChoices.Contains(parsedSize))
+        {
+            _pageSize = parsedSize;
+        }
+
+        // Out-of-stock inclusion — honored ONLY for Admin/Manager
+        // (the same roles the handler clamps the flag for server-side).
+        // Any other value than the literal "1" is ignored, so the URL
+        // contract stays a boolean flag without becoming a parser.
+        if (_canSeeInactive
+            && query.TryGetValue("oos", out var oos)
+            && oos == "1")
+        {
+            _includeInactive = true;
         }
     }
 
@@ -1185,9 +1331,26 @@
             parameters.Add(new("page", _pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
 
+        // Page size — persisted only when it differs from the design
+        // default (the same non-default-only discipline as every other
+        // parameter, so the default URL stays clean).
+        if (_pageSize != DefaultPageSize)
+        {
+            parameters.Add(new("size", _pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
         if (_sortBy != ProductSortBy.Name)
         {
             parameters.Add(new("sort", _sortBy.ToString()));
+        }
+
+        // Out-of-stock view mode — only ever true for Admin/Manager
+        // (the toggle + the restore are both staff-gated), so the URL
+        // never carries a flag a non-staff user could misread as
+        // functional. Written ONLY when on (the default is off).
+        if (_includeInactive)
+        {
+            parameters.Add(new("oos", "1"));
         }
 
         GridUrlState.ReplaceIfChanged(
@@ -1230,6 +1393,30 @@
         }
     }
 
+    /// <summary>
+    /// Toggles the "include out of stock" view mode (the staff chip in
+    /// the tools row) and reloads from page 1 — the result set changes
+    /// wholesale when zero-stock cards join the grid, so page 5 of the
+    /// in-stock list means something different after the flip.
+    ///
+    /// Export parity is automatic: both the grid load and the CSV loop
+    /// pass <c>IncludeInactive = _includeInactive</c> to the SAME query,
+    /// so the download always matches what the grid shows (the
+    /// availability column already renders per-row StockIn/StockOut
+    /// labels, which become meaningful rows under this view).
+    ///
+    /// Deliberately NOT reset by ClearFilters/Clear-all: those are the
+    /// "no results" escape hatch for the search/category CONTRACT;
+    /// the out-of-stock mode is a role-gated VIEW MODE whose own chip
+    /// is the single, always-visible way back.
+    /// </summary>
+    private async Task ToggleIncludeInactiveAsync()
+    {
+        _includeInactive = !_includeInactive;
+        _pageNumber = 1;
+        await LoadProductsAsync();
+    }
+
     private async Task LoadProductsAsync()
     {
         _isLoading = true;
@@ -1243,7 +1430,12 @@
                 PageSize = _pageSize,
                 SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
                 CategoryId = _selectedCategoryId,
-                SortBy = _sortBy
+                SortBy = _sortBy,
+                // Staff view mode (QA-10): include zero-stock products
+                // for Admin/Manager. The handler CLAMPS this to false for
+                // every other role server-side, so the flag is safe to
+                // pass unconditionally.
+                IncludeInactive = _includeInactive
             };
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
@@ -1304,9 +1496,12 @@
     /// Exports the CURRENT filtered catalog as a CSV download — the shop
     /// counterpart of the admin grids' export buttons. The loop re-issues
     /// the SAME GetProductsPaginatedQuery the grid loads from (search
-    /// term, category, sort — and the same per-role visibility rules, since
-    /// the query's handler enforces them server-side), 100 rows per page,
-    /// until the 2,000-row cap.
+    /// term, category, sort, out-of-stock view mode — and the same
+    /// per-role visibility rules, since the query's handler enforces
+    /// them server-side), 100 rows per page, until the 2,000-row cap.
+    /// For a staff user with the out-of-stock chip active, the exported
+    /// availability column tells in-stock from out-of-stock rows apart
+    /// (the same label the card badge shows).
     ///
     /// CUSTOMER-FACING COLUMNS ONLY (deliberate difference from the
     /// AdminProducts export): name, category path, price, currency, and
@@ -1351,7 +1546,12 @@
                     PageSize = exportPageSize,
                     SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
                     CategoryId = _selectedCategoryId,
-                    SortBy = _sortBy
+                    SortBy = _sortBy,
+                    // QA-10: export parity with the grid — the download
+                    // always ships exactly what the grid shows (the chip's
+                    // view mode included). The handler clamps this for
+                    // non-staff roles server-side, exactly as for loads.
+                    IncludeInactive = _includeInactive
                 };
 
                 var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
@@ -1446,6 +1646,29 @@
     private async Task OnPageChanged(int newPage)
     {
         _pageNumber = newPage;
+        await LoadProductsAsync();
+    }
+
+    /// <summary>
+    /// The page-size selector's change handler: accept only the three
+    /// design-checked sizes (anything else — a hand-edited DOM value —
+    /// falls back to the default), restart at page 1 (page 5 of a 12-row
+    /// list means something entirely different at 48 rows), and reload.
+    /// The URL mirror picks the new size up on the next successful load
+    /// (size=N, persisted only when ≠ the 12 default).
+    /// </summary>
+    private async Task OnPageSizeChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(),
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var size))
+        {
+            return;
+        }
+
+        _pageSize = PageSizeChoices.Contains(size) ? size : DefaultPageSize;
+        _pageNumber = 1;
         await LoadProductsAsync();
     }
 
