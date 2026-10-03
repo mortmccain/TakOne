@@ -287,4 +287,38 @@
     <value>Printed {0}</value>
   </data>
 
+  <!-- Receipt CSV export — the data-processing twin of the printable
+       invoice: one flat RFC 4180 table, one row per line item, sale
+       metadata repeated per row. Amounts raw/invariant + currency code. -->
+  <data name="DownloadReceiptButton" xml:space="preserve">
+    <value>Download CSV</value>
+    <comment>Receipt CSV download button (next to "Print invoice" — paper copy vs. data copy).</comment>
+  </data>
+  <data name="DownloadReceiptDone" xml:space="preserve">
+    <value>Receipt downloaded as CSV</value>
+  </data>
+  <data name="DownloadReceiptError" xml:space="preserve">
+    <value>The receipt download failed. Please try again.</value>
+  </data>
+  <data name="ColSaleNumber" xml:space="preserve">
+    <value>Sale #</value>
+    <comment>Receipt CSV column header — same caption as the Sales list page.</comment>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>Status</value>
+    <comment>Receipt CSV column header.</comment>
+  </data>
+  <data name="ColCreatedBy" xml:space="preserve">
+    <value>Created by</value>
+    <comment>Receipt CSV column header.</comment>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>Created At (UTC)</value>
+    <comment>Receipt CSV column header.</comment>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>Currency</value>
+    <comment>Receipt CSV column header.</comment>
+  </data>
+
 </root>

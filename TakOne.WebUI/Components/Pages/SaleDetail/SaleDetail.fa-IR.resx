@@ -283,4 +283,38 @@
     <value>چاپ شده در {0}</value>
   </data>
 
+  <!-- خروجی CSV فاکتور — قرینهٔ داده‌محور فاکتور چاپی: یک جدول تخت
+       RFC 4180، یک سطر به ازای هر قلم، با تکرار مشخصات سفارش در هر سطر.
+       مبالغ خام/بدون بومی‌سازی + کد ارز. -->
+  <data name="DownloadReceiptButton" xml:space="preserve">
+    <value>دانلود CSV</value>
+    <comment>دکمهٔ دانلود CSV فاکتور (کنار «چاپ فاکتور» — نسخهٔ کاغذی و نسخهٔ داده‌ای).</comment>
+  </data>
+  <data name="DownloadReceiptDone" xml:space="preserve">
+    <value>فاکتور به صورت CSV دانلود شد</value>
+  </data>
+  <data name="DownloadReceiptError" xml:space="preserve">
+    <value>دانلود فاکتور با خطا مواجه شد. دوباره تلاش کنید.</value>
+  </data>
+  <data name="ColSaleNumber" xml:space="preserve">
+    <value>شماره فروش</value>
+    <comment>سرستون CSV فاکتور — همان برچسب صفحهٔ فهرست فروش.</comment>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+    <comment>سرستون CSV فاکتور.</comment>
+  </data>
+  <data name="ColCreatedBy" xml:space="preserve">
+    <value>ایجادکننده</value>
+    <comment>سرستون CSV فاکتور.</comment>
+  </data>
+  <data name="ColCreatedAt" xml:space="preserve">
+    <value>تاریخ ثبت (UTC)</value>
+    <comment>سرستون CSV فاکتور.</comment>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>ارز</value>
+    <comment>سرستون CSV فاکتور.</comment>
+  </data>
+
 </root>

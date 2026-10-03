@@ -442,6 +442,22 @@
                     opacity: 0.5;
                 }
 
+            /* ── Document-action group (print + receipt download) ───────
+               The header's two "take this document with you" buttons
+               (paper copy via the print stylesheet + data copy via the
+               receipt CSV) sit in one inline-flex group so they read as
+               a pair. Wraps on narrow screens where the sale number +
+               badge consume the row; the spacer before it pushes the
+               group to the trailing edge on wide screens. The group
+               carries the no-print class (the print stylesheet hides
+               it), so neither button leaks into a printout. */
+            .invoice-actions {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
             /* Sticky action panel on desktop. On mobile it's not sticky
                                                                        (would consume too much viewport height). */
             @@media (min-width: 993px) {
@@ -547,10 +563,15 @@
                     <span class="crumb-current">@(CultureFormat.FormatDigits(_sale.DisplayNumber))</span>
                 </nav>
 
-                @* Page header — sale number + status badge + print button.
-                   The PRINT button (Round 3) is visible to everyone viewing a
-                   SUBMITTED sale (staff + customers print their own copies);
-                   drafts have no SaleNumber and nothing invoice-like to print. *@
+                @* Page header — sale number + status badge + print/download
+                   actions. Both the PRINT button (Round 3) and the
+                   RECEIPT CSV download are visible to everyone viewing a
+                   SUBMITTED sale (staff + customers export their own
+                   copies); drafts have no SaleNumber and nothing
+                   invoice-like to print or export. The two buttons sit
+                   in one .invoice-actions group so they read as the
+                   document-action pair they are (paper copy + data
+                   copy). *@
                 <div class="detail-header" Style="margin-bottom: 1rem;">
                     <h1 class="detail-sale-number"
                         title="@GetSaleNumberTooltip()">
@@ -562,14 +583,24 @@
                     @if (_sale.SaleNumber is not null)
                     {
                         <span style="flex: 1;"></span>
-                        <RadzenButton Text="@Loc["PrintInvoiceButton"]"
-                                      Icon="print"
-                                      ButtonStyle="ButtonStyle.Secondary"
-                                      Variant="Variant.Outlined"
-                                      Size="ButtonSize.Small"
-                                      Class="no-print"
-                                      Disabled="@_isBusy"
-                                      Click="@PrintInvoiceAsync" />
+                        <span class="invoice-actions no-print">
+                            <RadzenButton Text="@Loc["PrintInvoiceButton"]"
+                                          Icon="print"
+                                          ButtonStyle="ButtonStyle.Secondary"
+                                          Variant="Variant.Outlined"
+                                          Size="ButtonSize.Small"
+                                          Disabled="@_isBusy"
+                                          Click="@PrintInvoiceAsync" />
+                            <RadzenButton Text="@Loc["DownloadReceiptButton"]"
+                                          Icon="download"
+                                          ButtonStyle="ButtonStyle.Secondary"
+                                          Variant="Variant.Outlined"
+                                          Size="ButtonSize.Small"
+                                          Disabled="@_isBusy"
+                                          IsBusy="@_isExporting"
+                                          BusyText="@Loc["DownloadReceiptButton"]"
+                                          Click="@DownloadReceiptCsvAsync" />
+                        </span>
                     }
                 </div>
 
@@ -1023,6 +1054,126 @@
         {
             await Toast.Warning(Loc["PrintInvoiceError"], summary: Loc["ErrorTitle"]);
         }
+    }
+
+    // ── Receipt CSV export (document-level export) ────────────────────
+
+    /// <summary>
+    /// True while the receipt CSV download is being built/sent — drives
+    /// the download button's IsBusy spinner so double-clicks can't race
+    /// two downloads.
+    /// </summary>
+    private bool _isExporting;
+
+    /// <summary>
+    /// Downloads the sale as a receipt CSV — the data-processing twin of
+    /// the printable invoice: one FLAT, RFC 4180 table with one row per
+    /// LINE ITEM and the sale-level metadata (number, status, customer,
+    /// creator, created-at) repeated on every row, so the file is both
+    /// human-readable in a spreadsheet and trivially machine-parseable
+    /// (no mixed sections to split). Amounts export RAW (invariant) +
+    /// the currency code as its own column — the same data-processing
+    /// conventions every grid export in this app follows.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// WEBUI-ONLY by design: it renders the ALREADY-LOADED
+    /// <see cref="_sale"/> DTO — no new query, no server round-trip, and
+    /// nothing the viewer can't already see on the page (server-side
+    /// scoping already gated the load: a customer only ever reaches their
+    /// own sales; staff see any sale). Visible exactly where the Print
+    /// button is — submitted sales only.
+    /// </para>
+    /// <para>
+    /// The grand total rides every row (redundant but makes each row
+    /// self-contained for downstream consumers); the line-total column
+    /// sums to it, so a consumer can cross-check.
+    /// </para>
+    /// </remarks>
+    private async Task DownloadReceiptCsvAsync()
+    {
+        if (_sale is null || _isBusy || _isExporting) return;
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(BuildReceiptHeader().ToArray());
+
+            foreach (var line in _sale.LineItems)
+            {
+                builder.AddRow(BuildReceiptRow(_sale, line).ToArray());
+            }
+
+            var csv = builder.ToString();
+            var fileName = $"takone-receipt-{_sale.DisplayNumber}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, csv);
+
+            await Toast.Success(Loc["DownloadReceiptDone"], summary: Loc["PageTitle"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same pattern as every
+            // other JS-calling action in this page family).
+            await Toast.Warning(Loc["DownloadReceiptError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Localized header captions for the receipt CSV. Sale-level metadata
+    /// first (they read as "which document is this"), then the line-item
+    /// columns the on-page table shows, then currency + grand total.
+    /// </summary>
+    private List<string> BuildReceiptHeader()
+    {
+        // Column shape: sale metadata (repeated per row) + the line-item
+        // table's own columns (the on-page table's captions) + currency +
+        // the grand total.
+        return
+        [
+            Loc["ColSaleNumber"],
+            Loc["ColStatus"],
+            Loc["InvoiceCustomer"],
+            Loc["ColCreatedBy"],
+            Loc["ColCreatedAt"],
+            Loc["ColLineNumber"],
+            Loc["ColProduct"],
+            Loc["ColQuantity"],
+            Loc["ColUnitPrice"],
+            Loc["ColCurrency"],
+            Loc["ColLineTotal"],
+            Loc["GrandTotal"]
+        ];
+    }
+
+    /// <summary>
+    /// One receipt row: the sale-level metadata + this line's values.
+    /// Amounts are the RAW invariant decimals; timestamps ISO-8601
+    /// (CsvBuilder's DateTime convention); the status label is localized
+    /// like every other export in the app.
+    /// </summary>
+    private List<object?> BuildReceiptRow(SaleDto sale, SaleLineItemDto line)
+    {
+        return
+        [
+            sale.DisplayNumber,
+            GetStatusLabel(sale.Status),
+            sale.CustomerName,
+            sale.CreatedByName,
+            sale.CreatedAtUtc,
+            line.LineNumber,
+            line.ProductName,
+            line.Quantity,
+            line.UnitPrice.Amount,
+            line.UnitPrice.Currency,
+            line.LineTotal.Amount,
+            sale.Total.Amount
+        ];
     }
 
     private async Task HandleApproveAsync()

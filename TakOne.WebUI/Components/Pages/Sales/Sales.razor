@@ -307,8 +307,74 @@
                     line-height: 1;
                 }
 
+            /* ── Date-range PRESETS (quick ranges) ─────────────────────
+               One-click shortcuts for the ranges people actually check
+               (Today / last 7 days / last 30 days). A preset drives the
+               SAME from/to contract the pickers do, so the applied-range
+               chip, the URL state and the CSV export pick it up
+               automatically. The active chip carries the PRIMARY tint —
+               calendar semantics (the toolbar's icon and Apply button
+               are primary) — NOT the pending chip's amber (that chip
+               mirrors the Pending badge color). Inactive chips read as
+               quiet outline pills, mirroring the pending chip's shape
+               so the toolbar reads as one chip family. */
+            .sales-datefilter-presets {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                border-inline-start: 1px solid var(--rz-border-color);
+                padding-inline-start: 0.6rem;
+            }
+
+            .sales-preset-chip {
+                display: inline-flex;
+                align-items: center;
+                padding: 0.45rem 0.85rem;
+                font-size: 0.8rem;
+                font-weight: 500;
+                font-family: inherit;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                border: 1px solid var(--rz-base-border-color);
+                border-radius: 9999px;
+                cursor: pointer;
+                transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+                font-variant-numeric: tabular-nums;
+            }
+
+                .sales-preset-chip:hover:not(:disabled),
+                .sales-preset-chip:focus-visible {
+                    color: var(--rz-primary);
+                    border-color: var(--rz-primary);
+                }
+
+                .sales-preset-chip:focus-visible {
+                    outline: 2px solid var(--rz-primary);
+                    outline-offset: 1px;
+                }
+
+                .sales-preset-chip:disabled {
+                    opacity: 0.55;
+                    cursor: not-allowed;
+                }
+
+                /* ACTIVE: primary tint fills the chip — the SAME primary
+                   the calendar icon + Apply button already use for date
+                   filtering. */
+                .sales-preset-chip--active {
+                    background: color-mix(in srgb, var(--rz-primary) 12%, transparent);
+                    border-color: color-mix(in srgb, var(--rz-primary) 45%, transparent);
+                    color: var(--rz-primary);
+                    font-weight: 600;
+                }
+
+                    .sales-preset-chip--active:hover:not(:disabled) {
+                        background: color-mix(in srgb, var(--rz-primary) 18%, transparent);
+                    }
+
             @@media (prefers-reduced-motion: reduce) {
-                .sales-pending-chip {
+                .sales-pending-chip,
+                .sales-preset-chip {
                     transition: none;
                 }
             }
@@ -468,6 +534,39 @@
                         </button>
                     </span>
                 }
+
+                @* ── Date-range PRESETS (quick ranges) ──
+                   One-click shortcuts for the ranges people actually
+                   check: Today, the last 7 days, and the last 30 days
+                   (all inclusive, Tehran-local — "today" is computed in
+                   Tehran time, not the server's UTC clock). A preset
+                   drives the SAME apply pipeline the pickers do (local
+                   dates → UTC half-open interval → page-1 reload), so
+                   the applied-range chip above, the URL persistence
+                   (?from=&to=) and the CSV export pick it up
+                   automatically. The chips' active state DERIVES from
+                   the applied bounds (IsPresetActive): restoring a
+                   matching range from the URL lights the right chip,
+                   and manually editing the pickers or clearing the
+                   filter deactivates them — zero bookkeeping. A preset
+                   is not a toggle: clicking a different one simply
+                   switches the applied range. aria-pressed renders as
+                   a LITERAL STRING (see the pending chip's note —
+                   Blazor omits boolean-false attributes, and "false"
+                   is meaningful ARIA). *@
+                <span class="sales-datefilter-presets" role="group" aria-label="@Loc["DatePresetsAriaLabel"]">
+                    @foreach (var preset in DatePresets)
+                    {
+                        <button type="button"
+                                class="sales-preset-chip @(IsPresetActive(preset) ? "sales-preset-chip--active" : null)"
+                                aria-pressed="@(IsPresetActive(preset) ? "true" : "false")"
+                                title="@GetPresetTooltip(preset)"
+                                disabled="@_isLoading"
+                                @onclick="() => ApplyDatePresetAsync(preset)">
+                            <span>@GetPresetLabel(preset)</span>
+                        </button>
+                    }
+                </span>
 
                 @* ── "Pending only" quick-filter chip ──
                    A TOGGLE, not an action: ON sets the Status column's
@@ -1620,6 +1719,102 @@
             _isLoading = false;
         }
     }
+
+    // ── Date-range presets (quick ranges) ──────────────────────────────
+
+    /// <summary>
+    /// The offered quick ranges. Last7Days / Last30Days are INCLUSIVE of
+    /// today (…−6 / …−29 through today, Tehran-local) — "the last 7 days"
+    /// spans exactly 7 calendar days.
+    /// </summary>
+    private enum SalesDatePreset
+    {
+        Today,
+        Last7Days,
+        Last30Days
+    }
+
+    /// <summary>Render order of the preset chips in the toolbar.</summary>
+    private static readonly SalesDatePreset[] DatePresets =
+    {
+        SalesDatePreset.Today,
+        SalesDatePreset.Last7Days,
+        SalesDatePreset.Last30Days
+    };
+
+    /// <summary>
+    /// Computes a preset's Tehran-local [from, to] dates (inclusive).
+    /// "Today" is TODAY IN TEHRAN — computed from <c>UtcNow + offset</c>,
+    /// never from the server's (UTC) clock — so the ranges match how the
+    /// grid's timestamps read.
+    /// </summary>
+    private static (DateTime From, DateTime To) GetPresetRange(SalesDatePreset preset)
+    {
+        var today = (DateTime.UtcNow + TehranUtcOffset).Date;
+        var from = preset switch
+        {
+            SalesDatePreset.Last7Days => today.AddDays(-6),
+            SalesDatePreset.Last30Days => today.AddDays(-29),
+            _ => today
+        };
+        return (from, today);
+    }
+
+    /// <summary>
+    /// Applies a preset: mirrors <see cref="ApplyDateFilterAsync"/>'s
+    /// local→UTC conversion (including the exclusive next-midnight To
+    /// bound) and reloads from page 1. Also seeds the PICKER fields so
+    /// the toolbar shows the range the chip just applied — the pickers
+    /// and the applied state stay consistent, exactly as after a manual
+    /// Apply.
+    /// </summary>
+    private async Task ApplyDatePresetAsync(SalesDatePreset preset)
+    {
+        if (_isLoading)
+        {
+            return; // the chip is disabled mid-load — belt + braces
+        }
+
+        var (from, to) = GetPresetRange(preset);
+        _dateFrom = from;
+        _dateTo = to;
+        _appliedFromUtc = ToUtcInstant(from);
+        _appliedToUtc = ToUtcInstant(to.AddDays(1));
+
+        await ReloadFromFirstPageAsync();
+    }
+
+    /// <summary>
+    /// True when the APPLIED range is exactly this preset's CURRENT
+    /// bounds. DERIVED (never stored) so the URL restore (?from=&amp;to=),
+    /// the pickers' own Apply button, Clear-all, and the passage of Tehran
+    /// midnight (a "Today" applied yesterday is no longer today's range)
+    /// all keep the chips honest with zero bookkeeping. A manually picked
+    /// range that happens to match a preset lights that preset up — which
+    /// is exactly right: the chip names the range that IS applied.
+    /// </summary>
+    private bool IsPresetActive(SalesDatePreset preset)
+    {
+        var (from, to) = GetPresetRange(preset);
+        return _appliedFromUtc == ToUtcInstant(from)
+               && _appliedToUtc == ToUtcInstant(to.AddDays(1));
+    }
+
+    /// <summary>Localized chip caption.</summary>
+    private string GetPresetLabel(SalesDatePreset preset) => preset switch
+    {
+        SalesDatePreset.Last7Days => Loc["PresetLast7Days"],
+        SalesDatePreset.Last30Days => Loc["PresetLast30Days"],
+        _ => Loc["PresetToday"]
+    };
+
+    /// <summary>Localized chip tooltip (what the preset selects).</summary>
+    private string GetPresetTooltip(SalesDatePreset preset) => preset switch
+    {
+        SalesDatePreset.Last7Days => Loc["PresetLast7DaysTooltip"],
+        SalesDatePreset.Last30Days => Loc["PresetLast30DaysTooltip"],
+        _ => Loc["PresetTodayTooltip"]
+    };
 
     /// <summary>
     /// Human-readable restatement of the applied range for the chip —
