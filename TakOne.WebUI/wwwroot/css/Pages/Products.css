@@ -2045,3 +2045,78 @@
     opacity: 0.55;
     cursor: not-allowed;
 }
+
+/* ── CSV export button (catalog take-away) ─────────────────────────
+   Sits next to the sort control in the products header — both are
+   "view-shaping" actions over the current filtered catalog. Styled as
+   the same pill family as .tm-sort-control so the two read as one
+   toolbar; differentiated by the filled primary tint (an ACTION, not a
+   setting) and the download glyph. */
+
+.tm-products-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tm-export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--tm-border, var(--rz-border-color));
+    border-radius: 999px;
+    background: var(--tm-surface, var(--rz-base-background-color));
+    color: var(--tm-text, inherit);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, background-color 0.15s ease,
+                box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.tm-export-btn svg {
+    color: var(--tm-primary, var(--rz-primary));
+    flex: none;
+}
+
+.tm-export-btn:hover:not(:disabled) {
+    border-color: var(--tm-primary, var(--rz-primary));
+    background: color-mix(in srgb, var(--tm-primary, var(--rz-primary)) 8%, transparent);
+}
+
+.tm-export-btn:focus-visible {
+    outline: none;
+    border-color: var(--tm-primary, var(--rz-primary));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tm-primary, var(--rz-primary)) 18%, transparent);
+}
+
+.tm-export-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.tm-export-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Mini spinner shown in place of the download glyph while the export's
+   multi-page fetch loop runs — same size as the glyph it replaces. */
+.tm-export-spin {
+    width: 14px;
+    height: 14px;
+    border: 2px solid color-mix(in srgb, var(--tm-primary, var(--rz-primary)) 30%, transparent);
+    border-top-color: var(--tm-primary, var(--rz-primary));
+    border-radius: 50%;
+    animation: tm-export-rotate 0.7s linear infinite;
+    flex: none;
+}
+
+@keyframes tm-export-rotate {
+    to {
+        transform: rotate(360deg);
+    }
+}

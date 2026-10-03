@@ -16,6 +16,16 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: takone-db
     restart: unless-stopped
+    # Log rotation — caps each log file at 200MB, keeps 3 rotated files
+    # max = 600MB total. When the 3rd file hits 200MB, Docker deletes
+    # the oldest and starts a new one — automatic, permanent, no
+    # maintenance needed. Without this, Docker's default json-file
+    # driver keeps ALL logs forever → eventually fills the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "200m"
+        max-file: "3"
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD}
@@ -30,6 +40,15 @@ services:
     # See Brutal Code Review v3 finding #06.
     volumes:
       - takone_sqldata:/var/opt/mssql
+      # Shared with the web container (see takone-web below): the app's
+      # DatabaseBackupHostedService issues BACKUP DATABASE ... TO DISK
+      # against the DATABASE server's filesystem, so the backup volume
+      # must be mounted HERE (at the path DatabaseBackups:ServerPath
+      # points at) and in the web container (at DatabaseBackups:Directory)
+      # for the retention sweep + file verification to see the same
+      # files. Two mount points, one physical volume. See
+      # DatabaseBackupHostedService + DEPLOYMENT.md.
+      - takone_backups:/var/opt/mssql/backup
     mem_limit: 3g
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
@@ -49,6 +68,16 @@ services:
       dockerfile: Dockerfile
     container_name: takone-web
     restart: unless-stopped
+    # Log rotation — caps each log file at 200MB, keeps 3 rotated files
+    # max = 600MB total. When the 3rd file hits 200MB, Docker deletes
+    # the oldest and starts a new one — automatic, permanent, no
+    # maintenance needed. Without this, Docker's default json-file
+    # driver keeps ALL logs forever → eventually fills the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "200m"
+        max-file: "3"
     depends_on:
       takone-db:
         condition: service_healthy
@@ -87,6 +116,15 @@ services:
       # they are never served by the unauthenticated UseStaticFiles
       # middleware. See Brutal Code Review v3 finding #09.
       FileStorage__RootPath: "/var/lib/takone/uploads"
+
+      # Scheduled backups (03:30 + 14:30 UTC, 7-day retention): the web
+      # container manages retention from /var/lib/takone/backups while
+      # the BACKUP command itself writes to the DATABASE container's
+      # /var/opt/mssql/backup — both mount the SAME takone_backups
+      # volume. See DatabaseBackupHostedService's class docs.
+      DatabaseBackups__Directory: "/var/lib/takone/backups"
+      DatabaseBackups__ServerPath: "/var/opt/mssql/backup"
+      DatabaseBackups__RetentionDays: "7"
       TakOne__DefaultAdmin__Enabled: "true"
       TakOne__DefaultAdmin__WorkerId: "ADMIN-0001"
       TakOne__DefaultAdmin__Email: "admin@takone.local"
@@ -101,6 +139,11 @@ services:
     # Code Review v3 findings #09 + #10.
     volumes:
       - takone_uploads:/var/lib/takone/uploads
+      # Shared with the DB container (see takone-db above): the backup
+      # files land here (writable volume on an otherwise read-only
+      # rootfs) and the retention sweep deletes expired *.bak files
+      # from this mount.
+      - takone_backups:/var/lib/takone/backups
     # Container hardening (least privilege). `no-new-privileges` blocks
     # setuid escalation; `cap_drop: ALL` strips Linux capabilities;
     # `read_only` makes the rootfs immutable; tmpfs mounts give the few
@@ -136,3 +179,4 @@ services:
 volumes:
   takone_sqldata:
   takone_uploads:
+  takone_backups:

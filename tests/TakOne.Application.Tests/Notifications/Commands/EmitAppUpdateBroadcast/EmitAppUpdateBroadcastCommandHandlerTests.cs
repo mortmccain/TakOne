@@ -268,6 +268,7 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
         await broadcastRepo.Received(1).GetByTitleAndKindAsync(
             Arg.Is<string>(t => t == "TakOne updated to v9.9.9"),
             Arg.Is<NotificationKind>(k => k == NotificationKind.AppUpdate),
+            Arg.Any<DateTime?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -340,6 +341,7 @@ public class EmitAppUpdateBroadcastCommandHandlerTests
         await broadcastRepo.Received(1).GetByTitleAndKindAsync(
             Arg.Any<string>(),
             Arg.Any<NotificationKind>(),
+            Arg.Any<DateTime?>(),
             Arg.Is<CancellationToken>(t => t == ct));
     }
 }

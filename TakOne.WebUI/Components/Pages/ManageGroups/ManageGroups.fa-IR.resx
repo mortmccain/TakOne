@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- ManageGroups.fa-IR.resx — Persian (Farsi) strings for ManageGroups.razor.
      Persian text is RTL; the layout direction is handled at the <html dir>
      level by MainLayout based on the current culture. -->
@@ -210,4 +210,20 @@
     <value>به‌روزرسانی حالت محدودیت ناموفق بود. لطفاً دوباره تلاش کنید.</value>
   </data>
 
+
+  <!-- CSV export (header button) — exports the groups list narrowed to the active grid filters -->
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} گروه به CSV صادر شد</value>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی CSV ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+  </data>
+
+  <!-- CSV export column: ISO currency code of the monthly budget -->
+  <data name="ColCurrency" xml:space="preserve">
+    <value>واحد پول</value>
+  </data>
 </root>

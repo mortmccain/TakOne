@@ -109,21 +109,38 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Wolverine
+@using TakOne.Application.Common.Authorization
+@using TakOne.Application.Common.Interfaces
+@using TakOne.Application.Products.Commands.ImportProducts
 @using TakOne.Application.Users.DTOs
+@using TakOne.Application.Users.Commands.ImportUsers
 @using TakOne.Application.Users.Queries.GetUserById
 @using TakOne.Application.Notifications.DTOs
 @using TakOne.Application.Notifications.Queries.GetNotificationPreferences
 @using TakOne.Application.Notifications.Commands.SetNotificationMuted
+@using TakOne.Application.Settings.Queries.GetBackupStatus
+@using TakOne.Application.Settings.Commands.TriggerBackupNow
+@using TakOne.Application.Common.Models
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.Domain.Users
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
+@using TakOne.WebUI.Components.Pages.AdminProducts
+@using TakOne.WebUI.Components.Pages.AdminUsers
 @inject IMessageBus MessageBus
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject IStringLocalizer<Settings> Loc
+@* The two page localizers below are used ONLY by the admin-tools CSV
+   template builder: the sample files must carry the SAME localized column
+   headers the AdminProducts/AdminUsers exports write (those resx keys
+   already live in the respective page resources — reusing the localizers
+   instead of duplicating the keys keeps the round-trip format in sync). *@
+@inject IStringLocalizer<AdminProducts> ProductsLoc
+@inject IStringLocalizer<AdminUsers> UsersLoc
 @inject ToastService Toast
 @inject IJSRuntime JS
+@inject IFileStorage FileStorage
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -345,6 +362,609 @@
 
             /* Loading + error + not-found states reuse Radzen's alert
                                        components — same pattern as ProductDetail.razor. */
+
+            /* ── Admin tools section ────────────────────────────────
+               Full-width section below the 2-col settings grid. One
+               card per bulk tool; the cards wrap on a responsive
+               auto-fill grid (3-up on desktop, 1-up on mobile). */
+            .admin-tools-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 1rem;
+                align-items: start;
+            }
+
+            /* Section heading for the admin area — same visual family
+               as .settings-header but smaller. */
+            .admin-section-title {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                font-size: 1.15rem;
+                font-weight: 700;
+                margin: 0 0 0.25rem 0;
+            }
+
+            .admin-section-subtitle {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.85rem;
+                margin: 0 0 0.75rem 0;
+            }
+
+            /* Dropzone-style file pickers — visually consistent with
+               CreateProduct.razor's .picture-dropzone (re-declared here
+               because that page's styles are scoped to its own file). */
+            .import-dropzone {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 0.35rem;
+                padding: 1.25rem 1rem;
+                border: 2px dashed var(--rz-border-color);
+                border-radius: 10px;
+                cursor: pointer;
+                text-align: center;
+                transition: border-color 0.15s ease, background-color 0.15s ease;
+            }
+
+            .import-dropzone:hover,
+            .import-dropzone:focus-within {
+                border-color: var(--rz-primary);
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+            }
+
+            .import-dropzone-input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                opacity: 0;
+                overflow: hidden;
+                clip: rect(0 0 0 0);
+            }
+
+            .import-dropzone-title {
+                font-weight: 600;
+                font-size: 0.9rem;
+            }
+
+            .import-dropzone-hint {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.78rem;
+                line-height: 1.4;
+            }
+
+            /* Selected-file chips (bulk picture picker shows one chip per
+               buffered image). */
+            .import-file-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+                margin-top: 0.6rem;
+                /* Long lists scroll INSIDE the card instead of stretching
+                   the page — same policy as the notification list. */
+                max-height: 15rem;
+                overflow-y: auto;
+            }
+
+            .import-file-chip {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.35rem 0.6rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.8rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+            }
+
+            .import-file-chip .import-file-name {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                direction: ltr; /* hex file names stay LTR even in fa-IR/RTL */
+            }
+
+            .import-file-chip .import-file-size {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
+
+            /* Per-row import results — a compact scrollable ledger. */
+            .import-results {
+                margin-top: 0.75rem;
+            }
+
+            .import-results-summary {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .import-results-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 15rem;
+                overflow-y: auto;
+                font-size: 0.8rem;
+            }
+
+            .import-result-row {
+                display: flex;
+                align-items: baseline;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border-bottom: 1px solid var(--rz-border-color);
+            }
+
+            .import-result-row:last-child {
+                border-bottom: none;
+            }
+
+            .import-result-line {
+                color: var(--rz-text-secondary-color);
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.72rem;
+                flex: none;
+                direction: ltr;
+            }
+
+            .import-result-name {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+
+            .import-result-msg {
+                color: var(--rz-danger, #dc3545);
+                font-size: 0.74rem;
+                overflow-wrap: anywhere;
+            }
+
+            /* ── Admin tools polish (template/report downloads, steps) ── */
+
+            /* Numbered step badge on each admin card title — gives the
+               three tools a stable 1-2-3 order so the intended workflow
+               (upload pictures → import products / import users) reads
+               at a glance. Primary-filled circle, contrast text. */
+            .admin-step-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.5rem;
+                height: 1.5rem;
+                border-radius: 50%;
+                background: var(--rz-primary);
+                color: var(--rz-primary-contrast-color, #fff);
+                font-size: 0.78rem;
+                font-weight: 700;
+                flex: none;
+                direction: ltr; /* digits stay LTR in fa-IR/RTL */
+            }
+
+            /* Inline text-style action (template + report downloads).
+               Rendered as a small primary-colored link-button so it reads
+               as a secondary affordance next to the primary Upload/Import
+               actions — NOT another filled button competing for attention. */
+            .admin-inline-action {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                padding: 0.25rem 0.1rem;
+                margin-top: 0.35rem;
+                border: none;
+                background: none;
+                color: var(--rz-primary);
+                font-size: 0.82rem;
+                font-weight: 500;
+                cursor: pointer;
+                border-radius: 6px;
+                transition: color 0.15s ease;
+            }
+
+                .admin-inline-action:hover {
+                    color: var(--rz-primary-dark, var(--rz-primary));
+                    text-decoration: underline;
+                    text-underline-offset: 3px;
+                }
+
+                .admin-inline-action:focus-visible {
+                    outline: 2px solid var(--rz-primary);
+                    outline-offset: 2px;
+                }
+
+                .admin-inline-action[disabled] {
+                    color: var(--rz-text-disabled-color, var(--rz-text-secondary-color));
+                    cursor: not-allowed;
+                    text-decoration: none;
+                }
+
+            /* Dropzone icon — the cloud_upload glyph inside a soft primary
+               circle (same visual family as .notif-pref-icon). Gives the
+               dropzone a proper visual anchor instead of a bare glyph. */
+            .import-dropzone-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 50%;
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.1));
+                color: var(--rz-primary);
+                transition: transform 0.15s ease;
+            }
+
+            /* Dropzone affordance: gentle lift on hover, press-down on
+               click — the standard "this whole thing is clickable" cues. */
+            .import-dropzone:hover .import-dropzone-icon {
+                transform: translateY(-2px) scale(1.05);
+            }
+
+            .import-dropzone:active {
+                transform: translateY(1px);
+            }
+
+            /* Focus ring for keyboard users tabbing into the picker. */
+            .import-dropzone:focus-within {
+                box-shadow: 0 0 0 3px var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.25));
+            }
+
+            /* Thin themed scrollbars for the two scrollable ledgers (pending
+               files + per-row results) — the default browser scrollbar is
+               visually heavy inside the compact cards. Firefox + WebKit. */
+            .import-file-list,
+            .import-results-list {
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+                padding-inline-end: 0.25rem;
+            }
+
+                .import-file-list::-webkit-scrollbar,
+                .import-results-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .import-file-list::-webkit-scrollbar-thumb,
+                .import-results-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .import-file-list::-webkit-scrollbar-thumb:hover,
+                    .import-results-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .import-file-list::-webkit-scrollbar-track,
+                .import-results-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            /* Pending-file chip: per-file remove button (✕) — lets the
+               admin drop a wrongly-picked file without clearing the whole
+               selection. Bare icon button; danger-tinted on hover. */
+            .import-file-remove {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 1.4rem;
+                height: 1.4rem;
+                margin-inline-start: auto;
+                border: none;
+                border-radius: 50%;
+                background: transparent;
+                color: var(--rz-text-secondary-color);
+                cursor: pointer;
+                flex: none;
+                transition: background-color 0.15s ease, color 0.15s ease;
+            }
+
+                .import-file-remove:hover {
+                    background: var(--rz-danger-light, rgba(220, 53, 69, 0.12));
+                    color: var(--rz-danger, #dc3545);
+                }
+
+                .import-file-remove:focus-visible {
+                    outline: 2px solid var(--rz-danger, #dc3545);
+                    outline-offset: 1px;
+                }
+
+            /* Per-row result rows: hover highlight so the eye can track a
+               row across the ledger's full width while auditing failures. */
+            .import-result-row {
+                border-radius: 6px;
+                transition: background-color 0.1s ease;
+            }
+
+                .import-result-row:hover {
+                    background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                }
+
+            /* Info callout — the default-password formula notice on the
+               user-import card. Primary-tinted panel with a key icon; the
+               formula example renders as LTR monospace (it's literal
+               password text, never localized). */
+            .admin-info-callout {
+                display: flex;
+                align-items: flex-start;
+                gap: 0.6rem;
+                padding: 0.6rem 0.75rem;
+                margin: 0.25rem 0 0.75rem 0;
+                border-radius: 8px;
+                background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.08));
+                border: 1px solid var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.2));
+                font-size: 0.8rem;
+                line-height: 1.45;
+            }
+
+                .admin-info-callout .admin-info-icon {
+                    color: var(--rz-primary);
+                    flex: none;
+                    font-size: 1.1rem;
+                }
+
+                .admin-info-callout .admin-info-body {
+                    min-width: 0;
+                }
+
+                .admin-info-callout .admin-info-code {
+                    display: inline-block;
+                    margin-top: 0.2rem;
+                    padding: 0.15rem 0.45rem;
+                    border-radius: 6px;
+                    background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                    font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                    font-size: 0.78rem;
+                    direction: ltr; /* the formula + example are literal LTR text */
+                    unicode-bidi: embed;
+                }
+
+            /* ── Backup status card ─────────────────────────────────
+               2×2 health-stat grid (last run / next slot / retention /
+               files): muted small-caps-ish label on top, strong value
+               below, optional sub-line (duration, schedule note) and an
+               outcome badge. Collapses to a single column on narrow
+               cards (the admin-tools grid reflows at 300px). */
+            .backup-stats-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.75rem 1rem;
+                margin-bottom: 0.75rem;
+            }
+
+            @@media (max-width: 420px) {
+                .backup-stats-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            .backup-stat {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.15rem;
+                min-width: 0;
+            }
+
+            .backup-stat-label {
+                font-size: 0.7rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: var(--rz-text-secondary-color);
+            }
+
+            .backup-stat-value {
+                font-size: 0.92rem;
+                font-weight: 600;
+                color: var(--rz-text-color);
+                line-height: 1.35;
+                overflow-wrap: anywhere;
+            }
+
+            .backup-stat-sub {
+                font-size: 0.74rem;
+                color: var(--rz-text-secondary-color);
+                font-weight: 400;
+            }
+
+            /* Stored-files ledger — one row per *.bak: save icon, mono
+               LTR file name (flexes + ellipsizes), size, Tehran time.
+               Same scroll policy + thin themed scrollbar as the import
+               ledgers; capped at 14 files by the retention sweep. */
+            .backup-file-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 14rem;
+                overflow-y: auto;
+                margin-top: 0.5rem;
+                padding-inline-end: 0.25rem;
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+            }
+
+                .backup-file-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .backup-file-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .backup-file-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .backup-file-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            .backup-file-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.78rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                transition: background-color 0.1s ease;
+            }
+
+                .backup-file-row:hover {
+                    background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+                }
+
+            .backup-file-name {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.74rem;
+                direction: ltr; /* file names are literal LTR text */
+                unicode-bidi: embed;
+            }
+
+            .backup-file-size {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
+
+            .backup-file-date {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+            }
+
+            /* ── Run-history ledger ─────────────────────────────────
+               One row per COMPLETED run (newest first): trigger icon
+               (clock = scheduled slot, hand = manual "Back up now"),
+               Tehran start time + duration, outcome badge, and — when
+               the run failed — the error short-form (full message in
+               the native tooltip via the title attribute). Shares the
+               stored-files ledger's scroll policy + thin themed
+               scrollbar; bounded by the retention window. */
+            .backup-run-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+                max-height: 11rem;
+                overflow-y: auto;
+                margin-top: 0.5rem;
+                padding-inline-end: 0.25rem;
+                scrollbar-width: thin;
+                scrollbar-color: var(--rz-border-color) transparent;
+            }
+
+                .backup-run-list::-webkit-scrollbar {
+                    width: 8px;
+                }
+
+                .backup-run-list::-webkit-scrollbar-thumb {
+                    background: var(--rz-border-color);
+                    border-radius: 4px;
+                }
+
+                    .backup-run-list::-webkit-scrollbar-thumb:hover {
+                        background: var(--rz-text-secondary-color);
+                    }
+
+                .backup-run-list::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+            .backup-run-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.3rem 0.45rem;
+                border: 1px solid var(--rz-border-color);
+                border-radius: 8px;
+                font-size: 0.78rem;
+                background: var(--rz-secondary-background-color, var(--rz-base-background-color));
+                transition: background-color 0.1s ease, border-color 0.15s ease;
+                flex-wrap: wrap; /* narrow admin-tools cards wrap instead of overflowing */
+            }
+
+                .backup-run-row:hover {
+                    background: var(--rz-primary-lighter, rgba(var(--rz-primary-rgb, 67, 56, 202), 0.06));
+                }
+
+                /* Failed runs keep a danger border + a faint danger tint
+                   so a bad slot is findable while scrolling without
+                   reading badges. */
+                .backup-run-row.backup-run-failed {
+                    border-color: var(--rz-danger-color, #f44336);
+                    background: color-mix(in srgb, var(--rz-danger-color, #f44336) 5%, var(--rz-secondary-background-color, var(--rz-base-background-color)));
+                }
+
+                    .backup-run-row.backup-run-failed:hover {
+                        background: color-mix(in srgb, var(--rz-danger-color, #f44336) 10%, var(--rz-secondary-background-color, var(--rz-base-background-color)));
+                    }
+
+            .backup-run-icon {
+                font-size: 1rem;
+                flex: none;
+            }
+
+                .backup-run-icon.backup-run-icon-manual {
+                    color: var(--rz-primary);
+                }
+
+                .backup-run-icon.backup-run-icon-scheduled {
+                    color: var(--rz-text-secondary-color);
+                }
+
+            .backup-run-time {
+                flex: none;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+
+            .backup-run-duration {
+                color: var(--rz-text-secondary-color);
+                font-size: 0.72rem;
+                flex: none;
+                white-space: nowrap;
+            }
+
+            .backup-run-name {
+                flex: 1;
+                min-width: 4rem; /* keeps at least a stub of the name visible when wrapped on narrow cards */
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                font-family: var(--rz-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+                font-size: 0.72rem;
+                color: var(--rz-text-secondary-color);
+                direction: ltr; /* file names are literal LTR text */
+                unicode-bidi: embed;
+            }
+
+            .backup-run-name:empty {
+                display: none; /* failed runs have no file — no empty flex stub */
+            }
+
+            .backup-run-section-label {
+                font-size: 0.7rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: var(--rz-text-secondary-color);
+                margin-top: 0.75rem;
+                display: block;
+            }
     </style>
 </HeadContent>
 
@@ -588,6 +1208,565 @@
                 </RadzenCard>
             </RadzenStack>
         </div>
+
+        @* ── Admin tools section (admin-only) ──
+           Four tools, each a self-contained card:
+             1. Product CSV import  — the round-trip partner of the
+                AdminProducts export (which now carries each product's
+                picture directory + file name).
+             2. Bulk picture upload — same upload mechanism as the
+                CreateProduct page (InputFile → IFileStorage), but with
+                MULTI-file selection and ORIGINAL file names preserved, so
+                a restore re-lands every picture under the exact name the
+                CSV references.
+             3. User CSV import     — the round-trip partner of the
+                manage-users export; new users get the default password
+                "@" + reversed worker id + "Temp" and a forced one-time
+                password change.
+             4. Database backups    — read-side status of the scheduled
+                backup service (last run + outcome, next slot, stored
+                files, retention) + a "Back up now" trigger. Runs on the
+                server's own background execution — the card follows the
+                progress by polling.
+
+           GATED: the cards render only for Admins (role resolved via the
+           AuthenticationStateProvider — see _isAdmin). Every command is
+           ALSO admin-gated server-side via [RequireRoles]; the UI gate is
+           UX, the command gate is security. *@
+        @if (_isAdmin)
+        {
+            <div class="admin-section">
+                <h2 class="admin-section-title">
+                    <RadzenIcon Icon="admin_panel_settings" Style="color: var(--rz-primary);" />
+                    @Loc["AdminSectionTitle"]
+                </h2>
+                <p class="admin-section-subtitle">@Loc["AdminSectionSubtitle"]</p>
+
+                <div class="admin-tools-grid">
+
+                    @* ── Card 1: product CSV import ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">1</span>
+                            <RadzenIcon Icon="upload_file" Style="color: var(--rz-primary);" />
+                            <span>@Loc["ProductImportCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["ProductImportCardHint"]
+                        </RadzenText>
+
+                        @* Sample file with the EXACT positional format (same
+                           headers + column order as the AdminProducts export,
+                           including the two picture columns) — one click beats
+                           a manual 10-column reconstruction from the hint text. *@
+                        <button type="button" class="admin-inline-action"
+                                @onclick="DownloadProductCsvTemplateAsync">
+                            <RadzenIcon Icon="description" Style="font-size: 1rem;" />
+                            <span>@Loc["DownloadTemplateButton"]</span>
+                        </button>
+
+                        @if (_isImportingProducts)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["ImportWorking"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnProductCsvSelectedAsync"
+                                           accept=".csv,text/csv"
+                                           class="import-dropzone-input" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
+                                <span class="import-dropzone-title">@Loc["ProductImportPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["ProductImportPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_productImportError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_productImportError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                        }
+
+                        @if (_productImportRows is { Count: > 0 })
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["ImportCreatedCount", _productImportCreated]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportUpdatedCount", _productImportUpdated]"
+                                                 BadgeStyle="BadgeStyle.Info" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportFailedCount", _productImportFailed]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                    @* Audit trail: the same per-row ledger
+                                       rendered below, exported as CSV so the
+                                       import run can be filed / diffed. *@
+                                    <button type="button" class="admin-inline-action"
+                                            style="margin-top: 0; margin-inline-start: auto;"
+                                            @onclick="DownloadProductImportReportAsync">
+                                        <RadzenIcon Icon="sim_card_download" Style="font-size: 1rem;" />
+                                        <span>@Loc["DownloadReportButton"]</span>
+                                    </button>
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var rowResult in _productImportRows)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-line">@Loc["ImportRowLabel", rowResult.RowNumber]</span>
+                                            <span class="import-result-name">@rowResult.Name</span>
+                                            @if (rowResult.Outcome == ProductImportRowOutcome.Created)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeCreated"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                            }
+                                            else if (rowResult.Outcome == ProductImportRowOutcome.Updated)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeUpdated"]" BadgeStyle="BadgeStyle.Info" IsPill="true" />
+                                            }
+                                            else
+                                            {
+                                                <span class="import-result-msg">@rowResult.Message</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+
+                    @* ── Card 2: bulk picture upload ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">2</span>
+                            <RadzenIcon Icon="photo_library" Style="color: var(--rz-primary);" />
+                            <span>@Loc["PictureUploadCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["PictureUploadCardHint"]
+                        </RadzenText>
+
+                        @if (_isUploadingPictures)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["UploadWorking", _pictureUploadDone, _pendingPictures.Count + _pictureUploadDone]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnPicturesSelectedAsync"
+                                           accept="image/jpeg,image/png,image/webp"
+                                           multiple
+                                           class="import-dropzone-input" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
+                                <span class="import-dropzone-title">@Loc["PictureUploadPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["PictureUploadPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (_pendingPictures.Count > 0 && !_isUploadingPictures)
+                        {
+                            <div class="import-file-list">
+                                @foreach (var pending in _pendingPictures)
+                                {
+                                    <div class="import-file-chip">
+                                        <RadzenIcon Icon="image" Style="font-size: 1rem; color: var(--rz-primary);" />
+                                        <span class="import-file-name">@pending.FileName</span>
+                                        <span class="import-file-size">@FormatFileSize(pending.Bytes.Length)</span>
+                                        @* Per-file remove — a wrongly-picked file
+                                           can be dropped without losing the rest
+                                           of the selection. *@
+                                        <button type="button" class="import-file-remove"
+                                                title="@Loc["PictureRemoveFile"]"
+                                                aria-label="@Loc["PictureRemoveFile", pending.FileName]"
+                                                @onclick="() => RemovePendingPicture(pending)">
+                                            <RadzenIcon Icon="close" Style="font-size: 0.9rem;" />
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["PictureUploadButton", _pendingPictures.Count]"
+                                              Icon="cloud_done"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Click="@UploadPendingPicturesAsync" />
+                                <RadzenButton Text="@Loc["PictureUploadClearButton"]"
+                                              Icon="close"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Click="@ClearPendingPictures" />
+                            </div>
+                        }
+
+                        @if (_pictureUploadFailures.Count > 0)
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["UploadSucceededCount", _picturesUploaded]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["UploadFailedCount", _pictureUploadFailures.Count]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var failure in _pictureUploadFailures)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-name">@failure.FileName</span>
+                                            <span class="import-result-msg">@failure.Message</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+
+                    @* ── Card 3: user CSV import ── *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">3</span>
+                            <RadzenIcon Icon="group_add" Style="color: var(--rz-primary);" />
+                            <span>@Loc["UserImportCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["UserImportCardHint"]
+                        </RadzenText>
+
+                        @* Default-password formula — the admin handing out
+                           first-login credentials needs the exact rule; showing
+                           it (with a worked example) next to the import beats
+                           a support round-trip later. *@
+                        <div class="admin-info-callout" role="note">
+                            <RadzenIcon Icon="key" Class="admin-info-icon" />
+                            <div class="admin-info-body">
+                                <span>@Loc["UserImportPasswordHint"]</span>
+                                <code class="admin-info-code">@Loc["UserImportPasswordExample"]</code>
+                            </div>
+                        </div>
+
+                        @* Sample file with the EXACT positional format (same
+                           headers + column order as the manage-users export). *@
+                        <button type="button" class="admin-inline-action"
+                                @onclick="DownloadUserCsvTemplateAsync">
+                            <RadzenIcon Icon="description" Style="font-size: 1rem;" />
+                            <span>@Loc["DownloadTemplateButton"]</span>
+                        </button>
+
+                        @if (_isImportingUsers)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["ImportWorking"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnUserCsvSelectedAsync"
+                                           accept=".csv,text/csv"
+                                           class="import-dropzone-input" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
+                                <span class="import-dropzone-title">@Loc["UserImportPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["UserImportPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_userImportError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_userImportError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                        }
+
+                        @if (_userImportRows is { Count: > 0 })
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["ImportCreatedCount", _userImportCreated]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["UserImportSkippedCount", _userImportSkipped]"
+                                                 BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportFailedCount", _userImportFailed]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                    @* Audit trail: the same per-row ledger
+                                       rendered below, exported as CSV. *@
+                                    <button type="button" class="admin-inline-action"
+                                            style="margin-top: 0; margin-inline-start: auto;"
+                                            @onclick="DownloadUserImportReportAsync">
+                                        <RadzenIcon Icon="sim_card_download" Style="font-size: 1rem;" />
+                                        <span>@Loc["DownloadReportButton"]</span>
+                                    </button>
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var rowResult in _userImportRows)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-line">@Loc["ImportRowLabel", rowResult.RowNumber]</span>
+                                            <span class="import-result-name">@rowResult.WorkerId</span>
+                                            @if (rowResult.Outcome == UserImportRowOutcome.Created)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeCreated"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                            }
+                                            else if (rowResult.Outcome == UserImportRowOutcome.Skipped)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeSkipped"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                            }
+                                            else
+                                            {
+                                                <span class="import-result-msg">@rowResult.Message</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+                    @* ── Card 4: database backup status ──
+                       NOT numbered like cards 1-3: those form the CSV
+                       restore workflow; this is a separate operations
+                       card. Shows the scheduled-backup service's health
+                       (last run + outcome, next 03:30/14:30-UTC slot,
+                       stored files, retention) and offers a manual
+                       "Back up now" trigger. The trigger returns as soon
+                       as the run is ACCEPTED — the backup executes on the
+                       hosted service's own background loop, and the card
+                       follows it by polling every few seconds until it
+                       finishes. *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <RadzenIcon Icon="backup" Style="color: var(--rz-primary);" />
+                            <span>@Loc["BackupCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["BackupCardHint"]
+                        </RadzenText>
+
+                        @if (_isBackupLoading)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["BackupLoading"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else if (!string.IsNullOrEmpty(_backupLoadError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_backupLoadError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["BackupRetryButton"]"
+                                              Icon="refresh"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Click="@(() => LoadBackupStatusAsync())" />
+                            </div>
+                        }
+                        else if (_backupStatus is { Enabled: false })
+                        {
+                            @* Not an error — an externally-managed backup
+                               regime (or a dev box without a DB). The
+                               notice tells the admin which knob to flip. *@
+                            <div class="admin-info-callout" role="note">
+                                <RadzenIcon Icon="pause_circle" Class="admin-info-icon" />
+                                <div class="admin-info-body">
+                                    <span>@Loc["BackupDisabledNotice"]</span>
+                                    <code class="admin-info-code">DatabaseBackups:Enabled</code>
+                                </div>
+                            </div>
+                        }
+                        else if (_backupStatus is { } backup)
+                        {
+                            @* ── Health snapshot: last run / next slot /
+                                   retention / files. 2×2 stat grid; each
+                                   cell = muted label + strong value. *@
+                            <div class="backup-stats-grid">
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupLastRunLabel"]</span>
+                                    <span class="backup-stat-value">
+                                        @if (backup.IsRunning)
+                                        {
+                                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.4rem">
+                                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" />
+                                                <span>@Loc["BackupRunning"]</span>
+                                            </RadzenStack>
+                                        }
+                                        else if (backup.LastRunFinishedUtc is { } finishedUtc)
+                                        {
+                                            @CultureFormat.FormatTehranDateTime(finishedUtc)
+                                            @if (GetBackupRunDuration(backup) is { } durationSeconds)
+                                            {
+                                                <span class="backup-stat-sub">@Loc["BackupDurationFormat", durationSeconds]</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="backup-stat-sub">@Loc["BackupNeverRun"]</span>
+                                        }
+                                    </span>
+                                    @if (backup.LastRunSucceeded is false && !backup.IsRunning)
+                                    {
+                                        <RadzenBadge Text="@Loc["BackupOutcomeFailed"]" BadgeStyle="BadgeStyle.Danger" IsPill="true" Style="align-self: flex-start;" />
+                                    }
+                                    else if (backup.LastRunSucceeded is true)
+                                    {
+                                        <RadzenBadge Text="@Loc["BackupOutcomeSuccess"]" BadgeStyle="BadgeStyle.Success" IsPill="true" Style="align-self: flex-start;" />
+                                    }
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupNextRunLabel"]</span>
+                                    <span class="backup-stat-value">
+                                        @(backup.NextScheduledRunUtc is { } next ? CultureFormat.FormatTehranDateTime(next) : "—")
+                                    </span>
+                                    <span class="backup-stat-sub">@Loc["BackupScheduleSlots"]</span>
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupRetentionLabel"]</span>
+                                    <span class="backup-stat-value">@Loc["BackupRetentionValue", backup.RetentionDays]</span>
+                                </div>
+
+                                <div class="backup-stat">
+                                    <span class="backup-stat-label">@Loc["BackupFilesLabel"]</span>
+                                    <span class="backup-stat-value">@Loc["BackupFilesSummary", backup.Files.Count, FormatFileSize(backup.TotalSizeBytes)]</span>
+                                </div>
+                            </div>
+
+                            @* Failure detail from the last run — the same
+                               message the service logged (e.g. the Docker
+                               volume-wiring hint), surfaced so the admin
+                               can act without grepping container logs. *@
+                            @if (backup.LastRunSucceeded is false && !backup.IsRunning && !string.IsNullOrEmpty(backup.LastRunError))
+                            {
+                                <RadzenAlert Title="@Loc["BackupFailedAlertTitle"]"
+                                             Text="@backup.LastRunError"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Outlined"
+                                             ShowIcon="true"
+                                             Style="margin-top: 0.5rem;" />
+                            }
+
+                            @* ── Run-history ledger (persisted JSONL) — one row
+                               per COMPLETED run, newest first: trigger icon
+                               (clock = scheduled slot, touch = manual "Back
+                               up now"), Tehran start time + duration, and
+                               the outcome badge. The full failure message
+                               rides the row's title tooltip (the latest
+                               failure also gets the alert above). Only
+                               rendered when at least one run is recorded —
+                               the "Last run: never" stat already covers the
+                               fresh-install case. *@
+                            @if (backup.RunHistory is { Count: > 0 })
+                            {
+                                <span class="backup-run-section-label">@Loc["BackupRunHistoryLabel"]</span>
+                                <div class="backup-run-list">
+                                    @foreach (var run in backup.RunHistory)
+                                    {
+                                        var rawSeconds = (decimal)(run.FinishedUtc - run.StartedUtc).TotalSeconds;
+                                        var durationSeconds = rawSeconds >= 0 ? decimal.Round(rawSeconds, 1) : 0m;
+                                        var rowTitle = run.Succeeded
+                                            ? string.Format(CultureInfo.CurrentCulture, Loc["BackupRunTooltip"], run.WasManual ? Loc["BackupRunManual"] : Loc["BackupRunScheduled"])
+                                            : $"{Loc["BackupRunFailed"]}: {run.Error}";
+                                        <div class="backup-run-row @(run.Succeeded ? string.Empty : "backup-run-failed")"
+                                             title="@rowTitle">
+                                            @if (run.WasManual)
+                                            {
+                                                <RadzenIcon Icon="touch_app"
+                                                            Class="backup-run-icon backup-run-icon-manual"
+                                                            title="@Loc["BackupRunManual"]" />
+                                            }
+                                            else
+                                            {
+                                                <RadzenIcon Icon="schedule"
+                                                            Class="backup-run-icon backup-run-icon-scheduled"
+                                                            title="@Loc["BackupRunScheduled"]" />
+                                            }
+                                            <span class="backup-run-time">@CultureFormat.FormatTehranDateTime(run.StartedUtc)</span>
+                                            <span class="backup-run-duration">@Loc["BackupDurationFormat", durationSeconds]</span>
+                                            <span class="backup-run-name">@run.FileName</span>
+                                            @if (run.Succeeded)
+                                            {
+                                                <RadzenBadge Text="@Loc["BackupOutcomeSuccess"]" BadgeStyle="BadgeStyle.Success" IsPill="true" Style="flex: none;" />
+                                            }
+                                            else
+                                            {
+                                                <RadzenBadge Text="@Loc["BackupOutcomeFailed"]" BadgeStyle="BadgeStyle.Danger" IsPill="true" Style="flex: none;" />
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            @* Stored files ledger — newest first, mono
+                               names (LTR even in fa-IR), size + Tehran
+                               time. Scrollable with the thin themed
+                               scrollbar. *@
+                            @if (backup.Files.Count > 0)
+                            {
+                                <span class="backup-run-section-label">@Loc["BackupFilesLedgerLabel"]</span>
+                                <div class="backup-file-list">
+                                    @foreach (var file in backup.Files)
+                                    {
+                                        <div class="backup-file-row">
+                                            <RadzenIcon Icon="save" Style="font-size: 1rem; color: var(--rz-primary); flex: none;" />
+                                            <span class="backup-file-name">@file.FileName</span>
+                                            <span class="backup-file-size">@FormatFileSize(file.SizeBytes)</span>
+                                            <span class="backup-file-date">@CultureFormat.FormatTehranDateTime(file.LastWriteUtc)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <RadzenText TextStyle="TextStyle.Body2"
+                                            Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;">
+                                    @Loc["BackupNoFiles"]
+                                </RadzenText>
+                            }
+
+                            <div class="action-row">
+                                <RadzenButton Text="@Loc["BackupTriggerButton"]"
+                                              Icon="play_arrow"
+                                              ButtonStyle="ButtonStyle.Primary"
+                                              Variant="Variant.Filled"
+                                              Disabled="@(backup.IsRunning || _isTriggeringBackup)"
+                                              IsBusy="@_isTriggeringBackup"
+                                              BusyText="@Loc["BackupTriggering"]"
+                                              Click="@TriggerBackupNowAsync" />
+                                <RadzenButton Text="@Loc["BackupRefreshButton"]"
+                                              Icon="refresh"
+                                              ButtonStyle="ButtonStyle.Secondary"
+                                              Variant="Variant.Outlined"
+                                              Disabled="@(_isTriggeringBackup)"
+                                              Click="@(() => LoadBackupStatusAsync())" />
+                            </div>
+                        }
+                    </RadzenCard>
+                </div>
+            </div>
+        }
     }
 </RadzenStack>
 
@@ -750,6 +1929,12 @@
                 return;
             }
 
+            // Admin role for the admin-tools section — resolved via the
+            // auth state (NOT ICurrentUserService.IsInRole, which reads
+            // HttpContext and returns false for everyone over the SignalR
+            // circuit). Same pattern as ManageGroups.razor's _isAdmin.
+            _isAdmin = user.IsInRole(Roles.Admin);
+
             // The UserId claim is set by our custom IClaimsPrincipalFactory
             // in Infrastructure — it's the Domain User's Guid Id. Fallback
             // to NameIdentifier for safety.
@@ -782,6 +1967,14 @@
             // it. The query resolves the CURRENT user server-side (no
             // client-supplied Id — anti-CSRF). ──
             await LoadNotificationPreferencesAsync();
+
+            // ── Backup status (admin-only card) — loaded independently for
+            // the same reason: a failed status load only affects its own
+            // card (inline alert + Retry there). ──
+            if (_isAdmin)
+            {
+                await LoadBackupStatusAsync();
+            }
         }
         catch
         {
@@ -1099,5 +2292,961 @@
         Gender.Female => Loc["GenderFemale"],
         _ => gender.ToString()
     };
+
+    // ── Admin tools (admin-only) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Whether the current user is in the Admin role — gates the
+    /// admin-tools section (product import, bulk picture upload, user
+    /// import). Resolved in OnInitializedAsync from the Blazor auth
+    /// state; the commands are ALSO [RequireRoles(Admin)]-gated
+    /// server-side, so this is UX gating, not the security boundary.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
+    /// Hard cap on CSV import-file size: 5 MB is ~50k rows of either
+    /// export format — far beyond the 2,000-row command cap, so the cap
+    /// (not the file size) is always the binding limit.
+    /// </summary>
+    private const int MaxCsvFileSizeBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// Hard cap on ONE bulk picture upload batch. Keeps the circuit's
+    /// buffered memory bounded (50 × 5 MB worst case) and forces very
+    /// large restores to arrive in reviewable chunks.
+    /// </summary>
+    private const int MaxPicturesPerBatch = 50;
+
+    /// <summary>
+    /// Max size of ONE uploaded picture — mirrors the backend's
+    /// FileStorage:MaxImageSizeBytes default (5 MB). The backend
+    /// re-validates (magic bytes + bounded stream); this is the
+    /// client-side pre-filter so obviously-oversized files are rejected
+    /// without buffering them.
+    /// </summary>
+    private const int MaxPictureFileSizeBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// Content types the picture bulk-upload accepts — the SAME allowlist
+    /// LocalFileStorage sniffs for (JPEG / PNG / WebP). Declared here for
+    /// the client-side pre-filter; the backend's magic-byte sniff remains
+    /// the authority.
+    /// </summary>
+    private static readonly HashSet<string> AllowedPictureContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    };
+
+    // ── Product CSV import state ───────────────────────────────────────────
+
+    /// <summary>True while the product import command is in flight.</summary>
+    private bool _isImportingProducts;
+
+    /// <summary>Non-null when the product import failed before any row was processed (unreadable file, no data rows, dispatch failure).</summary>
+    private string? _productImportError;
+
+    /// <summary>Per-row product-import report (handler results + any local parse failures), in file order.</summary>
+    private List<ProductImportRowResultDto>? _productImportRows;
+
+    /// <summary>Tallies for the product import result badges.</summary>
+    private int _productImportCreated;
+    private int _productImportUpdated;
+    private int _productImportFailed;
+
+    // ── Bulk picture upload state ──────────────────────────────────────────
+
+    /// <summary>One buffered picture awaiting the explicit Upload click.</summary>
+    private sealed record PendingPicture(string FileName, string ContentType, byte[] Bytes);
+
+    /// <summary>One rejected/failed picture from a batch, with a human-readable reason.</summary>
+    private sealed record PictureUploadFailure(string FileName, string Message);
+
+    /// <summary>Pictures selected but not yet uploaded (buffered immediately — the IBrowserFile streams die with the JS registry; same lesson as CreateProduct.razor).</summary>
+    private List<PendingPicture> _pendingPictures = new();
+
+    /// <summary>True while the batch is streaming to storage.</summary>
+    private bool _isUploadingPictures;
+
+    /// <summary>Pictures uploaded successfully in the last batch.</summary>
+    private int _picturesUploaded;
+
+    /// <summary>Progress counter during an upload (done / total).</summary>
+    private int _pictureUploadDone;
+
+    /// <summary>Per-file failures from the last batch (invalid content, oversize, storage error).</summary>
+    private List<PictureUploadFailure> _pictureUploadFailures = new();
+
+    // ── User CSV import state ───────────────────────────────────────────
+
+    /// <summary>True while the user import command is in flight.</summary>
+    private bool _isImportingUsers;
+
+    /// <summary>Non-null when the user import failed before any row was processed.</summary>
+    private string? _userImportError;
+
+    /// <summary>Per-row user-import report (handler results + local parse failures), in file order.</summary>
+    private List<UserImportRowResultDto>? _userImportRows;
+
+    /// <summary>Tallies for the user import result badges.</summary>
+    private int _userImportCreated;
+    private int _userImportSkipped;
+    private int _userImportFailed;
+
+    // ── Backup status card state (admin-only) ──────────────────────────
+
+    /// <summary>True while the GetBackupStatusQuery is in flight. Initialized TRUE so the admin card's first frame shows the loading spinner (not an empty body) until the initial load resolves; polls pass showLoadingState:false so refreshes never blink the card.</summary>
+    private bool _isBackupLoading = true;
+
+    /// <summary>The latest backup-subsystem snapshot; null until the first load completes.</summary>
+    private BackupStatusDto? _backupStatus;
+
+    /// <summary>Non-null when the status query failed — the card shows an inline alert + Retry.</summary>
+    private string? _backupLoadError;
+
+    /// <summary>True while the TriggerBackupNowCommand is in flight (the "Back up now" button's busy state).</summary>
+    private bool _isTriggeringBackup;
+
+    /// <summary>
+    /// Loads (or refreshes) the backup status snapshot. Non-fatal: a
+    /// failed load only takes down the backup card (inline alert + Retry),
+    /// never the rest of the Settings page.
+    /// </summary>
+    /// <param name="showLoadingState">
+    /// True (default) for user-initiated loads — the card body swaps to a
+    /// spinner. False for background POLLS — the last snapshot stays on
+    /// screen so a 5-second poll never blinks the card.
+    /// </param>
+    private async Task LoadBackupStatusAsync(bool showLoadingState = true)
+    {
+        if (showLoadingState)
+        {
+            _isBackupLoading = true;
+        }
+
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<BackupStatusDto>>(
+                new GetBackupStatusQuery());
+
+            if (result.IsSuccess)
+            {
+                _backupStatus = result.Value;
+                _backupLoadError = null;
+            }
+            else
+            {
+                _backupLoadError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _backupLoadError = Loc["BackupLoadError"];
+        }
+        finally
+        {
+            if (showLoadingState)
+            {
+                _isBackupLoading = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// "Back up now": dispatches TriggerBackupNowCommand and — once the
+    /// run is accepted — follows its progress by polling the status every
+    /// few seconds until the run finishes (bounded at 10 minutes; the
+    /// scheduled slots are unaffected by manual runs). The backup itself
+    /// executes on the hosted service's own background loop; this handler
+    /// only waits for the ACCEPT + polls.
+    /// </summary>
+    private async Task TriggerBackupNowAsync()
+    {
+        if (_isTriggeringBackup || _backupStatus is { IsRunning: true })
+        {
+            return; // a run is already starting/executing — nothing to do
+        }
+
+        _isTriggeringBackup = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result>(new TriggerBackupNowCommand());
+
+            if (result.IsSuccess)
+            {
+                await Toast.Success(Loc["BackupTriggered"], summary: Loc["PageHeading"]);
+
+                // Immediate refresh (picks up IsRunning=true) + follow the
+                // run until it completes.
+                await LoadBackupStatusAsync();
+                await PollBackupStatusWhileRunningAsync();
+            }
+            else
+            {
+                // Rejected server-side: a run already in flight / pending,
+                // or the schedule is disabled. Refresh so the card shows
+                // which, then surface the rejection.
+                await LoadBackupStatusAsync();
+                await Toast.Warning(result.Error, summary: Loc["ErrorTitle"]);
+            }
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["BackupTriggerError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isTriggeringBackup = false;
+        }
+    }
+
+    /// <summary>
+    /// Polls the backup status every few seconds while a run is executing,
+    /// so the card's "Backup in progress…" turns into the outcome badge
+    /// without the admin hammering Refresh. Bounded (10 minutes) and
+    /// best-effort — a dropped circuit simply stops the polling.
+    /// </summary>
+    private async Task PollBackupStatusWhileRunningAsync()
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddMinutes(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                await LoadBackupStatusAsync(showLoadingState: false);
+                StateHasChanged(); // intermediate updates — the handler is long-running
+
+                if (_backupStatus is not { IsRunning: true })
+                {
+                    break;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Polling is cosmetic — swallow and leave the last snapshot.
+        }
+    }
+
+    /// <summary>
+    /// Duration (seconds, one decimal) of the last COMPLETED backup run,
+    /// or null when the run never finished / never happened. Derived from
+    /// the status DTO's start+finish timestamps.
+    /// </summary>
+    private static decimal? GetBackupRunDuration(BackupStatusDto backup)
+    {
+        if (backup.LastRunStartedUtc is not { } started || backup.LastRunFinishedUtc is not { } finished)
+        {
+            return null;
+        }
+
+        var seconds = (decimal)(finished - started).TotalSeconds;
+        return seconds >= 0 ? decimal.Round(seconds, 1) : null;
+    }
+
+    /// <summary>
+    /// Reads an InputFile's text content as UTF-8 (BOM-tolerant — the
+    /// export's download helper prepends one; CsvParser strips it).
+    /// Shared by both CSV import pickers.
+    /// </summary>
+    private static async Task<string> ReadTextFileAsync(IBrowserFile file, int maxBytes)
+    {
+        await using var stream = file.OpenReadStream(maxAllowedSize: maxBytes);
+        using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+        return await reader.ReadToEndAsync();
+    }
+
+    /// <summary>
+    /// Product-CSV picker: parse + normalize the file, dispatch
+    /// ImportProductsCommand, and merge the handler's per-row report
+    /// with any local parse failures.
+    ///
+    /// COLUMN ORDER (positional — must mirror the AdminProducts export):
+    /// Name, Category, SubCategory, SubSubCategory, Price, Currency,
+    /// Stock, Status, Picture directory, Picture file name. The Status
+    /// and Picture-directory columns are read but ignored (stock status
+    /// is derived from stock; the URL is rebuilt from the file name).
+    /// </summary>
+    private async Task OnProductCsvSelectedAsync(InputFileChangeEventArgs e)
+    {
+        // Reset the previous run's UI state.
+        _productImportError = null;
+        _productImportRows = null;
+        _productImportCreated = _productImportUpdated = _productImportFailed = 0;
+
+        if (e.FileCount == 0)
+        {
+            return; // picker cancelled — keep the previous state
+        }
+
+        var file = e.File;
+        var rows = new List<ProductImportRowDto>();
+        var localFailures = new List<ProductImportRowResultDto>();
+
+        try
+        {
+            var csv = await ReadTextFileAsync(file, MaxCsvFileSizeBytes);
+            var records = CsvParser.Parse(csv);
+
+            // Row 0 is the header; every record after it is a data row.
+            if (records.Count < 2)
+            {
+                _productImportError = Loc["ImportErrorNoDataRows"];
+                return;
+            }
+
+            for (var i = 1; i < records.Count; i++)
+            {
+                var fields = records[i];
+                var rowNumber = i; // 1-based DATA-row number (header = 0)
+
+                // Guard the positional contract: the export always writes
+                // 10 columns; a short row means a broken/edited file — the
+                // row is reported, not silently mis-mapped.
+                if (fields.Length < 10)
+                {
+                    localFailures.Add(new ProductImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        Name = fields.Length > 0 ? fields[0] : string.Empty,
+                        Outcome = ProductImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorShortRow"]
+                    });
+                    continue;
+                }
+
+                if (!CsvParser.TryParseInvariantDecimal(fields[4], out var price)
+                    || !CsvParser.TryParseInvariantInt(fields[6], out var stock))
+                {
+                    localFailures.Add(new ProductImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        Name = fields[0],
+                        Outcome = ProductImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorBadNumber"]
+                    });
+                    continue;
+                }
+
+                rows.Add(new ProductImportRowDto
+                {
+                    Name = fields[0],
+                    CategoryName = fields[1],
+                    SubCategoryName = fields[2],
+                    SubSubCategoryName = fields[3],
+                    PriceAmount = price,
+                    Currency = fields[5],
+                    StockQuantity = stock,
+                    PictureFileName = fields[9],
+                    RowNumber = rowNumber
+                });
+            }
+        }
+        catch (System.IO.IOException ex)
+        {
+            _productImportError = Loc["ImportErrorReadFailed", ex.Message];
+            return;
+        }
+
+        // All rows failed local parsing — nothing to dispatch.
+        if (rows.Count == 0)
+        {
+            _productImportRows = localFailures;
+            _productImportFailed = localFailures.Count;
+            return;
+        }
+
+        _isImportingProducts = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<ProductImportResultDto>>(new ImportProductsCommand(rows));
+
+            if (result.IsSuccess)
+            {
+                var report = result.Value;
+                _productImportCreated = report.CreatedCount;
+                _productImportUpdated = report.UpdatedCount;
+                _productImportFailed = report.FailedCount + localFailures.Count;
+
+                // Handler rows first (file order), then local failures —
+                // both are already ordered by row number within themselves.
+                _productImportRows = report.RowResults.Concat(localFailures).ToList();
+
+                await Toast.Success(Loc["ProductImportDone", report.CreatedCount, report.UpdatedCount, report.FailedCount + localFailures.Count], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                _productImportError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _productImportError = Loc["ImportErrorGeneric"];
+        }
+        finally
+        {
+            _isImportingProducts = false;
+        }
+    }
+
+    /// <summary>
+    /// Bulk-picture picker: buffer every selected image immediately (the
+    /// IBrowserFile streams die with the JS registry — same lesson as
+    /// CreateProduct.razor), pre-filter content type + size, and hand the
+    /// batch to the explicit Upload button.
+    /// </summary>
+    private async Task OnPicturesSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _pictureUploadFailures = new List<PictureUploadFailure>();
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+
+        if (e.FileCount == 0)
+        {
+            return; // picker cancelled — keep the previous batch
+        }
+
+        var accepted = new List<PendingPicture>(e.FileCount);
+        var rejected = new List<PictureUploadFailure>();
+
+        foreach (var file in e.GetMultipleFiles(MaxPicturesPerBatch))
+        {
+            // ── Pre-filter: content type + size (client-side mirror of the
+            //    backend's checks — the backend's magic-byte sniff stays
+            //    the authority). Rejected files become per-file failure
+            //    entries in the results list, not silent drops.
+            if (!AllowedPictureContentTypes.Contains(file.ContentType))
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
+                continue;
+            }
+
+            if (file.Size > MaxPictureFileSizeBytes)
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                continue;
+            }
+
+            try
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
+                accepted.Add(new PendingPicture(file.Name, file.ContentType, ms.ToArray()));
+            }
+            catch (System.IO.IOException)
+            {
+                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+            }
+        }
+
+        _pendingPictures = accepted;
+
+        if (rejected.Count > 0)
+        {
+            // Surface the pre-filter rejections in the results ledger
+            // (same shape as upload failures — file name + reason).
+            _pictureUploadFailures = rejected;
+            await Toast.Warning(Loc["PictureUploadSomeRejected", rejected.Count], summary: Loc["PageHeading"]);
+        }
+    }
+
+    /// <summary>
+    /// Uploads the buffered batch: one SaveWithOriginalNameAsync per file
+    /// (name-preserving — the restore contract), collecting per-file
+    /// failures instead of aborting the batch.
+    /// </summary>
+    private async Task UploadPendingPicturesAsync()
+    {
+        if (_pendingPictures.Count == 0 || _isUploadingPictures)
+        {
+            return;
+        }
+
+        _isUploadingPictures = true;
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+        var failures = new List<PictureUploadFailure>();
+
+        try
+        {
+            var batch = _pendingPictures;
+            foreach (var picture in batch)
+            {
+                try
+                {
+                    using var stream = new System.IO.MemoryStream(picture.Bytes, writable: false);
+                    await FileStorage.SaveWithOriginalNameAsync(
+                        stream, picture.FileName, picture.ContentType, CancellationToken.None);
+                    _picturesUploaded++;
+                }
+                catch (System.IO.InvalidDataException ex)
+                {
+                    // Backend rejected the file (bad magic bytes, type
+                    // mismatch, oversize, unusable name). The pre-filter
+                    // already catches most of these — this is the
+                    // server-side backstop.
+                    failures.Add(new PictureUploadFailure(picture.FileName, ex.Message));
+                }
+                catch (Exception)
+                {
+                    // Storage I/O failure — also per-file, not fatal.
+                    failures.Add(new PictureUploadFailure(picture.FileName, Loc["PictureUploadErrorStorage"]));
+                }
+                finally
+                {
+                    _pictureUploadDone++;
+                    StateHasChanged(); // progress text updates per file
+                }
+            }
+
+            _pictureUploadFailures = failures;
+            _pendingPictures = new List<PendingPicture>();
+
+            if (failures.Count == 0)
+            {
+                await Toast.Success(Loc["PictureUploadDone", _picturesUploaded], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                await Toast.Warning(Loc["PictureUploadDoneWithFailures", _picturesUploaded, failures.Count], summary: Loc["PageHeading"]);
+            }
+        }
+        finally
+        {
+            _isUploadingPictures = false;
+        }
+    }
+
+    /// <summary>
+    /// Discards the buffered batch without uploading (the picker's Clear
+    /// button).
+    /// </summary>
+    private void ClearPendingPictures()
+    {
+        _pendingPictures = new List<PendingPicture>();
+        _pictureUploadFailures = new List<PictureUploadFailure>();
+        _picturesUploaded = 0;
+        _pictureUploadDone = 0;
+    }
+
+    /// <summary>
+    /// Drops ONE buffered picture from the pending batch (the chip's ✕
+    /// button) — a wrongly-picked file can be removed without losing the
+    /// rest of the selection.
+    /// </summary>
+    private void RemovePendingPicture(PendingPicture picture)
+    {
+        _pendingPictures.Remove(picture);
+    }
+
+    // ── CSV template + import-report downloads (admin-only) ────────────
+    //
+    // Both builders reuse the shared CsvBuilder (RFC 4180 escaping +
+    // invariant numbers) and the takDownload.csv JS helper (UTF-8 + BOM)
+    // — the exact same write-side machinery the grid exports use, so the
+    // templates round-trip through CsvParser byte-for-byte.
+
+    /// <summary>
+    /// Builds and downloads a sample product-import CSV: the EXACT
+    /// positional 10-column format the import expects — the same
+    /// localized headers AND column order the AdminProducts export writes
+    /// (reused from that page's localizer, so the two can never drift) —
+    /// plus two example rows, including one WITHOUT a picture (empty
+    /// directory + file-name cells) to show the columns are optional.
+    /// </summary>
+    private async Task DownloadProductCsvTemplateAsync()
+    {
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                ProductsLoc["ColName"],
+                ProductsLoc["ColCategory"],
+                ProductsLoc["ColSubCategory"],
+                ProductsLoc["ColSubSubCategory"],
+                ProductsLoc["ColPrice"],
+                ProductsLoc["ColCurrency"],
+                ProductsLoc["ColStock"],
+                ProductsLoc["ColStatus"],
+                ProductsLoc["ColPictureDirectory"],
+                ProductsLoc["ColPictureFileName"]);
+
+            // Sample rows. Values are deliberately obvious placeholders so
+            // an accidentally-imported template is instantly recognizable
+            // (and deletable) in the products grid. Status mirrors what the
+            // export writes (localized in-stock/out-of-stock label); the
+            // import reads but ignores it (stock status is derived from
+            // the stock quantity).
+            builder.AddRow(
+                "Example Product A", "Example Category", "Example Sub-Category", "Example Sub-Sub-Category",
+                100.5m, "IRR", 10, ProductsLoc["StatusInStockBadge"],
+                "uploads/products", "example-product-a.jpg");
+            builder.AddRow(
+                "Example Product B", "Example Category", "Example Sub-Category", string.Empty,
+                250m, "IRR", 0, ProductsLoc["StatusOutOfStockBadge"],
+                string.Empty, string.Empty);
+
+            await JS.InvokeVoidAsync("takDownload.csv", "takone-products-import-template.csv", builder.ToString());
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — same policy
+            // as the grid exports: a visible toast beats a dead button.
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Builds and downloads a sample user-import CSV: the EXACT positional
+    /// 6-column format the import expects — the same localized headers AND
+    /// column order the manage-users export writes (reused from that
+    /// page's localizer) — plus two example rows.
+    /// NOTE: the Roles column must carry the SEEDED ENGLISH role names
+    /// ("Admin"/"Manager"/"Employee"/"ReadOnly"/"Customer" — the handler
+    /// validates them Ordinal-exact against the seeded set); the gender +
+    /// status cells use the CURRENT culture's labels, which the import's
+    /// normalizer maps back to the enum/bool.
+    /// </summary>
+    private async Task DownloadUserCsvTemplateAsync()
+    {
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                UsersLoc["ColWorkerId"],
+                UsersLoc["ColFullName"],
+                UsersLoc["ColGender"],
+                UsersLoc["ColGroup"],
+                UsersLoc["ColRoles"],
+                UsersLoc["ColStatus"]);
+
+            // Sample rows — recognizable placeholders (see the product
+            // template's remark). Worker IDs 10001/10002 import cleanly
+            // once and are then skipped on re-import (idempotent).
+            builder.AddRow("10001", "Example Employee", UsersLoc["GenderMale"], string.Empty,
+                "Employee", UsersLoc["StatusActive"]);
+            builder.AddRow("10002", "Example Customer", UsersLoc["GenderFemale"], "Example Group",
+                "Customer", UsersLoc["StatusActive"]);
+
+            await JS.InvokeVoidAsync("takDownload.csv", "takone-users-import-template.csv", builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Exports the LAST product-import run's per-row ledger as a CSV (row
+    /// number, product name, outcome, failure message) — the audit trail
+    /// counterpart of the on-screen report, so an import run can be filed
+    /// or diffed later.
+    /// </summary>
+    private async Task DownloadProductImportReportAsync()
+    {
+        if (_productImportRows is not { Count: > 0 })
+        {
+            return; // nothing to report — the button isn't rendered anyway
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColReportRow"],
+                ProductsLoc["ColName"],
+                Loc["ColReportOutcome"],
+                Loc["ColReportMessage"]);
+
+            foreach (var row in _productImportRows)
+            {
+                builder.AddRow(
+                    row.RowNumber,
+                    row.Name,
+                    GetProductImportOutcomeLabel(row.Outcome),
+                    row.Message);
+            }
+
+            var fileName = $"takone-product-import-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Exports the LAST user-import run's per-row ledger as a CSV (row
+    /// number, worker ID, outcome, failure message). Mirrors the product
+    /// report so both cards behave alike.
+    /// </summary>
+    private async Task DownloadUserImportReportAsync()
+    {
+        if (_userImportRows is not { Count: > 0 })
+        {
+            return;
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColReportRow"],
+                UsersLoc["ColWorkerId"],
+                Loc["ColReportOutcome"],
+                Loc["ColReportMessage"]);
+
+            foreach (var row in _userImportRows)
+            {
+                builder.AddRow(
+                    row.RowNumber,
+                    row.WorkerId,
+                    GetUserImportOutcomeLabel(row.Outcome),
+                    row.Message);
+            }
+
+            var fileName = $"takone-user-import-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Localized outcome label for the product-import report CSV — the
+    /// same strings the on-screen badges use, so the file and the page
+    /// tell one story.
+    /// </summary>
+    private string GetProductImportOutcomeLabel(ProductImportRowOutcome outcome) => outcome switch
+    {
+        ProductImportRowOutcome.Created => Loc["ImportOutcomeCreated"],
+        ProductImportRowOutcome.Updated => Loc["ImportOutcomeUpdated"],
+        _ => Loc["ImportOutcomeFailed"]
+    };
+
+    /// <summary>
+    /// Localized outcome label for the user-import report CSV (see the
+    /// product variant's remark).
+    /// </summary>
+    private string GetUserImportOutcomeLabel(UserImportRowOutcome outcome) => outcome switch
+    {
+        UserImportRowOutcome.Created => Loc["ImportOutcomeCreated"],
+        UserImportRowOutcome.Skipped => Loc["ImportOutcomeSkipped"],
+        _ => Loc["ImportOutcomeFailed"]
+    };
+
+    /// <summary>
+    /// Formats a byte count as a compact human size ("4.2 MB") — the
+    /// pending-picture chips. Invariant digits: file sizes are data, not
+    /// localized UI text.
+    /// </summary>
+    private static string FormatFileSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        var size = (double)bytes;
+        var unit = 0;
+        while (size >= 1024 && unit < units.Length - 1)
+        {
+            size /= 1024;
+            unit++;
+        }
+        return $"{size:0.#} {units[unit]}";
+    }
+
+    /// <summary>
+    /// User-CSV picker: parse + NORMALIZE the file (the export writes
+    /// LOCALIZED gender and status labels — map them back to the neutral
+    /// enum/bool here, where the localizer lives), dispatch
+    /// ImportUsersCommand, and merge the handler's per-row report with
+    /// local parse failures.
+    ///
+    /// COLUMN ORDER (positional — must mirror the manage-users export):
+    /// Worker ID, Full name, Gender, Group, Roles (semicolon-joined),
+    /// Status.
+    /// </summary>
+    private async Task OnUserCsvSelectedAsync(InputFileChangeEventArgs e)
+    {
+        // Reset the previous run's UI state.
+        _userImportError = null;
+        _userImportRows = null;
+        _userImportCreated = _userImportSkipped = _userImportFailed = 0;
+
+        if (e.FileCount == 0)
+        {
+            return;
+        }
+
+        var file = e.File;
+        var rows = new List<UserImportRowDto>();
+        var localFailures = new List<UserImportRowResultDto>();
+
+        try
+        {
+            var csv = await ReadTextFileAsync(file, MaxCsvFileSizeBytes);
+            var records = CsvParser.Parse(csv);
+
+            if (records.Count < 2)
+            {
+                _userImportError = Loc["ImportErrorNoDataRows"];
+                return;
+            }
+
+            for (var i = 1; i < records.Count; i++)
+            {
+                var fields = records[i];
+                var rowNumber = i;
+
+                if (fields.Length < 6)
+                {
+                    localFailures.Add(new UserImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        WorkerId = fields.Length > 0 ? fields[0] : string.Empty,
+                        Outcome = UserImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorShortRow"]
+                    });
+                    continue;
+                }
+
+                // ── Normalize the LOCALIZED cells (gender + status) into
+                //    neutral values. Accepts the canonical English keys,
+                //    the CURRENT culture's labels, and the known fa-IR
+                //    labels — covering same-deployment round-trips and
+                //    cross-culture imports alike.
+                if (!TryNormalizeGender(fields[2], out var gender))
+                {
+                    localFailures.Add(new UserImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        WorkerId = fields[0],
+                        Outcome = UserImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorBadGender"]
+                    });
+                    continue;
+                }
+
+                // Status: empty cell defaults to Active (an export always
+                // writes it, but hand-made files may not).
+                var isActive = NormalizeStatus(fields[5]);
+
+                // Roles: semicolon-joined inside one cell ("Employee;
+                // Customer") → trimmed, non-empty list.
+                var roles = fields[4]
+                    .Split(';', System.StringSplitOptions.TrimEntries | System.StringSplitOptions.RemoveEmptyEntries)
+                    .ToList();
+
+                rows.Add(new UserImportRowDto
+                {
+                    WorkerId = fields[0],
+                    FullName = fields[1],
+                    Gender = gender,
+                    GroupName = fields[3],
+                    Roles = roles,
+                    IsActive = isActive,
+                    RowNumber = rowNumber
+                });
+            }
+        }
+        catch (System.IO.IOException ex)
+        {
+            _userImportError = Loc["ImportErrorReadFailed", ex.Message];
+            return;
+        }
+
+        if (rows.Count == 0)
+        {
+            _userImportRows = localFailures;
+            _userImportFailed = localFailures.Count;
+            return;
+        }
+
+        _isImportingUsers = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<UserImportResultDto>>(new ImportUsersCommand(rows));
+
+            if (result.IsSuccess)
+            {
+                var report = result.Value;
+                _userImportCreated = report.CreatedCount;
+                _userImportSkipped = report.SkippedCount;
+                _userImportFailed = report.FailedCount + localFailures.Count;
+
+                _userImportRows = report.RowResults.Concat(localFailures).ToList();
+
+                await Toast.Success(Loc["UserImportDone", report.CreatedCount, report.SkippedCount, report.FailedCount + localFailures.Count], summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                _userImportError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _userImportError = Loc["ImportErrorGeneric"];
+        }
+        finally
+        {
+            _isImportingUsers = false;
+        }
+    }
+
+    /// <summary>
+    /// Maps a CSV gender cell back to the Gender enum. Accepts the
+    /// canonical English keys ("Male"/"Female"), the current culture's
+    /// localized labels (via the localizer — the common same-deployment
+    /// round-trip), and the known fa-IR label values (so an fa-IR export
+    /// imports cleanly even under an en-US UI). Values must stay in sync
+    /// with AdminUsers.en-US.resx / AdminUsers.fa-IR.resx
+    /// (GenderMale/GenderFemale).
+    /// </summary>
+    private bool TryNormalizeGender(string cell, out Gender gender)
+    {
+        var value = cell?.Trim() ?? string.Empty;
+
+        if (string.Equals(value, "Male", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, Loc["GenderMale"], StringComparison.Ordinal)
+            || value == "مرد")
+        {
+            gender = Gender.Male;
+            return true;
+        }
+
+        if (string.Equals(value, "Female", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, Loc["GenderFemale"], StringComparison.Ordinal)
+            || value == "زن")
+        {
+            gender = Gender.Female;
+            return true;
+        }
+
+        gender = Gender.Male;
+        return false;
+    }
+
+    /// <summary>
+    /// Maps a CSV status cell to the active flag. Active/فعال (either
+    /// case) → true; Inactive/غیرفعال → false; anything else (including
+    /// empty) → true (new accounts default to active). Values in sync with
+    /// AdminUsers.resx (StatusActive/StatusInactive).
+    /// </summary>
+    private static bool NormalizeStatus(string cell)
+    {
+        var value = cell?.Trim() ?? string.Empty;
+
+        if (string.Equals(value, "Inactive", StringComparison.OrdinalIgnoreCase) || value == "غیرفعال")
+        {
+            return false;
+        }
+
+        return true;
+    }
 
 }

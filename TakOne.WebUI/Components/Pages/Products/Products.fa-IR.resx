@@ -407,4 +407,52 @@
     <value>قیمت: زیاد به کم</value>
     <comment>دور ۴ — گزینهٔ مرتب‌سازی گران‌ترین اول.</comment>
   </data>
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+    <comment>خروجی کاتالوگ: فهرست کالاهای فیلترشدهٔ فعلی را به‌صورت فایل CSV دانلود می‌کند (همان فیلترها و ترتیب جدول).</comment>
+  </data>
+  <data name="ExportCsvWorking" xml:space="preserve">
+    <value>در حال خروجی…</value>
+    <comment>برچسب دکمهٔ خروجی هنگام اجرای حلقهٔ دریافت چندصفحه‌ای.</comment>
+  </data>
+  <data name="ExportCsvTooltip" xml:space="preserve">
+    <value>دانلود کاتالوگ قابل مشاهده به‌صورت فایل CSV</value>
+    <comment>راهنمای دکمهٔ خروجی (tooltip/aria-label).</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} کالا خروجی گرفته شد.</value>
+    <comment>پیام موفقیت پس از شروع دانلود CSV. {0} = تعداد سطرهای خروجی.</comment>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی گرفتن ناموفق بود. لطفاً دوباره تلاش کنید.</value>
+    <comment>پیام خطا هنگام شکست حلقهٔ خروجی یا دانلود.</comment>
+  </data>
+  <data name="ColName" xml:space="preserve">
+    <value>نام</value>
+    <comment>سرستون خروجی CSV — نام کالا.</comment>
+  </data>
+  <data name="ColCategory" xml:space="preserve">
+    <value>دسته</value>
+    <comment>سرستون خروجی CSV — دستهٔ سطح بالا.</comment>
+  </data>
+  <data name="ColSubCategory" xml:space="preserve">
+    <value>زیر‌دسته</value>
+    <comment>سرستون خروجی CSV — زیر‌دسته.</comment>
+  </data>
+  <data name="ColSubSubCategory" xml:space="preserve">
+    <value>زیر-زیر‌دسته</value>
+    <comment>سرستون خروجی CSV — زیر-زیر‌دسته.</comment>
+  </data>
+  <data name="ColPrice" xml:space="preserve">
+    <value>قیمت</value>
+    <comment>سرستون خروجی CSV — مبلغ قیمت.</comment>
+  </data>
+  <data name="ColCurrency" xml:space="preserve">
+    <value>واحد پول</value>
+    <comment>سرستون خروجی CSV — کد واحد پول.</comment>
+  </data>
+  <data name="ColAvailability" xml:space="preserve">
+    <value>وضعیت موجودی</value>
+    <comment>سرستون خروجی CSV — برچسب موجود/ناموجود (همان نشان کارت کالا).</comment>
+  </data>
 </root>

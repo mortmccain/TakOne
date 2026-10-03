@@ -114,6 +114,7 @@
 @page "/Sales"
 @attribute [Authorize]
 @attribute [SuppressMessage("Usage", "BL0005:Component parameters should not be set outside their component", Justification = "Radzen exposes FilterValue/FilterOperator on RadzenDataGridColumn as the official programmatic filter API per https://radzen.com/documentation/blazor/data-grid-programmatic-filter/. The BL0005 analyzer (designed for plain Blazor component params) does not understand this Radzen-specific contract; the mutations are intentional and load-bearing.")]
+@using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
@@ -329,63 +330,6 @@
         </RadzenAlert>
     }
 
-    @* ── Empty state (no orders at all, or none matching the filters) ──
-       _totalCount is the SERVER-side count of every row matching the
-       active filters — zero here means "no orders exist for this
-       filter combination", not "this page happens to be empty" (the
-       auto-heal in LoadGridDataAsync already corrects past-the-end
-       pages). When NO filter is active and the count is zero, this is
-       a fresh customer with no orders yet — the original "start
-       shopping" empty state. When a filter IS active and matches zero
-       rows, the user just filtered themselves into an empty corner —
-       a targeted message (plus the Clear button) beats telling them to
-       go shopping. *@
-    else if (_totalCount == 0 && !_isLoading)
-    {
-        @if (HasActiveFilters)
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="filter_alt_off"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitleFiltered"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessageFiltered"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenButton Text="@Loc["ClearFiltersButton"]"
-                                  Icon="restart_alt"
-                                  ButtonStyle="ButtonStyle.Secondary"
-                                  Variant="Variant.Outlined"
-                                  Click="@ClearAllFiltersAsync" />
-                </RadzenStack>
-            </RadzenCard>
-        }
-        else
-        {
-            <RadzenCard Variant="Variant.Filled" Style="padding: 3rem; text-align: center;">
-                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem">
-                    <RadzenIcon Icon="receipt_long"
-                                Style="font-size: 3rem; color: var(--rz-text-secondary-color);" />
-                    <RadzenText Text="@Loc["EmptyTitle"]"
-                                TextStyle="TextStyle.H6" />
-                    <RadzenText Text="@Loc["EmptyMessage"]"
-                                Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
-                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" JustifyContent="JustifyContent.Center">
-                        <RadzenButton Text="@Loc["GoToCartButton"]"
-                                      Icon="shopping_cart"
-                                      ButtonStyle="ButtonStyle.Primary"
-                                      Click="@(() => Navigation.NavigateTo("/Cart", forceLoad: false))" />
-                        <RadzenButton Text="@Loc["BrowseProductsButton"]"
-                                      Icon="inventory_2"
-                                      ButtonStyle="ButtonStyle.Secondary"
-                                      Variant="Variant.Outlined"
-                                      Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
-                    </RadzenStack>
-                </RadzenStack>
-            </RadzenCard>
-        }
-    }
-
     @* ── Date-range filter toolbar + Sales table ──
        Server-side creation-date filter: the picked Tehran-local dates are
        converted to UTC half-open interval instants [from, to) and pushed
@@ -396,7 +340,15 @@
        the page header docs). The toolbar + grid only render once at
        least one load has completed without error (or is in flight — the
        veil covers the grid during the initial round trip so the grid is
-       MOUNTED and its LoadData-on-init can fire). *@
+       MOUNTED and its LoadData-on-init can fire).
+
+       EMPTY RESULTS (filtered to nothing): the toolbar + grid stay
+       mounted — the search inputs and date pickers remain visible and
+       editable so the user can fix the over-narrow filter in place —
+       and the empty-state message card + Clear-filters button render
+       BELOW the grid (see the block after the veil). The pre-Task-7
+       behavior unmounted the grid entirely, which threw away both the
+       table shell and the search bar — disorienting. *@
     else
     {
         <RadzenCard Variant="Variant.Filled" Style="padding: 0.75rem 1rem; margin-bottom: 0;">
@@ -449,20 +401,23 @@
                    a customer exports their own sales, staff export the
                    audit view) across ALL pages, capped at 2,000 rows so
                    a pathological filter can't hang the circuit. Spacer
-                   pushes it to the trailing edge on wide screens. *@
+                   pushes it to the trailing edge on wide screens.
+                   NOTE (empty-button fix): RadzenButton renders ChildContent
+                   EXCLUSIVELY when set — the old `@if (_isExporting)` child
+                   block always produced a non-null (empty) RenderFragment,
+                   so the Text + Icon never rendered and the button looked
+                   blank. The built-in IsBusy/BusyText parameters now provide
+                   the exporting spinner without ChildContent. *@
                 <span style="flex: 1;"></span>
                 <RadzenButton Text="@Loc["ExportCsvButton"]"
                               Icon="download"
                               ButtonStyle="ButtonStyle.Secondary"
                               Variant="Variant.Outlined"
                               Size="ButtonSize.Small"
-                              Disabled="@(_isLoading || _isExporting || _totalCount == 0)"
-                              Click="@ExportSalesCsvAsync">
-                    @if (_isExporting)
-                    {
-                        <RadzenIcon Icon="hourglass_top" Style="margin-inline-start: 0.35rem;" />
-                    }
-                </RadzenButton>
+                              Disabled="@(_isLoading || _totalCount == 0)"
+                              IsBusy="@_isExporting"
+                              BusyText="@Loc["ExportCsvButton"]"
+                              Click="@ExportSalesCsvAsync" />
             </div>
         </RadzenCard>
 
@@ -727,6 +682,65 @@
                 }
             }
         </div>
+
+        @* ── Empty state (BELOW the grid — Task 7) ──
+           _totalCount is the SERVER-side count of every row matching the
+           active filters — zero here means "no orders exist for this
+           filter combination", not "this page happens to be empty" (the
+           auto-heal in LoadGridDataAsync already corrects past-the-end
+           pages). _sales not null means a load actually completed (null =
+           never loaded / retry remount, where the veil is still up). The
+           toolbar + grid above stay mounted with the search inputs and
+           date pickers visible, so this card explains the emptiness and
+           offers the one-click escape hatch without taking the filters
+           away. When NO filter is active and the count is zero, this is
+           a fresh customer with no orders yet — the "start shopping"
+           state. *@
+        @if (_totalCount == 0 && !_isLoading && _sales is not null)
+        {
+            @if (HasActiveFilters)
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="filter_alt_off"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitleFiltered"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessageFiltered"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        <RadzenButton Text="@Loc["ClearFiltersButton"]"
+                                      Icon="restart_alt"
+                                      ButtonStyle="ButtonStyle.Secondary"
+                                      Variant="Variant.Outlined"
+                                      Click="@ClearAllFiltersAsync" />
+                    </RadzenStack>
+                </RadzenCard>
+            }
+            else
+            {
+                <RadzenCard Variant="Variant.Filled" Style="padding: 2rem; text-align: center; margin-top: 0.75rem;">
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenIcon Icon="receipt_long"
+                                    Style="font-size: 2.5rem; color: var(--rz-text-secondary-color);" />
+                        <RadzenText Text="@Loc["EmptyTitle"]"
+                                    TextStyle="TextStyle.H6" />
+                        <RadzenText Text="@Loc["EmptyMessage"]"
+                                    Style="color: var(--rz-text-secondary-color); max-width: 360px;" />
+                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" JustifyContent="JustifyContent.Center">
+                            <RadzenButton Text="@Loc["GoToCartButton"]"
+                                          Icon="shopping_cart"
+                                          ButtonStyle="ButtonStyle.Primary"
+                                          Click="@(() => Navigation.NavigateTo("/Cart", forceLoad: false))" />
+                            <RadzenButton Text="@Loc["BrowseProductsButton"]"
+                                          Icon="inventory_2"
+                                          ButtonStyle="ButtonStyle.Secondary"
+                                          Variant="Variant.Outlined"
+                                          Click="@(() => Navigation.NavigateTo("/Products", forceLoad: false))" />
+                        </RadzenStack>
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        }
     }
 </RadzenStack>
 
@@ -921,10 +935,316 @@
                    || user.IsInRole(Roles.Employee)
                    || user.IsInRole(Roles.ReadOnly);
 
+        // URL-restored grid state (search terms / status selection / date
+        // range / page + page size): parsed BEFORE the toolbar + grid
+        // mount so the date pickers carry their restored values into the
+        // first render; the column FilterValues are applied in
+        // OnAfterRenderAsync once the grid reference exists.
+        RestoreGridStateFromUrl();
+
         // NOTE: the data load is NOT kicked off here — the grid mounts in
         // the same render and fires its LoadData-on-init, which drives
         // LoadGridDataAsync. Kicking a manual load here too would double
         // the initial query.
+    }
+
+    /// <summary>
+    /// One-shot grid-state restore: runs on the FIRST render where the
+    /// grid is mounted (the ref is set).
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_hasRestoredGridState && grid is not null)
+        {
+            _hasRestoredGridState = false; // one-shot — never re-apply
+            await ApplyRestoredGridStateAsync();
+        }
+    }
+
+    // ── URL-restored grid state (search/selection/page persistence) ─────
+    //
+    // Parsed from the query string in OnInitializedAsync, applied to the
+    // grid's columns in OnAfterRenderAsync, and mirrored BACK to the URL
+    // by PersistGridStateToUrl after every successful load. See
+    // GridUrlState's class docs for the why-the-URL rationale.
+
+    /// <summary>The grid's default page size — the value the markup's PageSize parameter binds.</summary>
+    private const int DefaultGridPageSize = 20;
+
+    private string? _restoredSaleNumberTerm;
+    private SalesTextFilter? _restoredCustomerNameFilter;
+    private SalesTextFilter? _restoredCreatedByNameFilter;
+    private SalesAmountFilter? _restoredTotalFilter;
+    private SaleStatus? _restoredStatus;
+    private int _restoredPage = 1;
+    private int _restoredPageSize = DefaultGridPageSize;
+
+    /// <summary>True when the URL carried ANY grid-state parameter (gates the one-shot apply).</summary>
+    private bool _hasRestoredGridState;
+
+    /// <summary>
+    /// Parses the URL query into the restored-state fields. PARAMETER
+    /// KEYS: sn (sale-number term), cust/custop + by/byop (text searches;
+    /// the *op keys are optional — absent = Contains), total/totalop
+    /// (invariant decimal + operator name), status (SaleStatus name),
+    /// from/to (applied Tehran-local date range as yyyy-MM-dd), page
+    /// (persisted only when > 1), size (persisted only when ≠ the 20
+    /// default).
+    /// </summary>
+    private void RestoreGridStateFromUrl()
+    {
+        var query = GridUrlState.CurrentQuery(Navigation);
+
+        if (query.TryGetValue("sn", out var sn) && !string.IsNullOrWhiteSpace(sn))
+        {
+            _restoredSaleNumberTerm = sn.Trim();
+        }
+
+        _restoredCustomerNameFilter = ParseTextFilter(query, "cust", "custop");
+        _restoredCreatedByNameFilter = ParseTextFilter(query, "by", "byop");
+
+        if (query.TryGetValue("total", out var total)
+            && decimal.TryParse(total, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedTotal))
+        {
+            var op = Enum.TryParse<SalesAmountOperator>(query.GetValueOrDefault("totalop"), ignoreCase: true, out var parsedOp)
+                ? parsedOp
+                : SalesAmountOperator.Equals;
+            _restoredTotalFilter = new SalesAmountFilter(op, parsedTotal);
+        }
+
+        if (query.TryGetValue("status", out var status)
+            && Enum.TryParse<SaleStatus>(status, ignoreCase: true, out var parsedSaleStatus))
+        {
+            _restoredStatus = parsedSaleStatus;
+        }
+
+        // Date range: persisted as the Tehran-LOCAL dates the pickers
+        // show; restored by mirroring ApplyDateFilterAsync's local→UTC
+        // conversion so both the pickers AND the applied UTC instants
+        // reflect the saved state.
+        if (query.TryGetValue("from", out var from)
+            && DateTime.TryParse(from, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedFrom))
+        {
+            _dateFrom = parsedFrom.Date;
+            _appliedFromUtc = ToUtcInstant(parsedFrom.Date);
+        }
+
+        if (query.TryGetValue("to", out var to)
+            && DateTime.TryParse(to, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedTo))
+        {
+            _dateTo = parsedTo.Date;
+            _appliedToUtc = ToUtcInstant(parsedTo.Date.AddDays(1));
+        }
+
+        if (query.TryGetValue("page", out var page)
+            && int.TryParse(page, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPage)
+            && parsedPage > 1)
+        {
+            _restoredPage = parsedPage;
+        }
+
+        if (query.TryGetValue("size", out var size)
+            && int.TryParse(size, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSize)
+            && parsedSize > 0)
+        {
+            _restoredPageSize = parsedSize;
+        }
+
+        _hasRestoredGridState =
+            _restoredSaleNumberTerm is not null ||
+            _restoredCustomerNameFilter is not null ||
+            _restoredCreatedByNameFilter is not null ||
+            _restoredTotalFilter is not null ||
+            _restoredStatus is not null ||
+            HasAppliedDateFilter ||
+            _restoredPage > 1 ||
+            _restoredPageSize != DefaultGridPageSize;
+
+        // Dropdown field — so the status FilterTemplate dropdown renders
+        // the restored selection immediately.
+        _selectedStatusFilter = _restoredStatus?.ToString();
+    }
+
+    /// <summary>
+    /// Applies the restored state to the grid's columns (same
+    /// programmatic-filter API the status dropdown handler uses) and
+    /// drives the grid to the restored page.
+    /// </summary>
+    private async Task ApplyRestoredGridStateAsync()
+    {
+        SetColumnFilter("DisplayNumber", _restoredSaleNumberTerm, FilterOperator.Contains);
+        SetTextColumnFilter("CustomerName", _restoredCustomerNameFilter);
+        SetTextColumnFilter("CreatedByName", _restoredCreatedByNameFilter);
+
+        if (_restoredTotalFilter is { } totalFilter)
+        {
+            SetColumnFilter("Total.Amount", totalFilter.Value, ToRadzenOperator(totalFilter.Operator));
+        }
+
+        if (_restoredStatus is { } saleStatus)
+        {
+            // Culture-neutral string key — exactly what the dropdown
+            // handler sets (the translator parses it back to the enum).
+            SetColumnFilter("Status", saleStatus.ToString(), FilterOperator.Equals);
+        }
+
+        if (_restoredPageSize != DefaultGridPageSize)
+        {
+            grid.PageSize = _restoredPageSize;
+        }
+
+        if (_restoredPage > 1)
+        {
+            await grid.GoToPage(_restoredPage - 1, forceReload: true);
+        }
+        else
+        {
+            await grid.Reload();
+        }
+    }
+
+    /// <summary>
+    /// Sets one column's FilterValue + FilterOperator by Property name —
+    /// the programmatic-filter API the dropdown handlers use (same
+    /// BL0005-suppressed Radzen contract).
+    /// </summary>
+    private void SetColumnFilter(string property, object? value, FilterOperator op)
+    {
+        var column = grid.ColumnsCollection.FirstOrDefault(c => c.Property == property);
+        if (column is null)
+        {
+            return; // column not mounted (e.g. staff-only column for a customer)
+        }
+
+        column.FilterValue = value;
+        column.FilterOperator = op;
+    }
+
+    /// <summary>
+    /// Sets a text column's FilterValue + the operator mapped from the
+    /// typed <see cref="SalesTextFilter"/>.
+    /// </summary>
+    private void SetTextColumnFilter(string property, SalesTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        SetColumnFilter(property, filter.Value, filter.Operator switch
+        {
+            SalesTextOperator.NotContains => FilterOperator.DoesNotContain,
+            SalesTextOperator.Equals => FilterOperator.Equals,
+            SalesTextOperator.NotEquals => FilterOperator.NotEquals,
+            SalesTextOperator.StartsWith => FilterOperator.StartsWith,
+            SalesTextOperator.EndsWith => FilterOperator.EndsWith,
+            _ => FilterOperator.Contains
+        });
+    }
+
+    /// <summary>Maps a typed amount operator onto Radzen's FilterOperator.</summary>
+    private static FilterOperator ToRadzenOperator(SalesAmountOperator op) => op switch
+    {
+        SalesAmountOperator.NotEquals => FilterOperator.NotEquals,
+        SalesAmountOperator.GreaterThan => FilterOperator.GreaterThan,
+        SalesAmountOperator.GreaterThanOrEqual => FilterOperator.GreaterThanOrEquals,
+        SalesAmountOperator.LessThan => FilterOperator.LessThan,
+        SalesAmountOperator.LessThanOrEqual => FilterOperator.LessThanOrEquals,
+        _ => FilterOperator.Equals
+    };
+
+    /// <summary>
+    /// Parses a text filter (value + optional operator name) from the
+    /// query dictionary.
+    /// </summary>
+    private static SalesTextFilter? ParseTextFilter(Dictionary<string, string> query, string valueKey, string operatorKey)
+    {
+        if (!query.TryGetValue(valueKey, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var op = Enum.TryParse<SalesTextOperator>(query.GetValueOrDefault(operatorKey), ignoreCase: true, out var parsedOp)
+            ? parsedOp
+            : SalesTextOperator.Contains;
+
+        return new SalesTextFilter(value.Trim(), op);
+    }
+
+    /// <summary>
+    /// Mirrors the active filter/page state into the URL (replace, no
+    /// history entry) after every successful load. Only NON-DEFAULT
+    /// state is written — see GridUrlState's class docs.
+    /// </summary>
+    private void PersistGridStateToUrl(int pageNumber, int pageSize)
+    {
+        var parameters = new List<KeyValuePair<string, string?>>();
+
+        if (!string.IsNullOrWhiteSpace(_activeSaleNumberTerm))
+        {
+            parameters.Add(new("sn", _activeSaleNumberTerm));
+        }
+
+        AppendTextFilter(parameters, "cust", "custop", _activeCustomerNameFilter);
+        AppendTextFilter(parameters, "by", "byop", _activeCreatedByNameFilter);
+
+        if (_activeTotalFilter is { } totalFilter)
+        {
+            parameters.Add(new("total", totalFilter.Value.ToString(CultureInfo.InvariantCulture)));
+            parameters.Add(new("totalop", totalFilter.Operator.ToString()));
+        }
+
+        if (_activeStatus is { } saleStatus)
+        {
+            parameters.Add(new("status", saleStatus.ToString()));
+        }
+
+        // The APPLIED range (not the raw picker values): persist the
+        // Tehran-local dates the user sees — the same values the pickers
+        // would show for this applied range.
+        if (_appliedFromUtc is { } appliedFrom)
+        {
+            parameters.Add(new("from", (appliedFrom + TehranUtcOffset).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        }
+
+        if (_appliedToUtc is { } appliedTo)
+        {
+            parameters.Add(new("to", (appliedTo + TehranUtcOffset).AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        }
+
+        if (pageSize != DefaultGridPageSize)
+        {
+            parameters.Add(new("size", pageSize.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (pageNumber > 1)
+        {
+            parameters.Add(new("page", pageNumber.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        GridUrlState.ReplaceIfChanged(
+            Navigation,
+            GridUrlState.BuildRelative(Navigation, parameters));
+    }
+
+    /// <summary>Appends a text filter's value (+ non-default operator) to the parameter list.</summary>
+    private static void AppendTextFilter(
+        List<KeyValuePair<string, string?>> parameters,
+        string valueKey,
+        string operatorKey,
+        SalesTextFilter? filter)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        parameters.Add(new(valueKey, filter.Value));
+
+        if (filter.Operator != SalesTextOperator.Contains)
+        {
+            parameters.Add(new(operatorKey, filter.Operator.ToString()));
+        }
     }
 
     // ── Data loading (Radzen LoadData) ──────────────────────────────────
@@ -984,6 +1304,11 @@
                     _healingPage = false;
                 }
             }
+
+            // URL mirror (NOT on the heal path — its early return above
+            // hands state ownership to the re-fired page-1 load, which
+            // persists its own state when it completes).
+            PersistGridStateToUrl(pageNumber, pageSize);
         }
         catch (Exception)
         {
@@ -1077,11 +1402,14 @@
     /// <summary>
     /// Clears EVERYTHING — the date toolbar AND every column filter —
     /// then reloads. The filtered-empty state's one-click escape hatch.
-    /// This button only renders when the grid is UNMOUNTED (the empty
-    /// state replaced it), so the reload happens via REMOUNT: the grid
-    /// mounts with Data=null and fires its LoadData-on-init with every
-    /// filter naturally reset (fresh column instances carry no filter
-    /// values).
+    ///
+    /// TASK-7 UPDATE: the grid now stays MOUNTED when a filter matches
+    /// nothing (the empty card renders BELOW it), so this runs against a
+    /// LIVE grid: reset the date toolbar + status dropdown fields, clear
+    /// every column's FilterValue, and re-fire the load via
+    /// FirstPage(true). (The old remount-based implementation relied on
+    /// the grid being unmounted by the empty state, which no longer
+    /// happens.)
     /// </summary>
     private async Task ClearAllFiltersAsync()
     {
@@ -1091,24 +1419,23 @@
         _appliedToUtc = null;
         _selectedStatusFilter = null;
 
-        // Clear the grid's OWN filter descriptors while the (soon to be
-        // re-mounted) column instances are still addressable — actually
-        // this button only renders in the EMPTY STATE, where the grid is
-        // already UNMOUNTED: the old column instances (and their filter
-        // values) are gone with it, and the fresh grid mounts with every
-        // column filter reset. So there is nothing to clear here — the
-        // reset comes from the remount itself.
-        //
-        // REMOUNT TRIGGER: _sales=null makes the grid mount with
-        // Data=null (which fires LoadData — the pinned Radzen contract),
-        // and _isLoading=true keeps the grid branch rendered (instead of
-        // flashing the empty state) until the fresh load completes. Do
-        // NOT call grid.FirstPage(true) here — the disposed grid's
-        // methods must not be touched.
-        _sales = null;
-        _isLoading = true;
+        if (grid is not null)
+        {
+            foreach (var column in grid.ColumnsCollection)
+            {
+                column.FilterValue = null;
+            }
 
-        await Task.CompletedTask;
+            _isLoading = true;
+            try
+            {
+                await grid.FirstPage(true); // re-fires LoadData with no filters
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        }
     }
 
     /// <summary>

@@ -386,26 +386,118 @@ In Docker **named volumes**. Run:
 docker volume ls
 ```
 
-You'll see `takone_sql_data` and `takone_uploads`. These live at
+You'll see `takone_sql_data`, `takone_uploads`, and `takone_backups`
+(the scheduled database backups — see the next question). These live at
 `/var/lib/docker/volumes/` on the server's filesystem. You don't
 need to touch them directly — Docker manages them.
 
 ### "How do I back up the database?"
 
+**You don't have to — it backs itself up now.** The app runs a scheduled
+backup service that takes a full `BACKUP DATABASE` **twice a day, at
+03:30 UTC and 14:30 UTC**, and automatically deletes backup files older
+than **7 days** (so there are at most 14 backup files at any time, and
+the disk usage is bounded).
+
+The backups live in the `takone_backups` Docker volume. To copy one out
+of the server:
+
 ```bash
-docker compose exec sql /opt/mssql-tools18/bin/sqlcmd \
-  -S localhost -U sa -P "YOUR_SA_PASSWORD" \
-  -Q "BACKUP DATABASE TakOne TO DISK='/var/opt/mssql/data/TakOne.bak'"
+# List the backups (same files, two mount points — pick either)
+docker compose exec takone-web ls -lh /var/lib/takone/backups
+docker compose exec takone-db  ls -lh /var/opt/mssql/backup
+
+# Copy the newest one out to your home folder
+docker compose cp takone-web:/var/lib/takone/backups/$( \
+  docker compose exec takone-web sh -c \
+  'ls /var/lib/takone/backups | tail -1' | tr -d '\r' \
+) ~/TakOne-$(date +%F-%H%M).bak
 ```
 
-Then copy the backup file out of the container:
+Then download it to your laptop with `scp` for safekeeping.
+
+**To restore a backup** (e.g. onto a fresh install), stop the app, put
+the `.bak` into the backup volume, and restore it over the database:
 
 ```bash
-docker compose cp sql:/var/opt/mssql/data/TakOne.bak ~/TakOne-$(date +%F).bak
+docker compose down
+docker run --rm -v takone_takone_backups:/backup -v "$PWD":/src alpine \
+  cp /src/TakOne-RESTORE-ME.bak /backup/
+docker compose up -d db
+sleep 30   # wait for SQL Server to be healthy
+docker compose exec takone-db /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P "YOUR_SA_PASSWORD" -C \
+  -Q "ALTER DATABASE TakOne SET SINGLE_USER WITH ROLLBACK IMMEDIATE; RESTORE DATABASE TakOne FROM DISK='/var/opt/mssql/backup/TakOne-RESTORE-ME.bak' WITH REPLACE; ALTER DATABASE TakOne SET MULTI_USER"
+docker compose up -d
 ```
 
-Now you have a `.bak` file in your home folder. Download it to your
-laptop with `scp` for safekeeping.
+**How the automatic backups work (and why the Docker setup looks a bit
+odd):** SQL Server's `BACKUP DATABASE ... TO DISK` writes the file on the
+**database server's own filesystem** — inside the `db` container, not
+the app container. That's why `docker-compose.yml` mounts ONE shared
+volume (`takone_backups`) into **both** containers:
+
+| Container | Mount point | Used for |
+|---|---|---|
+| `takone-db` | `/var/opt/mssql/backup` | where `BACKUP DATABASE` writes (the `DatabaseBackups__ServerPath` env var) |
+| `takone-web` | `/var/lib/takone/backups` | where the app verifies the file + deletes expired backups (the `DatabaseBackups__Directory` env var) |
+
+Two mount points, one physical volume — the app sees the exact files the
+database wrote, and the retention sweep (7 days) runs from the app side.
+
+**Differences vs a non-Docker (dev) deployment**, for the record:
+
+1. **Paths.** In dev (Kestrel + local SQL Server on one machine) the
+   backup goes to `backups/` under the app's content root — the app and
+   SQL Server share a filesystem, so `DatabaseBackups:Directory` and
+   `DatabaseBackups:ServerPath` are the same value (the default). In
+   Docker they MUST be the two volume mount points above.
+2. **Permissions.** In dev, your Windows/SQL login needs
+   `db_backupoperator` on the database (a sysadmin login has it
+   implicitly). In Docker the app connects as `sa`, which has it
+   implicitly.
+3. **Timezone.** The schedule is pinned to **UTC** (03:30 and 14:30)
+   regardless of the container's `TZ` (the web container runs
+   `Asia/Tehran` for the UI greeting). 03:30 UTC = 07:00 and 14:30 UTC =
+   18:00 Tehran time.
+4. **Missed slots are skipped, not replayed.** If the server was down at
+   03:30, that backup simply doesn't happen — the next one is at most 11
+   hours away.
+
+You can turn the whole thing off with `DatabaseBackups__Enabled=false`
+in the environment, or take a manual backup any time with the `sqlcmd`
+one-liner from the start of this section (just write it into
+`/var/opt/mssql/backup/` so the retention sweep manages it too).
+
+**Admin UI (Settings → Admin tools → "Database backups"):** the backup
+subsystem also has a first-class admin surface — sign in as an Admin and
+open `/Settings`:
+
+- **Status card** — last run (time, duration, succeeded/failed badge,
+  and the failure message when it failed), the next scheduled slot, the
+  retention window, and the full newest-first list of `*.bak` files with
+  sizes and Tehran-local timestamps.
+- **Run history** — a newest-first ledger of recently COMPLETED runs
+  (scheduled AND manual), each with its Tehran start time, duration,
+  trigger (clock icon = scheduled slot, hand icon = manual "Back up
+  now"), outcome badge, and — for failed runs — the failure message in
+  the row's hover tooltip. This is persisted across restarts in
+  `backup-history.jsonl` (one JSON line per completed run, written next
+  to the `*.bak` files on the shared volume) and pruned by the same
+  7-day retention sweep, so "did the 03:30 slot actually run last week?"
+  is answerable without grepping container logs. The ledger is
+  best-effort: a failed history write is logged as a warning and never
+  fails the backup itself.
+- **"Back up now"** — triggers an extra backup immediately (admin-only,
+  gated server-side by `[RequireRoles(Admin)]` via
+  `TriggerBackupNowCommand`). The run executes on the backup service's
+  own background loop — the card polls the status every 5 s until the
+  run finishes. A manual run NEVER shifts the fixed 03:30/14:30 UTC
+  schedule, and a second click while one is running is rejected.
+
+The status reads the same singleton the schedule loop mutates (the
+hosted service is dual-registered as the `IBackupCoordinator` port), so
+what the card shows is always the loop's actual state.
 
 ### "Can I use a real domain name instead of the IP?"
 
