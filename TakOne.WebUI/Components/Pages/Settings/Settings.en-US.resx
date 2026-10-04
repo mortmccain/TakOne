@@ -585,4 +585,8 @@
     <value>Error</value>
     <comment>Run-report CSV column: failure detail (empty on success).</comment>
   </data>
+  <data name="BackupRunReportColNote" xml:space="preserve">
+    <value>Note</value>
+    <comment>Run-report CSV column: non-failure annotation (empty on normal runs; explains the default-backup-directory fallback and where the file landed).</comment>
+  </data>
 </root>

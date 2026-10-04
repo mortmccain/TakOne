@@ -69,7 +69,8 @@ public class SettingsBackupCardTests
         bool succeeded,
         bool wasManual,
         string fileName,
-        string error = "") => new()
+        string error = "",
+        string note = "") => new()
     {
         StartedUtc = new DateTime(2026, 10, 3, 3, 30, 0, DateTimeKind.Utc),
         FinishedUtc = new DateTime(2026, 10, 3, 3, 30, 12, DateTimeKind.Utc),
@@ -77,7 +78,8 @@ public class SettingsBackupCardTests
         Error = error,
         FileName = fileName,
         SizeBytes = succeeded ? 2048 : 0,
-        WasManual = wasManual
+        WasManual = wasManual,
+        Note = note
     };
 
     private static TestContext Setup(BackupStatusDto backupStatus)
@@ -244,7 +246,11 @@ public class SettingsBackupCardTests
             Error = string.Empty,
             FileName = "run-a.bak",
             SizeBytes = 2048,
-            WasManual = true
+            WasManual = true,
+            // A default-backup-directory fallback run — the annotation
+            // that explains WHERE the file came from rides the note
+            // column (comma-laden: pins the RFC 4180 quoting too).
+            Note = "default backup directory used, file moved home"
         };
         var newer = new BackupRunRecordDto
         {
@@ -255,7 +261,8 @@ public class SettingsBackupCardTests
             Error = "boom, \"volume\" not mounted",
             FileName = string.Empty,
             SizeBytes = 0,
-            WasManual = false
+            WasManual = false,
+            Note = string.Empty
         };
         var status = MakeStatus(newer, older);
         using var ctx = Setup(status);
@@ -290,21 +297,24 @@ public class SettingsBackupCardTests
             "BackupRunReportColStarted,BackupRunReportColFinished," +
             "BackupRunReportColDuration,BackupRunReportColOutcome," +
             "BackupRunReportColTrigger,BackupRunReportColFile," +
-            "BackupRunReportColSize,BackupRunReportColError\r\n");
+            "BackupRunReportColSize,BackupRunReportColError,BackupRunReportColNote\r\n");
 
         // CHRONOLOGICAL order: the older SUCCESS row first (ISO-8601 UTC
         // timestamps, raw duration seconds incl. the half-second, raw
-        // bytes, localized outcome/trigger labels = keys in the stub).
+        // bytes, localized outcome/trigger labels = keys in the stub);
+        // the note column carries the fallback annotation, quoted per
+        // RFC 4180 because of its comma.
         csv.Should().Contain(
             "2026-10-02 03:30:00Z,2026-10-02 03:30:12Z,12.5," +
-            "BackupOutcomeSuccess,BackupRunManual,run-a.bak,2048,\r\n");
+            "BackupOutcomeSuccess,BackupRunManual,run-a.bak,2048,," +
+            "\"default backup directory used, file moved home\"\r\n");
 
         // Then the newer FAILED row: empty file + 0 bytes, and the
-        // punctuation-laden error quoted per RFC 4180.
+        // punctuation-laden error quoted per RFC 4180 (no note).
         csv.Should().Contain(
             "2026-10-03 14:30:00Z,2026-10-03 14:30:09Z,9," +
             "BackupOutcomeFailed,BackupRunScheduled,,0," +
-            "\"boom, \"\"volume\"\" not mounted\"\r\n");
+            "\"boom, \"\"volume\"\" not mounted\",\r\n");
 
         // Header + 2 rows = 3 records.
         csv.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3);
@@ -327,5 +337,40 @@ public class SettingsBackupCardTests
         var reportButton = cut.FindAll("button")
             .First(b => b.TextContent.Contains("BackupRunReportButton"));
         reportButton.HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Settings_BackupCard_RunWithNote_RendersNoteLineInLedgerRow()
+    {
+        // Arrange — a SUCCESSFUL run that went through the
+        // default-backup-directory fallback (the Windows dev box
+        // scenario): the run carries a NOTE explaining where the file
+        // came from / landed.
+        const string note =
+            "The configured backup directory was rejected by SQL Server; this run wrote the backup " +
+            "to the SQL Server default backup directory and moved it into the backups folder automatically.";
+        var status = MakeStatus(
+            MakeRun(succeeded: true, wasManual: false, fileName: "TakOne-backup-20261003-033000.bak", note: note),
+            MakeRun(succeeded: true, wasManual: true, fileName: "TakOne-backup-20261002-143000.bak"));
+        using var ctx = Setup(status);
+
+        // Act
+        var cut = ctx.RenderComponent<Settings>();
+
+        // Assert — the fallback run's row renders the note as a
+        // full-width secondary line (visible WITHOUT hovering — the
+        // admin must see where the file ended up); the note also rides
+        // the row's title tooltip. The normal run's row has NO note line.
+        cut.WaitForAssertion(
+            () => cut.FindAll(".backup-run-note").Should().ContainSingle(),
+            TimeSpan.FromSeconds(10));
+
+        var rows = cut.FindAll(".backup-run-row");
+        rows.Should().HaveCount(2);
+        rows[0].TextContent.Should().Contain("default backup directory");
+        rows[0].GetAttribute("title").Should().Contain("default backup directory",
+            "the note also rides the row's tooltip");
+        rows[1].TextContent.Should().NotContain("default backup directory",
+            "a normal run renders no note line");
     }
 }

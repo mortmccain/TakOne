@@ -54,7 +54,6 @@
 @using TakOne.Application.Dashboard.DTOs
 @using TakOne.Application.Dashboard.Queries.GetDashboardStats
 @using TakOne.Application.Products.Queries.GetProductsPaginated
-@using TakOne.Domain.Sales.Enums
 @using TakOne.SharedKernel.Common
 @inject IMessageBus MessageBus
 @inject ICurrentUserService CurrentUser
@@ -237,34 +236,14 @@ else if (_stats is not null)
                 </p>
             </div>
 
-            @* KPI 3: Pending Approvals (warn glow, clock icon) — WHOLE-CARD
-               DEEP LINK: opens the Sales list with the Pending status
-               filter pre-applied (?status=Pending — the page's existing
-               URL state contract, the same mechanism as the restock
-               banner's low-stock link). The approver's most common
-               follow-up to this KPI ("show me the queue") becomes one
-               click, and the Sales page's "Pending only" chip derives its
-               active state from the restored filter. An <a> (not a div +
-               onclick) keeps it a REAL link: middle-click/new-tab works,
-               the browser shows the destination, and keyboard focus is
-               native. Customers never see the dashboard (the query
-               handler rejects them), so every viewer of this card can
-               reach /Sales. The sr-only span tells screen-reader users
-               where the link goes (the card's visible text is the metric,
-               not the destination). *@
-            <a class="tm-dash-kpi-card tm-dash-kpi-glow-warn tm-dash-kpi-card--link"
-               href="@PendingSalesDeepLink">
+            @* KPI 3: Pending Approvals (warn glow, clock icon) *@
+            <div class="tm-dash-kpi-card tm-dash-kpi-glow-warn">
                 <div class="tm-dash-kpi-card-head">
                     <div class="tm-dash-icon-tile tm-dash-icon-warn">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     </div>
-                    <span class="tm-dash-kpi-link-chevron" aria-hidden="true">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="width:14px;height:14px;">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </span>
                 </div>
                 <p class="tm-dash-kpi-label">@Loc["Kpi_PendingApprovals"]</p>
                 <p class="tm-dash-kpi-value">@FormatDigits(_stats.PendingSalesCount)</p>
@@ -279,8 +258,7 @@ else if (_stats is not null)
                 {
                     <p class="tm-dash-kpi-footer">@Loc["Kpi_PendingApprovalsFooter_None"]</p>
                 }
-                <span class="tm-sr-only">@Loc["Kpi_PendingApprovalsLink"]</span>
-            </a>
+            </div>
 
             @* KPI 4: Approved Sales This Month / in period (info glow, users icon) *@
             <div class="tm-dash-kpi-card tm-dash-kpi-glow-info">
@@ -591,23 +569,7 @@ else if (_stats is not null)
                             <tbody>
                                 @foreach (var order in _stats.RecentOrders)
                                 {
-                                    @* CLICKABLE ROW — opens the sale's detail page
-                                       (/Sales/{id}, the same route the Sales grid's
-                                       sale-number links use). The whole row is the
-                                       target (the number, customer, and product cells
-                                       are all equally good click spots), with
-                                       tabindex + Enter for keyboard users. Space is
-                                       deliberately left at its default (page scroll)
-                                       so focus movement isn't hijacked. The title
-                                       tooltip announces the destination before the
-                                       click. Rows exclude Drafts (no detail page
-                                       pre-number), so every row always navigates
-                                       somewhere real. *@
-                                    <tr class="tm-dash-recent-row"
-                                        tabindex="0"
-                                        title="@Loc["Orders_RowViewTitle"]"
-                                        @onclick="() => GoToSaleDetail(order.SaleId)"
-                                        @onkeydown="@(e => OnRecentRowKeyDownAsync(e, order.SaleId))">
+                                    <tr>
                                         <td class="tm-dash-sale-number">#@FormatDigits(order.SaleNumber)</td>
                                         <td>
                                             <div class="tm-dash-customer-cell">
@@ -1422,41 +1384,6 @@ else if (_stats is not null)
         "Draft" => "#94A3A0",
         _ => "#94A3A0"
     };
-
-    // ── Pending-approvals deep link + recent-row navigation ─────────────
-
-    /// <summary>
-    /// The Pending-Approvals KPI card's deep link — the Sales page's
-    /// EXISTING URL state contract (status = the SaleStatus name), so the
-    /// card lands the approver on the grid already narrowed to the pending
-    /// queue, and the page's "Pending only" chip derives its active state
-    /// from the restored filter. Built from
-    /// <see cref="nameof(SaleStatus.Pending)"/>, not a stale literal (the
-    /// same discipline as <see cref="LowStockDeepLink"/>).
-    /// </summary>
-    private static string PendingSalesDeepLink => "/Sales?status=" + nameof(SaleStatus.Pending);
-
-    /// <summary>
-    /// Navigates to a sale's detail page (<c>/Sales/{id}</c>) — the same
-    /// route the Sales grid's sale-number links use (Sales.razor), so the
-    /// dashboard's Recent Orders rows and the full list behave
-    /// identically. forceLoad:false keeps it an enhanced (in-app)
-    /// navigation like every other internal link.
-    /// </summary>
-    private Task GoToSaleDetail(Guid saleId)
-    {
-        Navigation.NavigateTo($"/Sales/{saleId}", forceLoad: false);
-        return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Keyboard support for the clickable Recent Orders rows: Enter opens
-    /// the sale. Other keys (incl. Space — the page-scroll default, and
-    /// Tab — focus movement) are left at their browser defaults, so the
-    /// row never hijacks the keyboard.
-    /// </summary>
-    private Task OnRecentRowKeyDownAsync(KeyboardEventArgs args, Guid saleId)
-        => args.Key == "Enter" ? GoToSaleDetail(saleId) : Task.CompletedTask;
 
     /// <summary>
     /// Returns the CSS class for a status badge in the recent orders table.

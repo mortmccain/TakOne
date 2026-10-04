@@ -589,4 +589,8 @@
     <value>خطا</value>
     <comment>ستون CSV گزارش: جزئیات خطا (خالی در موفقیت).</comment>
   </data>
+  <data name="BackupRunReportColNote" xml:space="preserve">
+    <value>یادداشت</value>
+    <comment>ستون CSV گزارش: یادداشت غیرخطا (خالی در اجراهای عادی؛ توضیح مسیر جایگزین پشتیبان‌گیری از پوشه پیش‌فرض SQL Server و محل نهایی فایل).</comment>
+  </data>
 </root>

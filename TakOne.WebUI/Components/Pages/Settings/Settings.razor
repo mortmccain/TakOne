@@ -956,6 +956,23 @@
                 display: none; /* failed runs have no file — no empty flex stub */
             }
 
+            /* Fallback-annotation line (default-backup-directory runs —
+               see DatabaseBackupHostedService): a full-width secondary
+               line UNDER the row's main content. Engine strings are
+               English with embedded LTR paths, so the line renders LTR
+               (like the mono file names) while the page stays RTL. */
+            .backup-run-note {
+                flex-basis: 100%;
+                margin-top: 0.15rem;
+                font-size: 0.72rem;
+                line-height: 1.4;
+                color: var(--rz-text-secondary-color);
+                direction: ltr;
+                unicode-bidi: embed;
+                text-align: left;
+                overflow-wrap: anywhere; /* long server paths must wrap, not overflow the card */
+            }
+
             .backup-run-section-label {
                 font-size: 0.7rem;
                 font-weight: 600;
@@ -1690,7 +1707,7 @@
                                             ? string.Format(CultureInfo.CurrentCulture, Loc["BackupRunTooltip"], run.WasManual ? Loc["BackupRunManual"] : Loc["BackupRunScheduled"])
                                             : $"{Loc["BackupRunFailed"]}: {run.Error}";
                                         <div class="backup-run-row @(run.Succeeded ? string.Empty : "backup-run-failed")"
-                                             title="@rowTitle">
+                                             title="@(string.IsNullOrEmpty(run.Note) ? rowTitle : rowTitle + " — " + run.Note)">
                                             @if (run.WasManual)
                                             {
                                                 <RadzenIcon Icon="touch_app"
@@ -1713,6 +1730,14 @@
                                             else
                                             {
                                                 <RadzenBadge Text="@Loc["BackupOutcomeFailed"]" BadgeStyle="BadgeStyle.Danger" IsPill="true" Style="flex: none;" />
+                                            }
+                                            @if (!string.IsNullOrEmpty(run.Note))
+                                            {
+                                                @* Fallback annotation (default-backup-directory
+                                                   runs): renders as a full-width secondary line
+                                                   under the row content — the admin must see
+                                                   WHERE the file ended up without hovering. *@
+                                                <span class="backup-run-note">@run.Note</span>
                                             }
                                         </div>
                                     }
@@ -2570,7 +2595,8 @@
                 Loc["BackupRunReportColTrigger"],
                 Loc["BackupRunReportColFile"],
                 Loc["BackupRunReportColSize"],
-                Loc["BackupRunReportColError"]);
+                Loc["BackupRunReportColError"],
+                Loc["BackupRunReportColNote"]);
 
             // Runs are stored newest-first; the REPORT reads chronologically
             // (oldest→newest) so the audit trail unfolds in execution order.
@@ -2587,7 +2613,8 @@
                     run.WasManual ? Loc["BackupRunManual"] : Loc["BackupRunScheduled"],
                     run.FileName,                        // may be empty on pre-file failures
                     run.SizeBytes,                       // invariant RAW bytes
-                    run.Error);                          // empty on success
+                    run.Error,                           // empty on success
+                    run.Note);                           // empty on normal runs (fallback annotation)
             }
 
             var fileName = $"takone-backup-runs-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
