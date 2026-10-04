@@ -136,6 +136,26 @@ namespace TakOne.Infrastructure.Services;
 /// otherwise-successful backup.
 /// </para>
 /// <para>
+/// <b>DEFAULT-BACKUP-DIRECTORY FALLBACK</b>: when SQL Server rejects the
+/// configured path with <c>Cannot open backup device</c> (the path does
+/// not exist on the DB-server machine or its service account cannot
+/// write there — the classic single-machine Windows dev box, where the
+/// app-created <c>backups/</c> sits inside the developer's profile and
+/// <c>NT SERVICE\MSSQL$INSTANCE</c> has no write access to it), the run
+/// retries against the instance's OWN default backup directory (read
+/// from the instance registry — the one folder the service account can
+/// always write) and then MOVES/COPIES the file into the configured
+/// backups folder so retention, the files ledger, and verification keep
+/// working. The fallback is recorded as a NOTE on the run (see
+/// <see cref="BackupRunRecord.Note"/>) — never silent. When even the
+/// relocation is impossible the run still SUCCEEDS (the .bak exists on
+/// the server) and the note says exactly where the file landed. Docker
+/// deployments never hit this path: the shared volume is writable by
+/// the mssql user, so the primary attempt succeeds. If the fallback is
+/// unavailable (registry unreadable by the login, or the retry failed
+/// too), the original actionable guidance error is surfaced unchanged.
+/// </para>
+/// <para>
 /// <b>MANUAL TRIGGER SEMANTICS</b>: <see cref="TryTriggerNow"/> completes
 /// a <see cref="TaskCompletionSource"/> the schedule loop races its
 /// slot-delay against — the loop wakes, runs the backup on ITS OWN
@@ -442,12 +462,14 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         var error = string.Empty;
         var backupFileName = string.Empty;
         var backupFileSizeBytes = 0L;
+        var note = string.Empty;
 
         try
         {
-            var (localFilePath, sizeBytes) = await RunBackupCoreAsync(connectionString, directory, serverPath, cancellationToken);
+            var (localFilePath, sizeBytes, runNote) = await RunBackupCoreAsync(connectionString, directory, serverPath, cancellationToken);
             backupFileName = Path.GetFileName(localFilePath);
             backupFileSizeBytes = sizeBytes;
+            note = runNote;
             succeeded = true;
 
             lock (_stateLock)
@@ -491,17 +513,19 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                 Error = error,
                 FileName = backupFileName,
                 SizeBytes = backupFileSizeBytes,
-                WasManual = wasManual
+                WasManual = wasManual,
+                Note = note
             });
         }
     }
 
     /// <summary>The pre-existing backup body, extracted so the run-state
     /// bookkeeping wraps it exactly once (scheduled AND manual runs share
-    /// the same path). Returns the local file path + size in bytes for the
-    /// run-history record.
+    /// the same path). Returns the local file path + size in bytes + a
+    /// non-failure NOTE for the run-history record (empty on a normal
+    /// run; the default-backup-directory fallback explains itself there).
     /// </summary>
-    private async Task<(string LocalFilePath, long SizeBytes)> RunBackupCoreAsync(
+    private async Task<(string LocalFilePath, long SizeBytes, string Note)> RunBackupCoreAsync(
         string connectionString,
         string directory,
         string serverPath,
@@ -543,12 +567,31 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         catch (SqlException ex) when (ex.Message.Contains("Cannot open backup device", StringComparison.Ordinal))
         {
             // SQL Server could not open the target file: the path does not
-            // exist ON THE DB SERVER's filesystem, or its service account
-            // cannot write there. Re-throw with the actionable diagnosis —
-            // the raw engine message alone ("Operating system error 3")
-            // gives the admin no hint about WHICH machine's filesystem is
-            // at fault, and this message is what the Settings backup card
-            // + run-history ledger surface.
+            // exist on ITS OWN filesystem, or its service account cannot
+            // write there (the classic Windows dev box: the app-created
+            // backups folder sits inside the developer's profile, which
+            // NT SERVICE\MSSQL$INSTANCE has no write access to). Before
+            // surfacing the actionable guidance, try the ONE location the
+            // SQL Server service account can ALWAYS write — the
+            // instance's own default backup directory, read from the
+            // instance registry — and relocate the file into the backups
+            // folder afterwards. Docker/Linux deployments never get here
+            // (the shared volume is writable by the mssql user), so this
+            // is a dev/small-box resilience path, not a wiring mask: the
+            // fallback is recorded as a NOTE on the run, never silently.
+            var fallback = await TryBackupViaDefaultDirectoryAsync(
+                connection, databaseName, fileName, localFilePath, stopwatch, cancellationToken);
+            if (fallback is not null)
+            {
+                return fallback.Value;
+            }
+
+            // Fallback unavailable (no permission to read the instance
+            // registry, or the retry failed too) — re-throw with the
+            // actionable diagnosis. The raw engine message alone
+            // ("Operating system error 5") gives the admin no hint about
+            // WHICH machine's filesystem is at fault, and this message is
+            // what the Settings backup card + run-history ledger surface.
             throw new InvalidOperationException(
                 $"DatabaseBackup: SQL Server could not open the backup device '{serverFilePath}' " +
                 $"({ex.Message}) The path must exist ON THE MACHINE RUNNING SQL SERVER and be writable by its " +
@@ -586,7 +629,262 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
             "DatabaseBackup: {DatabaseName} backed up to {LocalFilePath} ({SizeMB:0.#} MB, {ElapsedSeconds:0.#}s).",
             databaseName, localFilePath, sizeMegabytes, stopwatch.Elapsed.TotalSeconds);
 
-        return (localFilePath, sizeBytes);
+        return (localFilePath, sizeBytes, string.Empty);
+    }
+
+    // ── Default-backup-directory fallback (see RunBackupCoreAsync's
+    //    "Cannot open backup device" catch) ──────────────────────────
+
+    /// <summary>
+    /// Reads the SQL Server instance's DEFAULT backup directory from the
+    /// instance registry via <c>master.dbo.xp_instance_regread</c> — the
+    /// one folder the SQL Server service account can ALWAYS write to
+    /// (e.g. <c>C:\Program Files\Microsoft SQL Server\MSSQL17.INSTANCE\MSSQL\Backup</c>).
+    /// Returns null when the value is unavailable: EXECUTE on
+    /// <c>xp_instance_regread</c> is restricted (sysadmin by default),
+    /// the key/value is missing, or the query fails — a least-privileged
+    /// login simply gets no fallback and the original actionable error
+    /// is surfaced instead.
+    /// </summary>
+    private const string DefaultBackupDirectoryQuery =
+        "DECLARE @backupDirectory nvarchar(4000); " +
+        "EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', " +
+        "N'Software\\Microsoft\\MSSQLServer\\MSSQLServer', N'BackupDirectory', @backupDirectory OUTPUT; " +
+        "SELECT @backupDirectory;";
+
+    private static async Task<string?> TryGetInstanceDefaultBackupDirectoryAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = new SqlCommand(DefaultBackupDirectoryQuery, connection);
+            if (await command.ExecuteScalarAsync(cancellationToken) is string directory
+                && !string.IsNullOrWhiteSpace(directory))
+            {
+                return directory;
+            }
+
+            return null;
+        }
+        catch (SqlException)
+        {
+            // Permission-denied on the extended stored procedure, or a
+            // broken registry read — the fallback is simply unavailable.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The fallback's second half: BACKUP to the instance's own default
+    /// backup directory (writable by the service account by definition),
+    /// then bring the file HOME — into the configured backups folder —
+    /// so the retention sweep, the files ledger, and the web-side
+    /// verification story keep working unchanged. Returns null when the
+    /// fallback cannot produce a backup (registry unreadable, retry
+    /// failed) so the caller surfaces the ORIGINAL actionable error.
+    /// On success returns the run result with a NOTE explaining what
+    /// happened and where the file ended up.
+    /// </summary>
+    private async Task<(string LocalFilePath, long SizeBytes, string Note)?> TryBackupViaDefaultDirectoryAsync(
+        SqlConnection connection,
+        string databaseName,
+        string fileName,
+        string localFilePath,
+        System.Diagnostics.Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        var defaultDirectory = await TryGetInstanceDefaultBackupDirectoryAsync(connection, cancellationToken);
+        if (string.IsNullOrWhiteSpace(defaultDirectory))
+        {
+            return null;
+        }
+
+        // Same separator convention as the primary path (SQL Server
+        // accepts both on every platform it runs on).
+        var serverDefaultFilePath = $"{defaultDirectory.TrimEnd('/', '\\')}/{fileName}";
+
+        // The registry-sourced path still goes through the same strict
+        // allowlist as configuration-sourced paths before it reaches
+        // command text — no exceptions for "trusted" sources. A path
+        // with unexpected characters simply disables the fallback.
+        if (!IsValidBackupPath(serverDefaultFilePath))
+        {
+            _logger.LogWarning(
+                "DatabaseBackup: the SQL Server default backup directory '{DefaultDirectory}' contains " +
+                "characters outside the backup-path allowlist — default-directory fallback skipped.",
+                defaultDirectory);
+            return null;
+        }
+
+        await using var command = new SqlCommand(
+            BuildBackupCommandText(databaseName, serverDefaultFilePath),
+            connection);
+        command.CommandTimeout = 0; // same policy as the primary attempt
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqlException retryException)
+        {
+            // Even the instance's own backup folder failed — surface the
+            // ORIGINAL device error + guidance (it names the CONFIGURED
+            // path, which is what the admin can act on).
+            _logger.LogWarning(
+                "DatabaseBackup: fallback attempt via the SQL Server default backup directory " +
+                "also failed: {Exception}",
+                retryException);
+            return null;
+        }
+
+        stopwatch.Stop();
+
+        // The backup file now exists on the SQL SERVER's filesystem. Can
+        // the app see it? Only when app + SQL Server share a filesystem
+        // (single-machine dev) AND the app's account has read access to
+        // the instance's backup folder.
+        if (File.Exists(serverDefaultFilePath))
+        {
+            var (outcome, detail) = RelocateBackupFile(serverDefaultFilePath, localFilePath);
+
+            if (outcome == RelocationOutcome.ServerOnly)
+            {
+                // The file is locked/unreadable for the app — it stays on
+                // the server. The run SUCCEEDED (the .bak exists); the
+                // note tells the admin where it is and what that means.
+                var serverOnlyNote =
+                    "The configured backup directory was rejected by SQL Server (the service account cannot " +
+                    $"write there); the backup succeeded via the SQL Server default backup directory but the file " +
+                    $"could not be copied into the backups folder ({detail}). It remains ON THE SQL SERVER at " +
+                    $"'{serverDefaultFilePath}' — it will not appear in the backup files list and is not " +
+                    "covered by the retention sweep; copy or move it manually.";
+                _logger.LogInformation(
+                    "DatabaseBackup: {DatabaseName} backed up to {ServerFilePath} via the default backup " +
+                    "directory; the file could not be relocated by the web app.",
+                    databaseName, serverDefaultFilePath);
+                return (localFilePath, 0, serverOnlyNote);
+            }
+
+            var relocatedNote =
+                "The configured backup directory was rejected by SQL Server (the service account cannot " +
+                "write there); this run wrote the backup to the SQL Server default backup directory and " +
+                (outcome == RelocationOutcome.MovedHome
+                    ? "moved it into the backups folder automatically."
+                    : $"copied it into the backups folder — an extra copy remains at '{serverDefaultFilePath}' " +
+                      "(the web app could not delete it); remove it manually to reclaim disk space.");
+
+            if (outcome == RelocationOutcome.CopiedHomeSourceRemains)
+            {
+                _logger.LogWarning(
+                    "DatabaseBackup: the backup was copied into the backups folder but the original " +
+                    "remains at {ServerFilePath} (delete denied).",
+                    serverDefaultFilePath);
+            }
+
+            // Same verification contract as the primary path — by
+            // construction the file just moved/copied here, but the
+            // check is cheap and keeps ONE post-condition.
+            if (!File.Exists(localFilePath))
+            {
+                throw new InvalidOperationException(
+                    $"DatabaseBackup: default-directory fallback reported success, but the file was not " +
+                    $"found at {localFilePath} after relocation.");
+            }
+
+            var sizeBytes = new FileInfo(localFilePath).Length;
+            var sizeMegabytes = sizeBytes / (1024.0 * 1024.0);
+
+            _logger.LogInformation(
+                "DatabaseBackup: {DatabaseName} backed up via the SQL Server default backup directory " +
+                "and relocated to {LocalFilePath} ({SizeMB:0.#} MB, {ElapsedSeconds:0.#}s).",
+                databaseName, localFilePath, sizeMegabytes, stopwatch.Elapsed.TotalSeconds);
+
+            return (localFilePath, sizeBytes, relocatedNote);
+        }
+
+        // The app cannot see the SQL Server's filesystem at all (remote
+        // server, or no read access to the instance folder). The backup
+        // SUCCEEDED — SQL Server wrote it — so report success with the
+        // location note rather than failing a run that produced a file.
+        var remoteNote =
+            "The configured backup directory was rejected by SQL Server (the service account cannot " +
+            $"write there); the backup succeeded via the SQL Server default backup directory but remains " +
+            $"ON THE SQL SERVER at '{serverDefaultFilePath}' (not visible to the web app). It will not " +
+            "appear in the backup files list and is not covered by the retention sweep; copy it manually.";
+        _logger.LogInformation(
+            "DatabaseBackup: {DatabaseName} backed up to {ServerFilePath} via the default backup " +
+            "directory (not visible to the web app).",
+            databaseName, serverDefaultFilePath);
+        return (localFilePath, 0, remoteNote);
+    }
+
+    /// <summary>
+    /// Outcome of <see cref="RelocateBackupFile"/>.
+    /// INTERNAL for unit tests.
+    /// </summary>
+    internal enum RelocationOutcome
+    {
+        /// <summary>The file was MOVED — it now lives only in the backups folder.</summary>
+        MovedHome,
+
+        /// <summary>
+        /// The file was COPIED home, but the source could not be deleted —
+        /// the SQL Server folder keeps a duplicate that must be removed
+        /// manually.
+        /// </summary>
+        CopiedHomeSourceRemains,
+
+        /// <summary>
+        /// The file could not be copied at all — it remains only on the
+        /// SQL Server side (locked or unreadable by the web app).
+        /// </summary>
+        ServerOnly
+    }
+
+    /// <summary>
+    /// Brings a backup file written by SQL Server into its own default
+    /// backup directory HOME — into the configured web-side backups
+    /// folder — so retention, the files ledger, and verification all see
+    /// it. Fast path: a real <see cref="File.Move"/> (no duplicate ever
+    /// exists on disk; needs delete rights on the source — e.g. an
+    /// elevated dev session). Slow path: <see cref="File.Copy"/> (read
+    /// rights on the source, which the instance folder commonly grants)
+    /// + best-effort delete of the original. INTERNAL for unit tests.
+    /// </summary>
+    internal static (RelocationOutcome Outcome, string Detail) RelocateBackupFile(
+        string serverFilePath,
+        string localFilePath)
+    {
+        try
+        {
+            File.Move(serverFilePath, localFilePath, overwrite: true);
+            return (RelocationOutcome.MovedHome, string.Empty);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Move needs delete rights on the source; fall through to the
+            // copy attempt (read rights are far more commonly granted).
+        }
+
+        try
+        {
+            File.Copy(serverFilePath, localFilePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (RelocationOutcome.ServerOnly, ex.Message);
+        }
+
+        try
+        {
+            File.Delete(serverFilePath);
+            return (RelocationOutcome.MovedHome, string.Empty);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (RelocationOutcome.CopiedHomeSourceRemains, ex.Message);
+        }
     }
 
     // ── IBackupCoordinator (see the class remarks for the dual role) ──
@@ -653,7 +951,8 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                     Error = r.Error,
                     FileName = r.FileName,
                     SizeBytes = r.SizeBytes,
-                    WasManual = r.WasManual
+                    WasManual = r.WasManual,
+                    Note = r.Note
                 })
                 .ToList();
 
@@ -823,8 +1122,8 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
 
     /// <summary>
     /// Path allowlist for the server-side backup path: ASCII letters,
-    /// digits, underscore, dash, dot, and the two path separators. The
-    /// single quote — the only character that could break out of the
+    /// digits, underscore, dash, dot, SPACE, and the two path separators.
+    /// The single quote — the only character that could break out of the
     /// N'…' literal — is NOT allowed.
     ///
     /// The COLON is allowed ONLY as a Windows drive-letter separator
@@ -832,7 +1131,15 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     /// colon cannot break out of the N'…' literal, but restricting it
     /// to the drive position keeps the allowlist tight now that
     /// absolute Windows paths reach the command (see
-    /// <see cref="ResolveServerPath"/>). INTERNAL for unit tests.
+    /// <see cref="ResolveServerPath"/>).
+    ///
+    /// The SPACE is required by the default-backup-directory fallback:
+    /// SQL Server's own default backup directory lives under
+    /// <c>C:\Program Files\…</c> on virtually every Windows install, and
+    /// that registry-sourced path must pass the SAME validation as
+    /// configuration-sourced paths before it reaches command text. A
+    /// space cannot break out of the N'…' literal. INTERNAL for unit
+    /// tests.
     /// </summary>
     internal static bool IsValidBackupPath(string value)
     {
@@ -849,6 +1156,10 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                      || (ch >= '0' && ch <= '9')
                      || ch == '_' || ch == '-' || ch == '.'
                      || ch == '/' || ch == '\\'
+                     // Space — legal inside the N'…' literal, and part of
+                     // SQL Server's default backup directory on Windows
+                     // ("C:\Program Files\…") for the fallback path.
+                     || ch == ' '
                      // Windows drive-letter colon ("C:\…") — legal only
                      // at position 1, with an ASCII letter before it.
                      || (ch == ':' && index == 1 && char.IsAsciiLetter(value[0]));
@@ -878,6 +1189,14 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
         public string FileName { get; init; } = string.Empty;
         public long SizeBytes { get; init; }
         public bool WasManual { get; init; }
+
+        /// <summary>
+        /// Non-failure annotation (default-backup-directory fallback —
+        /// see RunBackupCoreAsync). Empty on normal runs AND on records
+        /// written by older versions (a missing JSON member deserializes
+        /// to the default).
+        /// </summary>
+        public string Note { get; init; } = string.Empty;
     }
 
     /// <summary>

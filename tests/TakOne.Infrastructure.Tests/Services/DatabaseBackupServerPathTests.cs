@@ -157,4 +157,47 @@ public class DatabaseBackupServerPathTests
         Assert.Throws<InvalidOperationException>(() =>
             DatabaseBackupHostedService.BuildBackupCommandText("TakOne", "   "));
     }
+
+    // ── Default-backup-directory fallback paths (spaces) ─────────────
+    // The fallback reads the instance's own default backup directory
+    // from the registry — on virtually every Windows install that is
+    // "C:\Program Files\Microsoft SQL Server\MSSQLnn.INSTANCE\MSSQL\Backup"
+    // — and that registry-sourced path must pass the SAME allowlist as
+    // configuration-sourced paths before it reaches command text. Spaces
+    // are the one additional character the real default directory needs.
+
+    [Fact]
+    public void IsValidBackupPath_InstanceDefaultDirectoryWithSpaces_IsValid()
+    {
+        // The canonical Windows instance default backup directory +
+        // file, exactly what xp_instance_regread returns on a dev box.
+        const string instanceDefault =
+            @"C:\Program Files\Microsoft SQL Server\MSSQL17.HANZ\MSSQL\Backup\TakOne-backup-20260101-033000.bak";
+
+        DatabaseBackupHostedService.IsValidBackupPath(instanceDefault).Should().BeTrue(
+            "SQL Server's own default backup directory lives under 'C:\\Program Files\\…' — " +
+            "the fallback's registry-sourced path must pass the allowlist");
+    }
+
+    [Fact]
+    public void BuildBackupCommandText_InstanceDefaultDirectoryPath_IsEmbeddedVerbatim()
+    {
+        const string device =
+            @"C:\Program Files\Microsoft SQL Server\MSSQL17.HANZ\MSSQL\Backup/TakOne-backup-20260101-033000.bak";
+
+        var sql = DatabaseBackupHostedService.BuildBackupCommandText("TakOne", device);
+
+        sql.Should().Contain($"TO DISK = N'{device}'");
+    }
+
+    [Fact]
+    public void BuildBackupCommandText_SpaceWithQuote_IsStillRejected()
+    {
+        // Widening the allowlist with a space must not re-open the N'…'
+        // literal breakout boundary — the quote stays banned.
+        Assert.Throws<InvalidOperationException>(() =>
+            DatabaseBackupHostedService.BuildBackupCommandText(
+                "TakOne",
+                @"C:\Program Files\o'brien\TakOne-backup.bak"));
+    }
 }

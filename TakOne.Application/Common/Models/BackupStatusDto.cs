@@ -103,6 +103,19 @@ public sealed record BackupRunRecordDto
     /// false when it fired on the fixed 03:30/14:30 UTC schedule.
     /// </summary>
     public bool WasManual { get; init; }
+
+    /// <summary>
+    /// Non-failure annotation for the run (empty on normal runs). Carries
+    /// the default-backup-directory fallback explanation when SQL Server
+    /// could not write to the configured directory (the classic Windows
+    /// dev box: the SQL service account has no write access to the app's
+    /// backups folder) and the run nevertheless succeeded via the
+    /// instance's own default backup directory. This is the ONE field
+    /// where a full server-side path is deliberately surfaced — when the
+    /// file could not be relocated into the backups folder, the admin
+    /// needs to know exactly where it landed.
+    /// </summary>
+    public string Note { get; init; } = string.Empty;
 }
 
 /// <summary>

@@ -137,9 +137,10 @@ public class DatabaseBackupHostedServiceHistoryTests : IDisposable
         bool wasManual,
         string fileName = "TakOne-backup-20260101-033000.bak",
         long sizeBytes = 1024,
-        string error = "")
+        string error = "",
+        string note = "")
         => $$"""
-             {"StartedUtc":"{{finishedUtc.AddSeconds(-30):yyyy-MM-ddTHH:mm:ssZ}}","FinishedUtc":"{{finishedUtc:yyyy-MM-ddTHH:mm:ssZ}}","Succeeded":{{(succeeded ? "true" : "false")}},"Error":"{{error}}","FileName":"{{fileName}}","SizeBytes":{{sizeBytes}},"WasManual":{{(wasManual ? "true" : "false")}}}
+             {"StartedUtc":"{{finishedUtc.AddSeconds(-30):yyyy-MM-ddTHH:mm:ssZ}}","FinishedUtc":"{{finishedUtc:yyyy-MM-ddTHH:mm:ssZ}}","Succeeded":{{(succeeded ? "true" : "false")}},"Error":"{{error}}","FileName":"{{fileName}}","SizeBytes":{{sizeBytes}},"WasManual":{{(wasManual ? "true" : "false")}},"Note":"{{note}}"}
              """;
 
     // ── GetStatus → RunHistory ────────────────────────────────────────
@@ -314,5 +315,61 @@ public class DatabaseBackupHostedServiceHistoryTests : IDisposable
         run.Error.Should().NotBeNullOrEmpty();
         run.FileName.Should().BeEmpty();
         run.SizeBytes.Should().Be(0);
+    }
+
+    // ── Note round-trip (default-backup-directory fallback) ─────────
+
+    [Fact]
+    public async Task GetStatus_WithNoteInLedger_RoundTripsNote()
+    {
+        // Arrange — a SUCCESSFUL run that went through the default
+        // backup directory fallback (the Windows dev box scenario).
+        var runAt = new DateTime(2026, 1, 8, 3, 30, 0, DateTimeKind.Utc);
+        const string note =
+            "The configured backup directory was rejected by SQL Server (the service account cannot " +
+            "write there); this run wrote the backup to the SQL Server default backup directory and " +
+            "moved it into the backups folder automatically.";
+        WriteLedger(LedgerLine(
+            runAt,
+            succeeded: true,
+            wasManual: false,
+            fileName: "TakOne-backup-20260108-033000.bak",
+            sizeBytes: 4096,
+            note: note));
+
+        var service = await CreateArmedServiceAsync(_tempDir);
+
+        // Act
+        var status = service.GetStatus();
+
+        // Assert — the annotation reaches the Settings card's run row
+        // + the run-report CSV, not just the logs.
+        status.RunHistory.Should().ContainSingle();
+        var run = status.RunHistory[0];
+        run.Succeeded.Should().BeTrue();
+        run.Note.Should().Be(note);
+    }
+
+    [Fact]
+    public async Task GetStatus_WithLegacyRecordWithoutNote_ParsesWithEmptyNote()
+    {
+        // Arrange — a ledger line written by a version BEFORE the Note
+        // member existed (no "Note" property in the JSON at all).
+        var runAt = new DateTime(2026, 1, 8, 14, 30, 0, DateTimeKind.Utc);
+        WriteLedger(
+            "{\"StartedUtc\":\"2026-01-08T14:29:30Z\",\"FinishedUtc\":\"" +
+            runAt.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture) +
+            "\",\"Succeeded\":true,\"Error\":\"\",\"FileName\":\"legacy.bak\",\"SizeBytes\":1,\"WasManual\":false}");
+
+        var service = await CreateArmedServiceAsync(_tempDir);
+
+        // Act
+        var status = service.GetStatus();
+
+        // Assert — a missing member deserializes to the default: old
+        // ledgers keep parsing, the note simply renders as absent.
+        status.RunHistory.Should().ContainSingle();
+        status.RunHistory[0].FileName.Should().Be("legacy.bak");
+        status.RunHistory[0].Note.Should().BeEmpty();
     }
 }

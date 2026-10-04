@@ -474,6 +474,24 @@ database wrote, and the retention sweep (7 days) runs from the app side.
 
    (substitute your instance name; for the default instance use
    `NT SERVICE\MSSQLSERVER`)
+
+   **If you skip that grant**, backups still work: when SQL Server
+   rejects the configured folder with *Access is denied* (`Operating
+   system error 5`), the app automatically retries against the SQL
+   Server instance's **own default backup directory** (read from the
+   instance registry — the one folder the service account can always
+   write) and then moves/copies the `.bak` into your backups folder so
+   the retention sweep and the admin files list keep working. Such a
+   run is marked SUCCESS with a note in the run-history ledger saying
+   exactly what happened (and, if even the copy was impossible, where
+   the file remains on the SQL Server — that copy is not covered by the
+   7-day sweep and must be removed manually). Caveats: the fallback
+   needs a login that may read the instance registry
+   (`xp_instance_regread` — `sa`/sysadmin has it), and when the app
+   runs non-elevated it can usually copy but not delete from the
+   instance folder, so a duplicate `.bak` may accumulate there — the
+   `icacls` grant above remains the clean setup (the file then lands
+   directly in the configured folder, no detour, no duplicates).
 3. **Timezone.** The schedule is pinned to **UTC** (03:30 and 14:30)
    regardless of the container's `TZ` (the web container runs
    `Asia/Tehran` for the UI greeting). 03:30 UTC = 07:00 and 14:30 UTC =
@@ -507,7 +525,10 @@ open `/Settings`:
   (scheduled AND manual), each with its Tehran start time, duration,
   trigger (clock icon = scheduled slot, hand icon = manual "Back up
   now"), outcome badge, and — for failed runs — the failure message in
-  the row's hover tooltip. This is persisted across restarts in
+  the row's hover tooltip. Runs that succeeded via the
+  default-backup-directory fallback (see Permissions above) show a
+  secondary note line under the row explaining where the file came
+  from / landed. This is persisted across restarts in
   `backup-history.jsonl` (one JSON line per completed run, written next
   to the `*.bak` files on the shared volume) and pruned by the same
   7-day retention sweep, so "did the 03:30 slot actually run last week?"
@@ -526,8 +547,9 @@ open `/Settings`:
   portable CSV audit artifact (`takone-backup-runs-<timestamp>.csv`):
   one chronological row per completed run with UTC ISO-8601 start/finish
   timestamps, raw duration seconds, outcome, trigger, file name, size in
-  bytes, and the failure detail. Handy for ops handovers/ticketing where
-  pasting the live card isn't enough. Disabled until the first run
+  bytes, the failure detail, and the run's note (the fallback
+  annotation; empty on normal runs). Handy for ops handovers/ticketing
+  where pasting the live card isn't enough. Disabled until the first run
   completes.
 
 The status reads the same singleton the schedule loop mutates (the
