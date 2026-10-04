@@ -174,9 +174,10 @@ public class SalesPagePendingChipTests
     [Fact]
     public void Sales_PendingDeepLink_RestoresFilterAndActivatesChip()
     {
-        // Arrange — the exact URL the Dashboard's Pending-Approvals KPI
-        // card builds (PendingSalesDeepLink): pre-navigate BEFORE
-        // mounting so the page's OnInitializedAsync URL parse sees it.
+        // Arrange — the Sales page's URL state contract for the status
+        // filter (?status=Pending, the same mechanism every deep link
+        // into this page uses): pre-navigate BEFORE mounting so the
+        // page's OnInitializedAsync URL parse sees it.
         var (ctx, dispatched) = Setup(totalCount: 45, page: MakeSales(20));
         using (ctx)
         {

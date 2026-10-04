@@ -252,29 +252,9 @@
     .tm-dash-kpi-grid--reloading,
     .tm-dash-quick-card,
     .tm-dash-restock-link,
-    .tm-dash-restock-chip,
-    .tm-dash-kpi-link-chevron,
-    .tm-dash-recent-row {
+    .tm-dash-restock-chip {
         transition: none;
     }
-}
-
-/* Visually hidden, screen-reader visible — the standard clip utility.
-   Used by the Pending-Approvals KPI link to append its destination to
-   the anchor's accessible name (the card's visible text is the metric,
-   not where the link goes). Kept here (page CSS) rather than app.css
-   because only the Dashboard uses it today; promote it to app.css when
-   a second consumer appears. */
-.tm-sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 /* =============================================================================
@@ -344,59 +324,6 @@
 .tm-dash-kpi-glow-info {
     --tm-glow: rgba(91, 168, 232, 0.20);
 }
-
-/* ── Whole-card KPI deep link (Pending Approvals) ────────────────────
-   The card becomes an <a> so it's a REAL link (middle-click, destination
-   preview, native keyboard focus). The anchor reset (color + text-
-   decoration) keeps the card's typographic hierarchy exactly as the div
-   version rendered it; the --link modifier adds the affordances: warn
-   hover border (the card's own glow family), a focus ring for keyboard
-   users, and a chevron badge in the head that slides toward the
-   direction of travel on hover (left in RTL — forward in this UI). */
-.tm-dash-kpi-card--link {
-    display: block;
-    color: inherit;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-    .tm-dash-kpi-card--link:hover {
-        border-color: rgba(232, 161, 74, 0.45);
-    }
-
-    .tm-dash-kpi-card--link:focus-visible {
-        outline: 2px solid var(--tm-warning, #E8A14A);
-        outline-offset: 2px;
-    }
-
-.tm-dash-kpi-link-chevron {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 9999px;
-    color: var(--tm-warning, #E8A14A);
-    background: rgba(232, 161, 74, 0.12);
-    transition: transform 0.2s ease, background-color 0.2s ease;
-}
-
-    .tm-dash-kpi-card--link:hover .tm-dash-kpi-link-chevron,
-    .tm-dash-kpi-card--link:focus-visible .tm-dash-kpi-link-chevron {
-        background: rgba(232, 161, 74, 0.25);
-    }
-
-    /* RTL (fa-IR, the default culture): forward is LEFT, so the chevron
-       nudges left on hover. LTR (en-US) flips the nudge to the right. */
-    .tm-dash-kpi-card--link:hover .tm-dash-kpi-link-chevron,
-    .tm-dash-kpi-card--link:focus-visible .tm-dash-kpi-link-chevron {
-        transform: translateX(-3px);
-    }
-
-    [dir="ltr"] .tm-dash-kpi-card--link:hover .tm-dash-kpi-link-chevron,
-    [dir="ltr"] .tm-dash-kpi-card--link:focus-visible .tm-dash-kpi-link-chevron {
-        transform: translateX(3px);
-    }
 
 .tm-dash-kpi-card-head {
     display: flex;
@@ -824,32 +751,6 @@
 
         .tm-dash-table tbody tr:hover {
             background: var(--tm-dash-table-hover, rgba(255, 255, 255, 0.025));
-        }
-
-    /* ── Clickable Recent Orders rows ────────────────────────────────
-       The whole row opens the sale's detail page (tabindex + Enter for
-       keyboard users — see Dashboard.razor). A touch more hover tint
-       than the plain rows (the generic tr:hover above) + the gold
-       focus ring the dashboard's other interactive surfaces use, so
-       the row reads as a control, not just data. */
-    .tm-dash-table tbody tr.tm-dash-recent-row {
-        cursor: pointer;
-    }
-
-        .tm-dash-table tbody tr.tm-dash-recent-row:hover {
-            background: color-mix(in srgb, var(--tm-gold, #D4AF37) 6%, transparent);
-        }
-
-        .tm-dash-table tbody tr.tm-dash-recent-row:focus-visible {
-            outline: 2px solid var(--tm-gold, #D4AF37);
-            outline-offset: -2px; /* inside the row — the table's cells would clip an outer ring */
-        }
-
-        /* The sale-number cell of a clickable row reads as the row's
-           identity link: primary-tinted + underline on hover. */
-        .tm-dash-table tbody tr.tm-dash-recent-row .tm-dash-sale-number {
-            color: var(--tm-gold-bright, #E8C547);
-            font-variant-numeric: tabular-nums;
         }
 
     .tm-dash-table tbody td {

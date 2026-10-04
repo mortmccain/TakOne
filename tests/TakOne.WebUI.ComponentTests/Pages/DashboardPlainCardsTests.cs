@@ -18,35 +18,29 @@ using Xunit;
 namespace TakOne.WebUI.ComponentTests.Pages;
 
 /// <summary>
-/// Page-level bUnit tests for the Dashboard's new navigation surfaces:
-/// the Pending-Approvals KPI whole-card deep link and the clickable
-/// Recent Orders rows.
+/// Page-level bUnit tests pinning the dashboard cards' PLAIN rendering:
+/// the KPI cards (incl. Pending Approvals) are non-interactive <c>div</c>s
+/// with no link affordances, and the Recent Orders rows are plain data
+/// rows with no click/keyboard navigation.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>WHAT THIS PROVES</b>:
-///   1. The Pending-Approvals KPI card renders as a REAL anchor (not a
-///      div) whose href is the Sales page's URL state contract
-///      (<c>/Sales?status=Pending</c> — built from
-///      <c>nameof(SaleStatus.Pending)</c>, no stale literal), carries
-///      the chevron affordance, and appends the screen-reader-only
-///      destination text to its accessible name.
-///   2. Recent Orders rows are keyboard-focusable (tabindex) and CLICK
-///      navigates to <c>/Sales/{SaleId}</c> — the same route the Sales
-///      grid's sale-number links use.
-///   3. Enter opens the row; other keys (Space/page-scroll, Tab/focus
-///      movement) are left at their browser defaults — the row never
-///      hijacks the keyboard.
+/// <b>WHY THIS EXISTS</b>: a previous round turned the Pending-Approvals
+/// KPI card into a whole-card anchor (chevron badge, hover/focus link
+/// styles) and made the Recent Orders rows clickable — unrequested style
+/// changes to existing cards, which the product owner asked to have
+/// UNDONE. These tests pin the restored state so the affordances cannot
+/// silently creep back in.
 /// </para>
 /// <para>
-/// <b>WIRING</b>: same harness as
+/// <b>WIRING</b>: same harness family as
 /// <see cref="DashboardRestockAlertTests"/> — full page mount with the
 /// fake bus returning a hand-built DTO; navigation is observed through
 /// bUnit's <see cref="FakeNavigationManager"/>. The chart JS interop
 /// runs under bUnit's Loose mode.
 /// </para>
 /// </remarks>
-public class DashboardNavigationTests
+public class DashboardPlainCardsTests
 {
     private static (TestContext ctx, DashboardStatsDto dto) Setup(params RecentOrderDto[] recentOrders)
     {
@@ -118,7 +112,7 @@ public class DashboardNavigationTests
     };
 
     [Fact]
-    public void Dashboard_PendingKpiCard_IsDeepLinkToPendingQueue()
+    public void Dashboard_KpiCards_RenderAsPlainNonInteractiveDivs()
     {
         // Arrange / Act
         var (ctx, _) = Setup();
@@ -126,26 +120,29 @@ public class DashboardNavigationTests
         {
             var cut = ctx.RenderComponent<Dashboard>();
 
-            // Assert — the KPI card is a real ANCHOR with the Sales
-            // page's URL state contract pre-applied (the page's
-            // "Pending only" chip derives its active state from this
-            // restored filter), plus the chevron affordance and the
-            // sr-only destination text for assistive tech.
+            // Assert — the KPI grid renders its four cards as plain divs.
             cut.WaitForAssertion(
-                () => cut.FindAll("a.tm-dash-kpi-card--link").Should().HaveCount(1),
+                () => cut.FindAll("div.tm-dash-kpi-card").Should().HaveCount(4),
                 TimeSpan.FromSeconds(10));
-            var link = cut.Find("a.tm-dash-kpi-card--link");
-            link.GetAttribute("href").Should().Be("/Sales?status=Pending");
-            cut.Find(".tm-dash-kpi-link-chevron").Should().NotBeNull();
-            cut.Markup.Should().Contain("Kpi_PendingApprovalsLink",
-                "the sr-only span appends the destination to the anchor's accessible name");
+
+            // None of the cards is an anchor or carries link affordances:
+            // no whole-card link modifier, no chevron badge, no sr-only
+            // destination text (the Pending-Approvals card previously
+            // carried all three — reverted at the product owner's request).
+            cut.FindAll("a.tm-dash-kpi-card").Should().BeEmpty(
+                "KPI cards are plain divs, not links");
+            cut.FindAll(".tm-dash-kpi-card--link").Should().BeEmpty();
+            cut.FindAll(".tm-dash-kpi-link-chevron").Should().BeEmpty();
+            cut.FindAll(".tm-sr-only").Should().BeEmpty();
+            cut.Markup.Should().NotContain("Kpi_PendingApprovalsLink",
+                "the sr-only destination key must stay retired");
             cut.Markup.Should().Contain("Kpi_PendingApprovals",
-                "the visible metric label renders");
+                "the visible metric label still renders");
         }
     }
 
     [Fact]
-    public void Dashboard_RecentOrderRow_ClickNavigatesToSaleDetail()
+    public void Dashboard_RecentOrderRows_ArePlainRows_NoClickNavigation()
     {
         // Arrange — two recent orders with known ids.
         var firstSaleId = Guid.NewGuid();
@@ -157,60 +154,29 @@ public class DashboardNavigationTests
         {
             var cut = ctx.RenderComponent<Dashboard>();
 
-            // Assert — both rows render as clickable, focusable rows.
+            // Assert — both rows render as plain data rows.
             cut.WaitForAssertion(
-                () => cut.FindAll("tr.tm-dash-recent-row").Should().HaveCount(2),
+                () => cut.FindAll(".tm-dash-table tbody tr").Should().HaveCount(2),
                 TimeSpan.FromSeconds(10));
-            var rows = cut.FindAll("tr.tm-dash-recent-row");
-            rows[0].GetAttribute("tabindex").Should().Be("0",
-                "keyboard users can focus the row");
-            rows[0].GetAttribute("title").Should().NotBeNullOrEmpty(
-                "the tooltip announces the destination before the click");
+            var rows = cut.FindAll(".tm-dash-table tbody tr");
+            foreach (var row in rows)
+            {
+                row.ClassList.Should().NotContain("tm-dash-recent-row");
+                row.GetAttribute("tabindex").Should().BeNull(
+                    "plain rows are not keyboard-focusable controls");
+                row.GetAttribute("title").Should().BeNull(
+                    "plain rows carry no destination tooltip");
+                row.GetAttribute("blazor:onclick").Should().BeNull(
+                    "plain rows carry no click handler — bUnit's Click() would " +
+                    "throw MissingEventHandlerException on them, which is the " +
+                    "revert's own proof");
+            }
 
-            // Act — click the FIRST row.
-            rows[0].Click();
-
-            // Assert — navigation went to that sale's detail page (the
-            // same route the Sales grid's sale-number links use).
+            // No interaction with the rows exists — the URI is untouched
+            // without any event dispatch (nothing to dispatch).
             var nav = ctx.Services.GetRequiredService<FakeNavigationManager>();
-            nav.Uri.Should().EndWith($"/Sales/{firstSaleId}");
-        }
-    }
-
-    [Fact]
-    public void Dashboard_RecentOrderRow_EnterKeyNavigates_OtherKeysDoNot()
-    {
-        // Arrange
-        var firstSaleId = Guid.NewGuid();
-        var secondSaleId = Guid.NewGuid();
-        var (ctx, _) = Setup(
-            MakeOrder(firstSaleId, "TM-1001"),
-            MakeOrder(secondSaleId, "TM-1002"));
-        using (ctx)
-        {
-            var cut = ctx.RenderComponent<Dashboard>();
-            cut.WaitForAssertion(
-                () => cut.FindAll("tr.tm-dash-recent-row").Should().HaveCount(2),
-                TimeSpan.FromSeconds(10));
-            var nav = ctx.Services.GetRequiredService<FakeNavigationManager>();
-            var initialUri = nav.Uri;
-
-            // Act — a non-Enter key: the row must NOT hijack it (Space
-            // scrolls the page, Tab moves focus — browser defaults).
-            // NOTE: rows are RE-FOUND before each dispatch — Blazor
-            // re-renders the component after every event dispatch, which
-            // rebinds the handlers; a stale captured element would fail
-            // the renderer's event-binding lookup.
-            cut.FindAll("tr.tm-dash-recent-row")[0].KeyDown("a");
-            cut.WaitForAssertion(() => cut.FindAll("tr.tm-dash-recent-row").Should().HaveCount(2),
-                TimeSpan.FromSeconds(5));
-            nav.Uri.Should().Be(initialUri, "a non-Enter key must not navigate");
-
-            // Act — Enter on the SECOND row.
-            cut.FindAll("tr.tm-dash-recent-row")[1].KeyDown("Enter");
-
-            // Assert — navigation went to that row's sale.
-            nav.Uri.Should().EndWith($"/Sales/{secondSaleId}");
+            nav.Uri.Should().NotEndWith("/Sales/",
+                "nothing on the dashboard's recent-orders table navigates");
         }
     }
 }
