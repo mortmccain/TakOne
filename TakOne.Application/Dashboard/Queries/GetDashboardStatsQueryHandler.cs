@@ -620,6 +620,7 @@ public sealed class GetDashboardStatsQueryHandler
 
                 return new RecentOrderDto
                 {
+                    SaleId = s.Id,
                     SaleNumber = s.SaleNumber?.Value ?? "—",
                     CustomerName = s.CustomerName,
                     ProductSummary = productSummary,

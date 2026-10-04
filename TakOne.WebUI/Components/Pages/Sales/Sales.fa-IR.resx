@@ -148,6 +148,42 @@
   <data name="DateFilterInvalidRange" xml:space="preserve">
     <value>تاریخ «از» نمی‌تواند بعد از تاریخ «تا» باشد.</value>
   </data>
+  <!-- بازه‌های زمانی سریع — چیپ‌های یک‌کلیکی امروز / ۷ روز / ۳۰ روز که
+       همان قرارداد از/تا انتخابگرهای تاریخ را می‌رانند. حالت فعال از
+       محدودهٔ اعمال‌شده استنتاج می‌شود (IsPresetActive). -->
+  <data name="DatePresetsAriaLabel" xml:space="preserve">
+    <value>بازه‌های زمانی سریع</value>
+    <comment>نام دسترس‌پذیر برای گروه چیپ‌های امروز / ۷ روز / ۳۰ روز.</comment>
+  </data>
+  <data name="PresetToday" xml:space="preserve">
+    <value>امروز</value>
+  </data>
+  <data name="PresetTodayTooltip" xml:space="preserve">
+    <value>نمایش سفارش‌های ثبت‌شده امروز</value>
+  </data>
+  <data name="PresetLast7Days" xml:space="preserve">
+    <value>۷ روز</value>
+    <comment>برچسب چیپ بازه — ۷ روز اخیر، شامل امروز.</comment>
+  </data>
+  <data name="PresetLast7DaysTooltip" xml:space="preserve">
+    <value>نمایش ۷ روز اخیر، شامل امروز</value>
+  </data>
+  <data name="PresetLast30Days" xml:space="preserve">
+    <value>۳۰ روز</value>
+    <comment>برچسب چیپ بازه — ۳۰ روز اخیر، شامل امروز.</comment>
+  </data>
+  <data name="PresetLast30DaysTooltip" xml:space="preserve">
+    <value>نمایش ۳۰ روز اخیر، شامل امروز</value>
+  </data>
+  <!-- فیلتر سریع «فقط در انتظار تأیید» (کارگردش تأیید — قرینهٔ چیپ موجودی
+       کم در AdminProducts؛ کارت KPI «در انتظار تأیید» داشبورد با ?status=Pending
+       به اینجا پیوند داده می‌شود). -->
+  <data name="PendingFilterChip" xml:space="preserve">
+    <value>فقط در انتظار تأیید</value>
+  </data>
+  <data name="PendingFilterTooltip" xml:space="preserve">
+    <value>نمایش فقط فروش‌های در انتظار تأیید</value>
+  </data>
   <data name="EmptyTitleFiltered" xml:space="preserve">
     <value>سفارشی در این بازه تاریخ نیست</value>
   </data>

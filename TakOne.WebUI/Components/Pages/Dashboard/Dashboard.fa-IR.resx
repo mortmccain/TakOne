@@ -160,6 +160,11 @@
   <data name="Kpi_PendingApprovalsFooter_None" xml:space="preserve">
     <value>هیچ سفارش در انتظار تأییدی وجود ندارد</value>
   </data>
+  <!-- پیوند کل کارت KPI: متن فقط-برای-صفحه‌خوان که مقصد کارت «در انتظار تأیید»
+       را به نام دسترس‌پذیر پیوند می‌افزاید (متن مرئی کارت شاخص است، نه مقصد). -->
+  <data name="Kpi_PendingApprovalsLink" xml:space="preserve">
+    <value>مشاهده صف سفارش‌های در انتظار تأیید</value>
+  </data>
   <data name="Kpi_MonthlyApprovedSales" xml:space="preserve">
     <value>تعداد فروش های این ماه</value>
   </data>
@@ -315,6 +320,11 @@
   </data>
   <data name="Orders_Recent_Sub" xml:space="preserve">
     <value>۶ سفارش اخیر سیستم</value>
+  </data>
+  <!-- ردیف‌های قابل کلیک «سفارش‌های اخیر»: راهنمای اعلام مقصد (ردیف صفحه
+       جزئیات فروش را باز می‌کند). -->
+  <data name="Orders_RowViewTitle" xml:space="preserve">
+    <value>مشاهده جزئیات سفارش</value>
   </data>
   <data name="Orders_Col_Number" xml:space="preserve">
     <value>شماره سفارش</value>

@@ -1930,6 +1930,75 @@
     margin-inline-start: 8px;
 }
 
+/* ── Page-size selector (QA-10) ────────────────────────────────────
+   The "per page" select at the end of the pager row. Styled as the
+   pager family's compact pill (bordered like the pager buttons, sized
+   like the sort select) so the whole row reads as one control group.
+   Native select chrome reset + the sort select's RTL-aware caret
+   technique; numbers render through .tm-persian-num in the options. */
+.tm-page-size-label {
+    font-size: 0.75rem;
+    color: var(--tm-gray, var(--rz-text-secondary-color));
+    white-space: nowrap;
+    user-select: none;
+    /* Separate the pair from the pager-info text with the same gap
+       rhythm the row already uses, plus an inset hairline divider.
+       RTL-safe: logical (inline) properties — no [dir] override needed. */
+    margin-inline-start: 12px;
+    padding-inline-start: 12px;
+    border-inline-start: 1px solid var(--rz-border-color-light, rgba(0, 0, 0, 0.08));
+}
+
+.tm-page-size-select {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--rz-border-color);
+    border-radius: 9999px;
+    background: var(--tm-surface, var(--rz-component-background-color, #fff));
+    color: var(--tm-text, var(--rz-text-color));
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 22px 4px 10px;
+    cursor: pointer;
+    outline: none;
+    /* RTL-aware caret — same SVG chevron the sort select uses. */
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 7px center;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+[dir="rtl"] .tm-page-size-select {
+    padding: 4px 10px 4px 22px;
+    background-position: left 7px center;
+}
+
+.tm-page-size-select:hover:not(:disabled) {
+    border-color: var(--tm-gold, var(--rz-secondary));
+}
+
+.tm-page-size-select:focus-visible {
+    outline: 2px solid var(--tm-green, var(--rz-primary));
+    outline-offset: 1px;
+}
+
+.tm-page-size-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* On very narrow viewports the divider + label can crowd the wrapped
+   pager buttons — drop the divider only (the label stays, the select
+   stays; the row already wraps). */
+@media (max-width: 480px) {
+    .tm-page-size-label {
+        margin-inline-start: 0;
+        padding-inline-start: 0;
+        border-inline-start: none;
+    }
+}
+
 /* =============================================================================
    9. TOAST (inline success/error message at top of page)
    ========================================================================== */
@@ -2118,5 +2187,117 @@
 @keyframes tm-export-rotate {
     to {
         transform: rotate(360deg);
+    }
+}
+
+/* ── "Include out of stock" toggle chip (QA-10 — staff view mode) ───────
+   Pill button in the products tools row (before the sort control).
+   Mirrors the .tm-export-btn / .tm-sort-control sizing so the row reads
+   as one control family. INACTIVE: neutral surface + secondary text
+   with an eye-slash glyph (visibility OFF). ACTIVE: danger tint — the
+   SAME red family the out-of-stock card badges (.tm-stock-dot-out) and
+   the empty/danger affordances on this page use — with the eye glyph
+   (visibility ON), so the state difference is color + icon, never
+   color alone (a11y). Theme-aware via the --rz-danger* variables both
+   Tak themes define. */
+.tm-oos-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--tm-border, var(--rz-border-color, rgba(0, 0, 0, 0.12)));
+    border-radius: 999px;
+    background: var(--tm-surface, var(--rz-component-background-color, #fff));
+    color: var(--tm-gray, var(--rz-text-secondary-color, #6b7280));
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: inherit;
+    line-height: 1.4;
+    white-space: nowrap;
+    cursor: pointer;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    text-transform: none;
+    flex: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tm-oos-chip svg {
+    flex: none;
+}
+
+.tm-oos-chip:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--rz-danger, #DC2626) 40%, transparent);
+    color: var(--rz-danger, #DC2626);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.tm-oos-chip:focus-visible {
+    outline: 2px solid var(--rz-danger, #DC2626);
+    outline-offset: 2px;
+}
+
+.tm-oos-chip:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.tm-oos-chip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* ACTIVE — danger tint (color-mix keeps both themes correct; browsers
+   without support drop these declarations and keep the neutral base,
+   where the eye glyph + aria-pressed still communicate the state). */
+.tm-oos-chip--active {
+    background: color-mix(in srgb, var(--rz-danger, #DC2626) 10%, var(--tm-surface, var(--rz-component-background-color, #fff)));
+    border-color: color-mix(in srgb, var(--rz-danger, #DC2626) 38%, transparent);
+    color: var(--rz-danger, #DC2626);
+}
+
+    .tm-oos-chip--active:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--rz-danger, #DC2626) 16%, var(--tm-surface, var(--rz-component-background-color, #fff)));
+    }
+
+/* ── Sold-out card treatment (QA-10) ───────────────────────────────
+   When the staff chip includes zero-stock products, the card itself
+   communicates non-buyability at a glance: the image desaturates and
+   fades slightly, the name drops its green identity color for the
+   secondary text color, and the placeholder icon dims. The red
+   "Out of stock" badge stays fully saturated — the one loud signal
+   per card (don't shout everywhere). Only ever applies to zero-stock
+   rows, which non-staff users never receive from the handler. */
+.tm-product-card--out .tm-product-image img {
+    filter: grayscale(0.65);
+    opacity: 0.75;
+    /* Keep the base img transition (hover zoom) and ADD the filter/
+       opacity fade — the transition property is replace-not-merge, so
+       re-declaring it must carry all three. */
+    transition: transform 0.4s ease, filter 0.2s ease, opacity 0.2s ease;
+}
+
+.tm-product-card--out .tm-product-name {
+    color: var(--tm-gray, var(--rz-text-secondary-color, #6b7280));
+}
+
+.tm-product-card--out .tm-product-image-placeholder {
+    opacity: 0.4;
+}
+
+/* The price stays readable but slightly softened — it is informational
+   (what the product WOULD cost when restocked); the disabled add button
+   carries the actual dead state. */
+.tm-product-card--out .tm-product-price {
+    opacity: 0.85;
+}
+
+/* QA-10 a11y — the chip's color/border transitions are decorative
+   motion; reduced-motion users get instant state changes. The card
+   grayscale treatment is a filter (not motion) and stays. */
+@media (prefers-reduced-motion: reduce) {
+    .tm-oos-chip {
+        transition: none;
     }
 }

@@ -148,6 +148,42 @@
   <data name="DateFilterInvalidRange" xml:space="preserve">
     <value>The "from" date must not be after the "to" date.</value>
   </data>
+  <!-- Date-range PRESETS (quick ranges) — one-click Today / 7 days / 30
+       days chips that drive the same from/to contract the pickers do.
+       Active state derives from the applied bounds (IsPresetActive). -->
+  <data name="DatePresetsAriaLabel" xml:space="preserve">
+    <value>Quick date ranges</value>
+    <comment>Accessible name for the Today / 7 days / 30 days preset chip group.</comment>
+  </data>
+  <data name="PresetToday" xml:space="preserve">
+    <value>Today</value>
+  </data>
+  <data name="PresetTodayTooltip" xml:space="preserve">
+    <value>Show orders created today</value>
+  </data>
+  <data name="PresetLast7Days" xml:space="preserve">
+    <value>7 days</value>
+    <comment>Preset chip label — the last 7 days, inclusive of today.</comment>
+  </data>
+  <data name="PresetLast7DaysTooltip" xml:space="preserve">
+    <value>Show the last 7 days, including today</value>
+  </data>
+  <data name="PresetLast30Days" xml:space="preserve">
+    <value>30 days</value>
+    <comment>Preset chip label — the last 30 days, inclusive of today.</comment>
+  </data>
+  <data name="PresetLast30DaysTooltip" xml:space="preserve">
+    <value>Show the last 30 days, including today</value>
+  </data>
+  <!-- "Pending only" quick-filter chip (approver workflow — mirrors the
+       AdminProducts low-stock chip; the Dashboard's Pending-Approvals KPI
+       card deep-links here with ?status=Pending pre-applied). -->
+  <data name="PendingFilterChip" xml:space="preserve">
+    <value>Pending only</value>
+  </data>
+  <data name="PendingFilterTooltip" xml:space="preserve">
+    <value>Show only sales awaiting approval</value>
+  </data>
   <data name="EmptyTitleFiltered" xml:space="preserve">
     <value>No orders in this date range</value>
   </data>

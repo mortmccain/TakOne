@@ -455,4 +455,16 @@
     <value>وضعیت موجودی</value>
     <comment>سرستون خروجی CSV — برچسب موجود/ناموجود (همان نشان کارت کالا).</comment>
   </data>
+  <data name="ShowStockOutChip" xml:space="preserve">
+    <value>نمایش ناموجودها</value>
+    <comment>QA-10 — دکمهٔ حالت نمایش مدیران در نوار ابزار اجناس: اجناس ناموجود را نیز در فهرست نشان می‌دهد.</comment>
+  </data>
+  <data name="ShowStockOutTooltip" xml:space="preserve">
+    <value>نمایش اجناس ناموجود در فهرست اجناس (نمای مدیر)</value>
+    <comment>QA-10 — راهنمای دکمهٔ نمایش ناموجودها.</comment>
+  </data>
+  <data name="PagerPerPage" xml:space="preserve">
+    <value>در هر صفحه</value>
+    <comment>QA-10 — برچسب انتخابگر تعداد کالا در هر صفحه (۱۲/۲۴/۴۸).</comment>
+  </data>
 </root>

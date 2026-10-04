@@ -3,7 +3,9 @@
    Layout: MobileLayout
 
    PORTS desktop AdminUsers features (mobile-simplified):
-     - List every user once (GetUsersPaginatedQuery PageSize=500 → .Items)
+     - Loaded window of users (GetUsersPaginatedQuery PageSize=100, the
+       backend cap) + Load-more append pagination when the directory is
+       larger than one page (QA-12)
      - Client-side search filter (WorkerId OR FullName, case-insensitive)
      - Status tabs (All / Active / Inactive) — client-side on .IsActive
      - Per-row badges: gender (info/gold), group (neutral), status (success/danger)
@@ -156,7 +158,27 @@ else
     }
     else if (!FilteredUsers.Any())
     {
-        <p class="m-empty">@Loc["EmptyMessage"]</p>
+        @* Filters matched zero rows while the user list is NOT empty (the
+           empty CTA above only renders when the backend returned zero
+           users TOTAL). Different situation → different message (the old
+           EmptyMessage copy — "Create your first user account" — was
+           factually wrong here) + a one-tap escape hatch. When users
+           beyond the loaded window exist, a hint points at Load-more. *@
+        <div class="m-empty">
+            <p>@Loc["NoMatchesMessage"]</p>
+            @if (_users.Count < _totalCount)
+            {
+                <p class="m-no-match-hint">@Loc["NoMatchesMoreHint"]</p>
+            }
+            <button type="button"
+                    class="m-clear-filters-btn"
+                    @onclick="ClearAllFilters">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>@Loc["ClearFiltersButton"]</span>
+            </button>
+        </div>
     }
     else
     {
@@ -253,6 +275,43 @@ else
         </div>
     }
 
+    @* ── Loaded-window count + Load more (QA-12 — the QA-11 idiom).
+       Reflects the loaded window the client-side filters operate on;
+       hides on a single-page user directory. *@
+    @if (_totalCount > 0 && _users.Count > 0)
+    {
+        <div class="m-list-meta">
+            <span class="m-list-count">
+                @Loc["ShowingCount",
+                    CultureFormat.FormatDigits(1),
+                    CultureFormat.FormatDigits(Math.Min(_users.Count, _totalCount)),
+                    CultureFormat.FormatDigits(_totalCount)]
+            </span>
+        </div>
+        @if (_users.Count < _totalCount)
+        {
+            <div class="m-load-more">
+                <button type="button"
+                        class="m-load-more-btn"
+                        disabled="@_isLoadingMore"
+                        @onclick="LoadMoreAsync">
+                    @if (_isLoadingMore)
+                    {
+                        <span class="m-export-spin" aria-hidden="true"></span>
+                        <span>@Loc["LoadingMore"]</span>
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75" />
+                        </svg>
+                        <span>@Loc["LoadMore"]</span>
+                    }
+                </button>
+            </div>
+        }
+    }
+
     <div class="m-footer">@Loc["Version"]</div>
 }
 
@@ -264,6 +323,18 @@ else
     private List<UserListItemDto> _users = new();
     private string _searchTerm = string.Empty;
     private string _statusFilter = "all"; // "all" | "active" | "inactive"
+
+    /// <summary>Append-pagination page size (the backend MaxPageSize cap).</summary>
+    private const int UsersPageSize = 100;
+
+    /// <summary>Total users server-side (drives the count line + Load-more).</summary>
+    private int _totalCount;
+
+    /// <summary>Current page of the loaded window (append pagination).</summary>
+    private int _pageNumber = 1;
+
+    /// <summary>True while a Load-more round-trip is in flight.</summary>
+    private bool _isLoadingMore;
 
     // Per-row busy guard — Guid of the user whose action is currently in flight.
     private Guid? _busyId;
@@ -333,22 +404,63 @@ else
         _loadError = null;
         try
         {
-            // Load up to 100 users (the backend handler's MaxPageSize cap —
-            // asking for more, as this page historically did with 500, is
-            // silently clamped). Filtering happens client-side via the
-            // search box + status tabs (same mobile-list pattern as
-            // MobileSales). The DESKTOP AdminUsers grid is fully
-            // server-driven as of Round 5 — adopting that pattern here is
-            // a future-round item (needs debounced search to keep the
-            // instant-filter UX).
+            // Load the first page of the loaded window (PageSize = the
+            // backend handler's MaxPageSize cap — asking for more, as this
+            // page historically did with 500, is silently clamped).
+            // Filtering happens client-side via the search box + status
+            // tabs; users beyond the cap arrive via LoadMoreAsync.
             var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
-                new GetUsersPaginatedQuery { PageNumber = 1, PageSize = 100 });
+                new GetUsersPaginatedQuery { PageNumber = 1, PageSize = UsersPageSize });
             _users = page.Items?.ToList() ?? new List<UserListItemDto>();
+            _totalCount = page.TotalCount;
+            _pageNumber = 1;
         }
         catch
         {
             _loadError = Loc["Error_FailedToLoad"];
         }
+    }
+
+    /// <summary>
+    /// "Load more" (QA-12): appends the NEXT page to the loaded window —
+    /// the append-style mobile pagination the shop + broadcasts pages use.
+    /// The query is name-ordered server-side, so appended rows are strictly
+    /// later in the same order. On failure the page counter rolls back so
+    /// the next tap retries the SAME page instead of silently skipping it.
+    /// </summary>
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoadingMore) return;
+        if (_users.Count >= _totalCount) return;
+
+        _isLoadingMore = true;
+        try
+        {
+            _pageNumber++;
+            var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(
+                new GetUsersPaginatedQuery { PageNumber = _pageNumber, PageSize = UsersPageSize });
+            _users.AddRange(page.Items ?? Enumerable.Empty<UserListItemDto>());
+            _totalCount = page.TotalCount; // keep fresh — users can be created meanwhile
+        }
+        catch
+        {
+            _pageNumber--; // failed append: retry must re-fetch THIS page
+        }
+        finally
+        {
+            _isLoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Resets the client-side search box + status tab (the
+    /// filtered-to-zero escape hatch). Pure view state — no reload needed
+    /// (<see cref="FilteredUsers"/> recomputes over the loaded window).
+    /// </summary>
+    private void ClearAllFilters()
+    {
+        _searchTerm = string.Empty;
+        _statusFilter = "all";
     }
 
     // ── Filtering (client-side) ──────────────────────────────────────────

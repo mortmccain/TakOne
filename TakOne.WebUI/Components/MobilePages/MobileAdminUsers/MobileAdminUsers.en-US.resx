@@ -58,4 +58,10 @@
   <data name="ActivateSuccessTitle" xml:space="preserve"><value>Activated</value></data>
   <data name="ActionError" xml:space="preserve"><value>Action failed.</value></data>
   <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+  <data name="ShowingCount" xml:space="preserve"><value>Showing {0}–{1} of {2}</value></data>
+  <data name="LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="LoadingMore" xml:space="preserve"><value>Loading…</value></data>
+  <data name="NoMatchesMessage" xml:space="preserve"><value>No users match your filters.</value></data>
+  <data name="NoMatchesMoreHint" xml:space="preserve"><value>More users may not be loaded yet — load more below.</value></data>
+  <data name="ClearFiltersButton" xml:space="preserve"><value>Clear filters</value></data>
 </root>

@@ -20,10 +20,10 @@
      Per-row _restockingId / _deactivatingId guards prevent
      double-clicks on the same row's action button.
 
-   FILTERS (client-side only — the backend returns the FIRST 100 rows
-   (name-ordered, the MaxPageSize cap), so filtering happens in the
-   browser over that slice; products past the first 100 are not visible
-   here — see the LoadAsync comment for the Round 6 desktop parity note):
+   FILTERS (client-side over the loaded window — the backend caps a
+   round-trip at 100 rows (name-ordered, the MaxPageSize cap), so
+   filtering happens in the browser over the loaded slice; deeper rows
+   arrive via Load-more (QA-12) and re-join the client-side filter):
      - Search box filters by Name (case-insensitive contains).
      - Status tabs: All / In stock / Out of stock (StockQuantity > 0
        = in stock; <= 0 = out of stock — matches desktop's filter
@@ -162,11 +162,26 @@ else
     @* ── 4. Product list ── *@
     @if (!FilteredProducts.Any())
     {
-        <div class="m-empty-cta">
-            <p>@Loc["EmptyMessage"]</p>
-            <button class="m-btn m-btn-primary"
-                    @onclick='(() => Navigation.NavigateTo("/m/Admin/Products/Create", forceLoad: false))'>
-                @Loc["CreateFirstProductButton"]
+        @* Filters matched zero rows while the product list is NOT empty
+           (the page-level empty CTA above only renders when the backend
+           returned zero products TOTAL). Different situation → different
+           message (the old EmptyMessage copy — "Create your first
+           product" + its CTA — was factually wrong here) + a one-tap
+           escape hatch. When products beyond the loaded window exist,
+           a hint points at Load-more. *@
+        <div class="m-empty">
+            <p>@Loc["NoMatchesMessage"]</p>
+            @if (_products.Count < _totalCount)
+            {
+                <p class="m-no-match-hint">@Loc["NoMatchesMoreHint"]</p>
+            }
+            <button type="button"
+                    class="m-clear-filters-btn"
+                    @onclick="ClearAllFilters">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="14" height="14" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>@Loc["ClearFiltersButton"]</span>
             </button>
         </div>
     }
@@ -298,6 +313,43 @@ else
         </div>
     }
 
+    @* ── 5. Loaded-window count + Load more (QA-12 — the QA-11 idiom).
+       Reflects the loaded window the client-side filters operate on;
+       hides on a single-page catalog. *@
+    @if (_totalCount > 0 && _products.Count > 0)
+    {
+        <div class="m-list-meta">
+            <span class="m-list-count">
+                @Loc["ShowingCount",
+                    CultureFormat.FormatDigits(1),
+                    CultureFormat.FormatDigits(Math.Min(_products.Count, _totalCount)),
+                    CultureFormat.FormatDigits(_totalCount)]
+            </span>
+        </div>
+        @if (_products.Count < _totalCount)
+        {
+            <div class="m-load-more">
+                <button type="button"
+                        class="m-load-more-btn"
+                        disabled="@_isLoadingMore"
+                        @onclick="LoadMoreAsync">
+                    @if (_isLoadingMore)
+                    {
+                        <span class="m-export-spin" aria-hidden="true"></span>
+                        <span>@Loc["LoadingMore"]</span>
+                    }
+                    else
+                    {
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75" />
+                        </svg>
+                        <span>@Loc["LoadMore"]</span>
+                    }
+                </button>
+            </div>
+        }
+    }
+
     @* ── 6. Footer ── *@
     <div class="m-footer">@Loc["Version"]</div>
 }
@@ -309,6 +361,18 @@ else
     private string _stockFilter = "all";   // "all" | "in" | "out"
     private bool _isLoading = true;
     private string? _loadError;
+
+    /// <summary>Append-pagination page size (the backend MaxPageSize cap).</summary>
+    private const int ProductsPageSize = 100;
+
+    /// <summary>Total products server-side (drives the count line + Load-more).</summary>
+    private int _totalCount;
+
+    /// <summary>Current page of the loaded window (append pagination).</summary>
+    private int _pageNumber = 1;
+
+    /// <summary>True while a Load-more round-trip is in flight.</summary>
+    private bool _isLoadingMore;
 
     // Per-row in-flight guards. Null when no action is pending. Used to
     // disable the clicked row's action button (prevents double-clicks) and
@@ -345,20 +409,15 @@ else
 
         try
         {
-            // Load up to 100 products (the backend handler's MaxPageSize
-            // cap — asking for more is silently clamped). Filtering
-            // happens client-side via the search box + status tabs (same
-            // mobile-list pattern as MobileAdminUsers/MobileSales), which
-            // means products past the first 100 (name-ordered) are
-            // INVISIBLE here. The DESKTOP AdminProducts grid is fully
-            // server-driven as of Round 6 (Radzen LoadData — every filter
-            // and sort runs in SQL with exact paging); adopting that
-            // pattern on mobile is a future-round item (needs debounced
-            // search to keep the instant-filter UX).
+            // Load the first page of the loaded window (PageSize = the
+            // backend handler's MaxPageSize cap — asking for more is
+            // silently clamped). Filtering happens client-side via the
+            // search box + stock tabs; products beyond the cap arrive
+            // via LoadMoreAsync.
             var query = new GetProductsPaginatedQuery
             {
                 PageNumber = 1,
-                PageSize = 100,
+                PageSize = ProductsPageSize,
                 SearchTerm = null,
                 CategoryId = null,
                 IncludeInactive = true
@@ -366,6 +425,8 @@ else
 
             var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
             _products = result.Items.ToList();
+            _totalCount = result.TotalCount;
+            _pageNumber = 1;
         }
         catch
         {
@@ -376,6 +437,55 @@ else
             _isLoading = false;
             StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// "Load more" (QA-12): appends the NEXT page to the loaded window —
+    /// the append-style mobile pagination the shop + broadcasts pages use.
+    /// The query is name-ordered server-side, so appended rows are strictly
+    /// later in the same order. On failure the page counter rolls back so
+    /// the next tap retries the SAME page instead of silently skipping it.
+    /// </summary>
+    private async Task LoadMoreAsync()
+    {
+        if (_isLoadingMore) return;
+        if (_products.Count >= _totalCount) return;
+
+        _isLoadingMore = true;
+        try
+        {
+            _pageNumber++;
+            var query = new GetProductsPaginatedQuery
+            {
+                PageNumber = _pageNumber,
+                PageSize = ProductsPageSize,
+                SearchTerm = null,
+                CategoryId = null,
+                IncludeInactive = true
+            };
+            var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
+            _products.AddRange(result.Items);
+            _totalCount = result.TotalCount; // keep fresh — products change meanwhile
+        }
+        catch
+        {
+            _pageNumber--; // failed append: retry must re-fetch THIS page
+        }
+        finally
+        {
+            _isLoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Resets the client-side search box + stock tab (the
+    /// filtered-to-zero escape hatch). Pure view state — no reload needed
+    /// (<see cref="FilteredProducts"/> recomputes over the loaded window).
+    /// </summary>
+    private void ClearAllFilters()
+    {
+        _searchTerm = string.Empty;
+        _stockFilter = "all";
     }
 
     // ── Client-side filtering ──────────────────────────────────────────
