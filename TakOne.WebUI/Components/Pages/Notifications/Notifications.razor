@@ -449,21 +449,43 @@
 
     private async Task HandleTapAsync(NotificationDto n)
     {
+        // Mark-as-read is dispatched AWAITED, inside the circuit's event
+        // dispatch — deliberately NOT fire-and-forget (Task.Run).
+        //
+        // PRODUCTION INCIDENT (why): tapping an AppUpdate notification used
+        // to fire the command from `_ = Task.Run(...)` and then immediately
+        // NavigateTo(forceLoad: true). The force-load tears the Blazor
+        // circuit down while the background dispatch is still in flight.
+        // Wolverine executes inline handlers against a child DI scope built
+        // off the ROOT provider, so the handler's ICurrentUserService can
+        // only see the user through the AMBIENT ExecutionContext (the
+        // /_blazor hub request's HttpContext). When the teardown wins the
+        // race, that ambient state is gone: the child scope's fresh
+        // AuthenticationStateProvider throws ("Do not call
+        // GetAuthenticationStateAsync outside of the DI scope for a Razor
+        // component"), BlazorCurrentUserService degrades to anonymous, and
+        // the fail-closed AuthorizationMiddleware rejects the command with
+        // "Authentication required" — for a logged-in user
+        // (MarkNotificationAsReadCommand in the logs).
+        //
+        // Awaiting here keeps the dispatch inside the hub invocation's
+        // ExecutionContext — the exact same path every other command on
+        // this page already uses (MarkAllReadAsync, LoadAsync, …), which is
+        // proven to work in production. The command is an idempotent,
+        // single-row update, so the tap-to-navigate latency is
+        // imperceptible.
         if (n.IsUnread)
         {
-            _ = Task.Run(async () =>
+            try
             {
-                try
-                {
-                    await MessageBus.InvokeAsync<Result>(
-                        new MarkNotificationAsReadCommand(n.Id));
-                    await InvokeAsync(LoadAsync);
-                }
-                catch
-                {
-                    // Silent — best-effort read-state.
-                }
-            });
+                await MessageBus.InvokeAsync<Result>(
+                    new MarkNotificationAsReadCommand(n.Id));
+            }
+            catch
+            {
+                // Silent — the read-state is best-effort; the navigation
+                // below proceeds regardless.
+            }
         }
 
         if (n.SaleId.HasValue)
@@ -480,10 +502,14 @@
             // not forced on them.
             Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
         }
-        // For Broadcast (admin-authored): no navigation — the title +
-        // message are already displayed in the notification card. The
-        // tap just dismisses (marks as read). Future enhancement could
-        // link to a "broadcast detail" page via n.BroadcastId.
+        else
+        {
+            // Broadcast (admin-authored): no navigation — the title +
+            // message are already displayed in the notification card. The
+            // tap just dismisses (marks as read), so refresh the list so
+            // the unread dot and the bell badge update.
+            await LoadAsync();
+        }
     }
 
     /// <summary>
