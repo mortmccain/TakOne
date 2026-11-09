@@ -46,14 +46,14 @@
     var TAK_THEMES = {
         'tak-light': {
             base: 'standard',                                  // Radzen light theme
-            override: '/css/Themes/tak-light.css?v=12'         // Tak Light palette + utilities
+            override: '/css/Themes/tak-light.css?v=13'         // Tak Light palette + utilities
             // ?v=11 cache-bust: path corrected from /css/themes/ to /css/Themes/
             //                  (case mismatch with on-disk directory was 404'ing
             //                  the file on Linux / case-sensitive macOS).
         },
         'tak-dark': {
             base: 'standard-dark',                             // Radzen dark theme
-            override: '/css/Themes/tak-dark.css?v=4'           // Tak Dark palette + utilities
+            override: '/css/Themes/tak-dark.css?v=5'           // Tak Dark palette + utilities
             // ?v=3 cache-bust: path corrected from /css/themes/ to /css/Themes/
         }
     };

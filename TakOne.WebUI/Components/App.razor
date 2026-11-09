@@ -27,7 +27,7 @@
        tokens everywhere resolve to the local files. Serves the app's own
        origin: works on air-gapped intranets, no third-party CDN requests,
        no DNS/TLS handshake tax on first paint. See /css/fonts.css. *@
-    <link rel="stylesheet" href="css/fonts.css?v=1" />
+    <link rel="stylesheet" href="css/fonts.css?v=2" />
     @* BUGFIX (Issue #08 — UI): href was "app.css" (missing "css/" prefix).
        The actual file lives at wwwroot/css/app.css. Without the prefix,
        the browser requests /app.css → 404 → global styles (KPI card
@@ -36,18 +36,22 @@
        why this went unnoticed — the page renders, just without the
        global overrides. CSS files in wwwroot subdirectories MUST
        include the subdirectory in the href. *@
-    <link rel="stylesheet" href="css/app.css?v=6" />
-    <link rel="stylesheet" href="css/sidebar.css?v=1" />
-    @* ?v=13 — bump cache-busting query string after adding the
-       .tm-active-filters / .tm-filter-chip rules (search & category
-       clear chips on the Products page). Without this bump, browsers
-       keep serving the previously-cached Products.css?v=12 (which predates
-       the chip rules), so the chips render as plain unstyled rectangles
-       with vertically-stacked icon/text/X instead of a horizontal pill. *@
-    <link rel="stylesheet" href="css/Pages/Products.css?v=4" />
-    <link rel="stylesheet" href="css/Pages/Dashboard.css?v=2" />
-    <link rel="stylesheet" href="css/Pages/CartBudgetBar.css?v=1" />
-    <link rel="stylesheet" href="TakOne.WebUI.styles.css?v=3" />
+    <link rel="stylesheet" href="css/app.css?v=7" />
+    <link rel="stylesheet" href="css/sidebar.css?v=2" />
+    @* CACHE-BUST RULE (learned the hard way — TWICE): every time ANY
+       file referenced with ?v= below changes, its ?v= MUST be bumped in
+       the SAME commit. Browsers cache by full URL; an unchanged ?v= means
+       clients keep serving the OLD file indefinitely. Incidents: the
+       filter-chip incident (?v=12 era) and the QA-19 incident — Products.css
+       gained the out-of-stock chip + CSV export button rules (dd0bc77,
+       afa9277) WITHOUT a bump, so browsers holding the e11dbd4-era v=4
+       rendered both NEW buttons as unstyled native gray rectangles on the
+       shop page. v=5 (this bump) flushes every client. Same rule applies to
+       the js/ files and the theme overrides in js/theme.js. *@
+    <link rel="stylesheet" href="css/Pages/Products.css?v=5" />
+    <link rel="stylesheet" href="css/Pages/Dashboard.css?v=3" />
+    <link rel="stylesheet" href="css/Pages/CartBudgetBar.css?v=2" />
+    <link rel="stylesheet" href="TakOne.WebUI.styles.css?v=4" />
     @* LAUNCH-D10: use the SQUARE favicon.png (1759x1759, padded from the
        portrait TakLogo.png 1475x1759 with transparent sides) so browsers
        don't stretch the logo horizontally into a square (which made it
@@ -60,9 +64,9 @@
        <link> is injected by Blazor's HeadOutlet AFTER hydration — so this
        script uses a MutationObserver to detect when the link appears, then
        swaps its href to the saved theme (and layers the tak-light or
-       tak-dark override on top if needed). The ?v=12 cache-bust forces the
+       tak-dark override on top if needed). The ?v=2 cache-bust forces the
        browser to fetch the latest theme.js (now includes tak-dark registry). *@
-    <script src="js/theme.js?v=1"></script>
+    <script src="js/theme.js?v=2"></script>
 
     @* SignalR client — VENDORED locally (Issue #07).
        Previously loaded from cdnjs with no integrity attribute. Two problems:
@@ -124,7 +128,7 @@
     @* Hub bridge — depends on the `signalR` global exposed by the script
        above. Loaded after signalr.min.js so the global is available when
        notificationHub.js's IIFE runs. *@
-    <script src="js/notificationHub.js?v=1"></script>
+    <script src="js/notificationHub.js?v=2"></script>
 
     @* Shop page (Products) — Ctrl+F focuses the search bar (replaces the
         HTML's Ctrl+K binding). Registered globally; the listener only
@@ -141,7 +145,7 @@
         no `clearSearch` member on `window.tmShopPage`, so the new .razor
         call site would throw `JSCallException: 'tmShopPage.clearSearch'
         not found`. *@
-    <script src="js/products.js?v=1"></script>
+    <script src="js/products.js?v=2"></script>
 
     @* Culture cookie helper — Round 18-D / Brutal Code Review v3 finding
         #24, part 1. Replaces 3 `JS.InvokeVoidAsync("eval",
@@ -153,7 +157,7 @@
         passes ONLY a short culture string like "fa-IR"/"en-US", never a
         full cookie string that could be malformed/attacker-controlled).
         See the file's header comment for the full rationale. *@
-    <script src="js/culture.js?v=1"></script>
+    <script src="js/culture.js?v=2"></script>
 
     @* Mobile CSS — global styles for mobile pages + layout. Loaded on
        every page so the mobile CSS is available when the mobile redirect
@@ -205,14 +209,14 @@
        .m-page-subtitle--pad).
        Without this bump browsers keep serving the old v6 mobile.css and the
        Round 12 broadcast-compose + audit-list classes render unstyled. *@
-    <link rel="stylesheet" href="css/mobile.css?v=2" />
+    <link rel="stylesheet" href="css/mobile.css?v=3" />
 
     @* Mobile device detection + redirect logic + pull-to-refresh — v4
        (Round 8): added /Admin/Products/Create, /Admin/Users/Create,
        /Admin/Groups/Create → mobile equivalent so admins tapping Create
        buttons on the mobile list pages stay on mobile. Round 7 added
        detail-route redirects + the pull-to-refresh touch listener. *@
-    <script src="js/mobile.js?v=1"></script>
+    <script src="js/mobile.js?v=2"></script>
 
     @* Chart.js — VENDORED locally (same pattern as SignalR).
        Used by the redesigned Dashboard page (Dashboard.razor) for the
@@ -241,7 +245,7 @@
        future razor change forgets `.Value` again. Without this cache-bust
        the browser would keep serving the old v5 JS which has no asStr()
        safety net. *@
-    <script src="js/dashboard.js?v=1"></script>
+    <script src="js/dashboard.js?v=2"></script>
 
     @* Admin Categories page — measures node positions in the horizontal
         category tree and returns SVG bezier path data for the connector
@@ -254,14 +258,14 @@
         List views. Without this cache-bust the browser would keep
         serving the old v5 JS which leaks a MutationObserver on
         document.documentElement every time the user switches views. *@
-    <script src="js/adminCategoriesTree.js?v=1"></script>
+    <script src="js/adminCategoriesTree.js?v=2"></script>
 
     @* Download helper (Round 3 CSV exports): Blob + object-URL + synthetic
         click persistence for files built in .NET (Blazor Server circuits
         have no HttpResponse to stream through). takDownload.csv prepends
         the UTF-8 BOM so Excel opens Persian text correctly. See
         wwwroot/js/download.js. *@
-    <script src="js/download.js?v=1"></script>
+    <script src="js/download.js?v=2"></script>
 
     <HeadOutlet @rendermode="@RenderModeForPage" />
 </head>
