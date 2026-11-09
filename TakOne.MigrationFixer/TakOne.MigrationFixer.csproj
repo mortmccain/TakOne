@@ -15,8 +15,39 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Same SqlClient version the main app uses — shared framework provides the rest. -->
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
+    <!-- Same SqlClient version the main app uses — shared framework provides the rest.
+         (Was 6.0.1 — drifted from Infrastructure's 6.1.7; realigned.) -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.7" />
+
+    <!--
+      Direct, explicit override of SqlClient's TRANSITIVE dependency
+      System.Security.Cryptography.Pkcs.
+
+      WHY: SqlClient 6.x references the Pkcs 9.x line (9.0.0 from 6.0.1,
+      9.0.11 from 6.1.7) — and the ENTIRE 9.x line carries known
+      advisories (GHSA-2fmv-rv2c-59x7 moderate + GHSA-846f-f764-76mx
+      high), never to be patched: .NET 9 is EOL. NuGet's audit
+      (elevated to error by the repo-wide TreatWarningsAsErrors policy)
+      therefore fails this project's restore with NU1902/NU1903 —
+      which broke the Docker image build (the Dockerfile publishes this
+      project separately; it is NOT part of TakOne.slnx, so solution
+      builds never surfaced it).
+
+      The MAIN APP does not hit this only because its larger graph
+      (WolverineFx.SqlServer / Weasel.SqlServer → Pkcs 10.0.13) floats
+      the version up. This project has no such float, so the fix is the
+      documented NuGet remedy for vulnerable transitive packages: a
+      DIRECT reference to the patched version. Direct references win
+      over transitive ones, resolving the graph to 10.0.14 — the same
+      10.0.14 line the rest of the repo (EF Core / ASP.NET / Extensions)
+      standardizes on.
+
+      KEEP THIS PIN when bumping SqlClient: only remove it if SqlClient
+      itself starts referencing a patched (10.x) Pkcs, or if a
+      dedicated override mechanism replaces it. Re-check on every
+      SqlClient bump.
+    -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
 
 </Project>
