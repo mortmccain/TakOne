@@ -220,6 +220,35 @@ public static class ServiceCollectionExtensions
         // ------------------------------------------------------------------
         // 3. ASP.NET Core Identity.
         //
+        //    LOCKOUT RESET-ON-SUCCESS (QA-18, owner-approved policy):
+        //    Before any Identity registration, enable the .NET 10 AppContext
+        //    switch that makes SignInManager.CheckPasswordSignInCoreAsync
+        //    reset the failed-attempt counter after EVERY successful
+        //    password sign-in (verified against the 10.0 reference source:
+        //    decompiled the shared-framework Microsoft.AspNetCore.Identity
+        //    assembly — the switch is read at CheckPasswordSignInCoreAsync).
+        //    Without the switch, the reset is SKIPPED for users with
+        //    two-factor enabled whose client is not remembered — meaning
+        //    any future 2FA/passkey adoption would silently reintroduce
+        //    cross-day failure accumulation: 4 typos Monday + 3 Friday +
+        //    more next week = a surprise lockout "for no reason". The
+        //    workforce skews elderly; that failure mode is unacceptable,
+        //    and it is the required companion of the owner-approved
+        //    MaxFailedAccessAttempts=50 policy (Production).
+        //
+        //    WHY AppContext AND NOT CONFIG: .NET 10 has NO LockoutOptions
+        //    property for this (a "ResetLockoutOnSuccess" appsettings key
+        //    would be a silently-ignored dead key — the exact class of lie
+        //    the Brutal Code Review v3 fail-fast philosophy exists to
+        //    prevent). AppContext.SetSwitch is process-global and runs at
+        //    composition time — before any sign-in can read the switch.
+        //    TakOneIdentityOptionsValidator fails fast at startup if a
+        //    host ever wires Identity without it.
+        // ------------------------------------------------------------------
+        AppContext.SetSwitch(
+            "Microsoft.AspNetCore.Identity.CheckPasswordSignInAlwaysResetLockoutOnSuccess",
+            true);
+
         //    AddIdentity<ApplicationUser, IdentityRole<Guid>>() registers:
         //      - UserManager<ApplicationUser>
         //      - RoleManager<IdentityRole<Guid>>
@@ -290,7 +319,9 @@ public static class ServiceCollectionExtensions
         // <IdentityOptions>. ASP.NET Core runs all registered
         // IValidateOptions<T> the first time the IOptions<IdentityOptions>
         // value is resolved. If the bound values do not meet our security
-        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10), startup
+        // policy (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 50, and
+        // the CheckPasswordSignInAlwaysResetLockoutOnSuccess AppContext
+        // switch enabled above), startup
         // throws OptionsValidationException BEFORE traffic is served.
         //
         // This is the fail-fast safety net for the structural config-binding

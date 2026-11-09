@@ -21,7 +21,8 @@ namespace TakOne.Infrastructure.Identity;
 ///
 ///   This validator makes a re-introduction of the binding bug LOUD:
 ///   if the bound <c>IdentityOptions</c> do not meet our security policy
-///   (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 10), startup throws
+///   (RequiredLength ≥ 8, MaxFailedAccessAttempts ≤ 50,
+///   ResetLockoutOnSuccess switch enabled), startup throws
 ///   <see cref="OptionsValidationException"/> BEFORE the app starts
 ///   serving traffic. The key insight: if the config-binding path is
 ///   wrong, ASP.NET Identity DEFAULTS take over (RequiredLength=6),
@@ -34,11 +35,43 @@ namespace TakOne.Infrastructure.Identity;
 ///   - <c>Password.RequireUppercase</c> = true
 ///   - <c>Password.RequireLowercase</c> = true
 ///   - <c>Password.RequireDigit</c> = true
-///   - <c>Lockout.MaxFailedAccessAttempts</c> ≤ 10 (Identity default is 5 —
-///     safe; our old broken config had 50, which is effectively unlimited
-///     brute-force)
+///   - <c>Lockout.MaxFailedAccessAttempts</c> ≤ 50 (owner-approved
+///     maximum — see the LOCKOUT POLICY note below; anything higher is a
+///     fat-finger value or a re-introduced broken config)
+///   - The <c>Microsoft.AspNetCore.Identity.CheckPasswordSignInAlwaysResetLockoutOnSuccess</c>
+///     AppContext switch must be ENABLED (set by <c>AddTakOneInfrastructure</c>)
+///     — the structural mitigation that makes a 50-attempt threshold safe
 ///   - <c>Lockout.AllowedForNewUsers</c> = true (lockout must apply during
 ///     the initial login attempts, not just after the first success)
+///
+/// LOCKOUT POLICY (owner decision, QA-18):
+///   History: the Brutal Code Review v3 (Sep 19) capped attempts at 10;
+///   the owner's Sep 23 Production override of 50 then crashed the first
+///   Production deploy against that fail-fast ceiling (d185956 lowered
+///   the override to 10 to unblock the deploy). The owner has now
+///   CONSCIOUSLY selected 50 for Production: the workforce skews elderly
+///   and tighter thresholds locked out legitimate users. Two conditions
+///   make that acceptable, and BOTH are enforced here:
+///     1. MaxFailedAccessAttempts ≤ 50 — the ceiling still catches
+///        misconfigurations (a stray 500) and re-introduced broken
+///        configs; 50 is the signed-off maximum, not a slippery slope.
+///     2. Lockout counters reset on every successful login. In .NET 10
+///        this is the AppContext switch
+///        <c>Microsoft.AspNetCore.Identity.CheckPasswordSignInAlwaysResetLockoutOnSuccess</c>
+///        (verified against the 10.0 reference source: without it,
+///        <c>SignInManager.CheckPasswordSignInCoreAsync</c> SKIPS the
+///        reset for users with two-factor enabled whose client is not
+///        remembered — so any future 2FA/passkey adoption would silently
+///        reintroduce cross-day failure accumulation). NOTE: this is NOT
+///        a <c>LockoutOptions</c> property — there is no config key for
+///        it; <c>AddTakOneInfrastructure</c> sets the switch at composition
+///        time and this validator fails fast if a host ever wires
+///        Identity without it.
+///   With reset-on-success, a lockout requires 50 CONSECUTIVE failures —
+///   attacker behavior, not typo behavior. The residual brute-force cost
+///   of 50 attempts per 15-minute window is a deliberate owner-accepted
+///   trade-off; revisit this policy only with the owner, not by editing
+///   config alone.
 ///
 /// EMAIL POLICY (UPDATED):
 ///   We intentionally allow <c>User.RequireUniqueEmail = false</c>. The
@@ -124,16 +157,46 @@ internal sealed class TakOneIdentityOptionsValidator : IValidateOptions<Identity
         }
 
         // ── Lockout policy ──
-        // ASP.NET Identity default is MaxFailedAccessAttempts=5 (safe).
-        // Our broken config had 50 (unsafe). We cap at 10 to catch a
-        // re-introduction of the unsafe value — whether from a broken
-        // binding OR an operator misconfiguration.
-        if (options.Lockout.MaxFailedAccessAttempts > 10)
+        // ASP.NET Identity default is MaxFailedAccessAttempts=5. The
+        // owner has consciously selected 50 for Production (elderly
+        // workforce — see the class-level LOCKOUT POLICY note). The
+        // ceiling therefore sits at the owner-approved 50: anything
+        // higher is a fat-finger value or a re-introduced broken config
+        // and fails LOUDLY here at startup.
+        if (options.Lockout.MaxFailedAccessAttempts > 50)
         {
             failures.Add(
-                "TakOne:Identity:Lockout:MaxFailedAccessAttempts must be ≤ 10 " +
-                $"(industry standard). Bound value: {options.Lockout.MaxFailedAccessAttempts}. " +
-                "Higher values allow effectively unlimited brute-force attempts.");
+                "TakOne:Identity:Lockout:MaxFailedAccessAttempts must be ≤ 50 " +
+                $"(owner-approved maximum — see TakOneIdentityOptionsValidator's LOCKOUT POLICY note). " +
+                $"Bound value: {options.Lockout.MaxFailedAccessAttempts}.");
+        }
+
+        // ResetLockoutOnSuccess is the structural mitigation that makes a
+        // 50-attempt threshold acceptable. In .NET 10 it is NOT a
+        // LockoutOptions property — it is the AppContext switch
+        // "Microsoft.AspNetCore.Identity.CheckPasswordSignInAlwaysResetLockoutOnSuccess"
+        // (verified against the 10.0 reference source: SignInManager.
+        // CheckPasswordSignInCoreAsync resets the failed-attempt counter
+        // after a successful password check only when the switch is
+        // enabled — without it, users with two-factor enabled whose
+        // client is not remembered keep accumulating failures ACROSS
+        // DAYS). AddTakOneInfrastructure sets the switch at composition
+        // time; this check fails fast if a host ever wires Identity
+        // without it, so the pairing "50 attempts ⇒ reset-on-success"
+        // cannot be silently broken.
+        if (!AppContext.TryGetSwitch(
+                "Microsoft.AspNetCore.Identity.CheckPasswordSignInAlwaysResetLockoutOnSuccess",
+                out var resetLockoutOnSuccessEnabled)
+            || !resetLockoutOnSuccessEnabled)
+        {
+            failures.Add(
+                "The AppContext switch 'Microsoft.AspNetCore.Identity." +
+                "CheckPasswordSignInAlwaysResetLockoutOnSuccess' must be enabled " +
+                "(AddTakOneInfrastructure sets it at composition time) — lockout " +
+                "counters must reset on every successful login. Without it, " +
+                "non-consecutive failures accumulate across days and lock out " +
+                "legitimate users; it is the required companion of the " +
+                "owner-approved MaxFailedAccessAttempts=50 policy.");
         }
 
         if (!options.Lockout.AllowedForNewUsers)

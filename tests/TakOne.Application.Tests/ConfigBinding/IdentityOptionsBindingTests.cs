@@ -44,7 +44,7 @@ namespace TakOne.Application.Tests.ConfigBinding;
 ///     — uses the SAME JSON structure as the real <c>appsettings.Production.json</c>
 ///     (Identity is a sibling of Database under TakOne). Asserts the
 ///     operator-configured values bind: RequiredLength=8 (NOT the
-///     ASP.NET default of 6), MaxFailedAccessAttempts=5,
+///     ASP.NET default of 6), MaxFailedAccessAttempts=50,
 ///     RequireUniqueEmail=false (TakOne authenticates via WorkerId,
 ///     not email), RequireDigit=true, RequireUppercase=true.
 ///     The KEY assertion is <c>RequiredLength == 8</c> — if the JSON
@@ -89,8 +89,12 @@ public class IdentityOptionsBindingTests
     // Mirrors the structure of TakOne.WebUI/appsettings.Production.json
     // — Identity is a SIBLING of Database under TakOne. The binding
     // code reads `TakOne:Identity:Password:RequiredLength`, which IS
-    // present in this JSON. (Operator-configured values: RequiredLength=8,
-    // RequireUniqueEmail=false, MaxFailedAccessAttempts=5.)
+    // present in this JSON. (Operator-configured values since QA-18:
+    // RequiredLength=8, RequireUniqueEmail=false,
+    // MaxFailedAccessAttempts=50 — the owner-approved elderly-workforce
+    // policy. Its reset-on-success companion is the .NET 10 AppContext
+    // switch wired in AddTakOneInfrastructure, NOT a config key — there
+    // is no LockoutOptions property for it.)
     //
     // IMPORTANT: this is the SAME JSON structure that ships in
     // production (TakOne.WebUI/appsettings.Production.json after the
@@ -113,7 +117,7 @@ public class IdentityOptionsBindingTests
               },
               "Lockout": {
                 "DefaultLockoutTimeSpan": "00:05:00",
-                "MaxFailedAccessAttempts": 5,
+                "MaxFailedAccessAttempts": 50,
                 "AllowedForNewUsers": true
               },
               "User": {
@@ -152,7 +156,7 @@ public class IdentityOptionsBindingTests
                 },
                 "Lockout": {
                   "DefaultLockoutTimeSpan": "00:05:00",
-                  "MaxFailedAccessAttempts": 5,
+                  "MaxFailedAccessAttempts": 50,
                   "AllowedForNewUsers": true
                 },
                 "User": {
@@ -206,7 +210,8 @@ public class IdentityOptionsBindingTests
     // of Database) is the correct one. The bound IdentityOptions must
     // reflect the operator-configured values:
     //   - RequiredLength == 8  (the CRITICAL assertion — ASP.NET default is 6)
-    //   - MaxFailedAccessAttempts == 5  (the lockout threshold)
+    //   - MaxFailedAccessAttempts == 50  (the owner-approved lockout
+    //     threshold — also discriminative: the ASP.NET default is 5)
     //   - RequireUniqueEmail == false  (TakOne authenticates via WorkerId, not email)
     //   - RequireDigit == true
     //   - RequireUppercase == true
@@ -241,8 +246,10 @@ public class IdentityOptionsBindingTests
             "the JSON path `TakOne:Identity:Password:RequiredLength` is the OPERATOR-configured value (8) — NOT the ASP.NET default of 6 (which would indicate the binding path is wrong)");
 
         // ── Secondary assertions on the lockout + user policy ──
-        options.Lockout.MaxFailedAccessAttempts.Should().Be(5,
-            "TakOne:Identity:Lockout:MaxFailedAccessAttempts binds to the operator-configured 5");
+        options.Lockout.MaxFailedAccessAttempts.Should().Be(50,
+            "TakOne:Identity:Lockout:MaxFailedAccessAttempts binds to the operator-configured 50 " +
+            "(owner-approved elderly-workforce policy, QA-18) — NOT the ASP.NET default of 5 " +
+            "(which would indicate the binding path is wrong)");
         options.User.RequireUniqueEmail.Should().BeFalse(
             "TakOne:Identity:User:RequireUniqueEmail binds to the operator-configured false — TakOne authenticates via WorkerId (UserName), not email, so unique-email enforcement is intentionally disabled to allow null/empty emails on create-user flows.");
 
@@ -264,6 +271,9 @@ public class IdentityOptionsBindingTests
     //   - The default RequiredLength IS 6 (not the operator's 8) —
     //     confirming that with a WRONG JSON path, the operator's value
     //     doesn't bind.
+    //   - The default MaxFailedAccessAttempts IS 5 (not the operator's
+    //     50) — a DISCRIMINATIVE lockout assertion: config-50 at the
+    //     wrong path never binds, so the default survives.
     //   - The default RequireUniqueEmail IS false (which now matches the
     //     operator's value, so this is not a discriminative assertion
     //     anymore — but it's retained for documentation).
@@ -287,12 +297,16 @@ public class IdentityOptionsBindingTests
         // Assert
         // The defaults from ASP.NET Identity's constructor:
         //   - Password.RequiredLength default = 6  (we configured 8 — proves the path is wrong)
-        //   - Lockout.MaxFailedAccessAttempts default = 5  (matches by coincidence — our config also uses 5)
+        //   - Lockout.MaxFailedAccessAttempts default = 5  (we configured 50 — proves the path is wrong)
         //   - User.RequireUniqueEmail default = false  (matches our config — not a discriminative assertion)
         options.Password.RequiredLength.Should().Be(6,
             "with Identity nested under TakOne.Database (the original 3-cycles-missed-the-bug layout), " +
             "the `TakOne:Identity:Password:RequiredLength` binding path doesn't exist — the Bind() call is a no-op " +
             "and the IdentityOptions instance keeps its ASP.NET default of 6 (NOT the operator-configured 8)");
+
+        options.Lockout.MaxFailedAccessAttempts.Should().Be(5,
+            "same cause — the config sets 50 but at the WRONG path (TakOne:Database:Identity:Lockout), " +
+            "so the Bind() no-op leaves the ASP.NET default of 5 in place (NOT the operator-configured 50)");
 
         options.User.RequireUniqueEmail.Should().BeFalse(
             "same cause — the binding code reads `TakOne:Identity:User:RequireUniqueEmail` which doesn't exist in this JSON. " +
