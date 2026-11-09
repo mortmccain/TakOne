@@ -52,10 +52,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentAssertions" Version="6.12.2" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="FluentAssertions" Version="8.11.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
 
     <!--
       Bring in Microsoft.Extensions.Logging.Abstractions so the test source
@@ -65,7 +68,7 @@
       Without this reference the test-source compilation would fail with
       CS0103 ("ILogger not found").
     -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
 
     <!--
       Roslyn 4.11.0 — same version the analyzer project uses. The test
@@ -76,7 +79,7 @@
       unambiguous (and survives any future change to the analyzer
       project's dependency footprint).
     -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
   </ItemGroup>
 
   <ItemGroup>

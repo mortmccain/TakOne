@@ -19,7 +19,7 @@
       bundles it transitively, but transitive dependencies aren't surfaced to IntelliSense /
       the compiler in all setups — so `using FluentValidation;` fails without this entry.
     -->
-                <PackageReference Include="FluentValidation" Version="12.1.1" />
+                <PackageReference Include="FluentValidation" Version="12.2.0" />
 
 
 
@@ -42,7 +42,7 @@
       The Infrastructure layer additionally pulls in `Ardalis.Specification.EntityFrameworkCore`
       for the SpecificationEvaluator that runs against EF CoreDbSets.
     -->
-                <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+                <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
 
 
 
@@ -54,13 +54,13 @@
       We use the .Abstractions variants (no implementation) because we
       don't build a ServiceProvider here — we only configure one.
                 -->
-                <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
-                <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
-                <PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.12" />
-                <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+                <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+                <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+                <PackageReference Include="Microsoft.Extensions.Localization.Abstractions" Version="10.0.14" />
+                <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
 
 
-                <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+                <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
 
                 
                 
@@ -83,7 +83,7 @@
 
       Version pinning matches Wolverine's major release line.
     -->
-                <PackageReference Include="WolverineFx" Version="6.39.1" />
+                <PackageReference Include="WolverineFx" Version="6.63.0" />
 
 
                 
@@ -92,7 +92,7 @@
       command pipeline so any AbstractValidator<TCommand> runs automatically before
       the handler. Version must match the WolverineFx version above.
     -->
-                <PackageReference Include="WolverineFx.FluentValidation" Version="6.39.1" />
+                <PackageReference Include="WolverineFx.FluentValidation" Version="6.63.0" />
 
 
         </ItemGroup>

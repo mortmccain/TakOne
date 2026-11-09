@@ -52,7 +52,7 @@
       Blazor template.
     -->
 
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
@@ -72,9 +72,9 @@
       Version must match the EF Core / ASP.NET Core stack used elsewhere
       (10.0.12).
     -->
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.14" />
 
-    <PackageReference Include="Radzen.Blazor" Version="11.4.1" />
+    <PackageReference Include="Radzen.Blazor" Version="12.2.0" />
           
   </ItemGroup>
         
@@ -100,9 +100,7 @@
       Brutal Code Review v3 finding #02: the analyzer was documented
       as a "CI-level backstop" in 5 files but never actually ran.
     -->
-    <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\TakOne.Analyzers\TakOne.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\TakOne.Application\TakOne.Application.csproj" />
     <ProjectReference Include="..\TakOne.Infrastructure\TakOne.Infrastructure.csproj" />
     <ProjectReference Include="..\TakOne.SharedKernel\TakOne.SharedKernel.csproj" />
