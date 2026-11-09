@@ -60,7 +60,7 @@ internal static class MobileSalesPageTestHarness
     /// <param name="pageProvider">Answers each sales query with the
     /// payload for ITS page number — lets append-pagination tests hand
     /// out distinct payloads per page.</param>
-    internal static (TestContext ctx, List<GetSalesPaginatedQuery> dispatched, BunitJSInterop js) Setup(
+    internal static (BunitContext ctx, List<GetSalesPaginatedQuery> dispatched, BunitJSInterop js) Setup(
         string[] roles,
         int totalCount,
         Func<GetSalesPaginatedQuery, List<SaleListItemDto>>? pageProvider = null)
@@ -182,16 +182,16 @@ public class MobileSalesParityTests
     // The mobile page's loaded-window page size (mirrors the page const).
     private const int SalesPageSize = 100;
 
-    private static (TestContext ctx, List<GetSalesPaginatedQuery> dispatched, BunitJSInterop js) Setup(
+    private static (BunitContext ctx, List<GetSalesPaginatedQuery> dispatched, BunitJSInterop js) Setup(
         string[] roles,
         int totalCount,
         Func<GetSalesPaginatedQuery, List<SaleListItemDto>>? pageProvider = null)
         => MobileSalesPageTestHarness.Setup(roles, totalCount, pageProvider);
 
     /// <summary> Renders and waits for the initial list rows. </summary>
-    private static IRenderedComponent<MobileSales> Mount(TestContext ctx, int expectedRows)
+    private static IRenderedComponent<MobileSales> Mount(BunitContext ctx, int expectedRows)
     {
-        var cut = ctx.RenderComponent<MobileSales>();
+        var cut = ctx.Render<MobileSales>();
         cut.WaitForAssertion(
             () => cut.FindAll(".m-list-item").Should().HaveCount(expectedRows),
             TimeSpan.FromSeconds(10));

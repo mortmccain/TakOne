@@ -58,7 +58,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
 
         // Assert
@@ -79,7 +79,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, null));
 
         // Assert
@@ -98,7 +98,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
 
         // Assert
@@ -116,7 +116,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
         cut.WaitForState(
             () => cut.FindAll("button").Any(b => b.TextContent.Contains("ButtonYesReady")),
@@ -137,7 +137,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
         cut.WaitForState(
             () => cut.FindAll("button").Any(b => b.TextContent.Contains("ButtonYesReady")),
@@ -164,7 +164,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
         var cancelButton = cut.FindAll("button")
             .Single(b => b.TextContent.Contains("ButtonNo"));
@@ -187,7 +187,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
 
         // Assert
@@ -204,7 +204,7 @@ public class CancelConfirmationDialogTests
         ComponentTestSetup.AddIdentityLocalizer<CancelConfirmationDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<CancelConfirmationDialog>(ps => ps
+        var cut = ctx.Render<CancelConfirmationDialog>(ps => ps
             .Add(p => p.SaleNumber, "INT-1403-00000001"));
 
         // Assert

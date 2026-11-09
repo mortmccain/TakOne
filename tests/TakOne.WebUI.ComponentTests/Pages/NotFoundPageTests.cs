@@ -30,10 +30,10 @@ public class NotFoundPageTests
     public void NotFound_Rendered_ShowsNotFoundHeading()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<NotFound>();
+        var cut = ctx.Render<NotFound>();
 
         // Assert
         // The heading text is hard-coded "Not Found" — no localization.
@@ -44,10 +44,10 @@ public class NotFoundPageTests
     public void NotFound_Rendered_ShowsApologyParagraphText()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<NotFound>();
+        var cut = ctx.Render<NotFound>();
 
         // Assert
         // The apology sentence is hard-coded English text.
@@ -58,10 +58,10 @@ public class NotFoundPageTests
     public void NotFound_Rendered_HasNoGoHomeLink()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<NotFound>();
+        var cut = ctx.Render<NotFound>();
 
         // Assert
         // The task spec mentioned "a 'Go home' link or similar". The actual
@@ -76,10 +76,10 @@ public class NotFoundPageTests
     public void NotFound_Rendered_MarkupIsNonEmpty()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<NotFound>();
+        var cut = ctx.Render<NotFound>();
 
         // Assert
         // Sanity check: the page renders SOMETHING (non-empty markup).
@@ -94,10 +94,10 @@ public class NotFoundPageTests
     public void NotFound_Rendered_HasExactlyOneHeadingAndOneParagraph()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<NotFound>();
+        var cut = ctx.Render<NotFound>();
 
         // Assert
         // Lock in the minimal structure — exactly one h3 + one p. A future

@@ -55,7 +55,7 @@ public class AdminUsersPageLoadDataTests
             Roles = new List<string> { Roles.Customer }
         }).ToList();
 
-    private static (TestContext ctx, IMessageBus bus) Setup(int totalCount, List<UserListItemDto> page)
+    private static (BunitContext ctx, IMessageBus bus) Setup(int totalCount, List<UserListItemDto> page)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -112,7 +112,7 @@ public class AdminUsersPageLoadDataTests
         {
             // Act — mount the page. The grid's LoadData-on-init fires
             // during the initial render lifecycle.
-            var cut = ctx.RenderComponent<AdminUsers>();
+            var cut = ctx.Render<AdminUsers>();
 
             // Assert — the load settles: 20 rows render, the pager
             // reflects the SERVER total (45), not the local page size.
@@ -145,7 +145,7 @@ public class AdminUsersPageLoadDataTests
         var (ctx, bus) = Setup(totalCount: 45, page: MakeUsers(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<AdminUsers>();
+            var cut = ctx.Render<AdminUsers>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".worker-id-cell").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -171,7 +171,7 @@ public class AdminUsersPageLoadDataTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<AdminUsers>();
+            var cut = ctx.Render<AdminUsers>();
 
             // Assert — the fresh-install empty state (no filters were
             // active): the "no users yet" card, NOT the filtered-empty

@@ -69,7 +69,7 @@ public class BottomNavTests
         // OnInitializedAsync calls AuthStateProvider.GetAuthenticationStateAsync()
         // to read the user's roles. We await it via RenderComponent's sync
         // context (bUnit marshals the async work through InvokeAsync).
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // Customer sees: Products | MyOrders | Cart | Settings — 4 items.
@@ -86,7 +86,7 @@ public class BottomNavTests
         ctx.Services.GetRequiredService<NavigationManager>().NavigateTo("/m/Products");
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // Each customer nav item href points to a mobile route. The localizer
@@ -110,7 +110,7 @@ public class BottomNavTests
         ctx.Services.GetRequiredService<NavigationManager>().NavigateTo("/m/Products");
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // The first item (Products) should have the "active" CSS class
@@ -133,7 +133,7 @@ public class BottomNavTests
         ctx.Services.GetRequiredService<NavigationManager>().NavigateTo("/m/Cart");
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // Now the Cart item (index 2) should be active — section="cart"
@@ -157,7 +157,7 @@ public class BottomNavTests
         // Act
         // Render with CartCount=5 — the Cart item should display a badge
         // span showing the count.
-        var cut = ctx.RenderComponent<BottomNav>(ps => ps
+        var cut = ctx.Render<BottomNav>(ps => ps
             .Add(p => p.CartCount, 5));
 
         // Assert
@@ -180,7 +180,7 @@ public class BottomNavTests
 
         // Act
         // CartCount=0 (the default) — no badge should be rendered.
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         cut.FindAll(".nav-badge").Should().BeEmpty();
@@ -197,7 +197,7 @@ public class BottomNavTests
         // (No NavigateTo call needed — bUnit's default URL is "http://localhost/".)
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // Staff on Dashboard: Dashboard(active) | Products | AdminProducts |
@@ -220,7 +220,7 @@ public class BottomNavTests
         ctx.Services.GetRequiredService<NavigationManager>().NavigateTo("/m/Admin/Products");
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // On AdminProducts section: Dashboard | AdminProducts(active) |
@@ -243,7 +243,7 @@ public class BottomNavTests
         // Default URL → section "dashboard".
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // Anonymous user: _isAdmin, _isManager, _isEmployee, _isCustomer are
@@ -264,7 +264,7 @@ public class BottomNavTests
         ctx.Services.GetRequiredService<NavigationManager>().NavigateTo("/m/Products");
 
         // Act
-        var cut = ctx.RenderComponent<BottomNav>();
+        var cut = ctx.Render<BottomNav>();
 
         // Assert
         // The component renders a single <nav class="bottom-nav"> root.

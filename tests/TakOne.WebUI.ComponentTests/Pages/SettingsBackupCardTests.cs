@@ -82,7 +82,7 @@ public class SettingsBackupCardTests
         Note = note
     };
 
-    private static TestContext Setup(BackupStatusDto backupStatus)
+    private static BunitContext Setup(BackupStatusDto backupStatus)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -145,7 +145,7 @@ public class SettingsBackupCardTests
         return ctx;
     }
 
-    private static void AddLoc(TestContext ctx)
+    private static void AddLoc(BunitContext ctx)
     {
         AddIdentityLocalizer<Settings>(ctx);
         AddIdentityLocalizer<AdminProducts>(ctx);
@@ -155,7 +155,7 @@ public class SettingsBackupCardTests
     // Local twin of ComponentTestSetup.AddIdentityLocalizer that ALSO
     // stubs the format-args indexer (Settings uses Loc["Key", args]
     // for BackupFilesSummary / BackupRetentionValue / duration lines).
-    private static void AddIdentityLocalizer<T>(TestContext ctx) where T : class
+    private static void AddIdentityLocalizer<T>(BunitContext ctx) where T : class
     {
         var loc = Substitute.For<IStringLocalizer<T>>();
         loc[Arg.Any<string>()].Returns(ci =>
@@ -176,7 +176,7 @@ public class SettingsBackupCardTests
         using var ctx = Setup(status);
 
         // Act — mount the full Settings page as the admin.
-        var cut = ctx.RenderComponent<Settings>();
+        var cut = ctx.Render<Settings>();
 
         // Assert — the run-history ledger renders one row per record,
         // newest first: the failed scheduled run first (danger-tinted),
@@ -216,7 +216,7 @@ public class SettingsBackupCardTests
         using var ctx = Setup(status);
 
         // Act
-        var cut = ctx.RenderComponent<Settings>();
+        var cut = ctx.Render<Settings>();
 
         // Assert — the card renders its health stats (the "never run"
         // hint) but the run-history section is hidden entirely — the
@@ -268,7 +268,7 @@ public class SettingsBackupCardTests
         using var ctx = Setup(status);
         var js = ctx.JSInterop;
 
-        var cut = ctx.RenderComponent<Settings>();
+        var cut = ctx.Render<Settings>();
         cut.WaitForAssertion(
             () => cut.FindAll(".backup-run-row").Should().HaveCount(2),
             TimeSpan.FromSeconds(10));
@@ -327,7 +327,7 @@ public class SettingsBackupCardTests
         var status = MakeStatus();
         using var ctx = Setup(status);
 
-        var cut = ctx.RenderComponent<Settings>();
+        var cut = ctx.Render<Settings>();
         cut.WaitForAssertion(
             () => cut.Markup.Should().Contain("BackupCardTitle"),
             TimeSpan.FromSeconds(10));
@@ -355,7 +355,7 @@ public class SettingsBackupCardTests
         using var ctx = Setup(status);
 
         // Act
-        var cut = ctx.RenderComponent<Settings>();
+        var cut = ctx.Render<Settings>();
 
         // Assert — the fallback run's row renders the note as a
         // full-width secondary line (visible WITHOUT hovering — the

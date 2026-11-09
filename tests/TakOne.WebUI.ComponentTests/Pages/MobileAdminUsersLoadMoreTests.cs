@@ -54,7 +54,7 @@ internal static class MobileAdminUsersPageTestHarness
     /// page (drives the count line + load-more visibility).</param>
     /// <param name="pageProvider">Answers each users query with the
     /// payload for ITS page number.</param>
-    internal static (TestContext ctx, List<GetUsersPaginatedQuery> dispatched) Setup(
+    internal static (BunitContext ctx, List<GetUsersPaginatedQuery> dispatched) Setup(
         int totalCount,
         Func<GetUsersPaginatedQuery, List<UserListItemDto>>? pageProvider = null)
     {
@@ -170,15 +170,15 @@ public class MobileAdminUsersLoadMoreTests
     // The mobile page's loaded-window page size (mirrors the page const).
     private const int UsersPageSize = 100;
 
-    private static (TestContext ctx, List<GetUsersPaginatedQuery> dispatched) Setup(
+    private static (BunitContext ctx, List<GetUsersPaginatedQuery> dispatched) Setup(
         int totalCount,
         Func<GetUsersPaginatedQuery, List<UserListItemDto>>? pageProvider = null)
         => MobileAdminUsersPageTestHarness.Setup(totalCount, pageProvider);
 
     /// <summary> Renders and waits for the initial list rows. </summary>
-    private static IRenderedComponent<MobileAdminUsers> Mount(TestContext ctx, int expectedRows)
+    private static IRenderedComponent<MobileAdminUsers> Mount(BunitContext ctx, int expectedRows)
     {
-        var cut = ctx.RenderComponent<MobileAdminUsers>();
+        var cut = ctx.Render<MobileAdminUsers>();
         cut.WaitForAssertion(
             () => cut.FindAll(".m-list-item").Should().HaveCount(expectedRows),
             TimeSpan.FromSeconds(10));

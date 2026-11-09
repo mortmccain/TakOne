@@ -54,7 +54,7 @@ internal static class ProductsPageTestHarness
     /// test context and the ordered list of every dispatched
     /// <see cref="GetProductsPaginatedQuery"/>.
     /// </summary>
-    internal static (TestContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
+    internal static (BunitContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
         string[] roles,
         int totalCount,
         List<ProductListItemDto> page)
@@ -174,7 +174,7 @@ public class ProductsPageOutOfStockChipTests
             Price = new MoneyDto { Amount = i * 10_000m, Currency = "IRR" }
         }).ToList();
 
-    private static (TestContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
+    private static (BunitContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
         string[] roles,
         int totalCount,
         List<ProductListItemDto> page)
@@ -193,7 +193,7 @@ public class ProductsPageOutOfStockChipTests
             new[] { Roles.Admin }, totalCount: 40, page: MakeProducts(12, zeroStockCount: 2));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));
@@ -268,7 +268,7 @@ public class ProductsPageOutOfStockChipTests
             // Act — mount the page; the restore applies the view mode
             // BEFORE the first products load, so the very first query
             // already carries the flag.
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));
@@ -305,7 +305,7 @@ public class ProductsPageOutOfStockChipTests
             ctx.Services.GetRequiredService<NavigationManager>()
                 .NavigateTo("/Products?oos=1");
 
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));

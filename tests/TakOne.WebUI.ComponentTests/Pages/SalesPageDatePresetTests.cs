@@ -67,7 +67,7 @@ public class SalesPageDatePresetTests
             CreatedByName = "Test Staff"
         }).ToList();
 
-    private static (TestContext ctx, List<GetSalesPaginatedQuery> dispatched) Setup(
+    private static (BunitContext ctx, List<GetSalesPaginatedQuery> dispatched) Setup(
         int totalCount,
         List<SaleListItemDto> page)
     {
@@ -129,7 +129,7 @@ public class SalesPageDatePresetTests
         var (ctx, dispatched) = Setup(totalCount: 45, page: MakeSales(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -168,7 +168,7 @@ public class SalesPageDatePresetTests
         var (ctx, dispatched) = Setup(totalCount: 45, page: MakeSales(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -211,7 +211,7 @@ public class SalesPageDatePresetTests
             var url = $"/Sales?from={today:yyyy-MM-dd}&to={today:yyyy-MM-dd}";
             ctx.Services.GetRequiredService<NavigationManager>().NavigateTo(url);
 
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));

@@ -64,7 +64,7 @@ public class AdminProductsPageLoadDataTests
             MyPurchaseLimit = null
         }).ToList();
 
-    private static (TestContext ctx, IMessageBus bus) Setup(int totalCount, List<ProductListItemDto> page)
+    private static (BunitContext ctx, IMessageBus bus) Setup(int totalCount, List<ProductListItemDto> page)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -118,7 +118,7 @@ public class AdminProductsPageLoadDataTests
         {
             // Act — mount the page. The grid's LoadData-on-init fires
             // during the initial render lifecycle.
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
 
             // Assert — the load settles: 20 rows render (every row carries
             // a .stock-cell span), and the pager reflects the SERVER total
@@ -158,7 +158,7 @@ public class AdminProductsPageLoadDataTests
         var (ctx, bus) = Setup(totalCount: 45, page: MakeProducts(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".stock-cell").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -184,7 +184,7 @@ public class AdminProductsPageLoadDataTests
         var (ctx, bus) = Setup(totalCount: 45, page: MakeProducts(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".stock-cell").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -214,7 +214,7 @@ public class AdminProductsPageLoadDataTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
 
             // Assert — the fresh-install empty state (no filters were
             // active): the "no products yet" card, NOT the filtered-empty

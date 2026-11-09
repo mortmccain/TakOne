@@ -72,7 +72,7 @@ public class SalesPagePendingChipTests
             CreatedByName = "Test Staff"
         }).ToList();
 
-    private static (TestContext ctx, List<GetSalesPaginatedQuery> dispatched) Setup(
+    private static (BunitContext ctx, List<GetSalesPaginatedQuery> dispatched) Setup(
         int totalCount,
         List<SaleListItemDto> page)
     {
@@ -129,7 +129,7 @@ public class SalesPagePendingChipTests
         var (ctx, dispatched) = Setup(totalCount: 45, page: MakeSales(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -186,7 +186,7 @@ public class SalesPagePendingChipTests
 
             // Act — mount the page; the one-shot restore applies the
             // Status column filter, then the grid's (re)load dispatches.
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));

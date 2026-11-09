@@ -99,7 +99,7 @@ public class SaleDetailReceiptExportTests
         };
     }
 
-    private static (TestContext ctx, BunitJSInterop js) Setup(SaleDto sale)
+    private static (BunitContext ctx, BunitJSInterop js) Setup(SaleDto sale)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -152,7 +152,7 @@ public class SaleDetailReceiptExportTests
         var (ctx, js) = Setup(sale);
         using (ctx)
         {
-            var cut = ctx.RenderComponent<SaleDetail>(p => p.Add(s => s.Id, sale.Id));
+            var cut = ctx.Render<SaleDetail>(p => p.Add(s => s.Id, sale.Id));
 
             // The page loads and the document-action group renders with
             // BOTH buttons: Print (paper copy) + Download CSV (data copy).
@@ -215,7 +215,7 @@ public class SaleDetailReceiptExportTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<SaleDetail>(p => p.Add(s => s.Id, sale.Id));
+            var cut = ctx.Render<SaleDetail>(p => p.Add(s => s.Id, sale.Id));
 
             // Assert — the page loads (the pseudo-id header renders) but
             // NO document actions render for a draft.

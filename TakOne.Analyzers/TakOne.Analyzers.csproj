@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-	<!--
+        <!--
     TakOne.Analyzers — Roslyn analyzers enforcing security invariants that
     cannot be expressed by the type system alone.
 
@@ -26,45 +26,60 @@
         for the full rationale and the banned-token list.
   -->
 
-	<PropertyGroup>
-		<TargetFramework>netstandard2.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<LangVersion>latest</LangVersion>
-		<IsRoslynComponent>true</IsRoslynComponent>
-		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-		<GenerateDocumentationFile>false</GenerateDocumentationFile>
-		<!-- Suppress the "analyzer should be in a folder named analyzers" warning;
+        <PropertyGroup>
+                <TargetFramework>netstandard2.0</TargetFramework>
+                <Nullable>enable</Nullable>
+                <LangVersion>latest</LangVersion>
+                <IsRoslynComponent>true</IsRoslynComponent>
+                <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+                <GenerateDocumentationFile>false</GenerateDocumentationFile>
+                <!-- Suppress the "analyzer should be in a folder named analyzers" warning;
          we ship via direct ProjectReference, not as a NuGet package. -->
-		<NoWarn>$(NoWarn);RS1022</NoWarn>
-		<!--
-    RS2007 ("missing or invalid release header") is a known false-positive with
-    Microsoft.CodeAnalysis.Analyzers 3.11.0 under .NET 10 SDK. Our
-    AnalyzerReleases.Shipped.md and AnalyzerReleases.Unshipped.md files match the
-    official Microsoft format exactly (verified against the .md files in
-    dotnet/roslyn-analyzers' own projects — header `# Release Tracking` /
-    `# Release Tracking - Unshipped`, version `## 1.0`, table with
-    `AssemblyName:AnalyzerType` in the Notes column). RS2008 (the "enable
-    release tracking" rule that prompted us to ADD these files in the first
-    place) IS satisfied — the files exist, are declared as AdditionalFiles,
-    and contain the proper table. RS2007 (the "validate header format" rule)
-    fires anyway due to a parser quirk in 3.11.0 that is fixed in 4.x.
-    Upgrading the analyzer to 4.x is non-trivial (requires .NET 8+ runtime
-    for the analyzer host — but our analyzers project targets netstandard2.0
-    for max compatibility, and 4.x drops some APIs we use).
-    Safe to suppress: the release-tracking data is correct, the file IS
-    shipping in the proper format, and the suppression is scoped to this
-    project only (no global suppression of analyzer correctness rules).
+                <NoWarn>$(NoWarn);RS1022</NoWarn>
+                <!--
+    RS2007 HISTORY (resolved with the Roslyn 5.9.0 package bump):
+    the release-file FORMAT changed in newer Microsoft.CodeAnalysis.Analyzers.
+    The legacy format (top header `# Release Tracking` / `# Release Tracking
+    - Unshipped`, bare `## 1.0` version line, header-only table) was replaced
+    by `## Release 1.0` + `### New Rules`/`### Removed Rules`/`### Changed
+    Rules` sections (see ReleaseTrackingAnalyzers.Help.md in dotnet/roslyn).
+    Under the old 3.11.0 analyzers the legacy files were flagged by RS2007
+    and suppressed via NoWarn; with Microsoft.CodeAnalysis.Analyzers
+    5.9.0-1.26328.17 (ships with the Roslyn 5.9.0 packages) the files were
+    migrated to the CURRENT format and the RS2007 suppression was REMOVED
+    (verified: 0 warnings with the suppression dropped). Do NOT restore the
+    `# Release Tracking` headers — the error text still mentions them, but
+    the parser rejects them.
   -->
-		<NoWarn>$(NoWarn);RS2007</NoWarn>
-		<Version>1.0.0</Version>
-		<Description>TakOne security analyzers — flags credential-state/PII leakage in ILogger.Log* calls.</Description>
-	</PropertyGroup>
+                <Version>1.0.0</Version>
+                <Description>TakOne security analyzers — flags credential-state/PII leakage in ILogger.Log* calls.</Description>
+        </PropertyGroup>
 
-	<ItemGroup>
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
-	</ItemGroup>
+        <ItemGroup>
+                <!--
+      Compiler-layer Roslyn package ONLY. RS1038 (enforced by
+      Microsoft.CodeAnalysis.Analyzers 4.x, which ships with the Roslyn 5.x
+      packages) forbids compiler extensions (analyzers) from referencing
+      Microsoft.CodeAnalysis.Workspaces: the Workspaces assembly is not
+      provided by command-line compilation hosts, so an analyzer that
+      references it can behave unpredictably outside the IDE. The
+      ForbiddenLoggingAnalyzer uses ONLY compiler-layer APIs
+      (Microsoft.CodeAnalysis / .CSharp / .CSharp.Syntax / .Diagnostics),
+      so the Workspaces reference was dead weight and is removed.
 
-	<!--
+      VERSION PIN: 5.9.0 is the EXACT Microsoft.CodeAnalysis version
+      bundled with the .NET SDK this repo pins (10.0.401 ships compiler
+      5.9.0-1.26423.113 — verify with
+      `dotnet sdk/10.0.401/Roslyn/bincore/csc.dll -version`). Analyzer
+      package references must be <= the host compiler's version (CS9057:
+      a newer Microsoft.CodeAnalysis reference prevents the analyzer from
+      loading at all), so this pin must only move when the pinned SDK
+      moves.
+    -->
+                <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+        </ItemGroup>
+
+        <!--
     Analyzer release tracking files (required by Roslyn RS2008).
     These files MUST be declared as AdditionalFiles for the RS2008 analyzer
     to recognize them. See:
@@ -74,9 +89,9 @@
     been silently changed across releases without bumping the rule's
     release version.
   -->
-	<ItemGroup>
-		<AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
-		<AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
-	</ItemGroup>
+        <ItemGroup>
+                <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+                <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+        </ItemGroup>
 
 </Project>

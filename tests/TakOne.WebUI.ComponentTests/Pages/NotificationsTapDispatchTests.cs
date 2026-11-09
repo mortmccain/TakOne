@@ -102,7 +102,7 @@ public class NotificationsTapDispatchTests
     /// notification-id assertion).</para>
     /// </remarks>
     private sealed record Harness(
-        TestContext Context,
+        BunitContext Context,
         TaskCompletionSource<Result> Gate,
         List<string> Timeline,
         List<MarkNotificationAsReadCommand> MarkedRead) : IDisposable
@@ -353,7 +353,7 @@ public class NotificationsTapDispatchTests
         // from the production incident).
         var row = MakeNotification(NotificationKind.AppUpdate);
         using var h = Setup(new[] { row }, "/Notifications");
-        var cut = h.Context.RenderComponent<Notifications>();
+        var cut = h.Context.Render<Notifications>();
         cut.WaitForAssertion(
             () => cut.FindAll("button.notif-card").Should().HaveCount(1),
             TimeSpan.FromSeconds(10));
@@ -380,7 +380,7 @@ public class NotificationsTapDispatchTests
         var saleId = Guid.NewGuid();
         var row = MakeNotification(NotificationKind.SaleSubmitted, saleId: saleId);
         using var h = Setup(new[] { row }, "/Notifications");
-        var cut = h.Context.RenderComponent<Notifications>();
+        var cut = h.Context.Render<Notifications>();
         cut.WaitForAssertion(
             () => cut.FindAll("button.notif-card").Should().HaveCount(1),
             TimeSpan.FromSeconds(10));
@@ -411,7 +411,7 @@ public class NotificationsTapDispatchTests
         // dot + bell badge update).
         var row = MakeNotification(NotificationKind.Broadcast);
         using var h = Setup(new[] { row }, "/Notifications");
-        var cut = h.Context.RenderComponent<Notifications>();
+        var cut = h.Context.Render<Notifications>();
         cut.WaitForAssertion(
             () => cut.FindAll("button.notif-card").Should().HaveCount(1),
             TimeSpan.FromSeconds(10));
@@ -447,7 +447,7 @@ public class NotificationsTapDispatchTests
         // Arrange — one unread app-update notification on the mobile twin.
         var row = MakeNotification(NotificationKind.AppUpdate);
         using var h = Setup(new[] { row }, "/m/Notifications");
-        var cut = h.Context.RenderComponent<MobileNotifications>();
+        var cut = h.Context.Render<MobileNotifications>();
         cut.WaitForAssertion(
             () => cut.FindAll("button.m-notif-card").Should().HaveCount(1),
             TimeSpan.FromSeconds(10));
@@ -472,7 +472,7 @@ public class NotificationsTapDispatchTests
         var saleId = Guid.NewGuid();
         var row = MakeNotification(NotificationKind.SaleSubmitted, saleId: saleId);
         using var h = Setup(new[] { row }, "/m/Notifications");
-        var cut = h.Context.RenderComponent<MobileNotifications>();
+        var cut = h.Context.Render<MobileNotifications>();
         cut.WaitForAssertion(
             () => cut.FindAll("button.m-notif-card").Should().HaveCount(1),
             TimeSpan.FromSeconds(10));

@@ -43,7 +43,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP Customers"));
 
         // Assert
@@ -63,7 +63,7 @@ public class DeactivateGroupDialogTests
         // RenderComponent returns after the first await in OnInitializedAsync
         // (the 3-iteration countdown loop's first Task.Delay). At that point
         // countdown=3, button Disabled=true, text="ButtonYesCounting ...".
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
 
         // Assert
@@ -81,7 +81,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
         cut.WaitForState(
             () => cut.FindAll("button").Any(b => b.TextContent.Contains("ButtonYesReady")),
@@ -102,7 +102,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
         cut.WaitForState(
             () => cut.FindAll("button").Any(b => b.TextContent.Contains("ButtonYesReady")),
@@ -132,7 +132,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
         var cancelButton = cut.FindAll("button")
             .Single(b => b.TextContent.Contains("ButtonNo"));
@@ -156,7 +156,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
 
         // Assert
@@ -173,7 +173,7 @@ public class DeactivateGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateGroupDialog>(ps => ps
+        var cut = ctx.Render<DeactivateGroupDialog>(ps => ps
             .Add(p => p.GroupName, "VIP"));
 
         // Assert

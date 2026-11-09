@@ -51,7 +51,7 @@ namespace TakOne.WebUI.ComponentTests.Authorization;
 public class RequireRoleTests
 {
     private static IRenderedComponent<RequireRole> RenderWithRole(
-        TestContext ctx,
+        BunitContext ctx,
         string userName,
         string[] userRoles,
         string[] requiredRoles,
@@ -69,7 +69,7 @@ public class RequireRoleTests
         // AuthorizeView in the SUT requires all three to be available
         // (it queries IAuthorizationPolicyProvider for policy resolution
         // even when only Roles is set).
-        return ctx.RenderComponent<RequireRole>(ps => ps
+        return ctx.Render<RequireRole>(ps => ps
             .Add(p => p.Roles, requiredRoles)
             .Add(p => p.ChildContent, childContent));
     }
@@ -87,7 +87,7 @@ public class RequireRoleTests
     public async Task RequireRole_AdminUserAndAdminRequired_RendersChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -108,7 +108,7 @@ public class RequireRoleTests
     public async Task RequireRole_AdminUserAndManagerRequired_DoesNotRenderChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -129,7 +129,7 @@ public class RequireRoleTests
     public async Task RequireRole_AdminUserAndAdminOrManagerRequired_RendersChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -149,7 +149,7 @@ public class RequireRoleTests
     public async Task RequireRole_ManagerUserAndAdminOrEmployeeRequired_RendersChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -169,7 +169,7 @@ public class RequireRoleTests
     public async Task RequireRole_AnonymousUserAndAdminRequired_DoesNotRenderChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -190,7 +190,7 @@ public class RequireRoleTests
     public async Task RequireRole_AuthenticatedUserWithoutRolesAndAdminRequired_DoesNotRenderChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -212,7 +212,7 @@ public class RequireRoleTests
     public async Task RequireRole_AdminUserAndEmptyRoles_RendersChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -235,7 +235,7 @@ public class RequireRoleTests
     public async Task RequireRole_AnonymousUserAndEmptyRoles_DoesNotRenderChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -256,7 +256,7 @@ public class RequireRoleTests
     public async Task RequireRole_CustomerUserAndAdminRequired_DoesNotRenderChildContent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act
@@ -278,7 +278,7 @@ public class RequireRoleTests
     public async Task RequireRole_RendersAuthorizeViewWrapper_ChildContentIsInsideAuthorizeView()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         const string marker = "secret-content-marker";
 
         // Act

@@ -52,7 +52,7 @@ public class DashboardPeriodSelectorTests
         CurrentYearMonthlyData = new List<MonthlyRevenueDto>()
     };
 
-    private static (TestContext ctx, IMessageBus bus) Setup()
+    private static (BunitContext ctx, IMessageBus bus) Setup()
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
         ComponentTestSetup.AddIdentityLocalizer<Dashboard>(ctx);
@@ -93,8 +93,8 @@ public class DashboardPeriodSelectorTests
         return (ctx, bus);
     }
 
-    private static IRenderedComponent<Dashboard> Render(TestContext ctx)
-        => ctx.RenderComponent<Dashboard>();
+    private static IRenderedComponent<Dashboard> Render(BunitContext ctx)
+        => ctx.Render<Dashboard>();
 
     [Fact]
     public async Task Dashboard_Mount_DispatchesWindowFreeQuery_AndRendersFixedAnchorKpis()

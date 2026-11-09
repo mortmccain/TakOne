@@ -36,13 +36,13 @@ namespace TakOne.WebUI.ComponentTests.Pages;
 /// <b>WIRING</b>: same harness family as
 /// <see cref="DashboardRestockAlertTests"/> — full page mount with the
 /// fake bus returning a hand-built DTO; navigation is observed through
-/// bUnit's <see cref="FakeNavigationManager"/>. The chart JS interop
+/// bUnit's <see cref="BunitNavigationManager"/>. The chart JS interop
 /// runs under bUnit's Loose mode.
 /// </para>
 /// </remarks>
 public class DashboardPlainCardsTests
 {
-    private static (TestContext ctx, DashboardStatsDto dto) Setup(params RecentOrderDto[] recentOrders)
+    private static (BunitContext ctx, DashboardStatsDto dto) Setup(params RecentOrderDto[] recentOrders)
     {
         var dto = new DashboardStatsDto
         {
@@ -118,7 +118,7 @@ public class DashboardPlainCardsTests
         var (ctx, _) = Setup();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert — the KPI grid renders its four cards as plain divs.
             cut.WaitForAssertion(
@@ -152,7 +152,7 @@ public class DashboardPlainCardsTests
             MakeOrder(secondSaleId, "TM-1002"));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert — both rows render as plain data rows.
             cut.WaitForAssertion(
@@ -174,7 +174,7 @@ public class DashboardPlainCardsTests
 
             // No interaction with the rows exists — the URI is untouched
             // without any event dispatch (nothing to dispatch).
-            var nav = ctx.Services.GetRequiredService<FakeNavigationManager>();
+            var nav = ctx.Services.GetRequiredService<BunitNavigationManager>();
             nav.Uri.Should().NotEndWith("/Sales/",
                 "nothing on the dashboard's recent-orders table navigates");
         }

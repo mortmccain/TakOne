@@ -87,7 +87,7 @@ public class CartBudgetBarTests
         // Act
         // Budget=null is the default; the SUT's `@if (Budget is not null)`
         // guard means nothing renders.
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, null));
 
         // Assert
@@ -106,7 +106,7 @@ public class CartBudgetBarTests
         // Act
         // Both Budget and CartTotal null — should render nothing (Budget
         // guard short-circuits before CartTotal is consulted).
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, null)
             .Add(p => p.CartTotal, null));
 
@@ -124,7 +124,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 200m, remaining: 800m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget)
             .Add(p => p.CartTotal, new MoneyDto { Amount = 0m, Currency = "IRR" }));
 
@@ -148,7 +148,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 1000m, remaining: 0m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget)
             .Add(p => p.CartTotal, new MoneyDto { Amount = 0m, Currency = "IRR" }));
 
@@ -171,7 +171,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 500m, remaining: 500m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -193,7 +193,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 1500m, remaining: -500m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -219,7 +219,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 1500m, remaining: -500m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -246,7 +246,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 0m, consumed: 0m, remaining: 0m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -269,7 +269,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 0m, consumed: 100m, remaining: -100m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -289,7 +289,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 0m, remaining: 1000m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -316,7 +316,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 690m, remaining: 310m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -336,7 +336,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 700m, remaining: 300m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert
@@ -358,7 +358,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 100m, remaining: 900m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget)
             .Add(p => p.CartTotal, new MoneyDto { Amount = 300m, Currency = "IRR" }));
 
@@ -385,7 +385,7 @@ public class CartBudgetBarTests
         var budget = BuildBudget(salary: 1000m, consumed: 250m, remaining: 750m);
 
         // Act
-        var cut = ctx.RenderComponent<CartBudgetBarComponent>(ps => ps
+        var cut = ctx.Render<CartBudgetBarComponent>(ps => ps
             .Add(p => p.Budget, budget));
 
         // Assert

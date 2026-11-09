@@ -59,7 +59,7 @@ public class ManageGroupsPageExportTests
             IsActive = i % 2 == 1
         }).ToList();
 
-    private static (TestContext ctx, IMessageBus bus, BunitJSInterop js) Setup(List<CustomerGroupListItemDto> groups)
+    private static (BunitContext ctx, IMessageBus bus, BunitJSInterop js) Setup(List<CustomerGroupListItemDto> groups)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -117,7 +117,7 @@ public class ManageGroupsPageExportTests
         var (ctx, bus, js) = Setup(groups);
         using (ctx)
         {
-            var cut = ctx.RenderComponent<ManageGroups>();
+            var cut = ctx.Render<ManageGroups>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".group-name-cell").Should().HaveCount(3),
                 TimeSpan.FromSeconds(10));
@@ -167,7 +167,7 @@ public class ManageGroupsPageExportTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<ManageGroups>();
+            var cut = ctx.Render<ManageGroups>();
 
             // Assert — the fresh-install empty card renders and the
             // export button is disabled (belt + braces: the click

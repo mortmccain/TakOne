@@ -53,7 +53,7 @@ namespace TakOne.WebUI.ComponentTests.Dialogs;
 /// first <c>await</c>. For <c>OnInitializedAsync</c> with a
 /// <c>Task.Delay</c>-based countdown loop, this means:
 /// <list type="number">
-///   <item><c>RenderComponent</c> returns AFTER the first
+///   <item><c>Render</c> returns AFTER the first
 ///     <c>await Task.Delay(...)</c> in <c>OnInitializedAsync</c> is
 ///     hit. At that point, <c>countdown == 3</c>, the button text is
 ///     "ButtonYesCounting" (with the countdown number substituted),
@@ -93,7 +93,7 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice Johnson"));
 
         // Assert
@@ -114,11 +114,11 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        // RenderComponent returns after the first await in
+        // Render returns after the first await in
         // OnInitializedAsync — at that point countdown=3 and the
         // button text is "ButtonYesCounting" with the countdown
         // number substituted via string.Format.
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
 
         // Assert
@@ -150,7 +150,7 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
 
         // Wait for the countdown to complete (max 5s — the SUT's
@@ -178,7 +178,7 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
         cut.WaitForState(
             () => cut.FindAll("button").Any(b => b.TextContent.Contains("ButtonYesReady")),
@@ -210,7 +210,7 @@ public class DeactivateUserDialogTests
         // Act
         // The Cancel button has no Disabled gate (no countdown applies
         // to it) — it's immediately clickable after the initial render.
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
         // Cancel button is the Secondary-style button labeled "ButtonNo"
         // via the identity localizer. We find it by the localized text
@@ -238,7 +238,7 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
 
         // Assert
@@ -260,7 +260,7 @@ public class DeactivateUserDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateUserDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateUserDialog>(ps => ps
+        var cut = ctx.Render<DeactivateUserDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice"));
 
         // Assert

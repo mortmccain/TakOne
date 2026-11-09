@@ -75,7 +75,7 @@ public class AdminProductsLowStockChipTests
             MyPurchaseLimit = null
         }).ToList();
 
-    private static (TestContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
+    private static (BunitContext ctx, List<GetProductsPaginatedQuery> dispatched) Setup(
         int totalCount,
         List<ProductListItemDto> page)
     {
@@ -133,7 +133,7 @@ public class AdminProductsLowStockChipTests
         var (ctx, dispatched) = Setup(totalCount: 45, page: MakeProducts(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".stock-cell").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -190,7 +190,7 @@ public class AdminProductsLowStockChipTests
 
             // Act — mount the page; the one-shot restore applies the
             // Stock column filter, then the grid's (re)load dispatches.
-            var cut = ctx.RenderComponent<AdminProducts>();
+            var cut = ctx.Render<AdminProducts>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".stock-cell").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));

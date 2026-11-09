@@ -57,7 +57,7 @@ namespace TakOne.WebUI.ComponentTests.Pages;
 /// </remarks>
 public class SettingsAdminToolsDownloadTests
 {
-    private static (TestContext ctx, BunitJSInterop js) Setup()
+    private static (BunitContext ctx, BunitJSInterop js) Setup()
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -121,7 +121,7 @@ public class SettingsAdminToolsDownloadTests
         return (ctx, ctx.JSInterop);
     }
 
-    private static void AddLoc(TestContext ctx)
+    private static void AddLoc(BunitContext ctx)
     {
         AddIdentityLocalizer<Settings>(ctx);
         AddIdentityLocalizer<AdminProducts>(ctx);
@@ -130,7 +130,7 @@ public class SettingsAdminToolsDownloadTests
 
     // Local twin of ComponentTestSetup.AddIdentityLocalizer that ALSO
     // stubs the format-args indexer (same shape as SettingsBackupCardTests).
-    private static void AddIdentityLocalizer<T>(TestContext ctx) where T : class
+    private static void AddIdentityLocalizer<T>(BunitContext ctx) where T : class
     {
         var loc = Substitute.For<IStringLocalizer<T>>();
         loc[Arg.Any<string>()].Returns(ci =>
@@ -147,7 +147,7 @@ public class SettingsAdminToolsDownloadTests
         var (ctx, js) = Setup();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Settings>();
+            var cut = ctx.Render<Settings>();
             cut.WaitForAssertion(
                 () => cut.Markup.Should().Contain("ProductImportCardTitle"),
                 TimeSpan.FromSeconds(10));
@@ -198,7 +198,7 @@ public class SettingsAdminToolsDownloadTests
         var (ctx, js) = Setup();
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Settings>();
+            var cut = ctx.Render<Settings>();
             cut.WaitForAssertion(
                 () => cut.Markup.Should().Contain("ProductImportCardTitle"),
                 TimeSpan.FromSeconds(10));

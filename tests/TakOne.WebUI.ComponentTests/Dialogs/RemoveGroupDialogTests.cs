@@ -38,7 +38,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
 
@@ -62,7 +62,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
         var confirmButton = cut.FindAll("button")
@@ -87,7 +87,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
         var cancelButton = cut.FindAll("button")
@@ -111,7 +111,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
 
@@ -130,7 +130,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
 
@@ -148,7 +148,7 @@ public class RemoveGroupDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveGroupDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveGroupDialog>(ps => ps
+        var cut = ctx.Render<RemoveGroupDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.GroupName, "Wholesale Tier"));
 

@@ -56,7 +56,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -75,7 +75,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 12345));
 
@@ -99,7 +99,7 @@ public class DeactivateProductDialogTests
         // Act
         // No countdown on this dialog — the Yes button is immediately
         // clickable.
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Confirm button is the one labeled "ButtonConfirm" (identity localizer).
@@ -125,7 +125,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         var cancelButton = cut.FindAll("button")
@@ -149,7 +149,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -170,7 +170,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -188,7 +188,7 @@ public class DeactivateProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<DeactivateProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<DeactivateProductDialog>(ps => ps
+        var cut = ctx.Render<DeactivateProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 

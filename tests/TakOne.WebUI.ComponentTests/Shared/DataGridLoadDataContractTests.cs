@@ -53,7 +53,7 @@ public class DataGridLoadDataContractTests
 
         // Act — render a grid with LoadData + paging. Radzen raises
         // LoadData during initialization (Data is not yet provided).
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -79,7 +79,7 @@ public class DataGridLoadDataContractTests
         var calls = new List<LoadDataArgs>();
         var allRows = MakeRows(45);
 
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -93,7 +93,7 @@ public class DataGridLoadDataContractTests
         // hand the grid the current page + the server-side total.
         var skip = calls[0].Skip!.Value;
         var top = calls[0].Top!.Value;
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(g => g.Data, allRows.Skip(skip).Take(top).ToList())
             .Add(g => g.Count, allRows.Count));
 
@@ -118,7 +118,7 @@ public class DataGridLoadDataContractTests
         var calls = new List<LoadDataArgs>();
         var allRows = MakeRows(45);
 
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -129,7 +129,7 @@ public class DataGridLoadDataContractTests
 
         var skip = calls[0].Skip!.Value;
         var top = calls[0].Top!.Value;
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(g => g.Data, allRows.Skip(skip).Take(top).ToList())
             .Add(g => g.Count, allRows.Count));
 
@@ -156,7 +156,7 @@ public class DataGridLoadDataContractTests
         var calls = new List<LoadDataArgs>();
         var allRows = MakeRows(45);
 
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -170,7 +170,7 @@ public class DataGridLoadDataContractTests
 
         var skip = calls[0].Skip!.Value;
         var top = calls[0].Top!.Value;
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(g => g.Data, allRows.Skip(skip).Take(top).ToList())
             .Add(g => g.Count, allRows.Count));
 
@@ -205,7 +205,7 @@ public class DataGridLoadDataContractTests
         var allRows = MakeRows(45);
         RadzenDataGrid<Row> gridRef = null!;
 
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -219,7 +219,7 @@ public class DataGridLoadDataContractTests
         gridRef = cut.Instance;
         var skip = calls[0].Skip!.Value;
         var top = calls[0].Top!.Value;
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(g => g.Data, allRows.Skip(skip).Take(top).ToList())
             .Add(g => g.Count, allRows.Count));
         calls.Clear();
@@ -257,7 +257,7 @@ public class DataGridLoadDataContractTests
         var calls = new List<LoadDataArgs>();
         var allRows = MakeRows(200);
 
-        var cut = ctx.RenderComponent<RadzenDataGrid<Row>>(p => p
+        var cut = ctx.Render<RadzenDataGrid<Row>>(p => p
             .Add(g => g.LoadData, EventCallback.Factory.Create<LoadDataArgs>(this, args =>
             {
                 calls.Add(args);
@@ -270,7 +270,7 @@ public class DataGridLoadDataContractTests
 
         // Hand the grid its first page (20 rows) + the server total (200)
         // — the same Data/Count flow every real LoadData page performs.
-        cut.SetParametersAndRender(p => p
+        cut.Render(p => p
             .Add(g => g.Data, allRows.Take(20).ToList())
             .Add(g => g.Count, allRows.Count));
 

@@ -41,7 +41,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
 
@@ -65,7 +65,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
         var confirmButton = cut.FindAll("button")
@@ -90,7 +90,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
         var cancelButton = cut.FindAll("button")
@@ -114,7 +114,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
 
@@ -136,7 +136,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
 
@@ -154,7 +154,7 @@ public class RemoveRoleDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RemoveRoleDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RemoveRoleDialog>(ps => ps
+        var cut = ctx.Render<RemoveRoleDialog>(ps => ps
             .Add(p => p.UserDisplayName, "Alice")
             .Add(p => p.RoleLabel, "Manager"));
 

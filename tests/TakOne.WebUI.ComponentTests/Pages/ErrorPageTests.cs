@@ -51,13 +51,13 @@ public class ErrorPageTests
         // Render Error directly (no CascadingValue<HttpContext> wrapper) —
         // HttpContext will be null, Activity.Current will be null, so
         // RequestId stays null.
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        // RenderComponent<Error> runs OnInitialized which sets
+        // Render<Error> runs OnInitialized which sets
         // RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier.
         // With both null, RequestId = null and ShowRequestId = false.
-        var cut = ctx.RenderComponent<Error>();
+        var cut = ctx.Render<Error>();
 
         // Assert
         // The page should always render the static headings regardless of
@@ -71,10 +71,10 @@ public class ErrorPageTests
     public void Error_RenderedWithNoHttpContext_HidesRequestIdBlock()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<Error>();
+        var cut = ctx.Render<Error>();
 
         // Assert
         // The "Request ID:" paragraph is wrapped in @if(ShowRequestId) —
@@ -87,14 +87,14 @@ public class ErrorPageTests
     public void Error_RenderedWithHttpContextHavingTraceIdentifier_ShowsRequestId()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         // Wrap the SUT in a CascadingValue<HttpContext> because the SUT's
         // HttpContext cascading parameter is private (see class remarks).
         var httpContext = new DefaultHttpContext();
         httpContext.TraceIdentifier = "test-trace-id-12345";
 
         // Act
-        var cut = ctx.RenderComponent<CascadingValue<HttpContext>>(ps => ps
+        var cut = ctx.Render<CascadingValue<HttpContext>>(ps => ps
             .Add(p => p.Value, httpContext)
             .Add(p => p.IsFixed, true)
             .Add(p => p.ChildContent, b =>
@@ -115,13 +115,13 @@ public class ErrorPageTests
     public void Error_RenderedWithHttpContextHavingEmptyTraceIdentifier_HidesRequestIdBlock()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         // DefaultHttpContext.TraceIdentifier defaults to a fresh Guid, so
         // we explicitly set it to empty string to test the empty branch.
         var httpContext = new DefaultHttpContext { TraceIdentifier = string.Empty };
 
         // Act
-        var cut = ctx.RenderComponent<CascadingValue<HttpContext>>(ps => ps
+        var cut = ctx.Render<CascadingValue<HttpContext>>(ps => ps
             .Add(p => p.Value, httpContext)
             .Add(p => p.IsFixed, true)
             .Add(p => p.ChildContent, b =>
@@ -140,10 +140,10 @@ public class ErrorPageTests
     public void Error_Rendered_AlwaysShowsDevelopmentModeWarning()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<Error>();
+        var cut = ctx.Render<Error>();
 
         // Assert
         // The "Development Mode" heading + the dev-environment warning text
@@ -159,11 +159,11 @@ public class ErrorPageTests
     public void Error_RenderedWithHttpContext_RendersRequestIdInCodeElement()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         var httpContext = new DefaultHttpContext { TraceIdentifier = "trace-XYZ" };
 
         // Act
-        var cut = ctx.RenderComponent<CascadingValue<HttpContext>>(ps => ps
+        var cut = ctx.Render<CascadingValue<HttpContext>>(ps => ps
             .Add(p => p.Value, httpContext)
             .Add(p => p.IsFixed, true)
             .Add(p => p.ChildContent, b =>

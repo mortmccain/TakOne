@@ -58,7 +58,7 @@ public class ProductsPagePageSizeTests
             new[] { Roles.Customer }, totalCount: 200, page: MakeProducts(12));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));
@@ -108,7 +108,7 @@ public class ProductsPagePageSizeTests
                 .NavigateTo("/Products?size=48");
 
             // Act — mount the page.
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));
@@ -140,7 +140,7 @@ public class ProductsPagePageSizeTests
             ctx.Services.GetRequiredService<NavigationManager>()
                 .NavigateTo("/Products?size=999");
 
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".tm-product-card").Should().HaveCount(12),
                 TimeSpan.FromSeconds(10));

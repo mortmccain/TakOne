@@ -79,7 +79,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -97,7 +97,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -117,7 +117,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 12345));
 
@@ -139,7 +139,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Don't change the quantity input — the default _quantity=10 should
@@ -167,7 +167,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Find the numeric input by its type attribute (the SUT uses
@@ -201,7 +201,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Clear the input — bUnit's Change("") sets the value to empty
@@ -234,7 +234,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Set quantity to 0 — the SUT's OnConfirm rejects _quantity <= 0.
@@ -259,7 +259,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         // Set quantity to -5 — the SUT's OnConfirm rejects _quantity <= 0.
@@ -284,7 +284,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
         var cancelButton = cut.FindAll("button")
@@ -310,7 +310,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 
@@ -327,7 +327,7 @@ public class RestockProductDialogTests
         ComponentTestSetup.AddIdentityLocalizer<RestockProductDialog>(ctx);
 
         // Act
-        var cut = ctx.RenderComponent<RestockProductDialog>(ps => ps
+        var cut = ctx.Render<RestockProductDialog>(ps => ps
             .Add(p => p.ProductName, "Apple")
             .Add(p => p.CurrentStock, 50));
 

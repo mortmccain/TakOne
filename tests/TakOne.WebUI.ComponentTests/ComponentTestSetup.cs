@@ -16,13 +16,13 @@ namespace TakOne.WebUI.ComponentTests;
 /// project. The SUT components (BottomNav, dialogs, CartBudgetBar, etc.)
 /// all use Radzen + IStringLocalizer&lt;T&gt; + NavigationManager — this
 /// helper centralizes the bUnit plumbing required to render them in a
-/// TestContext.
+/// BunitContext.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Why a factory instead of a base class.</b> xUnit creates a fresh
 /// instance of the test class per test method. We want a fresh
-/// <see cref="TestContext"/> per test (services shouldn't leak between
+/// <see cref="BunitContext"/> per test (services shouldn't leak between
 /// tests), so a static factory method returning the configured context is
 /// the cleanest pattern — base-class fields would be shared-then-recreated
 /// which is confusing.
@@ -44,7 +44,7 @@ namespace TakOne.WebUI.ComponentTests;
 /// CancelConfirmation) all inject <c>Radzen.DialogService</c> and call
 /// <c>DialogService.Close(object)</c> when the user clicks Confirm or
 /// Cancel. <c>Close(Object)</c> is virtual (verified by reflection on the
-/// Radzen.Blazor v11.1.8 assembly), so NSubstitute can intercept it.
+/// Radzen.Blazor v12.2.0 assembly), so NSubstitute can intercept it.
 /// The DialogService ctor takes <c>(NavigationManager, IJSRuntime,
 /// IServiceProvider)</c> — passing in a substitute NavigationManager
 /// fails because the ctor subscribes to
@@ -66,14 +66,14 @@ namespace TakOne.WebUI.ComponentTests;
 internal static class ComponentTestSetup
 {
     /// <summary>
-    /// Creates a configured <see cref="TestContext"/> with Radzen
+    /// Creates a configured <see cref="BunitContext"/> with Radzen
     /// services + Loose JS interop. Use this for components that need
     /// RadzenButton/RadzenCard/RadzenAlert (BottomNav, dialogs,
     /// CartBudgetBar).
     /// </summary>
-    public static TestContext CreateRadzenEnabledContext()
+    public static BunitContext CreateRadzenEnabledContext()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         // Loose mode = any unplanned JS call returns default. See class
         // doc for why this is mandatory for Radzen components.
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
@@ -90,7 +90,7 @@ internal static class ComponentTestSetup
     /// <c>AddRadzenComponents()</c> called on it).</param>
     /// <returns>The substitute, returned so the test can
     /// call <c>.Received(...)</c> on it after the click.</returns>
-    public static Radzen.DialogService AddDialogServiceSpy(TestContext ctx)
+    public static Radzen.DialogService AddDialogServiceSpy(BunitContext ctx)
     {
         // Factory delegate delays substitute construction until the
         // DI container first resolves DialogService (which happens
@@ -116,7 +116,7 @@ internal static class ComponentTestSetup
     /// Returns the registered substitute DialogService after the
     /// component has been rendered (so the factory delegate has fired).
     /// </summary>
-    public static Radzen.DialogService GetDialogServiceSpy(TestContext ctx)
+    public static Radzen.DialogService GetDialogServiceSpy(BunitContext ctx)
         => ctx.Services.GetRequiredService<Radzen.DialogService>();
 
     /// <summary>
@@ -126,7 +126,7 @@ internal static class ComponentTestSetup
     /// null/empty checks (e.g. <c>Loc["..."] is { ResourceNotFound: true }
     /// fallback) don't trigger fallback paths.
     /// </summary>
-    public static IStringLocalizer<T> AddIdentityLocalizer<T>(TestContext ctx)
+    public static IStringLocalizer<T> AddIdentityLocalizer<T>(BunitContext ctx)
         where T : class
     {
         var loc = Substitute.For<IStringLocalizer<T>>();
@@ -151,7 +151,7 @@ internal static class ComponentTestSetup
     /// <param name="roles">Role names (use <c>Roles.Admin</c>,
     /// <c>Roles.Customer</c>, etc.).</param>
     public static AuthenticationStateProvider AddAuthenticatedUser(
-        TestContext ctx,
+        BunitContext ctx,
         string userName = "test-user",
         params string[] roles)
     {
@@ -176,7 +176,7 @@ internal static class ComponentTestSetup
 
     /// <summary>
     /// Builds an authenticated user via bUnit's native
-    /// <c>AddTestAuthorization()</c> extension — this registers the FULL
+    /// <c>AddAuthorization()</c> extension — this registers the FULL
     /// ASP.NET Core authorization pipeline (AuthenticationStateProvider
     /// + IAuthorizationService + IAuthorizationPolicyProvider + the
     /// AuthorizeView cascade). Use this for components that use
@@ -185,20 +185,22 @@ internal static class ComponentTestSetup
     /// <param name="ctx">The test context.</param>
     /// <param name="userName">The display name (default "test-user").</param>
     /// <param name="roles">Role names (use <c>Roles.Admin</c>, etc.).</param>
-    /// <returns>The <see cref="TestAuthorizationContext"/> so the
+    /// <returns>The <see cref="BunitAuthorizationContext"/> so the
     /// test can mutate it further if needed.</returns>
-    public static TestAuthorizationContext AddBunitAuthorizedUser(
-        TestContext ctx,
+    public static BunitAuthorizationContext AddBunitAuthorizedUser(
+        BunitContext ctx,
         string userName = "test-user",
         params string[] roles)
     {
-        // bUnit v1.36 API: AddTestAuthorization() returns
-        // TestAuthorizationContext. SetAuthorized(user, state) makes
+        // bUnit v2.x API (migrated from 1.36 with the 2.14.0 package
+        // bump): TestContext -> BunitContext, AddTestAuthorization() ->
+        // AddAuthorization(), TestAuthorizationContext ->
+        // BunitAuthorizationContext. SetAuthorized(user, state) makes
         // the user authenticated with the given auth state. SetRoles
         // adds role claims. AuthorizeView reads these via the
-        // FakeAuthenticationStateProvider that AddTestAuthorization
+        // FakeAuthenticationStateProvider that AddAuthorization
         // registers.
-        var auth = ctx.AddTestAuthorization();
+        var auth = ctx.AddAuthorization();
         auth.SetAuthorized(userName, AuthorizationState.Authorized);
         if (roles.Length > 0)
             auth.SetRoles(roles);
@@ -207,21 +209,21 @@ internal static class ComponentTestSetup
 
     /// <summary>
     /// Builds an anonymous (not authenticated) user via bUnit's native
-    /// AddTestAuthorization() extension. Use this for testing the not-
+    /// AddAuthorization() extension. Use this for testing the not-
     /// authorized paths in <c>&lt;AuthorizeView&gt;</c>-based components.
     /// </summary>
-    public static TestAuthorizationContext AddBunitAnonymousUser(TestContext ctx)
+    public static BunitAuthorizationContext AddBunitAnonymousUser(BunitContext ctx)
     {
         // SetNotAuthorized → user is not authenticated. AuthorizeView
         // treats this as anonymous → not-authorized.
-        return ctx.AddTestAuthorization().SetNotAuthorized();
+        return ctx.AddAuthorization().SetNotAuthorized();
     }
 
     /// <summary>
     /// Builds an anonymous (no claims) AuthenticationStateProvider — used
     /// for testing the not-authorized paths in RequireRole.razor.
     /// </summary>
-    public static AuthenticationStateProvider AddAnonymousUser(TestContext ctx)
+    public static AuthenticationStateProvider AddAnonymousUser(BunitContext ctx)
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity());
         var authState = new AuthenticationState(principal);

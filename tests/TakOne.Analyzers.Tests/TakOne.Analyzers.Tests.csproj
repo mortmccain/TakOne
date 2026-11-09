@@ -71,15 +71,18 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
 
     <!--
-      Roslyn 4.11.0 — same version the analyzer project uses. The test
-      harness builds a CSharpCompilation programmatically and calls
-      `compilation.WithAnalyzers(...).GetAnalyzerDiagnosticsAsync()`.
-      TakOne.Analyzers.csproj already pulls this transitively, but we
-      add it here explicitly so the harness's Roslyn API surface is
-      unambiguous (and survives any future change to the analyzer
-      project's dependency footprint).
+      Roslyn 5.9.0 — same version the analyzer project uses (and the
+      exact version bundled with the pinned .NET SDK 10.0.401 compiler).
+      The test harness builds a CSharpCompilation programmatically and
+      calls `compilation.WithAnalyzers(...).GetAnalyzerDiagnosticsAsync()`
+      — CompilationWithAnalyzers lives in the compiler layer
+      (Microsoft.CodeAnalysis.Diagnostics), NOT in Workspaces, so the
+      compiler package suffices. TakOne.Analyzers.csproj already pulls
+      it transitively, but we add it here explicitly so the harness's
+      Roslyn API surface is unambiguous (and survives any future change
+      to the analyzer project's dependency footprint).
     -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
   </ItemGroup>
 
   <ItemGroup>

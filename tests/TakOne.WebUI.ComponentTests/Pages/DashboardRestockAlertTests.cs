@@ -62,7 +62,7 @@ public class DashboardRestockAlertTests
         LowStockProductTotalCount = lowStockTotalCount
     };
 
-    private static (TestContext ctx, IMessageBus bus) Setup(DashboardStatsDto dto)
+    private static (BunitContext ctx, IMessageBus bus) Setup(DashboardStatsDto dto)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -117,7 +117,7 @@ public class DashboardRestockAlertTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert — the banner renders with its title + the count in
             // the subtitle, one chip per product (name + stock count).
@@ -168,7 +168,7 @@ public class DashboardRestockAlertTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert — the CAPPED subtitle variant with both numbers:
             // the stub localizer renders the key + args, so both the
@@ -198,7 +198,7 @@ public class DashboardRestockAlertTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert — the dashboard itself renders (KPI cards settle)
             // but the restock banner is absent.
@@ -220,7 +220,7 @@ public class DashboardRestockAlertTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<Dashboard>();
+            var cut = ctx.Render<Dashboard>();
 
             // Assert
             cut.WaitForAssertion(

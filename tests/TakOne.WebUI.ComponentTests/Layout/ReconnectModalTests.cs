@@ -52,10 +52,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_ContainsReconnectDialogElement()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The dialog element is the root of the component. The
@@ -73,10 +73,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_DataNoSnippetAttributePresent()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // data-nosnippet is a SEO hint: search engines should not index
@@ -91,10 +91,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_ContainsRetryButton()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The Retry button is shown when the reconnect has FAILED (the
@@ -108,10 +108,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_ContainsResumeButton()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The Resume button is shown when the circuit has been PAUSED
@@ -126,10 +126,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_ContainsRejoiningAnimationDiv()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The reconnect animation (a spinner / pulsing dots) is rendered
@@ -144,10 +144,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_ContainsAllVisibilityStateParagraphs()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // All four visibility-state paragraphs are present in the markup
@@ -171,10 +171,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_IncludesSecondsToNextAttemptPlaceholder()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The "Rejoin failed... trying again in X seconds" sentence has
@@ -189,10 +189,10 @@ public class ReconnectModalTests
     public void ReconnectModal_Rendered_IncludesScriptTagForRazorJs()
     {
         // Arrange
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
 
         // Act
-        var cut = ctx.RenderComponent<ReconnectModal>();
+        var cut = ctx.Render<ReconnectModal>();
 
         // Assert
         // The component emits a <script type="module" src="..."> tag

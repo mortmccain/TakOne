@@ -56,7 +56,7 @@ public class SalesPageLoadDataTests
             CreatedByName = "Test Staff"
         }).ToList();
 
-    private static (TestContext ctx, IMessageBus bus) Setup(int totalCount, List<SaleListItemDto> page)
+    private static (BunitContext ctx, IMessageBus bus) Setup(int totalCount, List<SaleListItemDto> page)
     {
         var ctx = ComponentTestSetup.CreateRadzenEnabledContext();
 
@@ -103,7 +103,7 @@ public class SalesPageLoadDataTests
         {
             // Act — mount the page. The grid's LoadData-on-init fires
             // during the initial render lifecycle.
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
 
             // Assert — the load settles: 20 rows render, the pager
             // reflects the SERVER total (45), not the local page size.
@@ -136,7 +136,7 @@ public class SalesPageLoadDataTests
         var (ctx, bus) = Setup(totalCount: 45, page: MakeSales(20));
         using (ctx)
         {
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
             cut.WaitForAssertion(
                 () => cut.FindAll(".sale-number-link").Should().HaveCount(20),
                 TimeSpan.FromSeconds(10));
@@ -162,7 +162,7 @@ public class SalesPageLoadDataTests
         using (ctx)
         {
             // Act
-            var cut = ctx.RenderComponent<Sales>();
+            var cut = ctx.Render<Sales>();
 
             // Assert — the fresh-customer empty state (no filters were
             // active): the "start shopping" card, NOT the filtered-empty

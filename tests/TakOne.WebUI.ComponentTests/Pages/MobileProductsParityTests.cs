@@ -70,7 +70,7 @@ internal static class MobileProductsPageTestHarness
     /// payload for ITS page number — defaults to a fixed single page
     /// (the export test's shape: every page = the same short list,
     /// which makes the export loop terminate after one fetch).</param>
-    internal static (TestContext ctx, List<GetProductsPaginatedQuery> dispatched, BunitJSInterop js) Setup(
+    internal static (BunitContext ctx, List<GetProductsPaginatedQuery> dispatched, BunitJSInterop js) Setup(
         string[] roles,
         int totalCount,
         Func<GetProductsPaginatedQuery, List<ProductListItemDto>>? pageProvider = null)
@@ -215,16 +215,16 @@ public class MobileProductsParityTests
     // The mobile page's per-page row count (mirrors the page const).
     private const int MobilePageSize = 24;
 
-    private static (TestContext ctx, List<GetProductsPaginatedQuery> dispatched, BunitJSInterop js) Setup(
+    private static (BunitContext ctx, List<GetProductsPaginatedQuery> dispatched, BunitJSInterop js) Setup(
         string[] roles,
         int totalCount,
         Func<GetProductsPaginatedQuery, List<ProductListItemDto>>? pageProvider = null)
         => MobileProductsPageTestHarness.Setup(roles, totalCount, pageProvider);
 
     /// <summary> Renders and waits for the initial product cards. </summary>
-    private static IRenderedComponent<MobileProducts> Mount(TestContext ctx, int expectedCards)
+    private static IRenderedComponent<MobileProducts> Mount(BunitContext ctx, int expectedCards)
     {
-        var cut = ctx.RenderComponent<MobileProducts>();
+        var cut = ctx.Render<MobileProducts>();
         cut.WaitForAssertion(
             () => cut.FindAll(".m-product-card").Should().HaveCount(expectedCards),
             TimeSpan.FromSeconds(10));
@@ -508,14 +508,15 @@ public class MobileProductsParityTests
 
             // Act — clear the search, then simulate the ROUTER's
             // parameter pass. bUnit renders the page WITHOUT a Router
-            // host, so FakeNavigationManager.NavigateTo alone never
+            // host, so BunitNavigationManager.NavigateTo alone never
             // re-triggers OnParametersSetAsync; in production the Router
             // re-renders the routed page on every same-route navigation
             // (fresh RouteData → parameter pass), which is exactly what
-            // SetParametersAndRender() (empty: the page has no route
+            // Render(ParameterView.Empty) (bUnit v2's replacement for the
+            // v1 SetParametersAndRender(); empty: the page has no route
             // params) reproduces here.
             await cut.InvokeAsync(() => cut.Find(".m-search-chip-clear").Click());
-            await cut.InvokeAsync(() => cut.SetParametersAndRender());
+            await cut.InvokeAsync(() => cut.Render(ParameterView.Empty));
 
             // Assert — a follow-up query WITHOUT the search term but
             // STILL carrying the staff view mode (a view mode, not a
