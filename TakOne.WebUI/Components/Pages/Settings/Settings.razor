@@ -1685,6 +1685,51 @@
                                              Style="margin-top: 0.5rem;" />
                             }
 
+                            @* Success-with-notice (the silent trap): the last
+                               run SUCCEEDED but its .bak did NOT land in the
+                               backups folder (default-backup-directory
+                               fallback — the file is stranded on the SQL
+                               Server's own filesystem). Rendered from the
+                               IN-MEMORY note so it appears even when the
+                               run-history ledger itself could not be
+                               written; without this alert a backup-volume
+                               permission problem looks exactly like
+                               "success + 0 files + 0 bytes". *@
+                            @if (backup.LastRunSucceeded is true && !backup.IsRunning && !string.IsNullOrEmpty(backup.LastRunNote))
+                            {
+                                <RadzenAlert Title="@Loc["BackupNoteAlertTitle"]"
+                                             Text="@backup.LastRunNote"
+                                             AlertStyle="AlertStyle.Warning"
+                                             Variant="Variant.Outlined"
+                                             ShowIcon="true"
+                                             Style="margin-top: 0.5rem;" />
+                            }
+
+                            @* Directory health — distinguishes a wiring
+                               problem from the legitimate "no files yet"
+                               state, so an empty files ledger is never
+                               ambiguous: NOT mounted (danger) vs mounted
+                               but read-only for the app (warning — history
+                               + retention silently stop working). *@
+                            @if (!backup.DirectoryExists)
+                            {
+                                <RadzenAlert Title="@Loc["BackupDirectoryMissingTitle"]"
+                                             Text="@Loc["BackupDirectoryMissingText"]"
+                                             AlertStyle="AlertStyle.Danger"
+                                             Variant="Variant.Outlined"
+                                             ShowIcon="true"
+                                             Style="margin-top: 0.5rem;" />
+                            }
+                            else if (!backup.DirectoryWritable)
+                            {
+                                <RadzenAlert Title="@Loc["BackupDirectoryNotWritableTitle"]"
+                                             Text="@Loc["BackupDirectoryNotWritableText"]"
+                                             AlertStyle="AlertStyle.Warning"
+                                             Variant="Variant.Outlined"
+                                             ShowIcon="true"
+                                             Style="margin-top: 0.5rem;" />
+                            }
+
                             @* ── Run-history ledger (persisted JSONL) — one row
                                per COMPLETED run, newest first: trigger icon
                                (clock = scheduled slot, touch = manual "Back
@@ -1763,8 +1808,15 @@
                                     }
                                 </div>
                             }
-                            else
+                            else if (backup.DirectoryExists && backup.DirectoryWritable)
                             {
+                                @* The LEGITIMATE empty state — the
+                                   directory is healthy, it just has no
+                                   .bak yet. When the directory is
+                                   missing or read-only, the health alert
+                                   above already explains the empty list
+                                   (rendering "no files yet" on top of a
+                                   wiring error would be a lie). *@
                                 <RadzenText TextStyle="TextStyle.Body2"
                                             Style="color: var(--rz-text-secondary-color); margin-top: 0.5rem;">
                                     @Loc["BackupNoFiles"]

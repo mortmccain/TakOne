@@ -248,6 +248,15 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
     private string _lastRunError = string.Empty;
 
     /// <summary>
+    /// Non-failure annotation for the most recent COMPLETED run (empty on
+    /// normal runs) — the in-memory copy of the ledger record's Note,
+    /// surfaced through <see cref="GetStatus"/> even when the ledger write
+    /// itself failed (an unwritable backup directory). See
+    /// <see cref="BackupStatusDto.LastRunNote"/>.
+    /// </summary>
+    private string _lastRunNote = string.Empty;
+
+    /// <summary>
     /// The manual-trigger wake signal + its pending flag. <see cref="TryTriggerNow"/>
     /// sets <c>_pendingTriggers</c> and completes the current source; the
     /// schedule loop races its slot-delay against the source and CONSUMES
@@ -505,6 +514,17 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
             // IO failures — history must NEVER fail the run itself (and
             // a throw here in the finally would mask the original
             // backup exception).
+            //
+            // The note ALSO lands in the in-memory coordinator state so
+            // the Settings card can surface it even when the ledger
+            // write above just failed (e.g. the volume is read-only for
+            // the app — precisely the misconfiguration the note
+            // describes).
+            lock (_stateLock)
+            {
+                _lastRunNote = note;
+            }
+
             await AppendRunHistoryRecordAsync(directory, new BackupRunRecord
             {
                 StartedUtc = startedUtc,
@@ -758,7 +778,9 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                     $"write there); the backup succeeded via the SQL Server default backup directory but the file " +
                     $"could not be copied into the backups folder ({detail}). It remains ON THE SQL SERVER at " +
                     $"'{serverDefaultFilePath}' — it will not appear in the backup files list and is not " +
-                    "covered by the retention sweep; copy or move it manually.";
+                    "covered by the retention sweep; copy or move it manually. Docker: this means the shared " +
+                    "takone_backups volume is not writable by the SQL Server service account (uid 10001) — see " +
+                    "DEPLOYMENT.md (Backup volume permissions).";
                 _logger.LogInformation(
                     "DatabaseBackup: {DatabaseName} backed up to {ServerFilePath} via the default backup " +
                     "directory; the file could not be relocated by the web app.",
@@ -811,7 +833,9 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
             "The configured backup directory was rejected by SQL Server (the service account cannot " +
             $"write there); the backup succeeded via the SQL Server default backup directory but remains " +
             $"ON THE SQL SERVER at '{serverDefaultFilePath}' (not visible to the web app). It will not " +
-            "appear in the backup files list and is not covered by the retention sweep; copy it manually.";
+            "appear in the backup files list and is not covered by the retention sweep; copy it manually. " +
+            "Docker: this means the shared takone_backups volume is not writable by the SQL Server service " +
+            "account (uid 10001) — see DEPLOYMENT.md (Backup volume permissions).";
         _logger.LogInformation(
             "DatabaseBackup: {DatabaseName} backed up to {ServerFilePath} via the default backup " +
             "directory (not visible to the web app).",
@@ -905,6 +929,18 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
             var directory = _directory;
             var enabled = _armed;
 
+            // Directory health — probed LIVE on every snapshot. These two
+            // flags let the Settings card distinguish a wiring problem
+            // (volume not mounted / not writable by the app's user) from
+            // the legitimate "no files yet" state, so an empty files
+            // ledger is never ambiguous. The write probe is what makes
+            // the SILENT failure modes visible: the ledger append and the
+            // retention sweep both swallow IO failures by design, so
+            // without this probe a read-only backup directory looks
+            // exactly like "success + 0 files + 0 bytes".
+            var directoryExists = Directory.Exists(directory);
+            var directoryWritable = directoryExists && ProbeDirectoryWritable(directory);
+
             // File listing — best-effort: an unreadable/missing directory
             // simply reports no files (the empty card state), never throws
             // into the query handler.
@@ -964,12 +1000,38 @@ public sealed class DatabaseBackupHostedService : BackgroundService, IBackupCoor
                 LastRunFinishedUtc = _lastRunFinishedUtc,
                 LastRunSucceeded = _lastRunSucceeded,
                 LastRunError = _lastRunError,
+                LastRunNote = _lastRunNote,
                 NextScheduledRunUtc = enabled ? NextRunUtc(DateTime.UtcNow) : null,
                 RetentionDays = _retentionDays,
+                DirectoryExists = directoryExists,
+                DirectoryWritable = directoryWritable,
                 Files = files,
                 TotalSizeBytes = totalBytes,
                 RunHistory = runHistory
             };
+        }
+    }
+
+    /// <summary>
+    /// Probes whether the CURRENT PROCESS can write into the directory:
+    /// creates and immediately deletes a uniquely-named zero-byte file.
+    /// NEVER throws — an unwritable directory is a diagnosable STATE, not
+    /// a failed status query. The probe file's name starts with a dot and
+    /// never matches the <c>*.bak</c> pattern, so it cannot pollute the
+    /// files ledger even if a crash leaves it behind.
+    /// </summary>
+    private static bool ProbeDirectoryWritable(string directory)
+    {
+        try
+        {
+            var probePath = Path.Combine(directory, ".takone-write-probe-" + Path.GetRandomFileName());
+            File.WriteAllText(probePath, string.Empty);
+            File.Delete(probePath);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 

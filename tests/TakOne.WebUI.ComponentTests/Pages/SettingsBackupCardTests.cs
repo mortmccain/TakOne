@@ -58,8 +58,15 @@ public class SettingsBackupCardTests
         LastRunFinishedUtc = history.Length > 0 ? history[0].FinishedUtc : null,
         LastRunSucceeded = history.Length > 0 ? history[0].Succeeded : null,
         LastRunError = history.Length > 0 ? history[0].Error : string.Empty,
+        // The in-memory note defaults to the ledger's first record when
+        // one exists (mirrors the service's finally-block state).
+        LastRunNote = history.Length > 0 ? history[0].Note : string.Empty,
         NextScheduledRunUtc = DateTime.UtcNow.AddHours(3),
         RetentionDays = 7,
+        // Healthy directory by default — the diagnostics tests override
+        // these to render the wiring-problem alerts.
+        DirectoryExists = true,
+        DirectoryWritable = true,
         Files = new List<BackupFileInfoDto>(),
         TotalSizeBytes = 0,
         RunHistory = history.ToList()
@@ -372,5 +379,103 @@ public class SettingsBackupCardTests
             "the note also rides the row's tooltip");
         rows[1].TextContent.Should().NotContain("default backup directory",
             "a normal run renders no note line");
+    }
+
+    [Fact]
+    public void Settings_BackupCard_SuccessRunWithInMemoryNote_RendersWarningAlertWithoutLedger()
+    {
+        // Arrange — the stranded-backups signature: the last run
+        // SUCCEEDED via the default-backup-directory fallback (the file
+        // is on the SQL Server, not in the backups folder), and the
+        // run-history LEDGER IS EMPTY because the backup volume was not
+        // writable by the app either. The in-memory LastRunNote is the
+        // ONLY surface that can explain the "success + 0 files + 0
+        // bytes" combination.
+        const string note =
+            "The configured backup directory was rejected by SQL Server; the backup succeeded via " +
+            "the SQL Server default backup directory but remains ON THE SQL SERVER at " +
+            "'/var/opt/mssql/data/TakOne-backup-20261003-033000.bak' (not visible to the web app).";
+        var status = new BackupStatusDto
+        {
+            Enabled = true,
+            IsRunning = false,
+            LastRunStartedUtc = new DateTime(2026, 10, 3, 3, 30, 0, DateTimeKind.Utc),
+            LastRunFinishedUtc = new DateTime(2026, 10, 3, 3, 30, 12, DateTimeKind.Utc),
+            LastRunSucceeded = true,
+            LastRunNote = note,
+            NextScheduledRunUtc = DateTime.UtcNow.AddHours(3),
+            RetentionDays = 7,
+            DirectoryExists = true,
+            DirectoryWritable = false,
+            Files = new List<BackupFileInfoDto>(),
+            TotalSizeBytes = 0,
+            RunHistory = new List<BackupRunRecordDto>()
+        };
+        using var ctx = Setup(status);
+
+        // Act
+        var cut = ctx.Render<Settings>();
+
+        // Assert — the success-with-notice alert renders the note (no
+        // hovering, no ledger row needed) …
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("BackupNoteAlertTitle"),
+            TimeSpan.FromSeconds(10));
+        cut.Markup.Should().Contain("/var/opt/mssql/data/TakOne-backup-20261003-033000.bak");
+
+        // … while there are no ledger rows to carry it (the ledger is
+        // empty — exactly the unwritable-volume scenario).
+        cut.FindAll(".backup-run-row").Should().BeEmpty();
+        cut.FindAll(".backup-run-note").Should().BeEmpty();
+
+        // The read-only directory warning renders too (history + the
+        // 7-day cleanup are not being persisted), and the failure alert
+        // stays hidden — the run did not fail.
+        cut.Markup.Should().Contain("BackupDirectoryNotWritableTitle");
+        cut.Markup.Should().NotContain("BackupFailedAlertTitle");
+    }
+
+    [Fact]
+    public void Settings_BackupCard_MissingDirectory_RendersDistinctMissingAlert()
+    {
+        // Arrange — the volume-not-mounted misconfiguration: the backup
+        // directory does not exist inside the web container at all.
+        var status = MakeStatus() with { DirectoryExists = false, DirectoryWritable = false };
+        using var ctx = Setup(status);
+
+        // Act
+        var cut = ctx.Render<Settings>();
+
+        // Assert — the danger alert names the problem; the generic
+        // "no files yet" line (a lie in this state) is suppressed, as
+        // is the read-only warning (a missing directory is not that).
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("BackupDirectoryMissingTitle"),
+            TimeSpan.FromSeconds(10));
+        cut.Markup.Should().NotContain("BackupNoFiles");
+        cut.Markup.Should().NotContain("BackupDirectoryNotWritableTitle");
+    }
+
+    [Fact]
+    public void Settings_BackupCard_ReadOnlyDirectory_SuppressesNoFilesLine()
+    {
+        // Arrange — the wrong-ownership volume: the directory exists
+        // (readable — the file scan works) but the app cannot write to
+        // it, so the ledger + retention sweep silently no-op.
+        var status = MakeStatus() with { DirectoryExists = true, DirectoryWritable = false };
+        using var ctx = Setup(status);
+
+        // Act
+        var cut = ctx.Render<Settings>();
+
+        // Assert — the read-only warning renders; the healthy-empty
+        // "no files yet" line is suppressed (the warning above already
+        // explains the empty list); the missing-directory danger alert
+        // stays hidden.
+        cut.WaitForAssertion(
+            () => cut.Markup.Should().Contain("BackupDirectoryNotWritableTitle"),
+            TimeSpan.FromSeconds(10));
+        cut.Markup.Should().NotContain("BackupNoFiles");
+        cut.Markup.Should().NotContain("BackupDirectoryMissingTitle");
     }
 }

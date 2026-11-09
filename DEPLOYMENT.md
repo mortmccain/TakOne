@@ -445,6 +445,62 @@ volume (`takone_backups`) into **both** containers:
 Two mount points, one physical volume — the app sees the exact files the
 database wrote, and the retention sweep (7 days) runs from the app side.
 
+**Backup volume permissions — the `takone-backup-init` service.** A fresh
+Docker *named volume* inherits the ownership of the image directory it is
+mounted over **only when that path exists in the image**. `/var/opt/mssql`
+exists in the mssql image (that's why the data volume just works), but
+`/var/opt/mssql/backup` does **not** — and `/var/lib/takone/backups` does
+not exist in the web image either. So the `takone_backups` volume is
+created `root:root` with mode `0755`, and *neither* process can use it:
+
+* SQL Server runs as uid **10001** (`mssql`) → cannot write `.bak` files →
+  every `BACKUP ... TO DISK` fails with *Cannot open backup device*
+  (Operating system error 5).
+* The web app runs as uid **1654** (`app`) → cannot write the run-history
+  ledger and cannot delete expired backups (both failures are silent by
+  design — a run's outcome must never fail because its history could not
+  be saved).
+
+The `takone-backup-init` one-shot service in `docker-compose.yml` fixes
+this on every `compose up`: it runs `chown -R 10001:0` + `chmod 0777` on
+the volume root **before** the db and web containers start, and drops a
+`.takone-volume-initialized` sentinel so no image-seeding ever re-owns
+the volume afterwards. It is idempotent and also **repairs volumes
+created before the service existed**.
+
+**"Backups say SUCCESS but 0 files / 0 bytes — what happened?"** This is
+the signature of the permission problem above, on a deployment that
+predates the init service. Because SQL Server could not write the shared
+volume, the app's fallback wrote every backup into SQL Server's **own
+default backup folder inside the db container** (`/var/opt/mssql/data/`)
+and reported success with an explanatory note — a note you never saw,
+because the app also couldn't write the ledger it would have been saved
+in. The backups are **not lost**. After updating and running
+`docker compose up -d --build` (which fixes the volume), move them onto
+the shared volume:
+
+```bash
+# 1. See the stranded backups (there is roughly one per scheduled slot
+#    + every manual "Back up now" since the first deploy):
+docker compose exec takone-db ls -lh /var/opt/mssql/data/TakOne-backup-*.bak
+
+# 2. Move them onto the shared backup volume (the Settings page will
+#    list them immediately — hit Refresh; the 7-day retention sweep
+#    then prunes the old ones on the next run):
+docker compose exec takone-db sh -c \
+  'mv /var/opt/mssql/data/TakOne-backup-*.bak /var/opt/mssql/backup/'
+```
+
+If step 1 prints `ls: cannot access ... No such file or directory`, there
+are no stranded files (e.g. the fallback never triggered on your box) —
+nothing to rescue.
+
+The Settings → backup card now also **tells you** instead of staying
+silent: a completed run whose file landed elsewhere shows a yellow
+"completed with a notice" alert with the exact server-side path, a backup
+folder the app cannot write to shows a read-only warning, and a missing
+folder shows its own error — so "0 files" is never ambiguous again.
+
 **Differences vs a non-Docker (dev) deployment**, for the record:
 
 1. **Paths.** In dev (Kestrel + local SQL Server on one machine) the

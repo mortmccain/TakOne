@@ -5,6 +5,49 @@ name: takone
 
 services:
 
+  # ── Backup-volume initializer (one-shot, runs before db + web) ──────
+  #
+  # WHY THIS EXISTS: Docker seeds a named volume's ownership from the
+  # image ONLY when the mount path exists in that image. /var/opt/mssql/
+  # backup does not exist in the mssql image, and /var/lib/takone/backups
+  # does not exist in the web image — so a fresh takone_backups volume
+  # stays root:root 0755 (Docker's default). Two silent failures follow:
+  #   • SQL Server (uid 10001, `mssql`) cannot write .bak files → every
+  #     BACKUP ... TO DISK fails with "Cannot open backup device"
+  #     (Operating system error 5) → the app's fallback rescues the run
+  #     into SQL Server's OWN backup folder inside the db container →
+  #     the Settings card shows "success" with 0 files + 0 bytes.
+  #   • The web app (uid 1654, `app`) cannot write the run-history
+  #     ledger nor delete expired backups (both swallow IO failures by
+  #     design) → the note explaining the above is never persisted.
+  #
+  # This service hands the volume to BOTH processes on every compose up:
+  #   chown -R 10001:0 → the mssql service account owns the tree
+  #   chmod 0777       → the volume ROOT is writable by both uids (fine
+  #                      for a dedicated volume only these two containers
+  #                      can reach; the files themselves stay 0644)
+  # The sentinel file marks the volume as initialized so no container's
+  # image-seeding can ever re-own it afterwards. Idempotent — safe on
+  # every redeploy, and it REPAIRS volumes created before this service
+  # existed (the stranded-backups incident — see DEPLOYMENT.md).
+  takone-backup-init:
+    # Same PINNED image as takone-db — no new registry dependency, and
+    # the exact toolset (bash + coreutils) is guaranteed present.
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        chown -R 10001:0 /backup
+        chmod 0777 /backup
+        touch /backup/.takone-volume-initialized
+        echo "takone_backups volume ready (owner 10001:0, root mode 0777)."
+    container_name: takone-backup-init
+    restart: "no"
+    volumes:
+      - takone_backups:/backup
+
   takone-db:
     # PINNED to a specific SQL Server 2022 CU tag (NOT :latest) for
     # data-safety. `:latest` could silently jump a major version on a
@@ -30,6 +73,13 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD}
       MSSQL_PID: "Developer"
+    # The backup volume MUST be handed to the mssql user (uid 10001)
+    # before SQL Server starts writing backups into it — see the
+    # takone-backup-init service above. service_completed_successfully
+    # makes a failed init block the whole stack (loud, not silent).
+    depends_on:
+      takone-backup-init:
+        condition: service_completed_successfully
     # No `ports:` mapping — SQL Server must NOT be exposed to the host.
     # The web container reaches takone-db:1433 over the internal Docker
     # network. Exposing 1433 to the host combined with the SA password

@@ -509,6 +509,22 @@
   <data name="BackupFailedAlertTitle" xml:space="preserve">
     <value>آخرین پشتیبان‌گیری ناموفق بود</value>
   </data>
+  <data name="BackupNoteAlertTitle" xml:space="preserve">
+    <value>آخرین پشتیبان‌گیری با توضیحی تکمیل شد</value>
+    <comment>هشدار «موفق اما همراه با یادداشت»: اجرا موفق بود اما فایل ‎.bak در پوشهٔ پشتیبان‌ها ننشست (مسیر جایگزین) — یادداشت موتور، محل فایل را توضیح می‌دهد.</comment>
+  </data>
+  <data name="BackupDirectoryMissingTitle" xml:space="preserve">
+    <value>پوشهٔ پشتیبان پیدا نشد</value>
+  </data>
+  <data name="BackupDirectoryMissingText" xml:space="preserve">
+    <value>پوشهٔ ذخیرهٔ پشتیبان‌ها درون کانتینر وب وجود ندارد. در Docker یعنی والوم takone_backups در مسیر ‎/var/lib/takone/backups نصب نشده است — docker-compose.yml را بررسی کنید و به DEPLOYMENT.md مراجعه کنید.</value>
+  </data>
+  <data name="BackupDirectoryNotWritableTitle" xml:space="preserve">
+    <value>پوشهٔ پشتیبان برای برنامه فقط‌خواندنی است</value>
+  </data>
+  <data name="BackupDirectoryNotWritableText" xml:space="preserve">
+    <value>برنامه نمی‌تواند در پوشهٔ پشتیبان بنویسد؛ در نتیجه سابقهٔ اجراها و پاک‌سازی ۷ روزه ذخیره نمی‌شوند. در Docker یعنی مالکیت والوم takone_backups نادرست است — استقرار دوباره با docker-compose.yml فعلی (سرویس takone-backup-init) آن را رفع می‌کند. برای جزئیات به DEPLOYMENT.md مراجعه کنید.</value>
+  </data>
   <data name="BackupNoFiles" xml:space="preserve">
     <value>هنوز فایل پشتیبانی ذخیره نشده است — نخستین اجرای برنامه‌ریزی‌شده (یا اجرای دستی) یکی می‌سازد.</value>
   </data>

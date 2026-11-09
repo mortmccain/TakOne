@@ -41,6 +41,18 @@ public sealed record BackupStatusDto
     public string LastRunError { get; init; } = string.Empty;
 
     /// <summary>
+    /// Non-failure annotation from the most recent COMPLETED run — the
+    /// in-memory twin of the ledger record's <see cref="BackupRunRecordDto.Note"/>.
+    /// Surfaced SEPARATELY from <see cref="RunHistory"/> because the ledger
+    /// write itself can fail (an unwritable backup directory leaves the
+    /// persisted history empty while this field still explains where the
+    /// backup file ended up — e.g. stranded on the SQL Server's own
+    /// filesystem by the default-backup-directory fallback). Empty on
+    /// normal runs and before any run has completed.
+    /// </summary>
+    public string LastRunNote { get; init; } = string.Empty;
+
+    /// <summary>
     /// The next scheduled 03:30/14:30 UTC slot. Null when disabled. A
     /// manually-triggered run does NOT shift this — the schedule is fixed.
     /// </summary>
@@ -48,6 +60,28 @@ public sealed record BackupStatusDto
 
     /// <summary>Configured retention window in days (files older than this are swept).</summary>
     public int RetentionDays { get; init; }
+
+    /// <summary>
+    /// True when the web-side backup directory currently EXISTS on the
+    /// filesystem. False after a mount/volume misconfiguration — the UI
+    /// then shows a distinct "directory not found" state instead of a
+    /// bare "no files yet" list, because an empty files ledger must
+    /// never be ambiguous.
+    /// </summary>
+    public bool DirectoryExists { get; init; }
+
+    /// <summary>
+    /// True when the app's process can WRITE into the backup directory
+    /// (probed live by creating + deleting a tiny temp file). The
+    /// run-history ledger and the retention sweep both swallow IO
+    /// failures BY DESIGN (a run's outcome must never fail because its
+    /// history could not be saved) — so when this is false the UI must
+    /// say it out loud: history stops persisting and expired files stop
+    /// being deleted, silently. In the Docker deployment this is the
+    /// signature of a takone_backups volume with wrong ownership (see
+    /// DEPLOYMENT.md — the takone-backup-init compose service fixes it).
+    /// </summary>
+    public bool DirectoryWritable { get; init; }
 
     /// <summary>
     /// Backup files currently in the backup directory, NEWEST FIRST.

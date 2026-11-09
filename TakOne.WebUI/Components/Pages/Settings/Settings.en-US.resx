@@ -505,6 +505,22 @@
   <data name="BackupFailedAlertTitle" xml:space="preserve">
     <value>Last backup failed</value>
   </data>
+  <data name="BackupNoteAlertTitle" xml:space="preserve">
+    <value>Last backup completed with a notice</value>
+    <comment>Success-with-note alert: the run succeeded but the .bak did not land in the backups folder (fallback path) — the engine note explains where it is.</comment>
+  </data>
+  <data name="BackupDirectoryMissingTitle" xml:space="preserve">
+    <value>Backup folder not found</value>
+  </data>
+  <data name="BackupDirectoryMissingText" xml:space="preserve">
+    <value>The backup storage folder does not exist inside the web container. In Docker this means the takone_backups volume is not mounted at /var/lib/takone/backups — check docker-compose.yml and see DEPLOYMENT.md.</value>
+  </data>
+  <data name="BackupDirectoryNotWritableTitle" xml:space="preserve">
+    <value>Backup folder is read-only for the app</value>
+  </data>
+  <data name="BackupDirectoryNotWritableText" xml:space="preserve">
+    <value>The app cannot write to the backup folder, so the run history and the 7-day cleanup are not being saved. In Docker this means the takone_backups volume has the wrong ownership — redeploying with the current docker-compose.yml (the takone-backup-init service) fixes it. See DEPLOYMENT.md.</value>
+  </data>
   <data name="BackupNoFiles" xml:space="preserve">
     <value>No backup files stored yet — the first scheduled run (or a manual run) will create one.</value>
   </data>
