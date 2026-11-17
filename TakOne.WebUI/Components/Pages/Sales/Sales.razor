@@ -597,12 +597,16 @@
                     <span>@Loc["PendingFilterChip"]</span>
                 </button>
 
-                @* Export CSV (Round 4) — exports every row matching the
-                   active filters (date range + column filters + scoping:
-                   a customer exports their own sales, staff export the
-                   audit view) across ALL pages, capped at 2,000 rows so
-                   a pathological filter can't hang the circuit. Spacer
-                   pushes it to the trailing edge on wide screens.
+                @* Export CSV (Round 4) — the order-history download, the
+                   ONLY order CSV in the app (owner policy: no other page
+                   may ship one). ROLE-SCOPED since the policy change:
+                     - Admin: the ENTIRE order history of everyone ever —
+                       a fresh unfiltered, UNcapped full dump (owner:
+                       "doesn't matter if the file gets big").
+                     - Everyone else (Manager/Employee/ReadOnly/Customer):
+                       their OWN orders only (MineOnly on the query),
+                       matching the active filters, capped at 2,000 rows
+                       so a pathological run can't hang the circuit.
                    NOTE (empty-button fix): RadzenButton renders ChildContent
                    EXCLUSIVELY when set — the old `@if (_isExporting)` child
                    block always produced a non-null (empty) RenderFragment,
@@ -1103,6 +1107,15 @@
     private bool _isStaff;
 
     /// <summary>
+    /// True only for the Admin role. Resolved alongside <see cref="_isStaff"/>
+    /// in OnInitializedAsync. Drives the order-history CSV export's role
+    /// policy: Admin's download is the full everyone-ever dump; every
+    /// other role's download carries their OWN orders only (see
+    /// ExportSalesCsvAsync + the query's MineOnly switch).
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
     /// Re-entrancy guard for the out-of-range auto-heal (see
     /// LoadGridDataAsync): a heal fires grid.FirstPage(true), which re-enters
     /// LoadGridDataAsync — the guard keeps a pathological sequence of loads
@@ -1135,6 +1148,7 @@
                    || user.IsInRole(Roles.Manager)
                    || user.IsInRole(Roles.Employee)
                    || user.IsInRole(Roles.ReadOnly);
+        _isAdmin = user.IsInRole(Roles.Admin);
 
         // URL-restored grid state (search terms / status selection / date
         // range / page + page size): parsed BEFORE the toolbar + grid
@@ -1528,9 +1542,12 @@
     /// Builds the typed query from the page-level filter/sort state (kept
     /// current by <see cref="SalesGridStateTranslator"/> on every load).
     /// Shared by the grid load and the CSV export so the export ships
-    /// exactly what the filters select.
+    /// exactly what the filters select. The optional
+    /// <paramref name="mineOnly"/> switch (set ONLY by the non-admin CSV
+    /// export) forces the server's customer-scoped specification so the
+    /// download carries the caller's OWN orders.
     /// </summary>
-    private GetSalesPaginatedQuery BuildQuery(int pageNumber, int pageSize) => new()
+    private GetSalesPaginatedQuery BuildQuery(int pageNumber, int pageSize, bool mineOnly = false) => new()
     {
         PageNumber = pageNumber,
         PageSize = pageSize,
@@ -1543,7 +1560,8 @@
         CreatedByNameFilter = _activeCreatedByNameFilter,
         TotalFilter = _activeTotalFilter,
         SortBy = _activeSortBy,
-        SortDescending = _activeSortDescending
+        SortDescending = _activeSortDescending,
+        MineOnly = mineOnly
     };
 
     /// <summary>
@@ -1836,23 +1854,38 @@
         return $"{CultureFormat.ToCultureDigits(fromLocal)} – {CultureFormat.ToCultureDigits(toLocal)}";
     }
 
-    // ── CSV export (Round 4 — all filtered rows, capped) ─────────────
+    // ── CSV export (order-history download — the only order CSV in the app) ─────
 
     /// <summary>
-    /// Hard cap on exported rows: generous enough for any real export,
-    /// small enough that a pathological filter (e.g. status-only on a
-    /// million-row DB) can't hang the Blazor circuit building a giant
-    /// string.
+    /// Hard cap on exported rows for NON-ADMIN exports. Generous enough
+    /// for any real personal order history, small enough that a
+    /// pathological filter (e.g. status-only on a million-row DB) can't
+    /// hang the Blazor circuit building a giant string. The ADMIN export
+    /// is deliberately UNcapped — see <see cref="ExportSalesCsvAsync"/>.
     /// </summary>
     private const int ExportRowCap = 2000;
 
     /// <summary>
-    /// Builds a CSV of EVERY sale matching the active filters (all
-    /// pages — a genuine improvement over the pre-Round-4 export, which
-    /// could only ship the ≤100 loaded rows), capped at
-    /// <see cref="ExportRowCap"/>, and downloads it via the takDownload
-    /// helper. Server-side scoping applies as always: a customer exports
-    /// their own sales, staff export the audit view.
+    /// Builds the order-history CSV download — the ONLY order CSV in the
+    /// app (owner policy), role-scoped per that policy:
+    ///
+    /// <list type="bullet">
+    ///   <item><b>Admin</b>: the ENTIRE order history of everyone ever —
+    ///   a fresh query with NO filters and NO row cap (the owner's
+    ///   explicit call: "only and only admin gets the whole csv …
+    ///   doesn't matter if the file gets big").</item>
+    ///   <item><b>Every other role</b> (Manager, Employee, ReadOnly,
+    ///   Customer): the caller's OWN orders only — enforced SERVER-SIDE
+    ///   via the query's <c>MineOnly</c> switch (the customer-scoped
+    ///   specification), NOT by anything this page decides. Active
+    ///   filters apply, capped at <see cref="ExportRowCap"/>.</item>
+    /// </list>
+    ///
+    /// The grid's list view keeps its own role-based scoping (staff see
+    /// the audit view) — for a Manager the CSV is therefore a PERSONAL
+    /// order history even though the grid on screen shows all sales.
+    /// That asymmetry is the policy: viewing is a staff tool, bulk
+    /// export of other people's orders is an admin-only capability.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1884,14 +1917,26 @@
             var pageNumber = 1;
             const int exportPageSize = 100; // the backend's MaxPageSize cap
 
-            while (exported < ExportRowCap)
+            while (_isAdmin || exported < ExportRowCap)
             {
+                // Admin: a FRESH unfiltered query — the full dump ignores
+                //   any date/status/column filters active on the grid
+                //   ("the entire orders of everyone ever").
+                // Non-admin: the grid's filtered query + MineOnly, which
+                //   the server enforces by re-scoping to the caller's own
+                //   purchases regardless of role.
                 var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
-                    BuildQuery(pageNumber, exportPageSize));
+                    _isAdmin
+                        ? new GetSalesPaginatedQuery
+                        {
+                            PageNumber = pageNumber,
+                            PageSize = exportPageSize
+                        }
+                        : BuildQuery(pageNumber, exportPageSize, mineOnly: true));
 
                 foreach (var sale in result.Items)
                 {
-                    if (exported >= ExportRowCap)
+                    if (!_isAdmin && exported >= ExportRowCap)
                     {
                         break;
                     }

@@ -637,4 +637,55 @@ public class GetSalesPaginatedQueryHandlerTests
         spec.Should().NotBeNull("the handler must hand a specification to the repository");
         return spec!;
     }
+
+    // ── MineOnly: the order-history CSV export's role-scoping switch ────
+
+    [Fact]
+    public async Task HandleAsync_StaffCallerWithMineOnly_ScopesToCallerPurchases()
+    {
+        // A STAFF caller (Admin here) sets MineOnly: the customer-scoped
+        // specification must win over the staff all-sales view. This is
+        // the server-side enforcement behind the Sales pages' order-history
+        // CSV policy — only Admin may bulk-export other people's orders,
+        // and Admin's export does that by NOT setting the flag; every
+        // other role's export sets it and is scoped to their own
+        // purchases regardless of role.
+        var (currentUser, saleRepo, logger) = BuildMocks(staff: true);
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery { MineOnly = true },
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var mine = SaleCreatedAt(DateTime.UtcNow); // caller IS the customer
+        var someoneElses = SaleCreatedAt(DateTime.UtcNow, customerId: Guid.NewGuid());
+
+        var matched = ApplySpec(new[] { mine, someoneElses }, CaptureSpec(saleRepo));
+
+        matched.Should().Contain(mine,
+            "MineOnly forces the customer-scoped spec even for staff callers");
+        matched.Should().NotContain(someoneElses,
+            "MineOnly must exclude other people's orders from the download");
+    }
+
+    [Fact]
+    public async Task HandleAsync_StaffCallerWithoutMineOnly_KeepsAllSalesScope()
+    {
+        // Without the flag, staff keep the all-sales audit view — the
+        // grid's behavior is unchanged; only the non-admin CSV export
+        // loop sets MineOnly.
+        var (currentUser, saleRepo, logger) = BuildMocks(staff: true);
+
+        await GetSalesPaginatedQueryHandler.HandleAsync(
+            new GetSalesPaginatedQuery(),
+            currentUser, saleRepo, logger, CancellationToken.None);
+
+        var mine = SaleCreatedAt(DateTime.UtcNow);
+        var someoneElses = SaleCreatedAt(DateTime.UtcNow, customerId: Guid.NewGuid());
+
+        var matched = ApplySpec(new[] { mine, someoneElses }, CaptureSpec(saleRepo));
+
+        matched.Should().Contain(mine);
+        matched.Should().Contain(someoneElses,
+            "staff WITHOUT MineOnly keep the all-sales audit view");
+    }
 }

@@ -57,12 +57,21 @@ public sealed class GetSalesPaginatedQueryHandler
         //    customer-role spec would hide every sale created by anyone
         //    else (and ReadOnly users by definition never buy), leaving
         //    them with an empty grid.
+        //
+        //    MINE-ONLY OVERRIDE (order-history CSV scoping): when the
+        //    caller sets MineOnly, the customer-scoped spec wins for EVERY
+        //    role. Owner policy: bulk CSV export of order history is an
+        //    Admin-only capability — every other role's download carries
+        //    their OWN purchases only. The flag can only narrow (see the
+        //    query's MineOnly xmldoc), never widen.
         // ------------------------------------------------------------------
         var canSeeAllSales =
             currentUser.IsInRole(Roles.Admin) ||
             currentUser.IsInRole(Roles.Manager) ||
             currentUser.IsInRole(Roles.Employee) ||
             currentUser.IsInRole(Roles.ReadOnly);
+
+        var useCustomerScope = !canSeeAllSales || query.MineOnly;
 
         // `ISpecification<Sale>` is the Ardalis interface. The repository's
         // SpecificationEvaluator translates whichever spec we hand it into
@@ -83,12 +92,12 @@ public sealed class GetSalesPaginatedQueryHandler
             SortBy: query.SortBy,
             SortDescending: query.SortDescending);
 
-        ISpecification<Sale> spec = canSeeAllSales
-            ? new AllSalesSpecification(
-                query.Status, query.FromDateUtc, query.ToDateUtc,
-                query.SearchTerm, filters)
-            : new SaleByCustomerSpecification(
+        ISpecification<Sale> spec = useCustomerScope
+            ? new SaleByCustomerSpecification(
                 currentUser.UserId, query.Status, query.FromDateUtc, query.ToDateUtc,
+                query.SearchTerm, filters)
+            : new AllSalesSpecification(
+                query.Status, query.FromDateUtc, query.ToDateUtc,
                 query.SearchTerm, filters);
 
         // ------------------------------------------------------------------

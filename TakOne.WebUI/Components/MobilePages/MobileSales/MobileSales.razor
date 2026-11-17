@@ -395,6 +395,15 @@ else
     private bool _isStaff;
 
     /// <summary>
+    /// True only for the Admin role. Resolved alongside <see cref="_isStaff"/>
+    /// in OnInitializedAsync. Drives the order-history CSV export's role
+    /// policy (mirrors the desktop Sales page): Admin's download is the
+    /// full everyone-ever, uncapped dump; every other role's download
+    /// carries their OWN orders only (the query's MineOnly switch).
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>
     /// Status filter tab options — string keys matching the SaleStatus enum's
     /// ToString() output. The tab labels are looked up via Loc["Status" + key]
     /// (e.g. "StatusDraft"), so the underlying filter value stays
@@ -417,6 +426,7 @@ else
                    || user.IsInRole(Roles.Manager)
                    || user.IsInRole(Roles.Employee)
                    || user.IsInRole(Roles.ReadOnly);
+        _isAdmin = user.IsInRole(Roles.Admin);
 
         try
         {
@@ -513,16 +523,20 @@ else
     }
 
     /// <summary>
-    /// ORDER-HISTORY CSV EXPORT (QA-12): builds a CSV of the FULL
-    /// server-scoped history — all pages via the loop, capped at
-    /// <see cref="ExportRowCap"/> — NOT just the loaded window, so a
-    /// customer with 250 orders exports all 250 even though only 100
-    /// are on screen. Column shape mirrors the desktop Sales export
-    /// (number, status, total, currency, staff-only customer + creator
-    /// audit columns, timestamp). Server-side scoping applies as always:
-    /// a customer exports their own sales, staff export the audit view.
-    /// CsvBuilder (RFC 4180 + invariant numbers) + takDownload.csv
-    /// (UTF-8 + BOM) — the shared export machinery every other page uses.
+    /// ORDER-HISTORY CSV EXPORT (QA-12, role-scoped by owner policy since):
+    /// builds a CSV of the FULL server-scoped history — all pages via the
+    /// loop — NOT just the loaded window, so a customer with 250 orders
+    /// exports all 250 even though only 100 are on screen. ROLE POLICY:
+    /// Admin downloads the ENTIRE order history of everyone ever,
+    /// UNcapped ("doesn't matter if the file gets big"); every other
+    /// role (Manager/Employee/ReadOnly/Customer) downloads their OWN
+    /// orders only — enforced server-side via the query's MineOnly
+    /// switch — capped at <see cref="ExportRowCap"/>. Column shape
+    /// mirrors the desktop Sales export (number, status, total,
+    /// currency, staff-only customer + creator audit columns,
+    /// timestamp). CsvBuilder (RFC 4180 + invariant numbers) +
+    /// takDownload.csv (UTF-8 + BOM) — the shared export machinery every
+    /// other page uses.
     /// </summary>
     private async Task ExportSalesCsvAsync()
     {
@@ -541,7 +555,7 @@ else
             var pageNumber = 1;
             const int exportPageSize = 100; // the backend's MaxPageSize cap
 
-            while (exported < ExportRowCap)
+            while (_isAdmin || exported < ExportRowCap)
             {
                 var result = await MessageBus.InvokeAsync<PaginatedResult<SaleListItemDto>>(
                     new GetSalesPaginatedQuery
@@ -549,12 +563,17 @@ else
                         PageNumber = pageNumber,
                         PageSize = exportPageSize,
                         SearchTerm = null,
-                        Status = null
+                        Status = null,
+                        // Non-admin: the server re-scopes to the caller's
+                        // OWN purchases regardless of role. Admin: the
+                        // flag is moot (the all-sales spec already applies)
+                        // — the loop simply runs uncapped to the last page.
+                        MineOnly = !_isAdmin
                     });
 
                 foreach (var sale in result.Items)
                 {
-                    if (exported >= ExportRowCap)
+                    if (!_isAdmin && exported >= ExportRowCap)
                     {
                         break;
                     }

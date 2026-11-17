@@ -155,6 +155,28 @@ public sealed class GetSalesPaginatedQuery
     /// </summary>
     public bool SortDescending { get; init; } = true;
 
+    /// <summary>
+    /// When <c>true</c>, the handler returns ONLY sales in which the
+    /// CALLER is the customer — their own purchases — regardless of the
+    /// caller's role. This is the data-export scoping switch for the
+    /// order-history CSV on the Sales pages ("my orders"): by owner
+    /// policy, the ONLY caller who may bulk-export OTHER people's orders
+    /// is Admin; every other role (Manager, Employee, ReadOnly, Customer)
+    /// exports their OWN orders only.
+    ///
+    /// SECURITY NOTE: <c>MineOnly = true</c> can only ever NARROW
+    /// visibility (it forces the customer-scoped specification even for
+    /// staff). It can never widen it — a customer without the flag
+    /// already gets the customer-scoped spec, and no role gains the
+    /// all-sales spec by setting it. The query stays
+    /// <c>[RequireAuthentication]</c>-gated; this flag adds no privilege.
+    ///
+    /// The Sales PAGES' grids never set this flag — the list view keeps
+    /// its role-based scoping (staff audit view vs. customer my-purchases
+    /// view). Only the CSV export loop sets it, for non-admin callers.
+    /// </summary>
+    public bool MineOnly { get; init; }
+
     // NOTE: no FilterByCreatorId on the query object — the handler resolves
     // the current user's id from ICurrentUserService so callers can't snoop
 }
