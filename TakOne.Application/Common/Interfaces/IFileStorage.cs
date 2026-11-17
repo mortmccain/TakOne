@@ -169,6 +169,158 @@ public interface IFileStorage
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Streams an upload to a SERVER-CONTROLLED STAGING FILE on disk and
+    /// returns its absolute path — the first half of the Settings page's
+    /// two-phase bulk-picture upload (pick → review → explicit Upload
+    /// click).
+    ///
+    /// WHY STAGING EXISTS (instead of buffering the batch in memory):
+    /// An <c>IBrowserFile</c> stream is only readable DURING the Blazor
+    /// <c>InputFile</c> OnChange handler — the browser-side references die
+    /// with the JS registry once the handler returns, so the bytes must be
+    /// captured at pick time, before the admin clicks Upload. Capturing a
+    /// 200-file batch as <c>byte[]</c> in circuit memory would spike the
+    /// Blazor Server process by up to 1 GB (200 × 5 MB worst case; the app
+    /// container runs with a 3 GB limit), so the capture target is a
+    /// staging FILE: peak memory stays at the copy-buffer size regardless
+    /// of batch size or file size.
+    ///
+    /// WHAT STAGING IS *NOT*:
+    ///   - <b>Not durable storage</b> — a staged file is single-use input
+    ///     for <see cref="SaveWithOriginalNameAsync"/> and is deleted once
+    ///     consumed (or discarded by the caller).
+    ///   - <b>Never web-reachable</b> — the staging root lives under the
+    ///     OS temp directory, NOT under the (potentially wwwroot-backed)
+    ///     <c>FileStorage:RootPath</c>, because staged bytes are
+    ///     PRE-VALIDATION: the magic-byte sniff happens later, at
+    ///     <see cref="SaveWithOriginalNameAsync"/> time. Staged content
+    ///     must never be servable by any URL.
+    ///   - <b>Not client-named</b> — the on-disk name is a
+    ///     cryptographically random hex string; the caller's file name is
+    ///     kept for logging only. The name the admin sees in the review
+    ///     chips lives in the page's state, not on disk.
+    ///
+    /// SAFETY:
+    ///   - <b>Size bound</b> — the write enforces the configured
+    ///     <c>FileStorage:MaxImageSizeBytes</c> limit while streaming
+    ///     (defense-in-depth on top of the page's client-side pre-filter,
+    ///     which rejects oversize files before staging them). An over-bound
+    ///     stream throws and the partial staging file is deleted.
+    ///   - <b>Failure cleanup</b> — any write failure deletes the partial
+    ///     staging file; no orphan is left behind on the error path.
+    ///
+    /// ORPHAN RECLAMATION:
+    ///   A circuit that dies mid-batch (browser closed, server restart)
+    ///     leaves staged files behind. The caller sweeps them
+    ///     opportunistically via <see cref="SweepStagedFilesAsync"/>;
+    ///     implementations must therefore tolerate deletion of files that no
+    ///     live caller remembers.
+    /// </summary>
+    /// <param name="content">
+    /// The binary content to stage. The implementation does NOT take
+    /// ownership of the stream's lifetime — caller disposes it.
+    /// </param>
+    /// <param name="fileName">
+    /// The caller's file name, used ONLY for log correlation — never for
+    /// the on-disk name, which is server-generated.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token. Cancellation aborts the write and
+    /// cleans up the partial staging file.
+    /// </param>
+    /// <returns>
+    /// The ABSOLUTE path of the staging file. Opaque to the caller —
+    /// pass it back verbatim to <see cref="OpenStagedFileAsync"/> /
+    /// <see cref="DeleteStagedFileAsync"/>.
+    /// </returns>
+    /// <exception cref="System.IO.InvalidDataException">
+    /// Thrown when the content exceeds the configured maximum size.
+    /// </exception>
+    Task<string> WriteStagedFileAsync(
+        Stream content,
+        string fileName,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a previously-staged file for reading — the second half of the
+    /// two-phase bulk upload (the Upload click streams staged file →
+    /// durable storage via <see cref="SaveWithOriginalNameAsync"/>).
+    ///
+    /// The returned stream is owned by the CALLER: dispose it when done.
+    /// Opening does not consume or lock the staged file against
+    /// <see cref="DeleteStagedFileAsync"/> — the two-phase flow deletes
+    /// each staged file only after its upload attempt finished.
+    /// </summary>
+    /// <param name="stagedFilePath">
+    /// The path returned by <see cref="WriteStagedFileAsync"/>. Treated as
+    /// untrusted: implementations MUST verify (via canonical-path
+    /// resolution) that it resolves inside the staging root, so a tampered
+    /// value can never open an arbitrary file on disk.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token.
+    /// </param>
+    /// <exception cref="System.IO.FileNotFoundException">
+    /// Thrown when the staged file no longer exists (already consumed,
+    /// discarded, or swept).
+    /// </exception>
+    /// <exception cref="System.IO.InvalidDataException">
+    /// Thrown when the path does not resolve inside the staging root.
+    /// </exception>
+    Task<Stream> OpenStagedFileAsync(
+        string stagedFilePath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Best-effort deletion of a staging file — called by the page when a
+    /// staged file is consumed (uploaded, successfully or not), discarded
+    /// (Clear button / per-file chip remove / re-pick), or the component
+    /// is torn down (navigation away).
+    ///
+    /// ERROR SEMANTICS (mirrors <see cref="DeleteAsync"/>): I/O failures
+    /// and invalid paths are logged and swallowed — cleanup must never
+    /// break the user flow that triggered it. A missing file is a no-op
+    /// (idempotent).
+    /// </summary>
+    /// <param name="stagedFilePath">
+    /// The path returned by <see cref="WriteStagedFileAsync"/>. Paths that
+    /// do not resolve inside the staging root are rejected (logged, not
+    /// thrown).
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token.
+    /// </param>
+    Task DeleteStagedFileAsync(
+        string stagedFilePath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes staging files older than <paramref name="olderThan"/> and
+    /// returns how many were deleted — the orphan-reclamation half of the
+    /// staging contract. A circuit that dies mid-batch (browser closed,
+    /// connection lost, app restart) leaves its staged files behind with
+    /// nobody remembering them; the page triggers this sweep
+    /// opportunistically when a NEW batch is picked, so the temp disk
+    /// never accumulates dead batches.
+    ///
+    /// The age threshold must comfortably exceed any live circuit's batch
+    /// lifetime (the caller uses 24 h) — a sweep must never delete a file
+    /// some live circuit is still about to upload.
+    ///
+    /// ERROR SEMANTICS: per-file failures are logged and skipped; the
+    /// sweep itself never throws.
+    /// </summary>
+    /// <param name="olderThan">
+    /// Minimum age (by last-write time) for a staging file to be deleted.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Standard cancellation token.
+    /// </param>
+    Task<int> SweepStagedFilesAsync(
+        TimeSpan olderThan,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Hard-deletes a previously-stored file by its public URL.
     ///
     /// Used when a product picture is being REPLACED — the old file at

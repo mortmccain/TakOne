@@ -95,6 +95,25 @@ internal sealed class LocalFileStorage : IFileStorage
     private const string ProductImagesSubfolder = "products";
 
     /// <summary>
+    /// Subfolder under the OS temp directory for the bulk-upload STAGING
+    /// area (see <see cref="WriteStagedFileAsync"/>). Deliberately NOT
+    /// under <c>RootPath</c>: in dev the storage root defaults to
+    /// <c>wwwroot/uploads</c>, and staged bytes are PRE-VALIDATION (the
+    /// magic-byte sniff happens later, at SaveWithOriginalNameAsync time)
+    /// — they must never sit anywhere a static-file or uploads endpoint
+    /// could serve them. Overridable via <c>FileStorage:StagingRootPath</c>
+    /// (e.g. to point at a dedicated volume).
+    /// </summary>
+    private const string DefaultStagingFolderName = "takone-upload-staging";
+
+    /// <summary>
+    /// Extension for staging files. Marks them as in-transit partials for
+    /// anyone inspecting the temp directory — staging files hold raw,
+    /// unvalidated upload bytes and are never served or kept long-term.
+    /// </summary>
+    private const string StagedFileExtension = ".part";
+
+    /// <summary>
     /// Default max upload size if <c>FileStorage:MaxImageSizeBytes</c> isn't
     /// set: 5 MB. Matches typical e-commerce product image limits.
     /// </summary>
@@ -121,6 +140,7 @@ internal sealed class LocalFileStorage : IFileStorage
 
     private readonly string _rootPath;
     private readonly string _productImagesPath;
+    private readonly string _stagingRootPath;
     private readonly long _maxImageSizeBytes;
     private readonly ILogger<LocalFileStorage> _logger;
 
@@ -131,6 +151,14 @@ internal sealed class LocalFileStorage : IFileStorage
         _rootPath = configuration["FileStorage:RootPath"]
             ?? DefaultRootPath;
         _productImagesPath = Path.Combine(_rootPath, ProductImagesSubfolder);
+
+        // Canonicalized once here so every staging-path validation below
+        // compares canonical-to-canonical (GetFullPath in ResolveStagedPath
+        // vs this). Config is expected to be absolute; GetFullPath also
+        // normalizes trailing separators and (on Windows) slash direction.
+        _stagingRootPath = Path.GetFullPath(
+            configuration["FileStorage:StagingRootPath"]
+            ?? Path.Combine(Path.GetTempPath(), DefaultStagingFolderName));
 
         // Read max size from config; fall back to default if missing/invalid.
         // We deliberately accept the config value even if it's larger than the
@@ -571,6 +599,264 @@ internal sealed class LocalFileStorage : IFileStorage
         }
 
         return Task.CompletedTask;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // STAGING — the Settings bulk-picture upload's two-phase flow
+    // (pick → review → explicit Upload click). See the IFileStorage
+    // staging docs for the full contract; the short version: staged files
+    // hold PRE-VALIDATION bytes on temp disk so a 200-file batch never
+    // buffers in circuit memory, and they are single-use — consumed by
+    // SaveWithOriginalNameAsync at Upload time, or swept when orphaned.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Streams an upload to a server-controlled staging file and returns
+    /// its absolute path — see <see cref="IFileStorage.WriteStagedFileAsync"/>
+    /// for the full contract and the WHY-STAGING-ON-DISK rationale.
+    ///
+    /// IMPLEMENTATION: random 32-hex-char name (same entropy class as
+    /// <see cref="SaveAsync"/>'s — staging names must be unguessable and
+    /// collision-free for concurrent circuits), a size-bounded
+    /// <see cref="BoundedStream"/> copy (defense-in-depth: the page's
+    /// pre-filter already rejected oversize files before staging), and
+    /// failure cleanup of the partial file.
+    /// </summary>
+    public async Task<string> WriteStagedFileAsync(
+        Stream content,
+        string fileName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        // Idempotent — safe to call on every pick, including the first.
+        Directory.CreateDirectory(_stagingRootPath);
+
+        var stagedFilePath = Path.Combine(
+            _stagingRootPath,
+            $"{RandomNumberGenerator.GetHexString(RandomFileNameHexChars, lowercase: true)}{StagedFileExtension}");
+
+        try
+        {
+            long bytesStaged;
+            await using (var fileStream = new FileStream(
+                             stagedFilePath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             CopyBufferSize,
+                             useAsync: true))
+            {
+                var boundedStream = new BoundedStream(content, _maxImageSizeBytes);
+                await boundedStream.CopyToAsync(fileStream, CopyBufferSize, cancellationToken);
+                bytesStaged = fileStream.Length;
+            }
+
+            _logger.LogInformation(
+                "Staged upload bytes for '{FileName}' ({Bytes} bytes) at {Path}",
+                fileName, bytesStaged, stagedFilePath);
+
+            return stagedFilePath;
+        }
+        catch
+        {
+            // Best-effort cleanup of the partial staging file on any
+            // failure path. Don't let the cleanup itself mask the original
+            // exception — identical to SaveAsync's temp-file discipline.
+            try { if (File.Exists(stagedFilePath)) File.Delete(stagedFilePath); }
+            catch { /* swallowed — original exception is more important */ }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Opens a staged file for reading — see
+    /// <see cref="IFileStorage.OpenStagedFileAsync"/> for the contract.
+    ///
+    /// IMPLEMENTATION: resolves and validates the path via
+    /// <see cref="ResolveStagedPath"/> (canonical-path check — a tampered
+    /// path can never open a file outside the staging root), then opens
+    /// read-only with an async-friendly buffer, mirroring the FileStream
+    /// options used everywhere else in this class.
+    /// </summary>
+    public Task<Stream> OpenStagedFileAsync(
+        string stagedFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        var canonicalPath = ResolveStagedPath(stagedFilePath);
+
+        if (!File.Exists(canonicalPath))
+        {
+            // Already consumed/discarded/swept — surface a precise,
+            // loggable failure instead of a bare FileNotFound from open.
+            _logger.LogWarning(
+                "OpenStagedFileAsync: staged file '{Path}' no longer exists.",
+                canonicalPath);
+            throw new FileNotFoundException(
+                $"The staged file '{stagedFilePath}' no longer exists (already uploaded, discarded, or swept).",
+                canonicalPath);
+        }
+
+        Stream stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            CopyBufferSize,
+            useAsync: true);
+        return Task.FromResult(stream);
+    }
+
+    /// <summary>
+    /// Best-effort deletion of a staging file — see
+    /// <see cref="IFileStorage.DeleteStagedFileAsync"/> for the contract.
+    ///
+    /// IMPLEMENTATION: same shape as <see cref="DeleteAsync"/> — invalid
+    /// paths are logged and rejected (never thrown, cleanup must not
+    /// break the flow that triggered it), missing files are an idempotent
+    /// no-op, and I/O failures are logged as warnings.
+    /// </summary>
+    public Task DeleteStagedFileAsync(
+        string stagedFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var canonicalPath = ResolveStagedPath(stagedFilePath);
+
+            if (File.Exists(canonicalPath))
+            {
+                File.Delete(canonicalPath);
+                _logger.LogInformation(
+                    "Deleted staged upload at {Path}",
+                    canonicalPath);
+            }
+            // else: idempotent no-op — the file was already consumed or
+            // discarded; double-delete is a normal part of the flow (e.g.
+            // upload consumed it, then navigation cleanup runs again).
+        }
+        catch (Exception ex) when (
+            ex is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or ArgumentException)
+        {
+            // Includes ResolveStagedPath's rejection of paths outside the
+            // staging root (InvalidDataException/ArgumentException) — a
+            // tampered or stale path is logged, not allowed to break the
+            // user flow. Log but don't throw — the contract is best-effort.
+            _logger.LogWarning(
+                "DeleteStagedFileAsync: failed to delete '{Path}': {Error}",
+                stagedFilePath, ex.Message);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Deletes staging files older than the given age — see
+    /// <see cref="IFileStorage.SweepStagedFilesAsync"/> for the contract.
+    ///
+    /// IMPLEMENTATION: single flat directory scan (the staging area is one
+    /// directory of a few hundred files at most — one batch), per-file
+    /// best-effort deletion, and a summary log line only when something
+    /// was actually swept (a log line per empty sweep would be noise on
+    /// every pick).
+    /// </summary>
+    public Task<int> SweepStagedFilesAsync(
+        TimeSpan olderThan,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(_stagingRootPath))
+        {
+            // No batch was ever staged on this instance — nothing to do.
+            return Task.FromResult(0);
+        }
+
+        var cutoffUtc = DateTime.UtcNow - olderThan;
+        var sweptCount = 0;
+
+        foreach (var filePath in Directory.EnumerateFiles(_stagingRootPath))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                // LastWriteTimeUtc doubles as a missing-file guard: a file
+                // deleted between enumeration and here reports year 1601,
+                // which is always older than the cutoff — and the delete
+                // then throws a caught-and-skipped FileNotFound.
+                if (File.GetLastWriteTimeUtc(filePath) < cutoffUtc)
+                {
+                    File.Delete(filePath);
+                    sweptCount++;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Log but don't throw — one stuck file must not abort the
+                // sweep of the rest (mirrors DeleteAsync's tolerance).
+                _logger.LogWarning(
+                    "SweepStagedFilesAsync: skipping '{Path}': {Error}",
+                    filePath, ex.Message);
+            }
+        }
+
+        if (sweptCount > 0)
+        {
+            _logger.LogInformation(
+                "Swept {Count} orphaned staging file(s) older than {Age}",
+                sweptCount, olderThan);
+        }
+
+        return Task.FromResult(sweptCount);
+    }
+
+    /// <summary>
+    /// Canonicalizes a staging path and verifies it resolves INSIDE the
+    /// staging root — the staging counterpart of DeleteAsync's
+    /// canonical-path guard. Every staging path the page holds came from
+    /// <see cref="WriteStagedFileAsync"/>, but component state is treated
+    /// as untrusted input anyway (defense-in-depth culture of this class):
+    /// a tampered or corrupted value must never open/delete an arbitrary
+    /// file outside the staging area.
+    /// </summary>
+    /// <exception cref="InvalidDataException">
+    /// Thrown when the path is unusable or resolves outside the staging
+    /// root.
+    /// </exception>
+    private string ResolveStagedPath(string stagedFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(stagedFilePath))
+        {
+            throw new ArgumentException("stagedFilePath is required.", nameof(stagedFilePath));
+        }
+
+        string canonicalPath;
+        try
+        {
+            canonicalPath = Path.GetFullPath(stagedFilePath);
+        }
+        catch (Exception ex) when (
+            ex is ArgumentException
+            or PathTooLongException
+            or NotSupportedException)
+        {
+            throw new InvalidDataException(
+                $"The staged path '{stagedFilePath}' is not a valid path.");
+        }
+
+        // Canonical-to-canonical comparison against the ctor-canonicalized
+        // root (same discipline as DeleteAsync's products-folder check).
+        // The root itself never passes (it's a directory, not a staged
+        // file) — the separator suffix enforces that.
+        if (!canonicalPath.StartsWith(_stagingRootPath + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"The staged path '{stagedFilePath}' is outside the staging root '{_stagingRootPath}'.");
+        }
+
+        return canonicalPath;
     }
 
     /// <summary>
