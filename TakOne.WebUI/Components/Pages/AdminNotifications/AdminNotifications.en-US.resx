@@ -90,6 +90,9 @@
   <data name="Time_DaysAgo" xml:space="preserve"><value>{0} d ago</value></data>
   <data name="Back" xml:space="preserve"><value>Back</value></data>
   <data name="Loading" xml:space="preserve"><value>Loading…</value></data>
+  <data name="Err_UserNotSelected" xml:space="preserve"><value>Select a recipient: type the worker ID or name and pick a user from the suggestions (typing the full ID or name selects it automatically).</value></data>
+  <data name="ClearSelection" xml:space="preserve"><value>Clear selection</value></data>
+  <data name="UserSearchEmpty" xml:space="preserve"><value>No users match your search.</value></data>
   <data name="ErrorTitle" xml:space="preserve">
     <value>Error</value>
   </data>

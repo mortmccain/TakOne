@@ -35,6 +35,8 @@
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.SharedKernel.DTOs
+@using FluentValidation
+@using TakOne.WebUI.Extensions
 @using TakOne.WebUI.Services
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
@@ -510,6 +512,19 @@ else
                 });
             if (token.IsCancellationRequested) return;
             _users = page.Items?.ToList() ?? new();
+
+            // AUTO-SELECT ON FULL MATCH: typing the COMPLETE worker id or
+            // full name resolves the recipient without a tap — but only
+            // when the match is unambiguous (a shared full name must not
+            // silently pick one of its owners).
+            var term = _userSearchTerm?.Trim() ?? string.Empty;
+            var exact = _users.Where(u =>
+                string.Equals(u.WorkerId?.Trim(), term, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(u.FullName?.Trim(), term, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (exact.Count == 1)
+            {
+                SelectUser(exact[0]);
+            }
         }
         catch
         {
@@ -542,6 +557,17 @@ else
         if (_isSending) return;
         if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_message)) return;
 
+        // Scope=User target guard: NEVER dispatch a User-scoped broadcast
+        // with no resolved recipient. Previously this fell through to the
+        // command's FluentValidation validator, which Wolverine surfaces as
+        // a thrown ValidationException — the generic catch then masked a
+        // predictable UI mistake as an opaque "unexpected error" code.
+        if (_scope == BroadcastScope.User && !_targetUserId.HasValue)
+        {
+            await Toast.Error(Loc["Err_UserNotSelected"]);
+            return;
+        }
+
         _isSending = true;
         try
         {
@@ -565,6 +591,15 @@ else
             {
                 await Toast.Error(MapError(result.Error));
             }
+        }
+        catch (ValidationException vex)
+        {
+            // A FluentValidation failure thrown by Wolverine's
+            // UseFluentValidation short-circuit (defense-in-depth — the
+            // local guard above should prevent every user-actionable
+            // case). Surface the validator's messages instead of masking
+            // them as an opaque unexpected-error code.
+            await Toast.Error(vex.GetJoinedMessages());
         }
         catch
         {

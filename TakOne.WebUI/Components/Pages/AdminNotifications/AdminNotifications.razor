@@ -51,6 +51,8 @@
 @using TakOne.Domain.Notifications.Enums
 @using TakOne.SharedKernel.Common
 @using TakOne.WebUI.Services
+@using FluentValidation
+@using TakOne.WebUI.Extensions
 @inject IMessageBus MessageBus
 @inject NavigationManager Navigation
 @inject IStringLocalizer<AdminNotifications> Loc
@@ -119,6 +121,17 @@
         .notif-form-field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
         .notif-form-label { font-size: 0.85rem; font-weight: 500; color: var(--rz-text-color); }
         .notif-form-hint { color: var(--rz-text-secondary-color); font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+        .notif-user-results { list-style: none; margin: 0.5rem 0 0; padding: 0; border: 1px solid var(--rz-border-color); border-radius: 8px; overflow: hidden; max-height: 16rem; overflow-y: auto; }
+        .notif-user-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; border: none; background: transparent; cursor: pointer; font: inherit; font-size: 0.875rem; color: var(--rz-text-color); text-align: start; }
+        .notif-user-row:hover { background: var(--rz-base-background-color); }
+        .notif-user-row + .notif-user-row { border-top: 1px solid var(--rz-border-color); }
+        .notif-user-name { font-weight: 500; }
+        .notif-user-id { color: var(--rz-text-secondary-color); font-size: 0.8rem; font-family: monospace; direction: ltr; }
+        .notif-selected-user { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.4rem 0.75rem; background: var(--rz-base-background-color); border: 1px solid var(--rz-primary); border-radius: 8px; }
+        .notif-selected-name { font-weight: 500; font-size: 0.875rem; color: var(--rz-text-color); flex: 1 1 auto; min-width: 0; }
+        .notif-selected-id { color: var(--rz-text-secondary-color); font-size: 0.8rem; font-family: monospace; direction: ltr; }
+        .notif-clear-user { border: none; background: transparent; color: var(--rz-danger); cursor: pointer; font-size: 0.9rem; padding: 0.15rem 0.3rem; border-radius: 4px; }
+        .notif-clear-user:hover { background: rgba(220,53,69,0.08); }
         .notif-segment-row { margin-bottom: 1rem; }
         .notif-target { margin-bottom: 1rem; }
         .notif-send-row { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
@@ -230,7 +243,12 @@
         else if (_scope == BroadcastScope.User)
         {
             <div class="notif-form-field notif-target">
-                <label class="notif-form-label" for="bc-user">@Loc["TargetUserLabel"]</label>
+                <label class="notif-form-label" for="bc-user-search">@Loc["TargetUserLabel"]</label>
+                @* Live search box — partial WorkerId OR name, 300ms debounce.
+                   The matching users appear in a VISIBLE list below (not a
+                   closed dropdown): the admin sees the similar ones as they
+                   type and clicks one. Typing the FULL id or name
+                   auto-selects the match (SearchUsersAsync). *@
                 <RadzenTextBox id="bc-user-search"
                                @bind-Value="_userSearchTerm"
                                @bind:event="oninput"
@@ -238,20 +256,46 @@
                                Placeholder="@Loc["TargetUserSearchPlaceholder"]"
                                Style="width: 100%;"
                                Debounce="300" />
-                @if (_users.Count > 0)
+
+                @* Selected-recipient chip — the resolved target the command
+                   will carry. Shown INSTEAD of the results list once a user
+                   is picked (or auto-selected). *@
+                @if (_targetUserId.HasValue && !string.IsNullOrWhiteSpace(_selectedUserName))
                 {
-                    <RadzenDropDown id="bc-user"
-                                    @bind-Value="_targetUserId"
-                                    Data="_users"
-                                    TextProperty="FullName"
-                                    ValueProperty="Id"
-                                    Placeholder="@Loc["TargetUserLabel"]"
-                                    Style="width: 100%; margin-top: 0.5rem;"
-                                    AllowClear="true">
-                        <Template Context="u">
-                            <span>@u.WorkerId — @u.FullName</span>
-                        </Template>
-                    </RadzenDropDown>
+                    <div class="notif-selected-user">
+                        <span class="notif-selected-name">@_selectedUserName</span>
+                        <span class="notif-selected-id">@_selectedWorkerId</span>
+                        <button type="button" class="notif-clear-user"
+                                title="@Loc["ClearSelection"]" aria-label="@Loc["ClearSelection"]"
+                                @onclick="@(() => ClearSelectedUser())">✕</button>
+                    </div>
+                }
+
+                @* Live results (visible list — the dropdown this replaced
+                   started CLOSED, so the suggestions were invisible unless
+                   the admin already knew to open it; typing the full id and
+                   hitting Send then sent TargetUserId=null and the command
+                   failed as "unexpected error 87DKG64"). *@
+                @if (_users.Count > 0 && !_targetUserId.HasValue)
+                {
+                    <ul class="notif-user-results">
+                        @foreach (var u in _users)
+                        {
+                            <li>
+                                <button type="button" class="notif-user-row"
+                                        @onclick="@(() => SelectUser(u))">
+                                    <span class="notif-user-name">@u.FullName</span>
+                                    <span class="notif-user-id">@u.WorkerId</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (!_targetUserId.HasValue
+                         && !string.IsNullOrWhiteSpace(_userSearchTerm)
+                         && _userSearchTerm.Trim().Length >= 2)
+                {
+                    <p class="notif-form-hint" style="margin-top: 0.5rem;">@Loc["UserSearchEmpty"]</p>
                 }
             </div>
         }
@@ -381,6 +425,20 @@
     private string _userSearchTerm = "";
     private List<UserListItemDto> _users = new();
 
+    /// <summary>
+    /// Display name of the resolved Scope=User recipient (chip label).
+    /// Null until a user is picked / auto-selected; cleared with the
+    /// selection.
+    /// </summary>
+    private string? _selectedUserName;
+
+    /// <summary>
+    /// WorkerId of the resolved Scope=User recipient (chip label). Kept
+    /// separately from the name so the chip shows exactly what the admin
+    /// searched by.
+    /// </summary>
+    private string? _selectedWorkerId;
+
     // ── Audit list state ──
     private List<BroadcastNotificationDto> _broadcasts = new();
     private int _pageNumber = 1;
@@ -490,6 +548,8 @@
         _targetUserId = null;
         _userSearchTerm = "";
         _users = new();
+        _selectedUserName = null;
+        _selectedWorkerId = null;
     }
 
     /// <summary>
@@ -497,7 +557,14 @@
     /// the "To User" scope. Bound to the @bind:after hook of the search
     /// RadzenTextBox (which has Debounce=300ms built-in, so we don't
     /// need our own debounce timer). Replaces _users with the new result
-    /// set so the dropdown below the search box reflects the latest query.
+    /// set so the VISIBLE results list below the search box reflects the
+    /// latest query.
+    ///
+    /// AUTO-SELECT ON FULL MATCH: when the typed term EXACTLY equals
+    /// (case-insensitive) exactly one result's WorkerId or FullName, that
+    /// user is selected immediately — "type the whole id or name" then
+    /// works without a click. Ambiguous full-name matches (two users
+    /// with the same name) still require an explicit pick from the list.
     /// </summary>
     private async Task SearchUsersAsync()
     {
@@ -521,12 +588,49 @@
             };
             var page = await MessageBus.InvokeAsync<PaginatedResult<UserListItemDto>>(query);
             _users = page.Items.ToList();
+
+            // Full-id / full-name auto-select (see xmldoc). Only when the
+            // match is UNAMBIGUOUS — a shared full name must not silently
+            // pick one of its owners.
+            var exact = _users.Where(u =>
+                string.Equals(u.WorkerId?.Trim(), term, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(u.FullName?.Trim(), term, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (exact.Count == 1)
+            {
+                SelectUser(exact[0]);
+            }
         }
         catch
         {
             // Silent — best-effort search. If it fails, the admin can retry.
             _users = new();
         }
+    }
+
+    /// <summary>
+    /// Resolves the Scope=User target to the clicked (or auto-selected)
+    /// user: stores the Guid the command will carry + the chip labels,
+    /// and hides the results list (the chip replaces it).
+    /// </summary>
+    private void SelectUser(UserListItemDto user)
+    {
+        _targetUserId = user.Id;
+        _selectedUserName = user.FullName;
+        _selectedWorkerId = user.WorkerId;
+        _users = new();
+        _userSearchTerm = "";
+    }
+
+    /// <summary>
+    /// Clears the resolved Scope=User target (the chip's ✕) so the admin
+    /// can re-search. The send guard rejects a Scope=User broadcast with
+    /// no selection, so a cleared chip can never dispatch a null target.
+    /// </summary>
+    private void ClearSelectedUser()
+    {
+        _targetUserId = null;
+        _selectedUserName = null;
+        _selectedWorkerId = null;
     }
 
     /// <summary>
@@ -540,6 +644,19 @@
     {
         if (_isSending) return;
         if (string.IsNullOrEmpty(_title) || string.IsNullOrEmpty(_message)) return;
+
+        // Scope=User target guard: NEVER dispatch a User-scoped broadcast
+        // with no resolved recipient. Previously this fell through to the
+        // command's FluentValidation validator, which Wolverine surfaces
+        // as a thrown ValidationException — the generic catch below then
+        // masked a perfectly predictable UI mistake as "unexpected error
+        // 87DKG64". Reject locally with a message that tells the admin
+        // what to do instead.
+        if (_scope == BroadcastScope.User && !_targetUserId.HasValue)
+        {
+            await Toast.Error(Loc["Err_UserNotSelected"], summary: Loc["ErrorTitle"]);
+            return;
+        }
 
         _isSending = true;
         try
@@ -577,6 +694,8 @@
                 _targetUserId = null;
                 _userSearchTerm = "";
                 _users = new();
+                _selectedUserName = null;
+                _selectedWorkerId = null;
 
                 // Reload audit page 1 so the just-sent broadcast appears at the top.
                 _pageNumber = 1;
@@ -591,6 +710,19 @@
                 var message = LocalizeError(result.Error);
                 await Toast.Error(message);
             }
+        }
+        catch (ValidationException vex)
+        {
+            // A FluentValidation failure thrown by Wolverine's
+            // UseFluentValidation short-circuit (defense-in-depth — the
+            // local guards above should prevent every user-actionable
+            // case). Surface the validator's localized messages instead
+            // of masking them as an opaque unexpected-error code.
+            Logger.LogWarning(
+                "AdminNotifications.HandleSendAsync: command validation failed. [{UnexpectedCode}] {Errors}",
+                UnexpectedErrorCodes.AdminNotifications_SendFailure,
+                vex.GetJoinedMessages());
+            await Toast.Error(vex.GetJoinedMessages(), summary: Loc["ErrorTitle"]);
         }
         catch (Exception ex)
         {

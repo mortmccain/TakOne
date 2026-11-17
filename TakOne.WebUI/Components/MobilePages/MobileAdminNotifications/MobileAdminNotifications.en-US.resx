@@ -81,6 +81,7 @@
   <data name="EmptyGroups" xml:space="preserve"><value>No customer groups exist yet.</value></data>
   <data name="Inactive" xml:space="preserve"><value>inactive</value></data>
   <data name="ClearSelection" xml:space="preserve"><value>Clear selection</value></data>
+  <data name="Err_UserNotSelected" xml:space="preserve"><value>Select a recipient: type the worker ID or name and pick a user from the suggestions (typing the full ID or name selects it automatically).</value></data>
   <data name="UserSearchEmpty" xml:space="preserve"><value>No users match your search.</value></data>
   <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
 </root>

@@ -81,6 +81,7 @@
   <data name="EmptyGroups" xml:space="preserve"><value>هنوز گروه مشتری‌ای وجود ندارد.</value></data>
   <data name="Inactive" xml:space="preserve"><value>غیرفعال</value></data>
   <data name="ClearSelection" xml:space="preserve"><value>حذف انتخاب</value></data>
+  <data name="Err_UserNotSelected" xml:space="preserve"><value>یک گیرنده انتخاب کنید: کد پرسنلی یا نام را تایپ کنید و کاربر را از فهرست پیشنهادها انتخاب کنید (تایپ کامل کد یا نام به‌طور خودکار انتخاب می‌کند).</value></data>
   <data name="UserSearchEmpty" xml:space="preserve"><value>کاربری مطابق جستجوی شما یافت نشد.</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
 </root>

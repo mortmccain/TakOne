@@ -90,6 +90,9 @@
   <data name="Time_DaysAgo" xml:space="preserve"><value>{0} روز پیش</value></data>
   <data name="Back" xml:space="preserve"><value>بازگشت</value></data>
   <data name="Loading" xml:space="preserve"><value>در حال بارگذاری…</value></data>
+  <data name="Err_UserNotSelected" xml:space="preserve"><value>یک گیرنده انتخاب کنید: کد پرسنلی یا نام را تایپ کنید و کاربر را از فهرست پیشنهادها انتخاب کنید (تایپ کامل کد یا نام به‌طور خودکار انتخاب می‌کند).</value></data>
+  <data name="ClearSelection" xml:space="preserve"><value>پاک کردن انتخاب</value></data>
+  <data name="UserSearchEmpty" xml:space="preserve"><value>کاربری مطابق جستجوی شما یافت نشد.</value></data>
   <data name="ErrorTitle" xml:space="preserve">
     <value>خطا</value>
   </data>
