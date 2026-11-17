@@ -471,8 +471,9 @@ public class MobileProductsParityTests
 
             var cut = Mount(ctx, MobilePageSize);
 
-            // No chip in the markup — the toolbar has only the sort group
-            // and the export button for non-staff users.
+            // No chip in the markup — the toolbar has only the sort
+            // group for non-staff users (the catalog CSV export button
+            // was removed from the shop by owner request).
             cut.FindAll("button.m-oos-chip").Should().BeEmpty();
 
             // And the URL's flag never reached a query.
@@ -541,70 +542,6 @@ public class MobileProductsParityTests
             cut.WaitForAssertion(
                 () => FindChip(cut).GetAttribute("aria-pressed").Should().Be("true"),
                 TimeSpan.FromSeconds(5));
-        }
-    }
-
-    // ── CSV export (the desktop shop export, ported) ────────────────
-
-    [Fact]
-    public async Task MobileProducts_Export_Click_ProducesCustomerSafeCsv()
-    {
-        // Arrange — a CUSTOMER (the export is deliberately NOT
-        // staff-gated: the columns are customer-safe, the data is
-        // role-scoped server-side). One zero-stock row (first) and a
-        // comma+quote product name (second) exercise the RFC 4180
-        // quoting and the availability labels. Built inline: the DTO's
-        // properties are init-only (no post-construction mutation).
-        var page = new List<ProductListItemDto>
-        {
-            new() { Id = Guid.NewGuid(), Name = "Product 001", Description = "d1",
-                    StockQuantity = 0, Price = new MoneyDto { Amount = 10_000m, Currency = "IRR" } },
-            new() { Id = Guid.NewGuid(), Name = "Pasta, \"Premium\" 500g", Description = "d2",
-                    StockQuantity = 17, Price = new MoneyDto { Amount = 20_000m, Currency = "IRR" } },
-            new() { Id = Guid.NewGuid(), Name = "Product 003", Description = "d3",
-                    StockQuantity = 18, Price = new MoneyDto { Amount = 30_000m, Currency = "IRR" } }
-        };
-        var (ctx, _, js) = Setup(
-            new[] { Roles.Customer }, totalCount: 3,
-            pageProvider: _ => page);
-        using (ctx)
-        {
-            var cut = Mount(ctx, 3);
-
-            // Act — click the toolbar's export button.
-            await cut.InvokeAsync(() => cut.Find("button.m-export-btn").Click());
-
-            // Assert — exactly one takDownload.csv invocation.
-            cut.WaitForAssertion(
-                () => js.Invocations["takDownload.csv"].Should().HaveCount(1),
-                TimeSpan.FromSeconds(5));
-            var args = js.Invocations["takDownload.csv"][0].Arguments;
-            var fileName = args[0].Should().BeOfType<string>().Subject;
-            fileName.Should().StartWith("takone-catalog-").And.EndWith(".csv");
-
-            // The CSV: header + 3 data rows. Identity-localizer keys as
-            // headers; invariant amounts; the availability column uses
-            // the same in/out labels the card badges show. NOTE row order:
-            // MakeProducts puts the zero-stock product FIRST.
-            var csv = args[1].Should().BeOfType<string>().Subject;
-            // CRLF records + a trailing CRLF after the last row — the
-            // trailing empty split fragment is dropped.
-            var lines = csv.Split('\n').Select(l => l.TrimEnd('\r'))
-                .Where(l => l.Length > 0).ToList();
-            lines.Should().HaveCount(4);
-            lines[0].Should().Be(
-                "ColName,ColCategory,ColSubCategory,ColSubSubCategory,ColPrice,ColCurrency,ColAvailability");
-
-            // Row 1 — the ZERO-STOCK row ships the OUT label, invariant
-            // amount, empty category cells.
-            lines[1].Should().Be("Product 001,,,,10000,IRR,StockOut");
-
-            // Row 2 — the punctuation-laden name is RFC 4180 quoted
-            // (embedded quotes doubled); in-stock label.
-            lines[2].Should().Be("\"Pasta, \"\"Premium\"\" 500g\",,,,20000,IRR,StockIn");
-
-            // Row 3 — a plain in-stock row.
-            lines[3].Should().Be("Product 003,,,,30000,IRR,StockIn");
         }
     }
 }

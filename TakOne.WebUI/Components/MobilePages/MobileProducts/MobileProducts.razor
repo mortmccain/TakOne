@@ -158,19 +158,22 @@ else
     </div>
 
     @* ── 2b. Shop toolbar (Round 4 sort + QA-11 parity) ──
-       Wraps the Round-4 sort control with the two QA-10 desktop-parity
-       affordances: the staff "include out of stock" chip (Admin/Manager)
-       and the catalog CSV export button. flex-wrap keeps the row sane on
-       360px screens (chip wraps to its own line before the sort group
-       does). The sort select keeps its Round-4 semantics: SERVER-side
-       ordering, so the whole loaded list re-orders (not just the rendered
-       cards) and the order survives category + search filters. *@
+       Wraps the Round-4 sort control with the QA-10 desktop-parity
+       affordance: the staff "include out of stock" chip (Admin/Manager).
+       (A catalog CSV export button used to live here too — removed by
+       owner request: the shop carries no CSV download on any role, any
+       surface. The AdminProducts grid keeps the staff-side catalog
+       export for the restore workflow.) flex-wrap keeps the row sane on
+       360px screens. The sort select keeps its Round-4 semantics:
+       SERVER-side ordering, so the whole loaded list re-orders (not just
+       the rendered cards) and the order survives category + search
+       filters. *@
     <div class="m-shop-toolbar">
         @* STAFF VIEW MODE (QA-11 — desktop-parity port): Admin/Manager
            only. Same contract as the desktop chip: the flag rides the
-           SAME GetProductsPaginatedQuery the list AND the CSV export
-           issue, and the handler CLAMPS IncludeInactive to false for
-           every other role SERVER-side — this gate is convenience, not
+           SAME GetProductsPaginatedQuery the list issues, and the handler
+           CLAMPS IncludeInactive to false for every other role
+           SERVER-side — this gate is convenience, not
            authorization. Persists as oos=1 in the URL (only ever written
            for staff) so it survives the add-to-cart forceLoad reload.
            aria-pressed is a LITERAL STRING — Blazor omits boolean-false
@@ -212,30 +215,6 @@ else
                 <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
             </select>
         </div>
-        @* CATALOG CSV EXPORT (QA-11 — desktop-parity port): the SAME
-           customer-safe 7-column download the desktop shop ships (name,
-           category path, price, currency, availability label — no stock
-           quantities, no picture columns). Exports parity with the list:
-           current search/category/sort AND the staff out-of-stock view
-           mode. Disabled while any load runs or the list is empty. *@
-        <button type="button"
-                class="m-export-btn"
-                title="@Loc["ExportCsvTooltip"]"
-                aria-label="@Loc["ExportCsvTooltip"]"
-                disabled="@(_isLoading || _isExporting || _totalCount == 0)"
-                @onclick="ExportProductsCsvAsync">
-            @if (_isExporting)
-            {
-                <span class="m-export-spin" aria-hidden="true"></span>
-            }
-            else
-            {
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="15" height="15" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                </svg>
-            }
-            <span>@(_isExporting ? Loc["ExportCsvWorking"] : Loc["ExportCsvButton"])</span>
-        </button>
     </div>
 
     @* ── 3. Hero banner ── *@
@@ -393,7 +372,7 @@ else
             <div class="m-load-more">
                 <button type="button"
                         class="m-load-more-btn"
-                        disabled="@(_isLoadingMore || _isExporting)"
+                        disabled="@_isLoadingMore"
                         @onclick="LoadMoreAsync">
                     @if (_isLoadingMore)
                     {
@@ -470,12 +449,6 @@ else
     // authorization. oos=1 in the URL restores the mode (staff only).
     private bool _canSeeInactive;
     private bool _includeInactive;
-
-    // ── CSV export (QA-11 — desktop-parity port) ──
-    private bool _isExporting;
-
-    /// <summary> Row cap for the CSV export loop (same as the desktop shop). </summary>
-    private const int ExportRowCap = 2000;
 
     /// <summary>
     /// The active catalog sort (Round 4) — same orders as the desktop
@@ -648,7 +621,7 @@ else
     /// </summary>
     private async Task LoadMoreAsync()
     {
-        if (_isLoadingMore || _isExporting) return;
+        if (_isLoadingMore) return;
         if (_products.Count >= _totalCount) return;
 
         _isLoadingMore = true;
@@ -672,9 +645,6 @@ else
     /// desktop-parity port) and reloads from page 1: the result set
     /// changes wholesale when zero-stock cards join the list, so page 3
     /// of the in-stock list means something different after the flip.
-    ///
-    /// Export parity is automatic: the list load AND the CSV loop pass
-    /// <c>IncludeInactive</c> to the SAME query.
     ///
     /// The flag persists as <see cref="UpdateOosUrl"/> (replace, not
     /// push — no history spam) so it survives the add-to-cart full-page
@@ -973,100 +943,6 @@ else
 
     private void GoToMyOrders()
         => Navigation.NavigateTo("/Sales", forceLoad: false);
-
-    // ── CSV export (QA-11 — desktop-parity port) ──
-
-    /// <summary>
-    /// Exports the CURRENT filtered catalog as a CSV download — the
-    /// mobile twin of the desktop shop's export (identical file: the
-    /// SAME customer-safe columns, the SAME filters + sort + staff
-    /// out-of-stock view mode, because both pages issue the SAME
-    /// GetProductsPaginatedQuery whose handler enforces per-role
-    /// visibility server-side). 100 rows per page until the 2,000-row
-    /// cap; CsvBuilder (RFC 4180 + invariant numbers) + takDownload.csv
-    /// (UTF-8 + BOM) — the shared export machinery every other page
-    /// uses, so the file opens cleanly in Excel under either culture.
-    /// </summary>
-    private async Task ExportProductsCsvAsync()
-    {
-        if (_isExporting || _totalCount == 0)
-        {
-            return; // the button is disabled for empty lists — belt + braces
-        }
-
-        _isExporting = true;
-        try
-        {
-            var builder = new CsvBuilder();
-            builder.AddHeader(
-                Loc["ColName"],
-                Loc["ColCategory"],
-                Loc["ColSubCategory"],
-                Loc["ColSubSubCategory"],
-                Loc["ColPrice"],
-                Loc["ColCurrency"],
-                Loc["ColAvailability"]);
-
-            var exported = 0;
-            var pageNumber = 1;
-            const int exportPageSize = 100; // the backend's MaxPageSize cap
-
-            while (exported < ExportRowCap)
-            {
-                var query = new GetProductsPaginatedQuery
-                {
-                    PageNumber = pageNumber,
-                    PageSize = exportPageSize,
-                    SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
-                    CategoryId = _selectedCategoryId,
-                    SortBy = _sortBy,
-                    // Export parity with the list: the download always
-                    // ships exactly what the list shows (the chip's view
-                    // mode included). The handler clamps this for
-                    // non-staff roles server-side, exactly as for loads.
-                    IncludeInactive = _includeInactive
-                };
-
-                var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
-
-                foreach (var product in result.Items)
-                {
-                    if (exported >= ExportRowCap) break;
-
-                    builder.AddRow(
-                        product.Name,
-                        product.CategoryName,
-                        product.SubCategoryName,
-                        product.SubSubCategoryName,
-                        product.Price?.Amount,
-                        product.Price?.Currency,
-                        product.StockQuantity > 0 ? Loc["StockIn"] : Loc["StockOut"]);
-                    exported++;
-                }
-
-                // Last page reached when the server returns fewer rows
-                // than requested.
-                if (result.Items.Count < exportPageSize) break;
-                pageNumber++;
-            }
-
-            var fileName = $"takone-catalog-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
-            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
-
-            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageTitle"]);
-        }
-        catch (Exception)
-        {
-            // JS interop can fail after a circuit reconnect — a visible
-            // toast beats a silently dead button (same policy as every
-            // other export button in the app).
-            await Toast.Error(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
-        }
-        finally
-        {
-            _isExporting = false;
-        }
-    }
 
     // ── Formatting ──
 

@@ -531,17 +531,14 @@
                    the page's chip aesthetic. Changing the sort restarts
                    at page 1 (page 5 of a differently-sorted list means
                    something else entirely). *@
-                @* TOOLS ROW (sort + CSV export)
-                   The export button sits next to the sort control — both
-                   are "view-shaping" actions over the CURRENT filtered
-                   catalog. The export ships EXACTLY what the grid shows
-                   (same search term, category, sort, visibility — the
-                   same GetProductsPaginatedQuery the grid loads from),
-                   capped at 2,000 rows like the admin exports. Customer-
-                   facing columns only: name, category path, price,
-                   currency, availability — no stock quantities, no
-                   picture paths (those belong to the admin restore
-                   workflow's export). *@
+                @* TOOLS ROW (sort)
+                   The sort control is the row's "view-shaping" action over
+                   the CURRENT filtered catalog. (A catalog CSV export
+                   button used to live here too — removed by owner request:
+                   the shop is a customer surface and carries no CSV
+                   download any more, on any role. The AdminProducts grid
+                   keeps the staff-side catalog export for the restore
+                   workflow.) *@
                 <div class="tm-products-tools">
                     @* OUT-OF-STOCK TOGGLE (staff chip — QA-10)
                        Admin/Manager only: includes zero-stock ("inactive")
@@ -554,8 +551,7 @@
                        every other caller), so this UI gate is convenience,
                        not authorization. The state persists as oos=1 in
                        the URL (only ever written for staff) and rides the
-                       SAME query the grid AND the CSV export issue — the
-                       toggle applies to both automatically. Active state
+                       SAME query the grid loads from. Active state
                        uses the danger tint the out-of-stock card badges
                        share. aria-pressed is a LITERAL STRING — Blazor
                        omits boolean-false attributes, and
@@ -601,24 +597,6 @@
                             <option value="@nameof(ProductSortBy.PriceHighToLow)">@Loc["SortPriceHighToLow"]</option>
                         </select>
                     </div>
-                    <button type="button"
-                            class="tm-export-btn"
-                            title="@Loc["ExportCsvTooltip"]"
-                            aria-label="@Loc["ExportCsvTooltip"]"
-                            disabled="@(_isLoading || _isExporting || _totalCount == 0)"
-                            @onclick="ExportProductsCsvAsync">
-                        @if (_isExporting)
-                        {
-                            <span class="tm-export-spin" aria-hidden="true"></span>
-                        }
-                        else
-                        {
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" width="16" height="16" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                            </svg>
-                        }
-                        <span>@(_isExporting ? Loc["ExportCsvWorking"] : Loc["ExportCsvButton"])</span>
-                    </button>
                 </div>
             </div>
 
@@ -1050,20 +1028,6 @@
     private bool _isLoading = true;
     private string _loadError = string.Empty;
 
-    /// <summary>
-    /// True while the CSV export's multi-page fetch loop is running —
-    /// disables the export button (double-click guard) and swaps its
-    /// label to a spinner (same pattern as the admin grids' exports).
-    /// </summary>
-    private bool _isExporting;
-
-    /// <summary>
-    /// Hard cap on exported rows — the SAME 2,000-row ceiling the admin
-    /// exports use. Keeps the export loop bounded on the interactive
-    /// circuit no matter how large the filtered catalog is.
-    /// </summary>
-    private const int ExportRowCap = 2000;
-
     // Cart state — loaded in parallel with products on init, reloaded after
     // any mutation (add, qty update, submit, quick reorder).
     private CartDto? _cart;
@@ -1399,12 +1363,6 @@
     /// wholesale when zero-stock cards join the grid, so page 5 of the
     /// in-stock list means something different after the flip.
     ///
-    /// Export parity is automatic: both the grid load and the CSV loop
-    /// pass <c>IncludeInactive = _includeInactive</c> to the SAME query,
-    /// so the download always matches what the grid shows (the
-    /// availability column already renders per-row StockIn/StockOut
-    /// labels, which become meaningful rows under this view).
-    ///
     /// Deliberately NOT reset by ClearFilters/Clear-all: those are the
     /// "no results" escape hatch for the search/category CONTRACT;
     /// the out-of-stock mode is a role-gated VIEW MODE whose own chip
@@ -1489,109 +1447,6 @@
         {
             // Non-fatal: an empty mini-cart is shown.
             _cart = null;
-        }
-    }
-
-    /// <summary>
-    /// Exports the CURRENT filtered catalog as a CSV download — the shop
-    /// counterpart of the admin grids' export buttons. The loop re-issues
-    /// the SAME GetProductsPaginatedQuery the grid loads from (search
-    /// term, category, sort, out-of-stock view mode — and the same
-    /// per-role visibility rules, since the query's handler enforces
-    /// them server-side), 100 rows per page, until the 2,000-row cap.
-    /// For a staff user with the out-of-stock chip active, the exported
-    /// availability column tells in-stock from out-of-stock rows apart
-    /// (the same label the card badge shows).
-    ///
-    /// CUSTOMER-FACING COLUMNS ONLY (deliberate difference from the
-    /// AdminProducts export): name, category path, price, currency, and
-    /// the in-stock/out-of-stock AVAILABILITY label the card badge shows —
-    /// no raw stock quantities, no picture directory/file columns (those
-    /// exist for the admin CSV→pictures→import restore workflow and are
-    /// meaningless, and mildly leaky, for a customer take-away).
-    ///
-    /// Shares the admin export machinery: CsvBuilder (RFC 4180 + invariant
-    /// numbers) + takDownload.csv (UTF-8 + BOM), so the file opens cleanly
-    /// in Excel under either culture.
-    /// </summary>
-    private async Task ExportProductsCsvAsync()
-    {
-        if (_isExporting || _totalCount == 0)
-        {
-            return; // the button is disabled for empty lists — belt + braces
-        }
-
-        _isExporting = true;
-        try
-        {
-            var builder = new CsvBuilder();
-            builder.AddHeader(
-                Loc["ColName"],
-                Loc["ColCategory"],
-                Loc["ColSubCategory"],
-                Loc["ColSubSubCategory"],
-                Loc["ColPrice"],
-                Loc["ColCurrency"],
-                Loc["ColAvailability"]);
-
-            var exported = 0;
-            var pageNumber = 1;
-            const int exportPageSize = 100; // the backend's MaxPageSize cap
-
-            while (exported < ExportRowCap)
-            {
-                var query = new GetProductsPaginatedQuery
-                {
-                    PageNumber = pageNumber,
-                    PageSize = exportPageSize,
-                    SearchTerm = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm.Trim(),
-                    CategoryId = _selectedCategoryId,
-                    SortBy = _sortBy,
-                    // QA-10: export parity with the grid — the download
-                    // always ships exactly what the grid shows (the chip's
-                    // view mode included). The handler clamps this for
-                    // non-staff roles server-side, exactly as for loads.
-                    IncludeInactive = _includeInactive
-                };
-
-                var result = await MessageBus.InvokeAsync<PaginatedResult<ProductListItemDto>>(query);
-
-                foreach (var product in result.Items)
-                {
-                    if (exported >= ExportRowCap) break;
-
-                    builder.AddRow(
-                        product.Name,
-                        product.CategoryName,
-                        product.SubCategoryName,
-                        product.SubSubCategoryName,
-                        product.Price?.Amount,
-                        product.Price?.Currency,
-                        product.StockQuantity > 0 ? Loc["StockIn"] : Loc["StockOut"]);
-                    exported++;
-                }
-
-                // Last page reached when the server returns fewer rows
-                // than requested.
-                if (result.Items.Count < exportPageSize) break;
-                pageNumber++;
-            }
-
-            var fileName = $"takone-catalog-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
-            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
-
-            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageTitle"]);
-        }
-        catch (Exception)
-        {
-            // JS interop can fail after a circuit reconnect — a visible
-            // toast beats a silently dead button (same policy as the admin
-            // export buttons).
-            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["LoadErrorTitle"]);
-        }
-        finally
-        {
-            _isExporting = false;
         }
     }
 

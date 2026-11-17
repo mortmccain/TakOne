@@ -409,54 +409,6 @@
     <value>Price: high to low</value>
     <comment>Round 4 — most-expensive-first sort option.</comment>
   </data>
-  <data name="ExportCsvButton" xml:space="preserve">
-    <value>Export CSV</value>
-    <comment>Catalog take-away: exports the currently filtered product list as a CSV download (same filters + sort as the grid).</comment>
-  </data>
-  <data name="ExportCsvWorking" xml:space="preserve">
-    <value>Exporting…</value>
-    <comment>Label shown on the export button while the multi-page fetch loop runs.</comment>
-  </data>
-  <data name="ExportCsvTooltip" xml:space="preserve">
-    <value>Download the visible catalog as a CSV file</value>
-    <comment>Tooltip/aria-label for the export button.</comment>
-  </data>
-  <data name="ExportCsvDone" xml:space="preserve">
-    <value>{0} product(s) exported.</value>
-    <comment>Success toast after the CSV download starts. {0} = exported row count.</comment>
-  </data>
-  <data name="ExportCsvError" xml:space="preserve">
-    <value>The export failed. Please try again.</value>
-    <comment>Failure toast when the export loop or the download fails.</comment>
-  </data>
-  <data name="ColName" xml:space="preserve">
-    <value>Name</value>
-    <comment>CSV export column header — product name.</comment>
-  </data>
-  <data name="ColCategory" xml:space="preserve">
-    <value>Category</value>
-    <comment>CSV export column header — top-level category.</comment>
-  </data>
-  <data name="ColSubCategory" xml:space="preserve">
-    <value>Sub-category</value>
-    <comment>CSV export column header — sub-category.</comment>
-  </data>
-  <data name="ColSubSubCategory" xml:space="preserve">
-    <value>Sub-sub-category</value>
-    <comment>CSV export column header — sub-sub-category.</comment>
-  </data>
-  <data name="ColPrice" xml:space="preserve">
-    <value>Price</value>
-    <comment>CSV export column header — price amount.</comment>
-  </data>
-  <data name="ColCurrency" xml:space="preserve">
-    <value>Currency</value>
-    <comment>CSV export column header — currency code.</comment>
-  </data>
-  <data name="ColAvailability" xml:space="preserve">
-    <value>Availability</value>
-    <comment>CSV export column header — in-stock/out-of-stock label (matches the card badge).</comment>
-  </data>
   <data name="ShowStockOutChip" xml:space="preserve">
     <value>Include out of stock</value>
     <comment>QA-10 — staff (admin/manager) toggle chip in the products tools row: includes zero-stock products in the catalog grid.</comment>
@@ -468,5 +420,9 @@
   <data name="PagerPerPage" xml:space="preserve">
     <value>Per page</value>
     <comment>QA-10 — label for the pager row's page-size selector (12/24/48 cards per page).</comment>
+  </data>
+  <data name="SubmitConfirmDialogTitle" xml:space="preserve">
+    <value>Confirm order submission</value>
+    <comment>Title of the two-step confirmation dialog shown before the cart is finally submitted (3-second countdown).</comment>
   </data>
 </root>
