@@ -605,4 +605,31 @@
     <value>Note</value>
     <comment>Run-report CSV column: non-failure annotation (empty on normal runs; explains the default-backup-directory fallback and where the file landed).</comment>
   </data>
+
+  <!-- ── Categories CSV import (card 4) ── -->
+  <data name="CategoriesImportCardTitle" xml:space="preserve">
+    <value>Import categories from CSV</value>
+    <comment>Admin tools card 4 — the round-trip partner of the AdminCategories (admin-only) export.</comment>
+  </data>
+  <data name="CategoriesImportCardHint" xml:space="preserve">
+    <value>Imports the AdminCategories page's CSV export. Each row is a Category → Sub-category → Sub-sub-category path: existing names are matched, missing names are created. The Status column is informational only and never applied; re-importing the same file is a no-op.</value>
+  </data>
+  <data name="CategoriesImportPickTitle" xml:space="preserve">
+    <value>Choose the categories CSV file</value>
+  </data>
+  <data name="CategoriesImportPickHint" xml:space="preserve">
+    <value>Column order: Category, Sub-category, Sub-sub-category, Status.</value>
+  </data>
+  <data name="CategoriesImportDone" xml:space="preserve">
+    <value>Category import finished: {0} created, {1} already existed, {2} failed.</value>
+    <comment>{0} = created, {1} = already existed, {2} = failed.</comment>
+  </data>
+  <data name="ImportExistedCount" xml:space="preserve">
+    <value>Already existed: {0}</value>
+    <comment>Categories import result badge; {0} = count.</comment>
+  </data>
+  <data name="ImportOutcomeExisted" xml:space="preserve">
+    <value>Already existed</value>
+    <comment>Per-row outcome label in the categories import report.</comment>
+  </data>
 </root>

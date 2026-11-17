@@ -297,4 +297,43 @@
   <data name="ViewModeList" xml:space="preserve">
     <value>فهرستی</value>
   </data>
+
+  <!-- ── Categories CSV export (admin-only) — the Settings import's round-trip partner ── -->
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>خروجی CSV</value>
+    <comment>دکمهٔ خروجی درخت کامل دسته‌بندی‌ها (فقط مدیر کل) — فایل یک‌جا شامل دسته، زیر‌دسته، زیر-زیر‌دسته و وضعیت.</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>{0} سطر خروجی گرفته شد.</value>
+    <comment>پیام موفقیت خروجی؛ {0} = تعداد سطرهای فایل.</comment>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>خروجی CSV ناموفق بود.</value>
+  </data>
+  <data name="ColCategory" xml:space="preserve">
+    <value>دسته‌بندی</value>
+    <comment>سرستون خروجی CSV — دستهٔ سطح بالا.</comment>
+  </data>
+  <data name="ColSubCategory" xml:space="preserve">
+    <value>زیر‌دسته</value>
+    <comment>سرستون خروجی CSV — زیر‌دسته.</comment>
+  </data>
+  <data name="ColSubSubCategory" xml:space="preserve">
+    <value>زیر-زیر‌دسته</value>
+    <comment>سرستون خروجی CSV — زیر-زیر‌دسته.</comment>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>وضعیت</value>
+    <comment>سرستون خروجی CSV — فعال/غیرفعال (فقط اطلاعاتی؛ ورود آن وضعیت را تغییر نمی‌دهد).</comment>
+  </data>
+  <data name="StatusActive" xml:space="preserve">
+    <value>فعال</value>
+  </data>
+  <data name="StatusDeactivated" xml:space="preserve">
+    <value>غیرفعال</value>
+  </data>
+  <data name="DeactivatedSuffix" xml:space="preserve">
+    <value> (غیرفعال)</value>
+    <comment>نشان انتهای نام گره‌های غیرفعال در خروجی CSV — همان قرارداد خروجی کالاها؛ ورودی هنگام تطبیق هر دو نسخه (فارسی/انگلیسی) را برمی‌دارد.</comment>
+  </data>
 </root>

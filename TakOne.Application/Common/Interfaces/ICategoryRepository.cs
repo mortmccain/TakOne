@@ -45,6 +45,26 @@ public interface ICategoryRepository
     Task<Category?> GetByIdWithHierarchyNoTrackingAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns ALL Categories (active AND inactive) with their full
+    /// SubCategory → SubSubCategory hierarchy eagerly loaded in a
+    /// single round-trip — <c>AsNoTracking</c> (nothing is attached to
+    /// EF Core's change tracker).
+    ///
+    /// USED BY:
+    ///   - <c>ImportCategoriesCommandHandler</c> (Settings → admin tools →
+    ///     categories CSV import). The import resolves each CSV row
+    ///     against the full existing tree (find-or-create at every level),
+    ///     and — following the documented Blazor Server stale-tracking
+    ///     pattern — persists each NEW child entity via
+    ///     <see cref="IUnitOfWork.AddEntity"/> while the loaded tree stays
+    ///     untracked. SaveChanges then emits exactly the INSERTs for the
+    ///     new nodes and zero UPDATEs, sidestepping the
+    ///     <c>DbUpdateConcurrencyException</c> trap that tracked
+    ///     hierarchy loads + collection mutations cause.
+    /// </summary>
+    Task<List<Category>> GetAllWithHierarchyNoTrackingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns all active Categories with their full SubCategory →
     /// SubSubCategory hierarchy eagerly loaded. Used by the shop
     /// sidebar (Products page), the product-create / product-edit

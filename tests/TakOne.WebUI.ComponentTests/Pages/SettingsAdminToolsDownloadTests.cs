@@ -18,6 +18,7 @@ using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
 using TakOne.WebUI.Components.Pages.AdminProducts;
 using TakOne.WebUI.Components.Pages.AdminUsers;
+using TakOne.WebUI.Components.Pages.AdminCategories;
 using TakOne.WebUI.Components.Pages.Settings;
 using TakOne.WebUI.Services;
 using Wolverine;
@@ -126,6 +127,7 @@ public class SettingsAdminToolsDownloadTests
         AddIdentityLocalizer<Settings>(ctx);
         AddIdentityLocalizer<AdminProducts>(ctx);
         AddIdentityLocalizer<AdminUsers>(ctx);
+        AddIdentityLocalizer<AdminCategories>(ctx);
     }
 
     // Local twin of ComponentTestSetup.AddIdentityLocalizer that ALSO
@@ -206,7 +208,10 @@ public class SettingsAdminToolsDownloadTests
             var templateButtons = cut.FindAll("button")
                 .Where(b => b.TextContent.Contains("DownloadTemplateButton"))
                 .ToList();
-            var userTemplateButton = templateButtons.Last(); // the users card's
+            // Card order: products (1), users (3), categories (4) — each
+            // card's template button, in markup order.
+            templateButtons.Should().HaveCount(3);
+            var userTemplateButton = templateButtons[1]; // the users card's
 
             // Act
             await cut.InvokeAsync(() => userTemplateButton.Click());
@@ -229,6 +234,48 @@ public class SettingsAdminToolsDownloadTests
             csv.Should().Contain("10001,Example Employee,GenderMale,,Employee,StatusActive\r\n");
             csv.Should().Contain("10002,Example Customer,GenderFemale,Example Group,Customer,StatusActive\r\n");
             csv.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3);
+        }
+    }
+
+    [Fact]
+    public async Task Settings_CategoriesTemplateClick_DownloadsFourColumnCsv()
+    {
+        // The categories-import card's template: the EXACT positional
+        // 4-column format of the AdminCategories export (Category,
+        // Sub-category, Sub-sub-category, Status) + three example rows —
+        // one per chain depth (category only, category+sub, full triple).
+        var (ctx, js) = Setup();
+        using (ctx)
+        {
+            var cut = ctx.Render<Settings>();
+            cut.WaitForAssertion(
+                () => cut.Markup.Should().Contain("ProductImportCardTitle"),
+                TimeSpan.FromSeconds(10));
+
+            var templateButtons = cut.FindAll("button")
+                .Where(b => b.TextContent.Contains("DownloadTemplateButton"))
+                .ToList();
+            templateButtons.Should().HaveCount(3);
+            var categoriesTemplateButton = templateButtons[2]; // the categories card's
+
+            // Act
+            await cut.InvokeAsync(() => categoriesTemplateButton.Click());
+
+            // Assert
+            cut.WaitForAssertion(
+                () => js.Invocations["takDownload.csv"].Should().HaveCount(1),
+                TimeSpan.FromSeconds(10));
+
+            var args = js.Invocations["takDownload.csv"][0].Arguments;
+            args[0].Should().BeOfType<string>().Which.Should().Be("takone-categories-import-template.csv");
+
+            var csv = args[1].Should().BeOfType<string>().Subject;
+            csv.Should().StartWith("ColCategory,ColSubCategory,ColSubSubCategory,ColStatus\r\n");
+            csv.Should().Contain("Example Category,,,StatusActive\r\n");
+            csv.Should().Contain("Example Category,Example Sub-category,,StatusActive\r\n");
+            csv.Should().Contain(
+                "Example Category,Example Sub-category,Example Sub-sub-category,StatusActive\r\n");
+            csv.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(4);
         }
     }
 }

@@ -95,6 +95,28 @@ public sealed class CategoryRepository : ICategoryRepository
     }
 
     /// <inheritdoc />
+    public async Task<List<Category>> GetAllWithHierarchyNoTrackingAsync(CancellationToken cancellationToken = default)
+    {
+        // Same shape as GetAllAsync, but AsNoTracking — the returned
+        // Category (and its SubCategories / SubSubCategories) is NOT
+        // attached to the change tracker.
+        //
+        // Use this from command handlers that resolve rows against the
+        // whole existing tree and then persist ONLY the NEW child entities
+        // (via IUnitOfWork.AddEntity). Keeping the loaded tree untracked
+        // means SaveChanges cannot emit spurious UPDATEs for it — the
+        // reliable fix for the Blazor Server scoped-DbContext
+        // stale-tracking bug documented on
+        // GetByIdWithHierarchyNoTrackingAsync / IUnitOfWork.AddEntity.
+        return await _db.Categories
+            .AsNoTracking()
+            .Include(c => c.SubCategories)
+                .ThenInclude(s => s.SubSubCategories)
+            .OrderBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<List<Category>> GetAllActiveAsync(CancellationToken cancellationToken = default)
     {
         // Returns all active Categories WITH their full SubCategory →

@@ -112,6 +112,7 @@
 @using TakOne.Application.Common.Authorization
 @using TakOne.Application.Common.Interfaces
 @using TakOne.Application.Products.Commands.ImportProducts
+@using TakOne.Application.Categories.Commands.ImportCategories
 @using TakOne.Application.Users.DTOs
 @using TakOne.Application.Users.Commands.ImportUsers
 @using TakOne.Application.Users.Queries.GetUserById
@@ -127,6 +128,7 @@
 @using TakOne.WebUI.Services
 @using TakOne.WebUI.Components.Pages.AdminProducts
 @using TakOne.WebUI.Components.Pages.AdminUsers
+@using TakOne.WebUI.Components.Pages.AdminCategories
 @inject IMessageBus MessageBus
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
@@ -138,6 +140,7 @@
    instead of duplicating the keys keeps the round-trip format in sync). *@
 @inject IStringLocalizer<AdminProducts> ProductsLoc
 @inject IStringLocalizer<AdminUsers> UsersLoc
+@inject IStringLocalizer<AdminCategories> CategoriesLoc
 @inject ToastService Toast
 @inject IJSRuntime JS
 @inject IFileStorage FileStorage
@@ -1227,7 +1230,8 @@
         </div>
 
         @* ── Admin tools section (admin-only) ──
-           Four tools, each a self-contained card:
+           Four numbered tools in the CSV restore workflow, each a
+           self-contained card, plus one unnumbered operations card:
              1. Product CSV import  — the round-trip partner of the
                 AdminProducts export (which now carries each product's
                 picture directory + file name).
@@ -1240,11 +1244,15 @@
                 manage-users export; new users get the default password
                 "@" + reversed worker id + "Temp" and a forced one-time
                 password change.
-             4. Database backups    — read-side status of the scheduled
-                backup service (last run + outcome, next slot, stored
-                files, retention) + a "Back up now" trigger. Runs on the
-                server's own background execution — the card follows the
-                progress by polling.
+             4. Categories CSV import — the round-trip partner of the
+                AdminCategories (admin-only) export; rows upsert the
+                category tree find-or-create style (Category → Sub →
+                SubSub) and never touch activation state.
+             [unnumbered] Database backups — read-side status of the
+                scheduled backup service (last run + outcome, next slot,
+                stored files, retention) + a "Back up now" trigger. Runs
+                on the server's own background execution — the card
+                follows the progress by polling.
 
            GATED: the cards render only for Admins (role resolved via the
            AuthenticationStateProvider — see _isAdmin). Every command is
@@ -1556,8 +1564,112 @@
                             </div>
                         }
                     </RadzenCard>
-                    @* ── Card 4: database backup status ──
-                       NOT numbered like cards 1-3: those form the CSV
+                    @* ── Card 4: categories CSV import ──
+                       The round-trip partner of the AdminCategories
+                       export (admin-only, like this card). Rows upsert
+                       the tree find-or-create style: Category → Sub →
+                       SubSub, each level matched case-insensitively by
+                       name (deactivated markers stripped) and missing
+                       nodes CREATED active. Activation state is never
+                       changed by an import — the Status column is
+                       informational. Re-importing an export is a no-op. *@
+                    <RadzenCard Variant="Variant.Filled" Style="padding: 1.25rem;">
+                        <div class="section-title">
+                            <span class="admin-step-badge" aria-hidden="true">4</span>
+                            <RadzenIcon Icon="category" Style="color: var(--rz-primary);" />
+                            <span>@Loc["CategoriesImportCardTitle"]</span>
+                        </div>
+                        <RadzenText TextStyle="TextStyle.Body2"
+                                    Style="color: var(--rz-text-secondary-color); line-height: 1.5; margin-bottom: 0.75rem;">
+                            @Loc["CategoriesImportCardHint"]
+                        </RadzenText>
+
+                        @* Sample file with the EXACT positional format (same
+                           headers + column order as the AdminCategories
+                           export, incl. the informational Status column). *@
+                        <button type="button" class="admin-inline-action"
+                                @onclick="DownloadCategoriesCsvTemplateAsync">
+                            <RadzenIcon Icon="description" Style="font-size: 1rem;" />
+                            <span>@Loc["DownloadTemplateButton"]</span>
+                        </button>
+
+                        @if (_isImportingCategories)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["ImportWorking"]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else
+                        {
+                            <label class="import-dropzone">
+                                <InputFile OnChange="@OnCategoriesCsvSelectedAsync"
+                                           accept=".csv,text/csv"
+                                           class="import-dropzone-input" />
+                                <span class="import-dropzone-icon">
+                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                                </span>
+                                <span class="import-dropzone-title">@Loc["CategoriesImportPickTitle"]</span>
+                                <span class="import-dropzone-hint">@Loc["CategoriesImportPickHint"]</span>
+                            </label>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_categoriesImportError))
+                        {
+                            <RadzenAlert Title="@Loc["ErrorTitle"]"
+                                         Text="@_categoriesImportError"
+                                         AlertStyle="AlertStyle.Danger"
+                                         Variant="Variant.Outlined"
+                                         ShowIcon="true"
+                                         Style="margin-top: 0.75rem;" />
+                        }
+
+                        @if (_categoriesImportRows is { Count: > 0 })
+                        {
+                            <div class="import-results">
+                                <div class="import-results-summary">
+                                    <RadzenBadge Text="@Loc["ImportCreatedCount", _categoriesImportCreated]"
+                                                 BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportExistedCount", _categoriesImportExisted]"
+                                                 BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                    <RadzenBadge Text="@Loc["ImportFailedCount", _categoriesImportFailed]"
+                                                 BadgeStyle="BadgeStyle.Danger" IsPill="true" />
+                                    @* Audit trail: the same per-row ledger
+                                       rendered below, exported as CSV. *@
+                                    <button type="button" class="admin-inline-action"
+                                            style="margin-top: 0; margin-inline-start: auto;"
+                                            @onclick="DownloadCategoriesImportReportAsync">
+                                        <RadzenIcon Icon="sim_card_download" Style="font-size: 1rem;" />
+                                        <span>@Loc["DownloadReportButton"]</span>
+                                    </button>
+                                </div>
+                                <div class="import-results-list">
+                                    @foreach (var rowResult in _categoriesImportRows)
+                                    {
+                                        <div class="import-result-row">
+                                            <span class="import-result-line">@Loc["ImportRowLabel", rowResult.RowNumber]</span>
+                                            <span class="import-result-name">@rowResult.CategoryName</span>
+                                            @if (rowResult.Outcome == CategoryImportRowOutcome.Created)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeCreated"]" BadgeStyle="BadgeStyle.Success" IsPill="true" />
+                                            }
+                                            else if (rowResult.Outcome == CategoryImportRowOutcome.Existed)
+                                            {
+                                                <RadzenBadge Text="@Loc["ImportOutcomeExisted"]" BadgeStyle="BadgeStyle.Light" IsPill="true" />
+                                            }
+                                            else
+                                            {
+                                                <span class="import-result-msg">@rowResult.Message</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </RadzenCard>
+
+                    @* ── Card 5 (unnumbered): database backup status ──
+                       NOT numbered like cards 1-4: those form the CSV
                        restore workflow; this is a separate operations
                        card. Shows the scheduled-backup service's health
                        (last run + outcome, next 03:30/14:30-UTC slot,
@@ -2482,6 +2594,22 @@
     private int _userImportSkipped;
     private int _userImportFailed;
 
+    // ── Categories CSV import state ─────────────────────────────────────
+
+    /// <summary>True while the categories import command is in flight.</summary>
+    private bool _isImportingCategories;
+
+    /// <summary>Non-null when the categories import failed before any row was processed.</summary>
+    private string? _categoriesImportError;
+
+    /// <summary>Per-row categories-import report (handler results + local parse failures), in file order.</summary>
+    private List<CategoryImportRowResultDto>? _categoriesImportRows;
+
+    /// <summary>Tallies for the categories import result badges.</summary>
+    private int _categoriesImportCreated;
+    private int _categoriesImportExisted;
+    private int _categoriesImportFailed;
+
     // ── Backup status card state (admin-only) ──────────────────────────
 
     /// <summary>True while the GetBackupStatusQuery is in flight. Initialized TRUE so the admin card's first frame shows the loading spinner (not an empty body) until the initial load resolves; polls pass showLoadingState:false so refreshes never blink the card.</summary>
@@ -3169,6 +3297,213 @@
             await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
         }
     }
+
+    // ── Categories CSV import (card 4) ──────────────────────────────────
+
+    /// <summary>
+    /// Categories-CSV picker: parse the file, dispatch
+    /// <see cref="ImportCategoriesCommand"/>, and merge the handler's
+    /// per-row report with any local parse failures.
+    ///
+    /// COLUMN ORDER (positional — must mirror the AdminCategories export):
+    /// Category, SubCategory, SubSubCategory, Status. The Status column is
+    /// read but ignored (the import never changes activation state — the
+    /// handler's xmldoc documents the policy). The SubSub-without-Sub
+    /// contradiction is validated SERVER-side by the handler (per-row
+    /// failure with a reason), not here — the handler is the single
+    /// enforcement point for domain rules.
+    /// </summary>
+    private async Task OnCategoriesCsvSelectedAsync(InputFileChangeEventArgs e)
+    {
+        // Reset the previous run's UI state.
+        _categoriesImportError = null;
+        _categoriesImportRows = null;
+        _categoriesImportCreated = _categoriesImportExisted = _categoriesImportFailed = 0;
+
+        if (e.FileCount == 0)
+        {
+            return; // picker cancelled — keep the previous state
+        }
+
+        var file = e.File;
+        var rows = new List<CategoryImportRowDto>();
+        var localFailures = new List<CategoryImportRowResultDto>();
+
+        try
+        {
+            var csv = await ReadTextFileAsync(file, MaxCsvFileSizeBytes);
+            var records = CsvParser.Parse(csv);
+
+            // Row 0 is the header; every record after it is a data row.
+            if (records.Count < 2)
+            {
+                _categoriesImportError = Loc["ImportErrorNoDataRows"];
+                return;
+            }
+
+            for (var i = 1; i < records.Count; i++)
+            {
+                var fields = records[i];
+                var rowNumber = i; // 1-based DATA-row number (header = 0)
+
+                // Guard the positional contract: the export always writes
+                // 4 columns; a short row means a broken/edited file — the
+                // row is reported, not silently mis-mapped.
+                if (fields.Length < 4)
+                {
+                    localFailures.Add(new CategoryImportRowResultDto
+                    {
+                        RowNumber = rowNumber,
+                        CategoryName = fields.Length > 0 ? fields[0] : string.Empty,
+                        Outcome = CategoryImportRowOutcome.Failed,
+                        Message = Loc["ImportErrorShortRow"]
+                    });
+                    continue;
+                }
+
+                rows.Add(new CategoryImportRowDto
+                {
+                    RowNumber = rowNumber,
+                    CategoryName = fields[0],
+                    SubCategoryName = fields[1],
+                    SubSubCategoryName = fields[2]
+                    // fields[3] (Status) deliberately not mapped — see the
+                    // xmldoc: activation state is informational only.
+                });
+            }
+        }
+        catch (System.IO.IOException ex)
+        {
+            _categoriesImportError = Loc["ImportErrorReadFailed", ex.Message];
+            return;
+        }
+
+        // All rows failed local parsing — nothing to dispatch.
+        if (rows.Count == 0)
+        {
+            _categoriesImportRows = localFailures;
+            _categoriesImportFailed = localFailures.Count;
+            return;
+        }
+
+        _isImportingCategories = true;
+        try
+        {
+            var result = await MessageBus.InvokeAsync<Result<CategoryImportResultDto>>(
+                new ImportCategoriesCommand(rows));
+
+            if (result.IsSuccess)
+            {
+                var report = result.Value;
+                _categoriesImportCreated = report.CreatedCount;
+                _categoriesImportExisted = report.ExistedCount;
+                _categoriesImportFailed = report.FailedCount + localFailures.Count;
+
+                // Handler rows first (file order), then local failures —
+                // both are already ordered by row number within themselves.
+                _categoriesImportRows = report.RowResults.Concat(localFailures).ToList();
+
+                await Toast.Success(
+                    Loc["CategoriesImportDone", report.CreatedCount, report.ExistedCount, report.FailedCount + localFailures.Count],
+                    summary: Loc["PageHeading"]);
+            }
+            else
+            {
+                _categoriesImportError = result.Error;
+            }
+        }
+        catch (Exception)
+        {
+            _categoriesImportError = Loc["ImportErrorGeneric"];
+        }
+        finally
+        {
+            _isImportingCategories = false;
+        }
+    }
+
+    /// <summary>
+    /// Sample file with the EXACT positional format (same headers +
+    /// column order as the AdminCategories export). The sample rows
+    /// import cleanly once and then report "existed" on re-import
+    /// (idempotent) — recognizable placeholders, same discipline as the
+    /// product/user templates.
+    /// </summary>
+    private async Task DownloadCategoriesCsvTemplateAsync()
+    {
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                CategoriesLoc["ColCategory"],
+                CategoriesLoc["ColSubCategory"],
+                CategoriesLoc["ColSubSubCategory"],
+                CategoriesLoc["ColStatus"]);
+
+            builder.AddRow("Example Category", string.Empty, string.Empty,
+                CategoriesLoc["StatusActive"]);
+            builder.AddRow("Example Category", "Example Sub-category", string.Empty,
+                CategoriesLoc["StatusActive"]);
+            builder.AddRow("Example Category", "Example Sub-category", "Example Sub-sub-category",
+                CategoriesLoc["StatusActive"]);
+
+            await JS.InvokeVoidAsync("takDownload.csv", "takone-categories-import-template.csv", builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Exports the LAST categories-import run's per-row ledger as a CSV
+    /// (row number, category name, outcome, failure message). Mirrors
+    /// the product/user reports so all three cards behave alike.
+    /// </summary>
+    private async Task DownloadCategoriesImportReportAsync()
+    {
+        if (_categoriesImportRows is not { Count: > 0 })
+        {
+            return;
+        }
+
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColReportRow"],
+                CategoriesLoc["ColCategory"],
+                Loc["ColReportOutcome"],
+                Loc["ColReportMessage"]);
+
+            foreach (var row in _categoriesImportRows)
+            {
+                builder.AddRow(
+                    row.RowNumber,
+                    row.CategoryName,
+                    GetCategoryImportOutcomeLabel(row.Outcome),
+                    row.Message);
+            }
+
+            var fileName = $"takone-categories-import-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+        }
+        catch (Exception)
+        {
+            await Toast.Warning(Loc["DownloadError"], summary: Loc["ErrorTitle"]);
+        }
+    }
+
+    /// <summary>
+    /// Localized outcome label for the categories-import report CSV —
+    /// the same shape as the product/user outcome-label helpers.
+    /// </summary>
+    private string GetCategoryImportOutcomeLabel(CategoryImportRowOutcome outcome) => outcome switch
+    {
+        CategoryImportRowOutcome.Created => Loc["ImportOutcomeCreated"],
+        CategoryImportRowOutcome.Existed => Loc["ImportOutcomeExisted"],
+        _ => Loc["ImportOutcomeFailed"]
+    };
 
     /// <summary>
     /// Localized outcome label for the product-import report CSV — the

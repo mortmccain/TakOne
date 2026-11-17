@@ -297,4 +297,43 @@
   <data name="ViewModeList" xml:space="preserve">
     <value>List</value>
   </data>
+
+  <!-- ── Categories CSV export (admin-only) — the Settings import's round-trip partner ── -->
+  <data name="ExportCsvButton" xml:space="preserve">
+    <value>Export CSV</value>
+    <comment>Admin-only button: exports the full category tree (categories, sub-categories, sub-sub-categories + status) as one file.</comment>
+  </data>
+  <data name="ExportCsvDone" xml:space="preserve">
+    <value>Exported {0} rows.</value>
+    <comment>Export success toast; {0} = row count.</comment>
+  </data>
+  <data name="ExportCsvError" xml:space="preserve">
+    <value>The CSV export failed.</value>
+  </data>
+  <data name="ColCategory" xml:space="preserve">
+    <value>Category</value>
+    <comment>CSV export column header — top-level category.</comment>
+  </data>
+  <data name="ColSubCategory" xml:space="preserve">
+    <value>Sub-category</value>
+    <comment>CSV export column header — sub-category.</comment>
+  </data>
+  <data name="ColSubSubCategory" xml:space="preserve">
+    <value>Sub-sub-category</value>
+    <comment>CSV export column header — sub-sub-category.</comment>
+  </data>
+  <data name="ColStatus" xml:space="preserve">
+    <value>Status</value>
+    <comment>CSV export column header — active/deactivated (informational; the import never applies it).</comment>
+  </data>
+  <data name="StatusActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="StatusDeactivated" xml:space="preserve">
+    <value>Deactivated</value>
+  </data>
+  <data name="DeactivatedSuffix" xml:space="preserve">
+    <value> (deactivated)</value>
+    <comment>Trailing marker appended to deactivated node names in the CSV export — the products-export convention; the import strips BOTH culture variants when matching.</comment>
+  </data>
 </root>

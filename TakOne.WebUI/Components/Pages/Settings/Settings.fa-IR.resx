@@ -609,4 +609,31 @@
     <value>یادداشت</value>
     <comment>ستون CSV گزارش: یادداشت غیرخطا (خالی در اجراهای عادی؛ توضیح مسیر جایگزین پشتیبان‌گیری از پوشه پیش‌فرض SQL Server و محل نهایی فایل).</comment>
   </data>
+
+  <!-- ── Categories CSV import (card 4) ── -->
+  <data name="CategoriesImportCardTitle" xml:space="preserve">
+    <value>ورود دسته‌بندی‌ها از CSV</value>
+    <comment>کارت ۴ ابزارهای مدیر — شریک چرخشیِ خروجی CSV صفحهٔ دسته‌بندی‌ها (فقط مدیر کل).</comment>
+  </data>
+  <data name="CategoriesImportCardHint" xml:space="preserve">
+    <value>فایل CSV خروجی صفحهٔ دسته‌بندی‌ها را وارد می‌کند. هر سطر یک مسیر دسته → زیر‌دسته → زیر-زیر‌دسته است: نام موجود تطبیق داده می‌شود و نام غایس ایجاد می‌گردد. وضعیت (فعال/غیرفعال) فقط اطلاعاتی است و هرگز تغییر نمی‌کند؛ وارد کردن دوبارهٔ همان فایل بی‌اثر است.</value>
+  </data>
+  <data name="CategoriesImportPickTitle" xml:space="preserve">
+    <value>انتخاب فایل CSV دسته‌بندی‌ها</value>
+  </data>
+  <data name="CategoriesImportPickHint" xml:space="preserve">
+    <value>ترتیب ستون‌ها: دسته‌بندی، زیر‌دسته، زیر-زیر‌دسته، وضعیت.</value>
+  </data>
+  <data name="CategoriesImportDone" xml:space="preserve">
+    <value>ورود دسته‌بندی‌ها تمام شد: {0} ایجاد، {1} از قبل موجود، {2} ناموفق.</value>
+    <comment>{0} = تعداد ایجادشده، {1} = از قبل موجود، {2} = ناموفق.</comment>
+  </data>
+  <data name="ImportExistedCount" xml:space="preserve">
+    <value>از قبل موجود: {0}</value>
+    <comment>جمع‌بندی نتیجهٔ ورود دسته‌بندی‌ها؛ {0} = تعداد.</comment>
+  </data>
+  <data name="ImportOutcomeExisted" xml:space="preserve">
+    <value>از قبل موجود بود</value>
+    <comment>برچسب نتیجهٔ سطر در گزارش ورود دسته‌بندی‌ها.</comment>
+  </data>
 </root>

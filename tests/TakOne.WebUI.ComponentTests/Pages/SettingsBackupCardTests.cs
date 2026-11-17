@@ -18,6 +18,7 @@ using TakOne.Domain.Users;
 using TakOne.SharedKernel.Common;
 using TakOne.WebUI.Components.Pages.AdminProducts;
 using TakOne.WebUI.Components.Pages.AdminUsers;
+using TakOne.WebUI.Components.Pages.AdminCategories;
 using TakOne.WebUI.Components.Pages.Settings;
 using TakOne.WebUI.Services;
 using Wolverine;
@@ -157,6 +158,7 @@ public class SettingsBackupCardTests
         AddIdentityLocalizer<Settings>(ctx);
         AddIdentityLocalizer<AdminProducts>(ctx);
         AddIdentityLocalizer<AdminUsers>(ctx);
+        AddIdentityLocalizer<AdminCategories>(ctx);
     }
 
     // Local twin of ComponentTestSetup.AddIdentityLocalizer that ALSO

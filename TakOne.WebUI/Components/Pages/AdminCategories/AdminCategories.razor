@@ -89,6 +89,7 @@
 @inject IStringLocalizer<AdminCategories> Loc
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
+@inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
@@ -785,6 +786,32 @@
                 <span>@Loc["ViewModeList"]</span>
             </button>
         </div>
+
+        @* ── Categories CSV export (admin-only) ──
+           The round-trip partner of the Settings → admin tools →
+           categories import. ONE file for the whole tree: one row per
+           deepest node (category-only rows when a category has no subs;
+           category+sub rows when the sub has no subsubs; full
+           category+sub+subsub rows otherwise), plus a Status column.
+           Deactivated nodes carry the same " (deactivated)" name marker
+           the products export uses, so a re-import matches them by name
+           (the import strips the marker; it never changes activation
+           state). The page is StaffManagement-gated (Admin+Manager);
+           the EXPORT is admin-only per the owner's policy — the UI gate
+           here is UX, the import command's [RequireRoles(Admin)] is the
+           security boundary. *@
+        @if (_isAdmin)
+        {
+            <RadzenButton Text="@Loc["ExportCsvButton"]"
+                          Icon="download"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Variant="Variant.Outlined"
+                          Size="ButtonSize.Small"
+                          Disabled="@(_isLoading || _categories.Count == 0)"
+                          IsBusy="@_isExporting"
+                          BusyText="@Loc["ExportCsvButton"]"
+                          Click="@ExportCategoriesCsvAsync" />
+        }
     </div>
 
     @* ── Loading state ── *@
@@ -1724,6 +1751,20 @@
     private bool _isRenaming;
     private bool _isToggling;
 
+    /// <summary>
+    /// True only for the Admin role — gates the categories CSV export
+    /// button (the owner's policy: bulk export/import of the category
+    /// tree is admin-only; the page itself stays Admin+Manager).
+    /// Resolved from the AuthenticationStateProvider (the canonical
+    /// source of role info for interactive components — see the Sales
+    /// page's note on why ICurrentUserService doesn't survive the
+    /// circuit), BEFORE the first render so the button never flickers.
+    /// </summary>
+    private bool _isAdmin;
+
+    /// <summary>True while the CSV export is building (button spinner).</summary>
+    private bool _isExporting;
+
     // ── Inline add-form state ───────────────────────────────────────────
     //
     // _addingTopLevel: when true, the inline add form is open at the
@@ -1783,6 +1824,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve the admin gate synchronously before the first render
+        // (the export button's visibility binds to _isAdmin).
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isAdmin = user.IsInRole(Roles.Admin);
+
         await LoadCategoriesAsync();
     }
 
@@ -1931,6 +1977,110 @@
             _needsConnectorUpdate = true;
         }
     }
+
+    // ── Categories CSV export (admin-only — the import's round-trip partner) ──
+
+    /// <summary>
+    /// Exports the ENTIRE loaded tree (active + deactivated — the page's
+    /// <see cref="_categories"/> already carries both) as ONE CSV:
+    /// positional columns Category, SubCategory, SubSubCategory, Status;
+    /// one row per DEEPEST node (a bare-category row when it has no
+    /// subs; a category+sub row when the sub has no subsubs; the full
+    /// triple otherwise). Deactivated nodes carry the " (deactivated)"
+    /// name marker (the products-export convention) so a round-tripped
+    /// file re-matches its own tree — the import strips the markers and
+    /// never touches activation state.
+    ///
+    /// Shares the export machinery every other page uses: CsvBuilder
+    /// (RFC 4180 + invariant numbers) + takDownload.csv (UTF-8 + BOM).
+    /// </summary>
+    private async Task ExportCategoriesCsvAsync()
+    {
+        if (_isExporting || _categories.Count == 0)
+        {
+            return; // the button is disabled for empty trees — belt + braces
+        }
+
+        _isExporting = true;
+        try
+        {
+            var builder = new CsvBuilder();
+            builder.AddHeader(
+                Loc["ColCategory"],
+                Loc["ColSubCategory"],
+                Loc["ColSubSubCategory"],
+                Loc["ColStatus"]);
+
+            var exported = 0;
+            foreach (var category in _categories)
+            {
+                var categoryName = MarkDeactivated(category.Name, category.IsActive);
+
+                if (category.SubCategories.Count == 0)
+                {
+                    builder.AddRow(
+                        categoryName,
+                        string.Empty,
+                        string.Empty,
+                        Loc[category.IsActive ? "StatusActive" : "StatusDeactivated"]);
+                    exported++;
+                    continue;
+                }
+
+                foreach (var sub in category.SubCategories)
+                {
+                    var subName = MarkDeactivated(sub.Name, sub.IsActive);
+
+                    if (sub.SubSubCategories.Count == 0)
+                    {
+                        builder.AddRow(
+                            categoryName,
+                            subName,
+                            string.Empty,
+                            Loc[sub.IsActive ? "StatusActive" : "StatusDeactivated"]);
+                        exported++;
+                        continue;
+                    }
+
+                    foreach (var subSub in sub.SubSubCategories)
+                    {
+                        builder.AddRow(
+                            categoryName,
+                            subName,
+                            MarkDeactivated(subSub.Name, subSub.IsActive),
+                            Loc[subSub.IsActive ? "StatusActive" : "StatusDeactivated"]);
+                        exported++;
+                    }
+                }
+            }
+
+            var fileName = $"takone-categories-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+            await JS.InvokeVoidAsync("takDownload.csv", fileName, builder.ToString());
+
+            await Toast.Success(Loc["ExportCsvDone", exported], summary: Loc["PageHeading"]);
+        }
+        catch (Exception)
+        {
+            // JS interop can fail after a circuit reconnect — a visible
+            // toast beats a silently dead button (same policy as every
+            // other export button in the app).
+            await Toast.Warning(Loc["ExportCsvError"], summary: Loc["ErrorTitle"]);
+        }
+        finally
+        {
+            _isExporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Appends the deactivated marker to an exported name when the node
+    /// is inactive — the SAME convention the AdminProducts export uses
+    /// for category columns, and the twin the import strips. The marker
+    /// text is resx-driven (DeactivatedSuffix) so each culture ships its
+    /// own variant, and BOTH variants are stripped on import.
+    /// </summary>
+    private string MarkDeactivated(string name, bool isActive)
+        => isActive ? name : name + Loc["DeactivatedSuffix"];
 
     // ── Create category (top-level, inline + at end of root list) ───────
 
