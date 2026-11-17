@@ -1380,13 +1380,41 @@
                             @Loc["PictureUploadCardHint"]
                         </RadzenText>
 
+                        @* The picker label is ALWAYS rendered — it is NEVER
+                            unmounted while a staging or upload pass runs.
+                            WHY: .NET 10's InputFile readFileData interop
+                            resolves the element via
+                            document.querySelector("[_bl_<id>]") and reads
+                            element._blazorFilesById; if a mid-batch render
+                            removes the input from the DOM, the NEXT file's
+                            read dies with a JSException that the browser's
+                            NotifyChange RPC error path silently discards —
+                            the progress line would freeze forever ("2 of
+                            N…"). display:none keeps the element attached
+                            (Blazor's element reference + _blazorFilesById
+                            stay valid) while a pass runs, and the hidden
+                            label still blocks re-picks during the pass (an
+                            invisible element can't be clicked). *@
+                        <label class="import-dropzone"
+                               style="@(_isStagingPictures || _isUploadingPictures ? "display:none;" : null)">
+                            <InputFile OnChange="@OnPicturesSelectedAsync"
+                                       accept="image/jpeg,image/png,image/webp"
+                                       multiple
+                                       class="import-dropzone-input" />
+                            <span class="import-dropzone-icon">
+                                <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
+                            </span>
+                            <span class="import-dropzone-title">@Loc["PictureUploadPickTitle"]</span>
+                            <span class="import-dropzone-hint">@Loc["PictureUploadPickHint"]</span>
+                        </label>
+
                         @if (_isStagingPictures)
                         {
                             // The staging pass (browser → server) is the LONG
-                            // phase for a big batch — the picker is replaced by
-                            // a live n-of-total line so the page never looks
-                            // frozen mid-transfer, and a re-pick can't fire
-                            // while a batch is still streaming in.
+                            // phase for a big batch — this live n-of-total line
+                            // is a SIBLING of the hidden picker (never its
+                            // replacement) so the page never looks frozen
+                            // mid-transfer.
                             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
                                 <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
                                 <RadzenText TextStyle="TextStyle.Body2">@Loc["PictureUploadStaging", _pictureStagingDone, _pictureStagingTotal]</RadzenText>
@@ -1398,20 +1426,6 @@
                                 <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
                                 <RadzenText TextStyle="TextStyle.Body2">@Loc["UploadWorking", _pictureUploadDone, _pictureUploadTotal]</RadzenText>
                             </RadzenStack>
-                        }
-                        else
-                        {
-                            <label class="import-dropzone">
-                                <InputFile OnChange="@OnPicturesSelectedAsync"
-                                           accept="image/jpeg,image/png,image/webp"
-                                           multiple
-                                           class="import-dropzone-input" />
-                                <span class="import-dropzone-icon">
-                                    <RadzenIcon Icon="cloud_upload" Style="font-size: 1.6rem;" />
-                                </span>
-                                <span class="import-dropzone-title">@Loc["PictureUploadPickTitle"]</span>
-                                <span class="import-dropzone-hint">@Loc["PictureUploadPickHint"]</span>
-                            </label>
                         }
 
                         @if (_pendingPictures.Count > 0 && !_isUploadingPictures)
@@ -3075,6 +3089,10 @@
 
         var accepted = new List<PendingPicture>(takeCount);
         var rejected = new List<PictureUploadFailure>();
+        // The toast must report FILES rejected, not ledger ROWS: the remaining
+        // rows (JSDisconnected / catch-all) and the overflow row are each ONE
+        // row covering MANY files — rejected.Count showed a 220-file pick as "2".
+        var rejectedFileCount = 0;
 
         _isStagingPictures = true;
         _pictureStagingDone = 0;
@@ -3082,60 +3100,114 @@
 
         try
         {
-            foreach (var file in e.GetMultipleFiles(takeCount))
+            try
             {
-                try
+                // ── GetMultipleFiles(max) THROWS when the pick exceeds max — passing
+                //    the clamped take count would abort the WHOLE batch on an
+                //    over-cap pick (the 220-file case). Reading with the ACTUAL file
+                //    count never throws; the over-cap files beyond the take were
+                //    already accounted for in the overflow ledger below, so they are
+                //    simply dropped here.
+                var selectedFiles = e.GetMultipleFiles(e.FileCount).Take(takeCount);
+
+                foreach (var file in selectedFiles)
                 {
-                    // ── Pre-filter: content type + size (client-side mirror
-                    //    of the backend's checks — the backend's magic-byte
-                    //    sniff at upload time stays the authority). Rejected
-                    //    files become per-file failure entries in the results
-                    //    ledger, not silent drops.
-                    if (!AllowedPictureContentTypes.Contains(file.ContentType))
-                    {
-                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
-                        continue; // finally below still ticks the progress counter
-                    }
-
-                    if (file.Size > MaxPictureFileSizeBytes)
-                    {
-                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
-                        continue;
-                    }
-
                     try
                     {
-                        // Stream browser → staging disk. The staged write is
-                        // size-bounded server-side (defense-in-depth on top
-                        // of the pre-filter above).
-                        await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
-                        var stagedPath = await FileStorage.WriteStagedFileAsync(stream, file.Name);
-                        accepted.Add(new PendingPicture(file.Name, file.ContentType, file.Size, stagedPath));
+                        // ── Pre-filter: content type + size (client-side mirror
+                        //    of the backend's checks — the backend's magic-byte
+                        //    sniff at upload time stays the authority). Rejected
+                        //    files become per-file failure entries in the results
+                        //    ledger, not silent drops.
+                        if (!AllowedPictureContentTypes.Contains(file.ContentType))
+                        {
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
+                            rejectedFileCount++;
+                            continue; // finally below still ticks the progress counter
+                        }
+
+                        if (file.Size > MaxPictureFileSizeBytes)
+                        {
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                            rejectedFileCount++;
+                            continue;
+                        }
+
+                        try
+                        {
+                            // Stream browser → staging disk. The staged write is
+                            // size-bounded server-side (defense-in-depth on top
+                            // of the pre-filter above).
+                            await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
+                            var stagedPath = await FileStorage.WriteStagedFileAsync(stream, file.Name);
+                            accepted.Add(new PendingPicture(file.Name, file.ContentType, file.Size, stagedPath));
+                        }
+                        catch (System.IO.InvalidDataException)
+                        {
+                            // The staged write's size bound tripped (a browser
+                            // mis-reporting IBrowserFile.Size) — mirror the
+                            // pre-filter's message.
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                            rejectedFileCount++;
+                        }
+                        catch (System.IO.IOException)
+                        {
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+                            rejectedFileCount++;
+                        }
+                        catch (JSDisconnectedException)
+                        {
+                            // The circuit itself is gone (tab closed/navigated away) — no
+                            // further browser reads can succeed and nothing can be rendered.
+                            // Record the file, then stop the batch; the 24 h sweep collects
+                            // whatever already reached the staging disk.
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+                            rejectedFileCount++;
+                            rejected.Add(new PictureUploadFailure(
+                                Loc["PictureUploadRemainingName", _pictureStagingTotal - _pictureStagingDone],
+                                Loc["PictureUploadErrorAborted"]));
+                            rejectedFileCount += _pictureStagingTotal - _pictureStagingDone;
+                            break;
+                        }
+                        catch (JSException)
+                        {
+                            // The browser could not hand over this file's bytes (e.g. the
+                            // picker element's file registry was lost mid-batch). Same shape
+                            // as a read failure — the batch continues with the next file.
+                            rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+                            rejectedFileCount++;
+                        }
                     }
-                    catch (System.IO.InvalidDataException)
+                    finally
                     {
-                        // The staged write's size bound tripped (a browser
-                        // mis-reporting IBrowserFile.Size) — mirror the
-                        // pre-filter's message.
-                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
-                    }
-                    catch (System.IO.IOException)
-                    {
-                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+                        // Ticks for pre-filter rejections too — the counter must
+                        // reach the total even when files never reach staging.
+                        _pictureStagingDone++;
+                        StateHasChanged(); // live "n of total" feedback — the staging pass is the long phase
                     }
                 }
-                finally
-                {
-                    // Ticks for pre-filter rejections too — the counter must
-                    // reach the total even when files never reach staging.
-                    _pictureStagingDone++;
-                    StateHasChanged(); // live "n of total" feedback — the staging pass is the long phase
-                }
+            }
+            catch (Exception)
+            {
+                // A non-per-file failure (e.g. the staging disk refusing writes).
+                // NEVER let this escape: the NotifyChange RPC error path is
+                // invisible server-side, so an escaping exception would freeze
+                // the progress line forever. One ledger row for the files that
+                // were never attempted, then the normal post-loop flow runs.
+                rejected.Add(new PictureUploadFailure(
+                    Loc["PictureUploadRemainingName", _pictureStagingTotal - _pictureStagingDone],
+                    Loc["PictureUploadErrorAborted"]));
+                rejectedFileCount += _pictureStagingTotal - _pictureStagingDone;
             }
         }
         finally
         {
             _isStagingPictures = false;
+
+            // The picker input stays mounted for the page's lifetime now —
+            // clear its FileList so a re-pick of the same files fires a
+            // change event. Must run even on the failure paths above.
+            await ResetPicturePickerAsync();
         }
 
         if (overflowCount > 0)
@@ -3146,6 +3218,7 @@
             rejected.Add(new PictureUploadFailure(
                 Loc["PictureUploadOverflowName", overflowCount],
                 Loc["PictureUploadErrorTooMany", MaxPicturesPerBatch]));
+            rejectedFileCount += overflowCount;
         }
 
         _pendingPictures = accepted;
@@ -3155,7 +3228,7 @@
             // Surface the pre-filter rejections in the results ledger
             // (same shape as upload failures — file name + reason).
             _pictureUploadFailures = rejected;
-            await Toast.Warning(Loc["PictureUploadSomeRejected", rejected.Count], summary: Loc["PageHeading"]);
+            await Toast.Warning(Loc["PictureUploadSomeRejected", rejectedFileCount], summary: Loc["PageHeading"]);
         }
     }
 
@@ -3174,6 +3247,31 @@
         }
 
         _pendingPictures = new List<PendingPicture>();
+    }
+
+    /// <summary>
+    /// Clears the picker input's value after a batch is staged. The input
+    /// element now stays mounted for the page's lifetime, so it would
+    /// otherwise keep its previous FileList — and re-picking the exact
+    /// same files would not fire a change event. Clearing value='' is
+    /// safe mid-lifetime: Blazor's readFileData reads the file registry
+    /// it stores on the element (_blazorFilesById), not input.value.
+    /// Best-effort — a dead circuit must not throw from here.
+    /// </summary>
+    private async Task ResetPicturePickerAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("takOne.resetPicturePicker");
+        }
+        catch (JSException)
+        {
+            // Circuit gone or helper unavailable — nothing to reset.
+        }
+        catch (InvalidOperationException)
+        {
+            // JS interop unavailable during prerender/prerendered teardown.
+        }
     }
 
     /// <summary>

@@ -60,3 +60,27 @@ window.takDownload = (function () {
         }
     };
 })();
+
+// =============================================================================
+// window.takOne — Settings-page DOM helpers
+// -----------------------------------------------------------------------------
+// Small, page-scoped browser chores that can't be done from .NET inside an
+// interactive circuit. Kept in this file (not a new one) so it ships with
+// the same <script> reference; same IIFE + object-literal style as
+// takDownload above.
+// =============================================================================
+window.takOne = (function () {
+    'use strict';
+
+    return {
+        // Settings bulk-picture picker: clears the input's value after a batch
+        // is staged. The input stays mounted for the page's lifetime now, so
+        // without this, re-picking the exact same files would not fire a
+        // change event. (Blazor's readFileData uses the element's own file
+        // registry, not input.value — clearing it is safe.)
+        resetPicturePicker: function () {
+            document.querySelectorAll('input.import-dropzone-input[accept="image/jpeg,image/png,image/webp"]')
+                .forEach(function (input) { input.value = ''; });
+        }
+    };
+})();

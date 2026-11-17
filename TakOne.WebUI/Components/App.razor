@@ -264,8 +264,17 @@
         click persistence for files built in .NET (Blazor Server circuits
         have no HttpResponse to stream through). takDownload.csv prepends
         the UTF-8 BOM so Excel opens Persian text correctly. See
-        wwwroot/js/download.js. *@
-    <script src="js/download.js?v=2"></script>
+        wwwroot/js/download.js.
+
+        v3 cache-bust: added the window.takOne namespace with
+        resetPicturePicker — the Settings bulk-picture picker's <input>
+        now stays mounted for the page's lifetime (the .NET 10 readFileData
+        element lookup dies if the input leaves the DOM mid-batch), so its
+        value must be cleared after each staged batch or re-picking the
+        exact same files would not fire a change event. Without this
+        cache-bust the browser would keep serving the old v2 JS which has
+        no takOne helper. *@
+    <script src="js/download.js?v=3"></script>
 
     <HeadOutlet @rendermode="@RenderModeForPage" />
 </head>

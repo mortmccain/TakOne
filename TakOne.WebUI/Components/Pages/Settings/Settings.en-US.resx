@@ -415,6 +415,12 @@
   <data name="PictureUploadErrorRead" xml:space="preserve">
     <value>The file could not be read.</value>
   </data>
+  <data name="PictureUploadRemainingName" xml:space="preserve">
+    <value>{0} remaining file(s)</value>
+  </data>
+  <data name="PictureUploadErrorAborted" xml:space="preserve">
+    <value>Transfer was interrupted before this file could be read</value>
+  </data>
   <data name="PictureUploadErrorStorage" xml:space="preserve">
     <value>Storing the file failed.</value>
   </data>
