@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SubmitSaleConfirmationDialog.fa-IR.resx — Persian (Farsi) strings for the
+     cart-submission confirmation dialog. Sits next to the razor
+     file so Blazor's SDK auto-discovers it as the culture-specific
+     resource for SubmitSaleConfirmationDialog. -->
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resmimetype">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Dialog title (set by parent via DialogService.OpenAsync title arg, but
+       kept here for reference / potential reuse if the title moves inside) -->
+  <data name="DialogTitle" xml:space="preserve">
+    <value>تأیید ثبت سفارش</value>
+  </data>
+
+  <!-- Warning header — red, with the ⚠️ icon -->
+  <data name="WarningHeading" xml:space="preserve">
+    <value>⚠️ این عملیات توسط شما قابل بازگشت نیست</value>
+  </data>
+
+  <!-- Body text — intro sentence, then the cart summary in <strong> (see
+       SummaryFormat), then the two warning sentences. -->
+  <data name="BodyIntro" xml:space="preserve">
+    <value>شما در حال ثبت سفارش خود هستید:</value>
+  </data>
+  <!-- {0} = item count (digit-localized), {1} = the caller-formatted grand total -->
+  <data name="SummaryFormat" xml:space="preserve">
+    <value>{0} قلم — جمع کل {1}</value>
+    <comment>خلاصهٔ سبد داخل متن تأیید؛ {0} تعداد اقلام و {1} مبلغ جمع کل (قالب‌بندی‌شده توسط صفحه) است.</comment>
+  </data>
+  <data name="BodyPermanent" xml:space="preserve">
+    <value>پس از ثبت، این سفارش دیگر توسط شما قابل تغییر یا لغو نخواهد بود.</value>
+  </data>
+  <data name="BodySupport" xml:space="preserve">
+    <value>اگر پس از ثبت نیاز به لغو آن داشته باشید، باید با پشتیبانی تماس بگیرید.</value>
+  </data>
+  <data name="BodyConfirm" xml:space="preserve">
+    <value>لطفاً تأیید کنید که می‌خواهید ادامه دهید.</value>
+  </data>
+
+  <!-- Buttons -->
+  <data name="ButtonNo" xml:space="preserve">
+    <value>نه، برگرد</value>
+  </data>
+  <data name="ButtonYesReady" xml:space="preserve">
+    <value>بله، سفارشم را ثبت کن</value>
+  </data>
+  <!-- {0} is the countdown number (1, 2, 3) -->
+  <data name="ButtonYesCounting" xml:space="preserve">
+    <value>بله، سفارشم را ثبت کن ({0} ثانیه)</value>
+  </data>
+</root>

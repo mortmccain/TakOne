@@ -87,6 +87,7 @@
 @inject ErrorDisplayService ErrorDisplay
 @inject IJSRuntime JS
 @inject IStringLocalizer<Products> Loc
+@inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -1933,9 +1934,55 @@
 
     // ── Submit cart ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Two-step submit (owner policy): the Submit button opens the
+    /// <see cref="Dialogs.SubmitSaleConfirmationDialog.SubmitSaleConfirmationDialog"/>
+    /// FIRST — a 3-second-countdown warning that the submission cannot be
+    /// undone by the shopper (cancelling after submit requires calling
+    /// support), summarizing the cart (item count + grand total). Only a
+    /// confirmed dialog dispatches <see cref="SubmitSaleCommand"/>; any
+    /// other dismissal (No / X / Esc) leaves the cart untouched. Mirrors
+    /// the sale-cancellation two-step on SaleDetail (same dialog family,
+    /// same countdown contract).
+    /// </summary>
     private async Task SubmitCartAsync()
     {
         if (_cart is null) return;
+
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<Components.Dialogs.SubmitSaleConfirmationDialog.SubmitSaleConfirmationDialog>(
+                Loc["SubmitConfirmDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "LineCount", _cart.TotalItemCount },
+                    { "TotalDisplay", FormatPrice(_cart.Total) }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false, // force an explicit button choice
+                    ShowClose = true,                   // keep the X as an obvious escape
+                });
+        }
+        catch (Exception)
+        {
+            // Radzen/JS-interop failure opening the dialog — surface it,
+            // don't silently swallow (the button would feel dead).
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Products_SubmitDialogOpen);
+            return;
+        }
+
+        // `confirmed` is a boxed bool from DialogService.Close(true|false),
+        // or null for X / Esc. Anything that isn't exactly `true` is
+        // "user aborted" — the cart stays as-is.
+        if (confirmed is not true)
+        {
+            return;
+        }
 
         _isSubmitting = true;
         try

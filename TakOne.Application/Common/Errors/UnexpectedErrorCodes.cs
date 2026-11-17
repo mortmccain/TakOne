@@ -312,6 +312,7 @@ public static class UnexpectedErrorCodes
     public const string MobileCart_RemoveFailure = "79FVY32";
     public const string MobileCart_ClearFailure = "58YDJ89";
     public const string MobileCart_SubmitFailure = "94DVV22";
+    public const string MobileCart_SubmitDialogOpen = "73QRT88";
     public const string MobileDashboard_LoadFailure = "23ZRC83";
     public const string MobileOrderTracker_LoadFailure = "97SZM88";
     public const string MobileCreateProduct_SubmitFailure = "96SPS53";
@@ -338,6 +339,7 @@ public static class UnexpectedErrorCodes
     public const string Cart_RemoveFailure = "26CJV87";
     public const string Cart_ClearFailure = "43VTQ77";
     public const string Cart_SubmitFailure = "27CCP96";
+    public const string Cart_SubmitDialogOpen = "92MPX47";
     public const string AdminUsers_DialogOpen = "92PPJ99";
     public const string AdminUsers_ActivateFailure = "23VNJ38";
     public const string AdminUsers_DeactivateFailure = "33CTM82";
@@ -361,6 +363,7 @@ public static class UnexpectedErrorCodes
     public const string Products_AddToCartFailure = "83NFW62";
     public const string Products_UpdateCartFailure = "62PRN36";
     public const string Products_SubmitOrderFailure = "66RCS33";
+    public const string Products_SubmitDialogOpen = "83KWN27";
     public const string Products_ReorderFailure = "63QCD42";
     public const string EditGroup_DialogOpen = "37SNB37";
     public const string EditGroup_RenameFailure = "83CFW42";

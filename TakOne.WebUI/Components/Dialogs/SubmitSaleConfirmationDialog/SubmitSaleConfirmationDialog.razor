@@ -1,0 +1,142 @@
+@* SubmitSaleConfirmationDialog.razor — second-step confirmation modal for
+   cart submission (the Submit Order button on the shop mini-cart, the
+   full Cart page, and the mobile cart).
+
+   CONTRACT (mirrors CancelConfirmationDialog.razor exactly):
+     - Same 3-second countdown UX: the "Yes, submit my order" button is
+       disabled for 3 seconds after the dialog opens, then becomes
+       clickable. Submitting an order is irreversible FROM THE SHOPPER'S
+       SIDE (a submitted order can only be cancelled by staff / support),
+       so the countdown provides friction against reflex confirmations —
+       the same reason sale cancellation uses it.
+     - Same layout: warning header, body text summarizing the cart
+       (item count + grand total, pre-formatted by the CALLER so each
+       page keeps its own price formatter/culture), the irreversibility
+       warning ("cannot be undone by you — to cancel, contact support"),
+       and a two-button footer (No go back / Yes I'm sure).
+     - Same DialogService.OpenAsync<SubmitSaleConfirmationDialog>
+       contract — the parent opens this with LineCount + TotalDisplay
+       parameters and receives a bool result (true = confirmed,
+       false/null = aborted).
+
+   DIFFERENCES FROM CancelConfirmationDialog:
+     - The strong-highlighted context is the cart summary (item count +
+       total) instead of a sale number. The total arrives ALREADY
+       FORMATTED (each caller renders money through its own
+       page formatter); only the item count is digit-localized here via
+       CultureFormat.FormatDigits.
+     - The body explicitly names the escape hatch the owner requires the
+       shopper to see BEFORE submitting: once submitted, the order can no
+       longer be changed or cancelled by the shopper — cancellation
+       requires contacting support.
+
+   LIFECYCLE & ROBUSTNESS (copied verbatim from CancelConfirmationDialog —
+   the countdown loop, the CTS, and both catch guards are the hardened
+   pattern the other countdown dialogs share):
+     - OnInitializedAsync starts a 3-iteration countdown loop with 1s sleep
+       between iterations. Each iteration updates `countdown` and calls
+       StateHasChanged so the button text re-renders.
+     - A CancellationTokenSource is created up-front; if the user closes
+       the dialog before the countdown finishes (e.g. clicks "No, go back"),
+       the Dispose() method cancels the CTS so the Task.Delay doesn't keep
+       ticking in the background.
+     - We catch BOTH OperationCanceledException (raised when the CTS is
+       cancelled) AND ObjectDisposedException (raised if Dispose runs so
+       fast that the next Task.Delay tries to access a disposed CTS).
+     - The dialog is single-purpose — no Command dispatch here. The parent
+       decides what to do based on the bool return value.
+*@
+
+@inject Radzen.DialogService DialogService
+@inject IStringLocalizer<SubmitSaleConfirmationDialog> Loc
+@implements IDisposable
+
+<div class="submit-sale-confirmation-dialog" style="padding: 1rem;">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6" Class="submit-sale-confirmation-dialog__warning">
+            @Loc["WarningHeading"]
+        </RadzenText>
+
+        <RadzenText>
+            @Loc["BodyIntro"]
+            <strong>@string.Format(System.Globalization.CultureInfo.CurrentCulture, Loc["SummaryFormat"], CultureFormat.FormatDigits(LineCount.ToString(System.Globalization.CultureInfo.InvariantCulture)), TotalDisplay)</strong>.
+            @Loc["BodyPermanent"]
+            @Loc["BodySupport"]
+        </RadzenText>
+
+        <RadzenText>@Loc["BodyConfirm"]</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="@Loc["ButtonNo"]"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="() => DialogService.Close(false)" />
+            <RadzenButton Text="@ButtonText"
+                          ButtonStyle="ButtonStyle.Danger"
+                          Disabled="@(countdown > 0)"
+                          Click="() => DialogService.Close(true)" />
+        </RadzenStack>
+    </RadzenStack>
+</div>
+
+@code {
+    /// <summary>
+    /// Number of line items in the cart being submitted. Displayed
+    /// digit-localized (Persian digits in fa-IR) inside the summary.
+    /// </summary>
+    [Parameter] public int LineCount { get; set; }
+
+    /// <summary>
+    /// The cart's grand total, ALREADY FORMATTED by the caller (each page
+    /// renders money through its own formatter — the desktop shop's
+    /// FormatPrice, the mobile pages' m-* helpers). Passed as a string so
+    /// the dialog never needs to know a page's money-formatting rules.
+    /// </summary>
+    [Parameter] public string? TotalDisplay { get; set; }
+
+    private int countdown = 3;
+    private CancellationTokenSource? _cts;
+
+    // Button text shows the countdown while it's ticking, then becomes the
+    // plain "Yes, submit my order" once the button is enabled. The format
+    // string is localized so fa-IR can render the digits in Persian if it
+    // wants to.
+    private string ButtonText =>
+        countdown > 0
+            ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Loc["ButtonYesCounting"], countdown)
+            : Loc["ButtonYesReady"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        try
+        {
+            for (int i = 3; i > 0; i--)
+            {
+                countdown = i;
+                await InvokeAsync(StateHasChanged);
+                // Capture the token locally so that even if Dispose races
+                // ahead and nulls out _cts, we still have a valid reference
+                // to pass to Task.Delay. (Dispose also calls Cancel first,
+                // so a disposed-token race here surfaces as
+                // OperationCanceledException, which we catch below.)
+                var token = _cts.Token;
+                await Task.Delay(1000, token);
+            }
+            countdown = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* user closed dialog before countdown finished */ }
+        catch (ObjectDisposedException) { /* Dispose ran between iterations — same story */ }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts?.Cancel();
+        }
+        catch (ObjectDisposedException) { /* already disposed — fine */ }
+        _cts?.Dispose();
+        _cts = null;
+    }
+}

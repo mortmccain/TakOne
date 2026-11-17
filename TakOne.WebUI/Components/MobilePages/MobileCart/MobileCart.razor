@@ -51,6 +51,7 @@
 @inject IStringLocalizer<MobileCart> Loc
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
+@inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -551,6 +552,47 @@ else
         if (HasLimitIssue())
         {
             await Toast.Error(Loc["LimitIssueWarning"]);
+            return;
+        }
+
+        // ── Two-step confirm (owner policy): submitting is irreversible from
+        //    the shopper's side — a submitted order can only be cancelled by
+        //    staff/support. The 3-second countdown dialog (the shared
+        //    SubmitSaleConfirmationDialog — same contract as the desktop
+        //    mini-cart and Cart page) makes the user face that before the
+        //    command is dispatched; No / X / Esc leaves the cart intact.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<TakOne.WebUI.Components.Dialogs.SubmitSaleConfirmationDialog.SubmitSaleConfirmationDialog>(
+                Loc["SubmitConfirmDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "LineCount", cart.TotalItemCount },
+                    { "TotalDisplay", FormatMoney(ComputeCartTotal()) }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false, // force an explicit button choice
+                    ShowClose = true,                   // keep the X as an obvious escape
+                });
+        }
+        catch
+        {
+            // Radzen/JS-interop failure opening the dialog — surface it,
+            // don't silently swallow (the button would feel dead).
+            await Toast.UnexpectedError(UnexpectedErrorCodes.MobileCart_SubmitDialogOpen);
+            return;
+        }
+
+        // `confirmed` is a boxed bool from DialogService.Close(true|false),
+        // or null for X / Esc. Anything that isn't exactly `true` is
+        // "user aborted" — the cart stays as-is.
+        if (confirmed is not true)
+        {
             return;
         }
 

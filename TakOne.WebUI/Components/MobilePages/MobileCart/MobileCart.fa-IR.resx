@@ -73,4 +73,5 @@
   <data name="Error_GenericSubmit" xml:space="preserve"><value>ثبت سفارش ناموفق بود.</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>تومان</value></data>
   <data name="Version" xml:space="preserve"><value>تک‌وان نسخه ۱.۰</value></data>
+  <data name="SubmitConfirmDialogTitle" xml:space="preserve"><value>تأیید ثبت سفارش</value></data>
 </root>

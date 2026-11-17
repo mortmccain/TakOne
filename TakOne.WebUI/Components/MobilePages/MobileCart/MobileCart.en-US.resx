@@ -73,4 +73,5 @@
   <data name="Error_GenericSubmit" xml:space="preserve"><value>Failed to submit order.</value></data>
   <data name="TomanUnit" xml:space="preserve"><value>Toman</value></data>
   <data name="Version" xml:space="preserve"><value>TakOne v1.0</value></data>
+  <data name="SubmitConfirmDialogTitle" xml:space="preserve"><value>Confirm order submission</value></data>
 </root>

@@ -260,4 +260,8 @@
   <data name="CurrencyMismatch" xml:space="preserve">
     <value>This item is not available for your account (code: CurrencyMismatch).</value>
   </data>
+  <data name="SubmitConfirmDialogTitle" xml:space="preserve">
+    <value>Confirm order submission</value>
+    <comment>Title of the two-step confirmation dialog shown before the cart is finally submitted (3-second countdown).</comment>
+  </data>
 </root>

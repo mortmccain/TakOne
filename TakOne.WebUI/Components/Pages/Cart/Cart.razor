@@ -104,6 +104,7 @@
 @inject IStringLocalizer<Cart> Loc
 @inject ToastService Toast
 @inject ErrorDisplayService ErrorDisplay
+@inject Radzen.DialogService DialogService
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -888,6 +889,46 @@
         if (HasLimitIssue())
         {
             await Toast.Error(Loc["LimitIssueWarning"], summary: Loc["ErrorTitle"]);
+            return;
+        }
+
+        // ── Two-step confirm (owner policy): submitting is irreversible from
+        //    the shopper's side — a submitted order can only be cancelled by
+        //    staff/support. The 3-second countdown dialog (same pattern as
+        //    sale cancellation on SaleDetail) makes the user face that before
+        //    the command is dispatched; No / X / Esc leaves the cart intact.
+        object? confirmed;
+        try
+        {
+            confirmed = await DialogService.OpenAsync<Components.Dialogs.SubmitSaleConfirmationDialog.SubmitSaleConfirmationDialog>(
+                Loc["SubmitConfirmDialogTitle"],
+                new Dictionary<string, object?>
+                {
+                    { "LineCount", _cart.LineItems.Count },
+                    { "TotalDisplay", FormatPrice(ComputeCartTotal()) }
+                },
+                new Radzen.DialogOptions
+                {
+                    Width = "420px",
+                    Resizable = false,
+                    Draggable = true,
+                    CloseDialogOnOverlayClick = false, // force an explicit button choice
+                    ShowClose = true,                   // keep the X as an obvious escape
+                });
+        }
+        catch (Exception)
+        {
+            // Radzen/JS-interop failure opening the dialog — surface it,
+            // don't silently swallow (the button would feel dead).
+            await Toast.UnexpectedError(UnexpectedErrorCodes.Cart_SubmitDialogOpen);
+            return;
+        }
+
+        // `confirmed` is a boxed bool from DialogService.Close(true|false),
+        // or null for X / Esc. Anything that isn't exactly `true` is
+        // "user aborted" — the cart stays as-is.
+        if (confirmed is not true)
+        {
             return;
         }
 

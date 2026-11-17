@@ -121,6 +121,18 @@
 }
 
 /* -----------------------------------------------------------------------------
+   SubmitSaleConfirmationDialog — warning heading color
+   -----------------------------------------------------------------------------
+   Same pattern as the CancelConfirmationDialog above: the cart-submission
+   dialog's "⚠️ cannot be undone by you" heading uses Radzen's danger color
+   so it reads as a warning across all themes. Scoped to the dialog's own
+   wrapper class (.submit-sale-confirmation-dialog) so it doesn't leak. */
+.submit-sale-confirmation-dialog__warning {
+    color: var(--rz-danger);
+    font-weight: 600;
+}
+
+/* -----------------------------------------------------------------------------
    DeactivateUserDialog — warning heading color
    -----------------------------------------------------------------------------
    Same pattern as the CancelConfirmationDialog above: the dialog's

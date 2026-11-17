@@ -258,4 +258,8 @@
   <data name="CurrencyMismatch" xml:space="preserve">
     <value>این کالا برای حساب شما قابل خرید نیست (کد: CurrencyMismatch).</value>
   </data>
+  <data name="SubmitConfirmDialogTitle" xml:space="preserve">
+    <value>تأیید ثبت سفارش</value>
+    <comment>عنوان پنجرهٔ تأیید دومرحله‌ای قبل از ثبت نهایی سفارش (تایمر ۳ ثانیه‌ای).</comment>
+  </data>
 </root>
