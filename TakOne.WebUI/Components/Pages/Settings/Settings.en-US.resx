@@ -316,7 +316,7 @@
     <value>Choose picture files</value>
   </data>
   <data name="PictureUploadPickHint" xml:space="preserve">
-    <value>You can select several files at once (up to 50 per batch).</value>
+    <value>You can select several files at once (up to 200 per batch).</value>
   </data>
   <data name="PictureUploadButton" xml:space="preserve">
     <value>Upload {0} picture(s)</value>
@@ -391,7 +391,7 @@
     <value>User import finished: {0} created, {1} already existed, {2} failed.</value>
   </data>
   <data name="PictureUploadSomeRejected" xml:space="preserve">
-    <value>{0} file(s) were rejected before upload (unsupported type or too large).</value>
+    <value>{0} file(s) were rejected before upload (unsupported type, too large, or over the batch limit).</value>
   </data>
   <data name="PictureUploadDone" xml:space="preserve">
     <value>{0} picture(s) uploaded.</value>
@@ -417,6 +417,15 @@
   </data>
   <data name="PictureUploadErrorStorage" xml:space="preserve">
     <value>Storing the file failed.</value>
+  </data>
+  <data name="PictureUploadStaging" xml:space="preserve">
+    <value>Reading files… {0} of {1}…</value>
+  </data>
+  <data name="PictureUploadOverflowName" xml:space="preserve">
+    <value>{0} more file(s)</value>
+  </data>
+  <data name="PictureUploadErrorTooMany" xml:space="preserve">
+    <value>At most {0} files can be uploaded per batch.</value>
   </data>
   <data name="DownloadTemplateButton" xml:space="preserve">
     <value>Download sample CSV</value>

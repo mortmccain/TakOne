@@ -320,7 +320,7 @@
     <value>انتخاب فایل‌های تصویر</value>
   </data>
   <data name="PictureUploadPickHint" xml:space="preserve">
-    <value>می‌توانید چند فایل را هم‌زمان انتخاب کنید (حداکثر ۵۰ فایل در هر دسته).</value>
+    <value>می‌توانید چند فایل را هم‌زمان انتخاب کنید (حداکثر ۲۰۰ فایل در هر دسته).</value>
   </data>
   <data name="PictureUploadButton" xml:space="preserve">
     <value>بارگذاری {0} تصویر</value>
@@ -395,7 +395,7 @@
     <value>ورود کاربران تمام شد: {0} ایجاد، {1} از قبل موجود، {2} ناموفق.</value>
   </data>
   <data name="PictureUploadSomeRejected" xml:space="preserve">
-    <value>{0} فایل قبل از بارگذاری رد شد (نوع پشتیبانی‌نشده یا حجم زیاد).</value>
+    <value>{0} فایل قبل از بارگذاری رد شد (نوع پشتیبانی‌نشده، حجم زیاد یا بیش از سقف هر دسته).</value>
   </data>
   <data name="PictureUploadDone" xml:space="preserve">
     <value>{0} تصویر بارگذاری شد.</value>
@@ -421,6 +421,15 @@
   </data>
   <data name="PictureUploadErrorStorage" xml:space="preserve">
     <value>ذخیرهٔ فایل ناموفق بود.</value>
+  </data>
+  <data name="PictureUploadStaging" xml:space="preserve">
+    <value>در حال دریافت فایل‌ها… {0} از {1}…</value>
+  </data>
+  <data name="PictureUploadOverflowName" xml:space="preserve">
+    <value>{0} فایل دیگر</value>
+  </data>
+  <data name="PictureUploadErrorTooMany" xml:space="preserve">
+    <value>حداکثر {0} فایل در هر دفعه قابل بارگذاری است.</value>
   </data>
   <data name="DownloadTemplateButton" xml:space="preserve">
     <value>دانلود نمونهٔ CSV</value>

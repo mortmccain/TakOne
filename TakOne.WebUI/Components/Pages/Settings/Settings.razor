@@ -144,6 +144,7 @@
 @inject ToastService Toast
 @inject IJSRuntime JS
 @inject IFileStorage FileStorage
+@implements IAsyncDisposable
 
 <PageTitle>@Loc["PageTitle"]</PageTitle>
 
@@ -1379,11 +1380,23 @@
                             @Loc["PictureUploadCardHint"]
                         </RadzenText>
 
-                        @if (_isUploadingPictures)
+                        @if (_isStagingPictures)
+                        {
+                            // The staging pass (browser → server) is the LONG
+                            // phase for a big batch — the picker is replaced by
+                            // a live n-of-total line so the page never looks
+                            // frozen mid-transfer, and a re-pick can't fire
+                            // while a batch is still streaming in.
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["PictureUploadStaging", _pictureStagingDone, _pictureStagingTotal]</RadzenText>
+                            </RadzenStack>
+                        }
+                        else if (_isUploadingPictures)
                         {
                             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
                                 <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
-                                <RadzenText TextStyle="TextStyle.Body2">@Loc["UploadWorking", _pictureUploadDone, _pendingPictures.Count + _pictureUploadDone]</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Body2">@Loc["UploadWorking", _pictureUploadDone, _pictureUploadTotal]</RadzenText>
                             </RadzenStack>
                         }
                         else
@@ -1409,7 +1422,7 @@
                                     <div class="import-file-chip">
                                         <RadzenIcon Icon="image" Style="font-size: 1rem; color: var(--rz-primary);" />
                                         <span class="import-file-name">@pending.FileName</span>
-                                        <span class="import-file-size">@FormatFileSize(pending.Bytes.Length)</span>
+                                        <span class="import-file-size">@FormatFileSize(pending.Size)</span>
                                         @* Per-file remove — a wrongly-picked file
                                            can be dropped without losing the rest
                                            of the selection. *@
@@ -2511,11 +2524,19 @@
     private const int MaxCsvFileSizeBytes = 5 * 1024 * 1024;
 
     /// <summary>
-    /// Hard cap on ONE bulk picture upload batch. Keeps the circuit's
-    /// buffered memory bounded (50 × 5 MB worst case) and forces very
-    /// large restores to arrive in reviewable chunks.
+    /// Hard cap on ONE bulk picture upload batch: 200 files. The batch is
+    /// staged to DISK (IFileStorage.WriteStagedFileAsync), not circuit
+    /// RAM, so this cap does NOT exist to protect memory — staging keeps
+    /// peak memory at the copy-buffer size regardless of batch size. It
+    /// exists to keep one batch reviewable in the chips list and the
+    /// upload phase bounded; worst case 200 × 5 MB = 1 GB of temporary
+    /// staging disk. A selection beyond the cap is NEVER an exception
+    /// (GetMultipleFiles throws when its argument is exceeded — the old
+    /// 50-file cap crashed the circuit on a 51-file pick): the first
+    /// MaxPicturesPerBatch files are staged and the rest are reported in
+    /// the per-file rejection ledger.
     /// </summary>
-    private const int MaxPicturesPerBatch = 50;
+    private const int MaxPicturesPerBatch = 200;
 
     /// <summary>
     /// Max size of ONE uploaded picture — mirrors the backend's
@@ -2557,16 +2578,40 @@
 
     // ── Bulk picture upload state ──────────────────────────────────────────
 
-    /// <summary>One buffered picture awaiting the explicit Upload click.</summary>
-    private sealed record PendingPicture(string FileName, string ContentType, byte[] Bytes);
+    /// <summary>
+    /// One staged picture awaiting the explicit Upload click. The bytes
+    /// live in a server-side STAGING FILE (IFileStorage.WriteStagedFileAsync),
+    /// never in circuit memory — a 200 × 5 MB byte[] batch would spike the
+    /// process by up to 1 GB, and the app container runs with a 3 GB
+    /// limit. Size is the browser-reported file size (chip display).
+    /// </summary>
+    private sealed record PendingPicture(string FileName, string ContentType, long Size, string StagedFilePath);
 
     /// <summary>One rejected/failed picture from a batch, with a human-readable reason.</summary>
     private sealed record PictureUploadFailure(string FileName, string Message);
 
-    /// <summary>Pictures selected but not yet uploaded (buffered immediately — the IBrowserFile streams die with the JS registry; same lesson as CreateProduct.razor).</summary>
+    /// <summary>
+    /// Pictures staged but not yet uploaded. Staged to disk IMMEDIATELY at
+    /// pick time — the IBrowserFile streams die with the JS registry when
+    /// the OnChange handler returns (same lesson as CreateProduct.razor).
+    /// </summary>
     private List<PendingPicture> _pendingPictures = new();
 
-    /// <summary>True while the batch is streaming to storage.</summary>
+    /// <summary>
+    /// True while a picked batch is streaming browser → staging disk. This
+    /// is the LONG phase for big batches (the actual network transfer) —
+    /// the picker is replaced by a live n-of-total progress line so a
+    /// 200-file pick never looks frozen.
+    /// </summary>
+    private bool _isStagingPictures;
+
+    /// <summary>Progress counter during the staging pass (done / total).</summary>
+    private int _pictureStagingDone;
+
+    /// <summary>Total files in the in-flight staging pass (progress denominator).</summary>
+    private int _pictureStagingTotal;
+
+    /// <summary>True while a staged batch is streaming to durable storage.</summary>
     private bool _isUploadingPictures;
 
     /// <summary>Pictures uploaded successfully in the last batch.</summary>
@@ -2575,8 +2620,25 @@
     /// <summary>Progress counter during an upload (done / total).</summary>
     private int _pictureUploadDone;
 
-    /// <summary>Per-file failures from the last batch (invalid content, oversize, storage error).</summary>
+    /// <summary>
+    /// Total files in the in-flight upload pass. Captured once before the
+    /// loop (the previous live expression `_pendingPictures.Count +
+    /// _pictureUploadDone` inflated as the counter ticked — "3/52", "4/53"…).
+    /// </summary>
+    private int _pictureUploadTotal;
+
+    /// <summary>Per-file failures from the last batch (invalid content, oversize, over the batch cap, storage error).</summary>
     private List<PictureUploadFailure> _pictureUploadFailures = new();
+
+    /// <summary>
+    /// Staging files orphaned by circuits that died mid-batch (browser
+    /// closed, connection lost) are swept — deleted — once older than
+    /// this. The sweep runs opportunistically each time a NEW batch is
+    /// picked (IFileStorage.SweepStagedFilesAsync). 24 h is far beyond any
+    /// live circuit's batch lifetime, so a sweep can never delete a file
+    /// a live admin is still about to upload.
+    /// </summary>
+    private static readonly TimeSpan StagedFileSweepAge = TimeSpan.FromHours(24);
 
     // ── User CSV import state ───────────────────────────────────────────
 
@@ -2972,10 +3034,13 @@
     }
 
     /// <summary>
-    /// Bulk-picture picker: buffer every selected image immediately (the
-    /// IBrowserFile streams die with the JS registry — same lesson as
-    /// CreateProduct.razor), pre-filter content type + size, and hand the
-    /// batch to the explicit Upload button.
+    /// Bulk-picture picker: stage every selected image to DISK immediately
+    /// (the IBrowserFile streams die with the JS registry when this
+    /// handler returns — same lesson as CreateProduct.razor), pre-filter
+    /// content type + size, and hand the batch to the explicit Upload
+    /// button. Staging — not byte[] buffering — is what makes a 200-file
+    /// batch safe: peak circuit memory stays at the copy-buffer size no
+    /// matter how many files are picked.
     /// </summary>
     private async Task OnPicturesSelectedAsync(InputFileChangeEventArgs e)
     {
@@ -2988,38 +3053,99 @@
             return; // picker cancelled — keep the previous batch
         }
 
-        var accepted = new List<PendingPicture>(e.FileCount);
+        // ── Over-cap selection: GetMultipleFiles THROWS when the count
+        //    exceeds its argument (with the old 50-file cap, a 51-file
+        //    pick surfaced as an unhandled circuit exception). The take
+        //    count is clamped instead — the first MaxPicturesPerBatch
+        //    files are staged, the rest become ONE ledger row plus a
+        //    toast, never a crash.
+        var takeCount = Math.Min(e.FileCount, MaxPicturesPerBatch);
+        var overflowCount = e.FileCount - takeCount;
+
+        // ── Re-picking replaces the previous, not-yet-uploaded batch
+        //    (same semantics as before staging existed). With staging the
+        //    replacement ALSO deletes the previous batch's staged files —
+        //    otherwise they'd sit on the temp disk until the 24 h sweep.
+        await DiscardPendingPicturesAsync();
+
+        // ── Opportunistic orphan sweep: staged files left behind by
+        //    circuits that died mid-batch would otherwise accumulate on
+        //    the temp disk forever. Best-effort — never blocks the batch.
+        await FileStorage.SweepStagedFilesAsync(StagedFileSweepAge);
+
+        var accepted = new List<PendingPicture>(takeCount);
         var rejected = new List<PictureUploadFailure>();
 
-        foreach (var file in e.GetMultipleFiles(MaxPicturesPerBatch))
+        _isStagingPictures = true;
+        _pictureStagingDone = 0;
+        _pictureStagingTotal = takeCount;
+
+        try
         {
-            // ── Pre-filter: content type + size (client-side mirror of the
-            //    backend's checks — the backend's magic-byte sniff stays
-            //    the authority). Rejected files become per-file failure
-            //    entries in the results list, not silent drops.
-            if (!AllowedPictureContentTypes.Contains(file.ContentType))
+            foreach (var file in e.GetMultipleFiles(takeCount))
             {
-                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
-                continue;
-            }
+                try
+                {
+                    // ── Pre-filter: content type + size (client-side mirror
+                    //    of the backend's checks — the backend's magic-byte
+                    //    sniff at upload time stays the authority). Rejected
+                    //    files become per-file failure entries in the results
+                    //    ledger, not silent drops.
+                    if (!AllowedPictureContentTypes.Contains(file.ContentType))
+                    {
+                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorType"]));
+                        continue; // finally below still ticks the progress counter
+                    }
 
-            if (file.Size > MaxPictureFileSizeBytes)
-            {
-                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
-                continue;
-            }
+                    if (file.Size > MaxPictureFileSizeBytes)
+                    {
+                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                        continue;
+                    }
 
-            try
-            {
-                await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
-                using var ms = new System.IO.MemoryStream();
-                await stream.CopyToAsync(ms);
-                accepted.Add(new PendingPicture(file.Name, file.ContentType, ms.ToArray()));
+                    try
+                    {
+                        // Stream browser → staging disk. The staged write is
+                        // size-bounded server-side (defense-in-depth on top
+                        // of the pre-filter above).
+                        await using var stream = file.OpenReadStream(maxAllowedSize: MaxPictureFileSizeBytes);
+                        var stagedPath = await FileStorage.WriteStagedFileAsync(stream, file.Name);
+                        accepted.Add(new PendingPicture(file.Name, file.ContentType, file.Size, stagedPath));
+                    }
+                    catch (System.IO.InvalidDataException)
+                    {
+                        // The staged write's size bound tripped (a browser
+                        // mis-reporting IBrowserFile.Size) — mirror the
+                        // pre-filter's message.
+                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorSize"]));
+                    }
+                    catch (System.IO.IOException)
+                    {
+                        rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
+                    }
+                }
+                finally
+                {
+                    // Ticks for pre-filter rejections too — the counter must
+                    // reach the total even when files never reach staging.
+                    _pictureStagingDone++;
+                    StateHasChanged(); // live "n of total" feedback — the staging pass is the long phase
+                }
             }
-            catch (System.IO.IOException)
-            {
-                rejected.Add(new PictureUploadFailure(file.Name, Loc["PictureUploadErrorRead"]));
-            }
+        }
+        finally
+        {
+            _isStagingPictures = false;
+        }
+
+        if (overflowCount > 0)
+        {
+            // ONE ledger row for the files beyond the cap, named by count
+            // (they were never enumerated) with the limit as the reason —
+            // the admin sees exactly how many to re-pick in the next batch.
+            rejected.Add(new PictureUploadFailure(
+                Loc["PictureUploadOverflowName", overflowCount],
+                Loc["PictureUploadErrorTooMany", MaxPicturesPerBatch]));
         }
 
         _pendingPictures = accepted;
@@ -3034,9 +3160,28 @@
     }
 
     /// <summary>
-    /// Uploads the buffered batch: one SaveWithOriginalNameAsync per file
-    /// (name-preserving — the restore contract), collecting per-file
-    /// failures instead of aborting the batch.
+    /// Deletes the staged files of the not-yet-uploaded batch and clears
+    /// the pending list — shared by the re-pick path (a new selection
+    /// replaces the old one), the Clear button, and component teardown.
+    /// Best-effort per file: IFileStorage.DeleteStagedFileAsync logs and
+    /// swallows failures, so one stuck file never blocks the rest.
+    /// </summary>
+    private async Task DiscardPendingPicturesAsync()
+    {
+        foreach (var pending in _pendingPictures)
+        {
+            await FileStorage.DeleteStagedFileAsync(pending.StagedFilePath);
+        }
+
+        _pendingPictures = new List<PendingPicture>();
+    }
+
+    /// <summary>
+    /// Uploads the staged batch: one SaveWithOriginalNameAsync per file
+    /// (name-preserving — the restore contract), streaming staged file →
+    /// durable storage and deleting the staged copy as each file is
+    /// consumed (success OR failure — a staged file is single-use).
+    /// Per-file failures are collected instead of aborting the batch.
     /// </summary>
     private async Task UploadPendingPicturesAsync()
     {
@@ -3048,6 +3193,7 @@
         _isUploadingPictures = true;
         _picturesUploaded = 0;
         _pictureUploadDone = 0;
+        _pictureUploadTotal = _pendingPictures.Count; // captured once — the progress denominator must not move
         var failures = new List<PictureUploadFailure>();
 
         try
@@ -3057,7 +3203,7 @@
             {
                 try
                 {
-                    using var stream = new System.IO.MemoryStream(picture.Bytes, writable: false);
+                    await using var stream = await FileStorage.OpenStagedFileAsync(picture.StagedFilePath);
                     await FileStorage.SaveWithOriginalNameAsync(
                         stream, picture.FileName, picture.ContentType, CancellationToken.None);
                     _picturesUploaded++;
@@ -3072,11 +3218,16 @@
                 }
                 catch (Exception)
                 {
-                    // Storage I/O failure — also per-file, not fatal.
+                    // Storage I/O failure (incl. a missing staged file) —
+                    // also per-file, not fatal.
                     failures.Add(new PictureUploadFailure(picture.FileName, Loc["PictureUploadErrorStorage"]));
                 }
                 finally
                 {
+                    // The staged copy is consumed either way — delete it so
+                    // a finished batch leaves nothing on the temp disk
+                    // (best-effort; the storage layer logs and swallows).
+                    await FileStorage.DeleteStagedFileAsync(picture.StagedFilePath);
                     _pictureUploadDone++;
                     StateHasChanged(); // progress text updates per file
                 }
@@ -3101,25 +3252,45 @@
     }
 
     /// <summary>
-    /// Discards the buffered batch without uploading (the picker's Clear
-    /// button).
+    /// Discards the staged batch without uploading (the picker's Clear
+    /// button) — the staged files are deleted along with the list.
     /// </summary>
-    private void ClearPendingPictures()
+    private async Task ClearPendingPictures()
     {
-        _pendingPictures = new List<PendingPicture>();
+        await DiscardPendingPicturesAsync();
         _pictureUploadFailures = new List<PictureUploadFailure>();
         _picturesUploaded = 0;
         _pictureUploadDone = 0;
+        _pictureUploadTotal = 0;
     }
 
     /// <summary>
-    /// Drops ONE buffered picture from the pending batch (the chip's ✕
-    /// button) — a wrongly-picked file can be removed without losing the
-    /// rest of the selection.
+    /// Drops ONE staged picture from the pending batch (the chip's ✕
+    /// button) — a wrongly-picked file is removed (and its staged copy
+    /// deleted) without losing the rest of the selection.
     /// </summary>
-    private void RemovePendingPicture(PendingPicture picture)
+    private async Task RemovePendingPicture(PendingPicture picture)
     {
+        await FileStorage.DeleteStagedFileAsync(picture.StagedFilePath);
         _pendingPictures.Remove(picture);
+    }
+
+    /// <summary>
+    /// IAsyncDisposable — circuit teardown / navigation away: delete the
+    /// staged files still held by the pending batch so they don't linger
+    /// on the temp disk until the 24 h sweep gets them. Skipped while a
+    /// staging or upload pass is in flight (those files are about to be
+    /// consumed by the running loop — deleting under it would fail the
+    /// batch; if the circuit dies mid-pass the sweep collects what's left).
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_isStagingPictures || _isUploadingPictures)
+        {
+            return;
+        }
+
+        await DiscardPendingPicturesAsync();
     }
 
     // ── CSV template + import-report downloads (admin-only) ────────────
