@@ -36,10 +36,21 @@ namespace TakOne.Application.Products.Commands.ImportProducts;
 /// <para>
 /// <b>PICTURE RE-LINKING</b>: the picture URL is reconstructed from the
 /// row's file name as <c>/uploads/products/{fileName}</c> — the canonical
-/// URL shape <see cref="IFileStorage"/> always returns. The uploaded
+/// URL shape <see cref="IFileStorage"/> always returns. The file name is
+/// first NORMALIZED through <see cref="PreservedFileNames"/> — the same
+/// canonical rule the Settings page's bulk picture upload applies when it
+/// lands a file on disk (spaces, <c>&amp;</c>, parentheses, … are stripped
+/// to the <c>[A-Za-z0-9._-]</c> allowlist). Without this, a CSV carrying
+/// the ORIGINAL photo names (e.g. <c>"Pizza flour 500g.png"</c>) linked
+/// URLs that could never resolve: the upload had stored that photo as
+/// <c>Pizzaflour500g.png</c>, so every spaced/special-character name
+/// rendered without its picture while allowlist-clean names (e.g.
+/// <c>ABC.png</c>) worked. A name that normalizes to nothing usable (no
+/// allowlist characters at all) links no picture — such a file could never
+/// have been uploaded, so there is nothing on disk to link. The uploaded
 /// picture FILES themselves are restored separately (the Settings page's
-/// bulk picture upload stores them under their original names), which is
-/// what makes the CSV + files pair a complete catalog backup.
+/// bulk picture upload), which is what makes the CSV + files pair a
+/// complete catalog backup.
 /// </para>
 /// <para>
 /// <b>DDD NOTES</b>: every mutation goes through the aggregate —
@@ -259,16 +270,21 @@ public sealed class ImportProductsCommandHandler
     }
 
     /// <summary>
-    /// Builds the canonical picture URL from an exported file name, or
-    /// null when the row carried no picture (an empty cell). Only the FILE
-    /// NAME is honored — the URL prefix is the one <see cref="IFileStorage"/>
-    /// always returns, regardless of what directory the export happened to
-    /// record (the column is informational for the human reading the CSV).
+    /// Builds the canonical picture URL from the exported file name, or
+    /// null when the row carried no picture (an empty cell). The file name
+    /// is normalized through <see cref="PreservedFileNames"/> — the SAME
+    /// canonical rule the bulk picture upload applies on disk — so the URL
+    /// always points at the name the upload actually stored (see the
+    /// handler's PICTURE RE-LINKING remarks for the mismatch this prevents).
+    /// Only the FILE NAME is honored — the URL prefix is the one
+    /// <see cref="IFileStorage"/> always returns, regardless of what
+    /// directory the export happened to record (the column is informational
+    /// for the human reading the CSV).
     /// </summary>
     private static string? BuildPictureUrl(string? pictureFileName)
-        => string.IsNullOrWhiteSpace(pictureFileName)
-            ? null
-            : $"/uploads/products/{pictureFileName.Trim()}";
+        => PreservedFileNames.TryNormalizeClientSuppliedName(pictureFileName, out var normalizedName)
+            ? $"/uploads/products/{normalizedName}"
+            : null;
 
     /// <summary>
     /// Resolves the row's category NAME path against the loaded category

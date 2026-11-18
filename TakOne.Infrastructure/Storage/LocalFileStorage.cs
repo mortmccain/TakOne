@@ -420,18 +420,21 @@ internal sealed class LocalFileStorage : IFileStorage
     /// the final dot), removes any client-side extension, then rebuilds the
     /// name as <c>{sanitizedBase}.{forcedExtension}</c>.
     ///
+    /// THE RULE ITSELF lives in <see cref="PreservedFileNames"/> (Application
+    /// layer) — the SAME canonical rule the products CSV import normalizes
+    /// picture file names with, so an uploaded file's on-disk name and the
+    /// URL the import links can never drift apart (see that class's remarks
+    /// for the incident this prevents). This wrapper only translates the
+    /// outcome into the historical, admin-facing exceptions.
+    ///
     /// REJECTION (not truncation/repair) when:
     ///   - the sanitized base is empty (e.g. "(((.jpg" or "…/evil.jpg"),
-    ///   - the final name exceeds the 128-character cap (see the
-    ///     <c>MaxPreservedFileNameLength</c> constant inside) — a silent
-    ///     truncation could collide two files.
+    ///   - the final name exceeds the 128-character cap
+    ///     (<see cref="PreservedFileNames.MaxPreservedFileNameLength"/>) — a
+    ///     silent truncation could collide two files.
     ///
-    /// WHY STRIP RATHER THAN ENCODE: the names that matter here are
-    /// SaveAsync's own 32-hex-char outputs (pure [0-9a-f]), which pass
-    /// through untouched. Anything exotic from a hand-picked upload set
-    /// degrades to its safe subset — "My Photo (1)!.jpg" → "MyPhoto1.jpg" —
-    /// which keeps the API total (never throws for weird-but-harmless
-    /// names) while remaining collision-auditable by the caller.
+    /// WHY STRIP RATHER THAN ENCODE: see <see cref="PreservedFileNames"/> —
+    /// the rationale is documented once, at the rule itself.
     /// </summary>
     /// <param name="fileName">The raw caller-supplied file name.</param>
     /// <param name="forcedExtension">
@@ -440,48 +443,22 @@ internal sealed class LocalFileStorage : IFileStorage
     /// </param>
     private static string SanitizePreservedFileName(string fileName, string forcedExtension)
     {
-        const int MaxPreservedFileNameLength = 128;
+        var outcome = PreservedFileNames.TryBuildPreservedName(
+            fileName, forcedExtension, out var finalName);
 
-        // Take the base name: strip everything from the LAST dot on. If
-        // there's no dot, the whole string is the base. Path separators
-        // are stripped by the allowlist below, so a "dir/evil.jpg" input
-        // degrades to "direvil" + forced extension — it can never escape
-        // the products directory.
-        var lastDot = fileName.LastIndexOf('.');
-        var baseName = lastDot > 0 ? fileName[..lastDot] : fileName;
-
-        // Allowlist pass: keep only ASCII letters, digits, dots, dashes,
-        // underscores. This removes separators, whitespace, Unicode
-        // bi-di tricks, control chars, and everything else dangerous.
-        var sb = new System.Text.StringBuilder(baseName.Length);
-        foreach (var ch in baseName)
-        {
-            if ((ch >= 'a' && ch <= 'z')
-                || (ch >= 'A' && ch <= 'Z')
-                || (ch >= '0' && ch <= '9')
-                || ch == '.' || ch == '-' || ch == '_')
-            {
-                sb.Append(ch);
-            }
-        }
-
-        var sanitizedBase = sb.ToString().Trim('.');
-
-        if (sanitizedBase.Length == 0)
+        if (outcome == PreservedNameBuildResult.EmptyBase)
         {
             throw new InvalidDataException(
                 $"The file name '{fileName}' has no usable base name after sanitization.");
         }
 
-        var finalName = $"{sanitizedBase}.{forcedExtension}";
-
-        if (finalName.Length > MaxPreservedFileNameLength)
+        if (outcome == PreservedNameBuildResult.TooLong)
         {
             throw new InvalidDataException(
-                $"The file name '{fileName}' exceeds the {MaxPreservedFileNameLength}-character limit after sanitization.");
+                $"The file name '{fileName}' exceeds the {PreservedFileNames.MaxPreservedFileNameLength}-character limit after sanitization.");
         }
 
-        return finalName;
+        return finalName!;
     }
 
     /// <summary>

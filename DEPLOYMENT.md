@@ -391,6 +391,28 @@ You'll see `takone_sql_data`, `takone_uploads`, and `takone_backups`
 `/var/lib/docker/volumes/` on the server's filesystem. You don't
 need to touch them directly — Docker manages them.
 
+### "How do I back up my product CATALOG (CSV + pictures)?"
+
+Two pieces, both in **Settings → Admin tools**:
+
+1. **The CSV** — export from the *Admin Products* page (it includes each
+   product's picture file name).
+2. **The picture files** — bulk-upload them through the *Settings →
+   Admin tools* picture card (up to 200 at a time).
+
+To restore: bulk-upload the pictures first, then import the CSV — the
+import re-links every product to its picture by file name.
+
+**One rule to know:** picture file names are *normalized* on their way
+to disk — spaces and special characters (`&`, `(`, `)`, …) are stripped
+(e.g. `Pizza flour 500g.png` is stored as `Pizzaflour500g.png`). The
+import applies the **same** normalization, so the CSV may carry the
+original photo names with spaces and everything still links up. If you
+ever imported with an app version from before 2025-11 and pictures went
+missing for photos whose names contain spaces: just **re-import the same
+CSV** after updating — every product's picture link is rewritten to the
+correct normalized name (nothing to re-upload).
+
 ### "How do I back up the database?"
 
 **You don't have to — it backs itself up now.** The app runs a scheduled

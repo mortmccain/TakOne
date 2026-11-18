@@ -116,10 +116,14 @@ public interface IFileStorage
     ///     sniffed type's canonical extension (jpg/png/webp), never the
     ///     client-supplied one. Only the BASE name is preserved.
     ///   - <b>Path-traversal-proof sanitization</b> — the name is stripped
-    ///     to <c>[A-Za-z0-9._-]</c>; path separators, Unicode tricks, and
-    ///     control characters are removed, so the final path can never
-    ///     escape the products directory. A name that sanitizes to nothing
-    ///     (or nothing but its extension) is rejected.
+    ///     to <c>[A-Za-z0-9._-]</c> by the CANONICAL shared rule
+    ///     (<see cref="PreservedFileNames"/>); path separators, Unicode
+    ///     tricks, and control characters are removed, so the final path
+    ///     can never escape the products directory. A name that sanitizes
+    ///     to nothing (or nothing but its extension) is rejected. The SAME
+    ///     rule normalizes picture file names on the products-CSV IMPORT
+    ///     side — keep the two in lockstep by always going through that
+    ///     class (never re-implement the allowlist locally).
     ///   - <b>Length cap</b> — the sanitized name (including extension) is
     ///     capped; longer names are rejected (not truncated — a silent
     ///     truncation could collide two different files).
