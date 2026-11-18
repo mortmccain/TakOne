@@ -77,6 +77,7 @@
 @attribute [Authorize]
 @layout TakOne.WebUI.Components.Layout.MobileLayout.MobileLayout
 @using System.Globalization
+@using System.Security.Claims
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.Extensions.Localization
 @using Wolverine
@@ -401,7 +402,7 @@ else
             }
             else
             {
-                @if (_sale.Status == nameof(SaleStatus.Pending))
+                @if (CanApproveSale && _sale.Status == nameof(SaleStatus.Pending))
                 {
                     <button type="button"
                             class="m-btn m-btn-primary m-btn-block"
@@ -472,6 +473,28 @@ else
     private bool _canActOnSales;
 
     /// <summary>
+    /// The current user's Id, resolved once in OnInitializedAsync from the
+    /// authentication state (the custom IClaimsPrincipalFactory sets the
+    /// "UserId" claim; fallback to ClaimTypes.NameIdentifier — same
+    /// pattern as MobileUserDetail.razor). Used by <see cref="CanApproveSale"/>
+    /// to hide the Approve button on the user's OWN sale.
+    /// </summary>
+    private Guid _currentUserId;
+
+    /// <summary>
+    /// True when the current user holds a staff role AND is NOT the
+    /// customer on this sale — the separation-of-duties gate for the
+    /// Approve button. No one may confirm their own order, regardless
+    /// of role; the ApproveSaleCommandHandler enforces the same rule
+    /// server-side (defense-in-depth), so even if the button were
+    /// somehow rendered, the dispatch would fail with SelfApproval.
+    /// </summary>
+    private bool CanApproveSale =>
+        _canActOnSales
+        && _sale is not null
+        && _sale.CustomerId != _currentUserId;
+
+    /// <summary>
     /// True while an action (Approve / MarkInvoiced / Cancel) is in flight.
     /// Disables all action buttons + the cancel form's Confirm/Discard to
     /// prevent double-clicks and concurrent command dispatch.
@@ -525,6 +548,16 @@ else
         _canActOnSales = user.IsInRole(Roles.Admin)
                          || user.IsInRole(Roles.Manager)
                          || user.IsInRole(Roles.Employee);
+
+        // Current user's Id — same claim-resolution pattern as
+        // MobileUserDetail.razor ("UserId" claim set by the custom
+        // claims factory; NameIdentifier as fallback).
+        var idClaim = user.FindFirst("UserId")?.Value
+                      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(idClaim, out var parsedId))
+        {
+            _currentUserId = parsedId;
+        }
 
         try
         {
@@ -761,6 +794,14 @@ else
                 limitName,
                 limit);
         }
+        // SelfApproval is returned by ApproveSaleCommandHandler when the
+        // staff member tries to approve a sale in which THEY are the
+        // customer — no one may confirm their own order, regardless of
+        // role or confirmation rights.
+        if (SelfApprovalErrors.TryParse(error))
+        {
+            return Loc["SelfApprovalBlocked"];
+        }
         return null;
     }
 
@@ -798,7 +839,7 @@ else
             {
                 // result.Error may be a stable, culture-neutral error code
                 // (e.g. StockErrors.Format / CategoryDeactivatedErrors.Format /
-                // PurchaseLimitErrors.Format)
+                // PurchaseLimitErrors.Format / SelfApprovalErrors.Format)
                 // that needs to be localized into the user's language.
                 // LocalizeError returns null for errors it doesn't recognize —
                 // we fall back to the raw error string, or to Error_GenericAction

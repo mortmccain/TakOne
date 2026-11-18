@@ -61,6 +61,34 @@ public sealed class ApproveSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
+        // SELF-APPROVAL GUARD (owner policy — separation of duties).
+        //
+        // No one — not an employee, manager, or admin, i.e. NOT ANYONE
+        // with confirmation rights — may approve a sale in which THEY
+        // are the customer. The buyer of record is sale.CustomerId
+        // (the user the sale is FOR: a self-serve shop buy where the
+        // user is both customer and creator, or an on-behalf draft
+        // created for them by staff). A staff member approving a sale
+        // they created FOR SOMEONE ELSE is not blocked by this check —
+        // they are not the buyer.
+        //
+        // The role check above already limits confirmers to staff; this
+        // guard adds the separation-of-duties rule on top of it: a
+        // second person must always confirm an order. The error uses
+        // SelfApprovalErrors.Format so the UI layer (SaleDetail /
+        // MobileSaleDetail pages) can localize it.
+        // ------------------------------------------------------------------
+        if (sale.CustomerId == currentUser.UserId)
+        {
+            logger.LogWarning
+                ("ApproveSale: user {UserId} attempted to approve their OWN sale {SaleId} ({SaleNumber}). " +
+                 "Rejecting — no one may confirm their own order.",
+                currentUser.UserId, sale.Id, sale.SaleNumber);
+
+            return Result.Failure(SelfApprovalErrors.Format());
+        }
+
+        // ------------------------------------------------------------------
         // ACQUIRE PER-SALE STATE-TRANSITION LOCK (race-condition fix).
         //
         // Serializes Approve against any concurrent Submit / Cancel /

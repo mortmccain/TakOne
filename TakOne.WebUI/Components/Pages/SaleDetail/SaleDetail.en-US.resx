@@ -254,6 +254,12 @@
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value>
   </data>
+  <!-- SelfApprovalBlocked — shown when a staff member who holds
+       confirmation rights tries to approve a sale in which THEY are the
+       customer. Separation of duties: no one may confirm their own order. -->
+  <data name="SelfApprovalBlocked" xml:space="preserve">
+    <value>You cannot confirm your own order. Another person with confirmation rights must approve it.</value>
+  </data>
   <data name="DraftPseudoIdTooltip" xml:space="preserve">
     <value>Draft orders have no permanent number yet — one is assigned when the order is submitted.</value>
   </data>

@@ -106,7 +106,7 @@
        توسط هندلرهای دستور Approve / MarkAsInvoiced / Cancel بازگردانده
        می‌شوند. به LocalizeError در MobileSaleDetail.razor و کمک‌کننده‌های
        TakOne.Application.Common.Errors (StockErrors،
-       CategoryDeactivatedErrors، PurchaseLimitErrors)
+       CategoryDeactivatedErrors، PurchaseLimitErrors، SelfApprovalErrors)
        مراجعه کنید. -->
   <!-- StockExceeded — {0} = نام محصول، {1} = موجودی فعلی، {2} = تعداد درخواستی -->
   <data name="StockExceeded" xml:space="preserve"><value>موجودی برای تأیید این سفارش کافی نیست. محصول «{0}» {1} عدد موجود دارد، اما سفارش به {2} عدد نیاز دارد.</value></data>
@@ -117,4 +117,6 @@
   </data>
   <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
   <data name="PurchaseLimitExceeded" xml:space="preserve"><value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value></data>
+  <!-- SelfApprovalBlocked — no one may confirm their own order (separation of duties). -->
+  <data name="SelfApprovalBlocked" xml:space="preserve"><value>شما نمی‌توانید سفارش خودتان را تأیید کنید. این سفارش باید توسط فرد دیگری که دسترسی تأیید دارد تأیید شود.</value></data>
 </root>

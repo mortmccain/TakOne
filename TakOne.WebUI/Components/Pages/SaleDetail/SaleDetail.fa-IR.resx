@@ -252,6 +252,12 @@
   <data name="PurchaseLimitExceeded" xml:space="preserve">
     <value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value>
   </data>
+  <!-- SelfApprovalBlocked — shown when a staff member who holds
+       confirmation rights tries to approve a sale in which THEY are the
+       customer. Separation of duties: no one may confirm their own order. -->
+  <data name="SelfApprovalBlocked" xml:space="preserve">
+    <value>شما نمی‌توانید سفارش خودتان را تأیید کنید. این سفارش باید توسط فرد دیگری که دسترسی تأیید دارد تأیید شود.</value>
+  </data>
   <data name="DraftPseudoIdTooltip" xml:space="preserve">
     <value>سفارش‌های پیش‌نویس هنوز شمارهٔ دائمی ندارند — شماره در زمان ثبت سفارش اختصاص می‌یابد.</value>
   </data>

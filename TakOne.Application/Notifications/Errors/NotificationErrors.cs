@@ -7,7 +7,7 @@ namespace TakOne.Application.Notifications.Errors;
 /// pattern in <c>TakOne.Application.Common.Errors.CartConflictErrors</c>,
 /// <c>PurchaseLimitErrors</c>, <c>StockErrors</c>,
 /// <c>SalaryBudgetExceededErrors</c>, <c>CategoryDeactivatedErrors</c>,
-/// <c>CurrencyMismatchErrors</c>.
+/// <c>SelfApprovalErrors</c>, <c>CurrencyMismatchErrors</c>.
 /// </summary>
 /// <remarks>
 /// <para>

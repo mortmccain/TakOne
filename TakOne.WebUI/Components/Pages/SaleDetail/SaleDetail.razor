@@ -79,6 +79,7 @@
 @page "/Sales/{Id:guid}"
 @attribute [Authorize]
 @using System.Globalization
+@using System.Security.Claims
 @using Microsoft.AspNetCore.Authorization
 @using Wolverine
 @using TakOne.Application.Common.Authorization
@@ -762,13 +763,20 @@
                         @if (_canActOnSales)
                         {
                             <div class="action-stack">
-                                @* Approve — only enabled when sale is Pending. *@
-                                <RadzenButton Text="@Loc["ActionApprove"]"
-                                              Icon="check_circle"
-                                              ButtonStyle="ButtonStyle.Success"
-                                              Variant="Variant.Filled"
-                                              Disabled="@(_sale.Status != nameof(SaleStatus.Pending) || _isBusy)"
-                                              Click="@HandleApproveAsync" />
+                                @* Approve — only enabled when sale is Pending.
+                                   HIDDEN when the current user is the sale's
+                                   customer: no one may confirm their own
+                                   order (separation of duties — the handler
+                                   enforces the same rule server-side). *@
+                                @if (CanApproveSale)
+                                {
+                                    <RadzenButton Text="@Loc["ActionApprove"]"
+                                                  Icon="check_circle"
+                                                  ButtonStyle="ButtonStyle.Success"
+                                                  Variant="Variant.Filled"
+                                                  Disabled="@(_sale.Status != nameof(SaleStatus.Pending) || _isBusy)"
+                                                  Click="@HandleApproveAsync" />
+                                }
 
                                 @* Mark as invoiced — only enabled when sale is Approved. *@
                                 <RadzenButton Text="@Loc["ActionMarkInvoiced"]"
@@ -895,6 +903,28 @@
     private bool _canActOnSales;
 
     /// <summary>
+    /// The current user's Id, resolved once in OnInitializedAsync from the
+    /// authentication state (the custom IClaimsPrincipalFactory sets the
+    /// "UserId" claim; fallback to ClaimTypes.NameIdentifier — same
+    /// pattern as MobileUserDetail.razor). Used by <see cref="CanApproveSale"/>
+    /// to hide the Approve button on the user's OWN sale.
+    /// </summary>
+    private Guid _currentUserId;
+
+    /// <summary>
+    /// True when the current user holds a staff role AND is NOT the
+    /// customer on this sale — the separation-of-duties gate for the
+    /// Approve button. No one may confirm their own order, regardless
+    /// of role; the ApproveSaleCommandHandler enforces the same rule
+    /// server-side (defense-in-depth), so even if the button were
+    /// somehow rendered, the dispatch would fail with SelfApproval.
+    /// </summary>
+    private bool CanApproveSale =>
+        _canActOnSales
+        && _sale is not null
+        && _sale.CustomerId != _currentUserId;
+
+    /// <summary>
     /// True if the sale is in a cancellable state (Pending or Approved).
     /// Drafts are cancellable via DeleteDraftSaleCommand (handled on /Cart);
     /// Invoiced sales require a credit note flow (not implemented in v1).
@@ -939,6 +969,16 @@
         _canActOnSales = user.IsInRole(Roles.Admin)
                          || user.IsInRole(Roles.Manager)
                          || user.IsInRole(Roles.Employee);
+
+        // Current user's Id — same claim-resolution pattern as
+        // MobileUserDetail.razor ("UserId" claim set by the custom
+        // claims factory; NameIdentifier as fallback).
+        var idClaim = user.FindFirst("UserId")?.Value
+                      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (Guid.TryParse(idClaim, out var parsedId))
+        {
+            _currentUserId = parsedId;
+        }
 
         try
         {
@@ -1448,6 +1488,14 @@
                 Loc["PurchaseLimitExceeded"],
                 limitName,
                 limit);
+        }
+        // SelfApproval is returned by ApproveSaleCommandHandler when the
+        // staff member tries to approve a sale in which THEY are the
+        // customer — no one may confirm their own order, regardless of
+        // role or confirmation rights.
+        if (SelfApprovalErrors.TryParse(error))
+        {
+            return Loc["SelfApprovalBlocked"];
         }
         return null;
     }
