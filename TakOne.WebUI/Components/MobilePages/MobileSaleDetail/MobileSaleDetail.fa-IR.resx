@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -106,7 +106,7 @@
        توسط هندلرهای دستور Approve / MarkAsInvoiced / Cancel بازگردانده
        می‌شوند. به LocalizeError در MobileSaleDetail.razor و کمک‌کننده‌های
        TakOne.Application.Common.Errors (StockErrors،
-       CategoryDeactivatedErrors، PurchaseLimitErrors، NoCustomerGroupErrors)
+       CategoryDeactivatedErrors، PurchaseLimitErrors)
        مراجعه کنید. -->
   <!-- StockExceeded — {0} = نام محصول، {1} = موجودی فعلی، {2} = تعداد درخواستی -->
   <data name="StockExceeded" xml:space="preserve"><value>موجودی برای تأیید این سفارش کافی نیست. محصول «{0}» {1} عدد موجود دارد، اما سفارش به {2} عدد نیاز دارد.</value></data>
@@ -117,6 +117,4 @@
   </data>
   <!-- PurchaseLimitExceeded — {0} = نام محصول، {1} = سقف خرید هر مشتری -->
   <data name="PurchaseLimitExceeded" xml:space="preserve"><value>سقف خرید برای «{0}» {1} عدد است. این سفارش از سقف مجاز فراتر می‌رود.</value></data>
-  <!-- NoCustomerGroup — نشان داده می‌شود وقتی مشتریِ سفارش گروه مشتریان ندارد. -->
-  <data name="NoCustomerGroup" xml:space="preserve"><value>این مشتری برای خرید پیکربندی نشده است. پیش از افزودن کالا، او را به یک گروه مشتریان اختصاص دهید.</value></data>
 </root>

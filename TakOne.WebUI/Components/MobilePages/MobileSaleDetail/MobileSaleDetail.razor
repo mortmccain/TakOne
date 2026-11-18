@@ -761,14 +761,6 @@ else
                 limitName,
                 limit);
         }
-        // NoCustomerGroup is produced when the customer on the sale has no
-        // CustomerGroup assigned. The backend rejects the mutation outright.
-        // The localized message tells the staff user to assign the customer
-        // to a group before adding more items.
-        if (NoCustomerGroupErrors.TryParse(error))
-        {
-            return Loc["NoCustomerGroup"];
-        }
         return null;
     }
 
@@ -806,7 +798,7 @@ else
             {
                 // result.Error may be a stable, culture-neutral error code
                 // (e.g. StockErrors.Format / CategoryDeactivatedErrors.Format /
-                // PurchaseLimitErrors.Format / NoCustomerGroupErrors.Format)
+                // PurchaseLimitErrors.Format)
                 // that needs to be localized into the user's language.
                 // LocalizeError returns null for errors it doesn't recognize —
                 // we fall back to the raw error string, or to Error_GenericAction

@@ -213,33 +213,22 @@ public sealed class AddItemToSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        // GROUPLESS BUYERS (owner policy, replaces the Step 12-a
+        // group-membership guard).
         //
-        //    Business rule: a customer MUST belong to a CustomerGroup for
-        //    any purchase mutation (including staff adding items to a
-        //    draft on the customer's behalf). Without a group, the
-        //    customer has no salary budget / currency / per-product cap
-        //    to enforce — i.e. unlimited mutations, which defeats the
-        //    entire salary/budget feature.
-        //
-        //    The error uses NoCustomerGroupErrors.Format so the UI layer
-        //    (SaleDetail page) can localize it without exposing the
-        //    internal "customer group" concept to the staff user.
+        //    A customer WITHOUT a CustomerGroup (e.g. an admin who was
+        //    never assigned to a salary group) may receive cart mutations
+        //    too — self-serve or staff-added: the group-scoped checks
+        //    below (currency match, salary budget, per-product cap)
+        //    simply don't apply to them, because there is no group to
+        //    scope to. Stock quantity still caps every line.
         // ------------------------------------------------------------------
-        if (customer.GroupId is null)
-        {
-            logger.LogWarning
-                ("AddItemToSale: customer {CustomerId} on sale {SaleId} has no customer group assigned. " +
-                 "Rejecting add-item for product {ProductId} ('{ProductName}').",
-                customer.Id, sale.Id, product.Id, product.Name);
-
-            return Result.Failure(NoCustomerGroupErrors.Format());
-        }
 
         // ------------------------------------------------------------------
         // CURRENCY MATCH CHECK (always enforced, regardless of LimitMode).
         // A customer whose salary is in IRR cannot buy a product priced
-        // in USD. GroupId is guaranteed non-null here (guarded above).
+        // in USD. Only applies when the buyer HAS a group — a groupless
+        // buyer has no salary currency to match against.
         // ------------------------------------------------------------------
         if (customer.GroupId is not null)
         {
@@ -276,7 +265,7 @@ public sealed class AddItemToSaleCommandHandler
         // (where Remaining = Salary − Consumed; can be negative if the
         // salary was lowered mid-month after a purchase).
         //
-        // Skip when customer has no group (staff) — no budget applies.
+        // Skip when the buyer has no group — no budget applies.
         // ------------------------------------------------------------------
         var lineTotal = product.Price.Amount * command.Quantity;
 
@@ -302,7 +291,7 @@ public sealed class AddItemToSaleCommandHandler
         // PER-PRODUCT COUNT LIMIT (replaces inline product.GetPurchaseLimitForGroup).
         // Returns null when:
         //   - count limits are NOT enforced (mode = SalaryOnly)
-        //   - customer has no group (staff)
+        //   - buyer has no group (groupless buyers have no cap)
         //   - the product has no limit set for the customer's group
         // ------------------------------------------------------------------
         int? purchaseLimit = null;

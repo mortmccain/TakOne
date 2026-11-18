@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- Cart.en-US.resx — English strings for Cart.razor.
 
      The four <resheader> tags below are REQUIRED by the .resx reader —
@@ -227,9 +227,6 @@
   <!-- Step 12-a — shown when a user without a customer group tries to buy.
        The internal "group" concept is intentionally hidden — the customer
        just sees a "contact administrator" message. -->
-  <data name="NoCustomerGroup" xml:space="preserve">
-    <value>Your account is not configured for purchases. Please contact an administrator.</value>
-  </data>
 
   <!-- Step 7 — SalaryBudgetExceeded is produced when the customer's salary
        budget (LimitMode = SalaryOnly or Both) would be exceeded by adding /

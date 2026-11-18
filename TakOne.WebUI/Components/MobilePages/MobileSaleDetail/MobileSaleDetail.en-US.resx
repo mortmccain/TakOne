@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -108,7 +108,7 @@
        returned by the Approve / MarkAsInvoiced / Cancel command handlers.
        See LocalizeError in MobileSaleDetail.razor and the
        TakOne.Application.Common.Errors helpers (StockErrors,
-       CategoryDeactivatedErrors, PurchaseLimitErrors, NoCustomerGroupErrors)
+       CategoryDeactivatedErrors, PurchaseLimitErrors)
        for the format-string contracts. -->
   <!-- StockExceeded — {0} = product name, {1} = current stock, {2} = required quantity -->
   <data name="StockExceeded" xml:space="preserve"><value>Not enough stock to approve this order. Product '{0}' has {1} in stock, but the order requires {2}.</value></data>
@@ -119,6 +119,4 @@
   </data>
   <!-- PurchaseLimitExceeded — {0} = product name, {1} = per-customer limit -->
   <data name="PurchaseLimitExceeded" xml:space="preserve"><value>The purchase limit for '{0}' is {1} units per customer. This order exceeds the limit.</value></data>
-  <!-- NoCustomerGroup — shown when the customer on the sale has no CustomerGroup assigned. -->
-  <data name="NoCustomerGroup" xml:space="preserve"><value>This customer is not configured for purchases. Assign them to a customer group before adding items.</value></data>
 </root>

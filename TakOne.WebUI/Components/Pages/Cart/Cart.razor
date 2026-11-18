@@ -1355,16 +1355,6 @@
         {
             return Loc["CartConflict"];
         }
-        // Step 12-a — NoCustomerGroup is produced when the customer
-        // associated with the sale has no CustomerGroup assigned. The
-        // backend rejects the mutation outright (defense-in-depth: a
-        // no-group customer cannot buy anything). The localized message
-        // tells the customer to contact an admin — the internal "group"
-        // concept is never exposed.
-        if (NoCustomerGroupErrors.TryParse(error))
-        {
-            return Loc["NoCustomerGroup"];
-        }
         return error;
     }
 

@@ -163,33 +163,16 @@ public sealed class SubmitSaleCommandHandler
         }
 
         // ------------------------------------------------------------------
-        // GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        // GROUPLESS BUYERS (owner policy, replaces the Step 12-a
+        // group-membership guard).
         //
-        //    Business rule: a user MUST belong to a CustomerGroup to
-        //    submit any sale. Without a group, the customer has no salary
-        //    budget / currency / per-product cap to enforce — the sale
-        //    would escape all purchase-limit checks at the final submit
-        //    step, defeating the entire salary/budget feature.
-        //
-        //    This applies to ALL customers (staff submitting on behalf of
-        //    a customer included — the customer must have a group). It
-        //    blocks the exact bug reported in the Step 12-a runtime
-        //    review: a no-group user could submit sales without any
-        //    limit enforcement.
-        //
-        //    The error uses NoCustomerGroupErrors.Format so the UI layer
-        //    (Cart page) can localize it without exposing the internal
-        //    "customer group" concept.
+        //    A customer WITHOUT a CustomerGroup (e.g. an admin who was
+        //    never assigned to a salary group) may still submit their
+        //    sale: the group-scoped re-checks below (currency match,
+        //    salary budget, per-product cap) simply don't apply to them,
+        //    because there is no group to scope to. Stock quantity and
+        //    category activation still gate every line.
         // ------------------------------------------------------------------
-        if (customer.GroupId is null)
-        {
-            logger.LogWarning
-                ("SubmitSale: customer {CustomerId} on sale {SaleId} has no customer group assigned. " +
-                 "Rejecting submit.",
-                customer.Id, sale.Id);
-
-            return Result.Failure(NoCustomerGroupErrors.Format());
-        }
 
         if (sale.LineItems.Count > 0)
         {
@@ -239,8 +222,9 @@ public sealed class SubmitSaleCommandHandler
                 }
             }
 
-            // ---- Pass 2: purchase-limit check (ONLY for customers with
-            //              a GroupId — staff have no per-product cap).
+            // ---- Pass 2: purchase-limit check (ONLY for buyers with
+            //              a GroupId — groupless buyers have no
+            //              per-product cap).
             //              Uses the policy (replaces inline GetPurchaseLimitForGroup)
             //              so the LimitMode is respected: when mode is SalaryOnly,
             //              GetCountLimitsAsync returns no limits and the check is skipped.

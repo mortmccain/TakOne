@@ -148,25 +148,16 @@ public sealed class QuickReorderLastSaleCommandHandler
         var groupId = freshUser?.GroupId;
 
         // ------------------------------------------------------------------
-        // 2b-1. GROUP-MEMBERSHIP GUARD (Step 12-a runtime fix).
+        // 2b-1. GROUPLESS BUYERS (owner policy, replaces the Step 12-a
+        //       group-membership guard).
         //
-        //       Business rule: a user MUST belong to a CustomerGroup to
-        //       make any purchase. Reject upfront with a culture-neutral
-        //       error so the UI can localize it without exposing the
-        //       "customer group" concept to the end user.
-        //
-        //       See NoCustomerGroupErrors.cs for the rationale and the
-        //       matching UI-side TryParse hook.
+        //       A user WITHOUT a CustomerGroup (e.g. an admin who was
+        //       never assigned to a salary group) may quick-reorder too:
+        //       every group-scoped clamp below (per-product cap, budget,
+        //       currency) is guarded by `groupId is not null` and simply
+        //       doesn't apply to a groupless buyer. Stock quantity still
+        //       caps every line.
         // ------------------------------------------------------------------
-        if (groupId is null)
-        {
-            logger.LogWarning
-                ("QuickReorderLastSale: user {UserId} has no customer group assigned. " +
-                 "Rejecting quick-reorder of last sale {LastSaleId}.",
-                currentUser.UserId, lastSale.Id);
-
-            return Result<Guid>.Failure(NoCustomerGroupErrors.Format());
-        }
 
         var salaryBudgetEnforced = groupId is not null
             && await purchaseLimitPolicy.IsSalaryBudgetEnforcedAsync(cancellationToken);

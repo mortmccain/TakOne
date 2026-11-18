@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- Cart.fa-IR.resx — Persian (Farsi) strings for Cart.razor.
 
      Persian text is RTL; the layout direction is handled at the <html dir>
@@ -229,9 +229,6 @@
   <!-- Step 12-a — shown when a user without a customer group tries to buy.
        The internal "group" concept is intentionally hidden — the customer
        just sees a "contact administrator" message. -->
-  <data name="NoCustomerGroup" xml:space="preserve">
-    <value>حساب شما برای خرید پیکربندی نشده است. لطفاً با مدیر سامانه تماس بگیرید.</value>
-  </data>
 
   <!-- Step 7 — SalaryBudgetExceeded هنگامی تولید می‌شود که بودجهٔ ماهانهٔ مشتری
        (در حالت SalaryOnly یا Both) با افزودن/به‌روزرسانی/ثبت بیشتر شود. پیام

@@ -1449,14 +1449,6 @@
                 limitName,
                 limit);
         }
-        // Step 12-a — NoCustomerGroup is produced when the customer on the
-        // sale has no CustomerGroup assigned. The backend rejects the
-        // mutation outright. The localized message tells the staff user
-        // to assign the customer to a group before adding more items.
-        if (NoCustomerGroupErrors.TryParse(error))
-        {
-            return Loc["NoCustomerGroup"];
-        }
         return null;
     }
 
